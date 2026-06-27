@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+*.log
+.nx/
+.DS_Store
+.pipeline-out/
+.pipeline-staging/

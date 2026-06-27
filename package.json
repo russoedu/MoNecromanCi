@@ -1,0 +1,50 @@
+{
+  "name": "nx-magic",
+  "version": "0.0.0",
+  "description": "Interactive CLI to create and fix NX monorepos for Azure DevOps (function apps, React apps, internal/publishable libs, CLI tools).",
+  "bin": {
+    "nx-magic": "./dist/cli.js",
+    "nxm": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup && node scripts/copy-assets.mjs",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "nx",
+    "monorepo",
+    "azure-devops",
+    "cli",
+    "scaffold",
+    "typescript"
+  ],
+  "author": "Eduardo Russo",
+  "license": "MIT",
+  "dependencies": {
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-jest": "^29.15.3",
+    "jest": "^30.4.2",
+    "neostandard": "^0.13.0",
+    "ts-jest": "^29.4.11",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  }
+}
