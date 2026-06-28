@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 /** Creates a directory (and parents) if it does not already exist. */
-export function ensureDir (directory: string): void {
+export function ensureDirectory (directory: string): void {
   if (!existsSync(directory)) {
     mkdirSync(directory, { recursive: true })
   }
@@ -10,12 +10,14 @@ export function ensureDir (directory: string): void {
 
 /** Writes a UTF-8 file, creating parent directories as needed. */
 export function writeFileEnsured (filePath: string, content: string): void {
-  ensureDir(dirname(filePath))
+  ensureDirectory(dirname(filePath))
   writeFileSync(filePath, content, 'utf8')
 }
 
-/** Reads and parses a JSON file, returning `fallback` on any error. */
-export function readJsonSafe<T> (filePath: string, fallback: T): T {
+/** Reads and parses a JSON file, returning `fallback` (or `undefined`) on any error. */
+export function readJsonSafe<T> (filePath: string): T | undefined
+export function readJsonSafe<T> (filePath: string, fallback: T): T
+export function readJsonSafe<T> (filePath: string, fallback?: T): T | undefined {
   try {
     return JSON.parse(readFileSync(filePath, 'utf8')) as T
   } catch {
@@ -37,4 +39,4 @@ export function toJson (value: unknown): string {
   return `${JSON.stringify(value, undefined, 2)}\n`
 }
 
-export { existsSync as fileExists }
+export { existsSync as fileExists } from 'node:fs'

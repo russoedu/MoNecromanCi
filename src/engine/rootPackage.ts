@@ -26,7 +26,7 @@ export function addRootDependencies (
   }
 
   manifest[section] = Object.fromEntries(
-    Object.entries(existing).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(existing).toSorted(([left], [right]) => left.localeCompare(right)),
   )
   writeFileEnsured(manifestPath, toJson(manifest))
 

@@ -42,19 +42,19 @@ export function discoverProjects (repoRoot: string, config: NxMagicConfig): Proj
   const projects: ProjectVars[] = []
 
   for (const area of ['apps', 'libs']) {
-    const areaDir = join(repoRoot, area)
-    if (!existsSync(areaDir)) {
+    const areaDirectory = join(repoRoot, area)
+    if (!existsSync(areaDirectory)) {
       continue
     }
 
-    for (const entry of readdirSync(areaDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(areaDirectory, { withFileTypes: true })) {
       if (!entry.isDirectory()) {
         continue
       }
 
-      const projectDir = join(areaDir, entry.name)
-      const projectJson = readJsonSafe<Record<string, unknown>>(join(projectDir, 'project.json'), {})
-      const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDir, 'package.json'), {})
+      const projectDirectory = join(areaDirectory, entry.name)
+      const projectJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'project.json'), {})
+      const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'package.json'), {})
       const kind = kindFromProject(projectJson, packageJson)
       if (!kind) {
         continue

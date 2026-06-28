@@ -19,7 +19,7 @@ export function loadConfig (repoRoot: string): NxMagicConfig | undefined {
     return undefined
   }
 
-  return readJsonSafe<NxMagicConfig | undefined>(stampPath(repoRoot), undefined)
+  return readJsonSafe<NxMagicConfig>(stampPath(repoRoot))
 }
 
 /** Writes the `.nx-magic.json` stamp for a repo. */
@@ -31,11 +31,11 @@ export function saveConfig (repoRoot: string, config: NxMagicConfig): void {
 export function configFromVars (vars: MonorepoVars): NxMagicConfig {
   return {
     templateVersion: TEMPLATE_VERSION,
-    workspaceName: vars.workspaceName,
-    displayName: vars.displayName,
-    scope: vars.scope,
-    defaultBase: vars.defaultBase,
-    nodeVersion: vars.nodeVersion,
-    azure: vars.azure,
+    workspaceName:   vars.workspaceName,
+    displayName:     vars.displayName,
+    scope:           vars.scope,
+    defaultBase:     vars.defaultBase,
+    nodeVersion:     vars.nodeVersion,
+    azure:           vars.azure,
   }
 }

@@ -39,6 +39,9 @@ const projectRules = {
   semi:                                  ['error', 'never'],
   '@stylistic/comma-dangle':             ['error', 'always-multiline'],
   '@stylistic/key-spacing':              ['error', { align: { beforeColon: false, afterColon: true, on: 'value' } }],
+  // key-spacing's alignment inserts the multi-space runs that no-multi-spaces
+  // would otherwise strip back out on type literals/interfaces; exempt those.
+  '@stylistic/no-multi-spaces':          ['error', { exceptions: { TSTypeAnnotation: true, TSIndexSignature: true, PropertyDefinition: true } }],
   '@stylistic/jsx-quotes':               ['error', 'prefer-single'],
   '@typescript-eslint/no-explicit-any':  'off',
   '@typescript-eslint/no-non-null-assertion': 'off',
@@ -62,6 +65,14 @@ const testRules = {
   'no-new':                                'off',
 }
 
+// Several plugin "recommended" presets ship rule blocks with no \`files\` filter
+// (meant to apply broadly to their own JS/JSON/YAML-shaped ASTs). @eslint/markdown
+// parses .md through ESLint's newer "Language" API, whose SourceCode doesn't
+// implement everything a generic rule may assume (e.g. \`getAllComments\`,
+// \`parserServices\`), so those unscoped blocks crash instead of simply no-op'ing
+// on markdown. Keep markdown out of every preset except the dedicated md block below.
+const excludeMarkdown = (configs) => configs.map((config) => ({ ...config, ignores: [...(config.ignores ?? []), '**/*.md'] }))
+
 export default [
   {
     ignores: [
@@ -74,7 +85,7 @@ export default [
   },
 
   // Standard style (no semicolons) + @stylistic + typescript-eslint (non type-checked).
-  ...neostandard({ ts: true }),
+  ...excludeMarkdown(neostandard({ ts: true })),
 
   // Unicorn for all TS/JS.
   { ...unicorn.configs.recommended, files: code },
@@ -118,12 +129,12 @@ export default [
   },
 
   // JSON / JSONC / JSON5.
-  ...jsonc.configs['flat/recommended-with-json'],
-  ...jsonc.configs['flat/recommended-with-jsonc'],
-  ...jsonc.configs['flat/recommended-with-json5'],
+  ...excludeMarkdown(jsonc.configs['flat/recommended-with-json']),
+  ...excludeMarkdown(jsonc.configs['flat/recommended-with-jsonc']),
+  ...excludeMarkdown(jsonc.configs['flat/recommended-with-json5']),
 
   // YAML.
-  ...yaml.configs['flat/standard'],
+  ...excludeMarkdown(yaml.configs['flat/standard']),
 
   // Markdown.
   { files: ['**/*.md'], plugins: { markdown }, language: 'markdown/gfm' },

@@ -13,7 +13,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup && node scripts/copy-assets.mjs",
+    "build": "tsup && node scripts/copyAssets.mjs",
     "dev": "tsup --watch",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -37,10 +37,16 @@
     "commander": "^15.0.0"
   },
   "devDependencies": {
+    "@eslint/markdown": "^7.5.1",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.1",
     "eslint": "^9.39.4",
     "eslint-plugin-jest": "^29.15.3",
+    "eslint-plugin-jsonc": "^3.2.0",
+    "eslint-plugin-unicorn": "^64.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "eslint-plugin-yml": "^3.5.0",
+    "globals": "^17.7.0",
     "jest": "^30.4.2",
     "neostandard": "^0.13.0",
     "ts-jest": "^29.4.11",

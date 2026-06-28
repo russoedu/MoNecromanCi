@@ -4,20 +4,20 @@ import type { FileSpec, ProjectVars } from '../engine/types'
 
 function libPackageJson (vars: ProjectVars): string {
   return toJson({
-    name: vars.packageName,
-    version: '0.0.0',
-    private: true,
-    type: 'commonjs',
+    name:         vars.packageName,
+    version:      '0.0.0',
+    private:      true,
+    type:         'commonjs',
     // Point at source so consumers resolve TS directly: enables step-into-source
     // debugging and editor "find references" across internal libraries.
-    main: './src/index.ts',
-    types: './src/index.ts',
+    main:         './src/index.ts',
+    types:        './src/index.ts',
     dependencies: {},
-    scripts: {
+    scripts:      {
       build: 'tsc -p ./tsconfig.lib.json',
-      test: 'jest --collectCoverage',
-      lint: 'eslint . -c ../../eslint.config.mjs',
-      doc: 'typedoc --tsconfig tsconfig.lib.json',
+      test:  'jest --collectCoverage',
+      lint:  'eslint . -c ../../eslint.config.mjs',
+      doc:   'typedoc --tsconfig tsconfig.lib.json',
     },
   })
 }
@@ -25,44 +25,44 @@ function libPackageJson (vars: ProjectVars): string {
 function libProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
-    options: { command: `npm run ${target} -w ${vars.packageName}` },
+    options:  { command: `npm run ${target} -w ${vars.packageName}` },
   })
 
   return toJson({
-    name: vars.name,
-    $schema: '../../node_modules/nx/schemas/project-schema.json',
-    sourceRoot: `libs/${vars.name}/src`,
+    name:        vars.name,
+    $schema:     '../../node_modules/nx/schemas/project-schema.json',
+    sourceRoot:  `libs/${vars.name}/src`,
     projectType: 'library',
-    tags: [TAGS.internalLib],
-    targets: {
+    tags:        [TAGS.internalLib],
+    targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
-      test: run('test'),
-      lint: run('lint'),
-      doc: run('doc'),
+      test:  run('test'),
+      lint:  run('lint'),
+      doc:   run('doc'),
     },
   })
 }
 
 function libTsconfig (): string {
   return toJson({
-    extends: '../../tsconfig.base.json',
+    extends:         '../../tsconfig.base.json',
     compilerOptions: {
-      baseUrl: '.',
-      rootDir: '.',
-      outDir: './dist',
-      module: 'nodenext',
-      moduleResolution: 'nodenext',
-      target: 'es2024',
-      lib: ['es2024'],
-      noEmit: true,
-      emitDeclarationOnly: true,
-      sourceMap: true,
-      declaration: true,
-      declarationMap: true,
-      removeComments: false,
+      baseUrl:                      '.',
+      rootDir:                      '.',
+      outDir:                       './dist',
+      module:                       'nodenext',
+      moduleResolution:             'nodenext',
+      target:                       'es2024',
+      lib:                          ['es2024'],
+      noEmit:                       true,
+      emitDeclarationOnly:          true,
+      sourceMap:                    true,
+      declaration:                  true,
+      declarationMap:               true,
+      removeComments:               false,
       allowSyntheticDefaultImports: true,
-      importHelpers: true,
-      isolatedModules: true,
+      importHelpers:                true,
+      isolatedModules:              true,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**'],
   })
@@ -70,15 +70,15 @@ function libTsconfig (): string {
 
 function libTsconfigLib (): string {
   return toJson({
-    extends: './tsconfig.json',
+    extends:         './tsconfig.json',
     compilerOptions: {
-      rootDir: './src',
-      noEmit: false,
+      rootDir:             './src',
+      noEmit:              false,
       emitDeclarationOnly: false,
-      sourceMap: true,
-      declaration: true,
-      declarationMap: true,
-      removeComments: false,
+      sourceMap:           true,
+      declaration:         true,
+      declarationMap:      true,
+      removeComments:      false,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**', './src/**/*.test.ts', './src/_jest/**'],
   })
@@ -86,10 +86,10 @@ function libTsconfigLib (): string {
 
 function libTypedoc (): string {
   return toJson({
-    extends: ['../../typedoc.json'],
+    extends:     ['../../typedoc.json'],
     entryPoints: ['./src'],
-    out: 'doc',
-    exclude: ['./node_modules/**', './src/**/*.test.ts'],
+    out:         'doc',
+    exclude:     ['./node_modules/**', './src/**/*.test.ts'],
   })
 }
 

@@ -8,7 +8,7 @@ import { reactAppFiles } from '../templates/reactApp'
 import { logger } from '../util/logger'
 
 interface RootDeps {
-  dependencies?: Record<string, string>
+  dependencies?:    Record<string, string>
   devDependencies?: Record<string, string>
 }
 
@@ -18,33 +18,39 @@ const ROOT_DEPENDENCIES: Partial<Record<ProjectKind, RootDeps>> = {
     dependencies: { '@azure/functions': '^4.16.0' },
   },
   'react-app': {
-    dependencies: { react: '^19.2.0', 'react-dom': '^19.2.0' },
+    dependencies:    { react: '^19.2.0', 'react-dom': '^19.2.0' },
     devDependencies: {
       '@testing-library/jest-dom': '^6.6.3',
-      '@testing-library/react': '^16.1.0',
-      '@types/react': '^19.2.0',
-      '@types/react-dom': '^19.2.0',
-      '@vitejs/plugin-react': '^4.3.4',
-      'jest-environment-jsdom': '^30.0.0',
-      vite: '^6.0.7',
+      '@testing-library/react':    '^16.1.0',
+      '@types/react':              '^19.2.0',
+      '@types/react-dom':          '^19.2.0',
+      '@vitejs/plugin-react':      '^4.3.4',
+      'jest-environment-jsdom':    '^30.0.0',
+      vite:                        '^6.0.7',
     },
   },
 }
 
 function filesForKind (kind: ProjectKind, vars: ProjectVars): FileSpec[] {
   switch (kind) {
-    case 'internal-lib':
+    case 'internal-lib': {
       return internalLibFiles(vars)
-    case 'publishable-lib':
+    }
+    case 'publishable-lib': {
       return publishableLibFiles(vars)
-    case 'cli-tool':
+    }
+    case 'cli-tool': {
       return cliToolFiles(vars)
-    case 'function-app':
+    }
+    case 'function-app': {
       return functionAppFiles(vars)
-    case 'react-app':
+    }
+    case 'react-app': {
       return reactAppFiles(vars)
-    default:
+    }
+    default: {
       throw new Error(`The '${kind as string}' generator is not implemented yet.`)
+    }
   }
 }
 
@@ -74,8 +80,8 @@ export function generateProject (repoRoot: string, kind: ProjectKind, name: stri
     kind,
     name,
     packageName: `${config.scope}/${name}`,
-    scope: config.scope,
-    azure: config.azure,
+    scope:       config.scope,
+    azure:       config.azure,
   }
 
   logger.step(`Adding ${kind} '${name}' (${vars.packageName})`)

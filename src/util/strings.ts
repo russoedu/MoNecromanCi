@@ -6,9 +6,9 @@
 export function toSlug (input: string): string {
   return input
     .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replaceAll(/[^a-zA-Z0-9]+/g, '-')
+    .replaceAll(/^-+|-+$/g, '')
     .toLowerCase()
 }
 
@@ -19,7 +19,7 @@ export function toSlug (input: string): string {
 export function toVariableToken (input: string): string {
   return input
     .trim()
-    .replace(/[^A-Za-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+    .replaceAll(/[^A-Za-z0-9]+/g, '_')
+    .replaceAll(/^_+|_+$/g, '')
     .toUpperCase()
 }

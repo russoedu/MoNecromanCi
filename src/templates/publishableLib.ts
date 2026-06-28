@@ -20,24 +20,24 @@ function publishConfig (vars: ProjectVars): Record<string, string> | undefined {
 
 function tsconfig (): string {
   return toJson({
-    extends: '../../tsconfig.base.json',
+    extends:         '../../tsconfig.base.json',
     compilerOptions: {
-      baseUrl: '.',
-      rootDir: '.',
-      outDir: './dist',
-      module: 'nodenext',
-      moduleResolution: 'nodenext',
-      target: 'es2024',
-      lib: ['es2024'],
-      noEmit: true,
-      emitDeclarationOnly: true,
-      sourceMap: true,
-      declaration: true,
-      declarationMap: true,
-      removeComments: false,
+      baseUrl:                      '.',
+      rootDir:                      '.',
+      outDir:                       './dist',
+      module:                       'nodenext',
+      moduleResolution:             'nodenext',
+      target:                       'es2024',
+      lib:                          ['es2024'],
+      noEmit:                       true,
+      emitDeclarationOnly:          true,
+      sourceMap:                    true,
+      declaration:                  true,
+      declarationMap:               true,
+      removeComments:               false,
       allowSyntheticDefaultImports: true,
-      importHelpers: true,
-      isolatedModules: true,
+      importHelpers:                true,
+      isolatedModules:              true,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**'],
   })
@@ -45,15 +45,15 @@ function tsconfig (): string {
 
 function tsconfigLib (): string {
   return toJson({
-    extends: './tsconfig.json',
+    extends:         './tsconfig.json',
     compilerOptions: {
-      rootDir: './src',
-      noEmit: false,
+      rootDir:             './src',
+      noEmit:              false,
       emitDeclarationOnly: false,
-      sourceMap: true,
-      declaration: true,
-      declarationMap: true,
-      removeComments: false,
+      sourceMap:           true,
+      declaration:         true,
+      declarationMap:      true,
+      removeComments:      false,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**', './src/**/*.test.ts'],
   })
@@ -61,30 +61,30 @@ function tsconfigLib (): string {
 
 function typedoc (): string {
   return toJson({
-    extends: ['../../typedoc.json'],
+    extends:     ['../../typedoc.json'],
     entryPoints: ['./src'],
-    out: 'doc',
-    exclude: ['./node_modules/**', './src/**/*.test.ts'],
+    out:         'doc',
+    exclude:     ['./node_modules/**', './src/**/*.test.ts'],
   })
 }
 
 function projectJson (vars: ProjectVars, buildCommand: string): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
-    options: { command: `npm run ${target} -w ${vars.packageName}` },
+    options:  { command: `npm run ${target} -w ${vars.packageName}` },
   })
 
   return toJson({
-    name: vars.name,
-    $schema: '../../node_modules/nx/schemas/project-schema.json',
-    sourceRoot: `libs/${vars.name}/src`,
+    name:        vars.name,
+    $schema:     '../../node_modules/nx/schemas/project-schema.json',
+    sourceRoot:  `libs/${vars.name}/src`,
     projectType: vars.kind === 'cli-tool' ? 'application' : 'library',
-    tags: [TAGS.publishableLib],
-    targets: {
+    tags:        [TAGS.publishableLib],
+    targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: buildCommand } },
-      test: run('test'),
-      lint: run('lint'),
-      doc: run('doc'),
+      test:  run('test'),
+      lint:  run('lint'),
+      doc:   run('doc'),
     },
   })
 }
@@ -109,8 +109,8 @@ describe('greet', () => {
 /** The vendored resolved-deps script, written once at the repo root tools/ dir. */
 function distPackageScript (): FileSpec {
   return {
-    path: 'tools/generate-dist-package.mjs',
-    content: readAsset('scripts/generate-dist-package.mjs'),
+    path:      'tools/generate-dist-package.mjs',
+    content:   readAsset('scripts/generate-dist-package.mjs'),
     ownership: 'tool-owned',
   }
 }
@@ -120,19 +120,19 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
   const buildCommand = `npm run build -w ${vars.packageName}`
   const packageJson = toJson({
-    name: vars.packageName,
-    version: '0.0.0',
-    type: 'commonjs',
-    main: './src/index.ts',
-    types: './src/index.ts',
+    name:          vars.packageName,
+    version:       '0.0.0',
+    type:          'commonjs',
+    main:          './src/index.ts',
+    types:         './src/index.ts',
     publishConfig: publishConfig(vars),
-    nxMagic: { dist: { main: './index.js', types: './index.d.ts' } },
-    dependencies: {},
-    scripts: {
-      build: 'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
-      test: 'jest --collectCoverage',
-      lint: 'eslint . -c ../../eslint.config.mjs',
-      doc: 'typedoc --tsconfig tsconfig.lib.json',
+    nxMagic:       { dist: { main: './index.js', types: './index.d.ts' } },
+    dependencies:  {},
+    scripts:       {
+      build:   'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
+      test:    'jest --collectCoverage',
+      lint:    'eslint . -c ../../eslint.config.mjs',
+      doc:     'typedoc --tsconfig tsconfig.lib.json',
       publish: 'npm publish ./dist',
     },
   })
@@ -153,10 +153,10 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
   ]
 }
 
-const cliMainTs = `/** Sample CLI entry point. Replace with your own command logic. */
+const cliMainTs = String.raw`/** Sample CLI entry point. Replace with your own command logic. */
 function main (argv: string[]): void {
   const name = argv[0] ?? 'world'
-  process.stdout.write('Hello, ' + name + '!\\n')
+  process.stdout.write('Hello, ' + name + '!\n')
 }
 
 main(process.argv.slice(2))
@@ -183,19 +183,19 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
   const buildCommand = `npm run build -w ${vars.packageName}`
   const esbuild = 'esbuild src/cli.ts --bundle --platform=node --target=node24 --outfile=dist/cli.js'
   const packageJson = toJson({
-    name: vars.packageName,
-    version: '0.0.0',
-    type: 'commonjs',
-    main: './src/cli.ts',
-    bin: { [vars.name]: './dist/cli.js' },
+    name:          vars.packageName,
+    version:       '0.0.0',
+    type:          'commonjs',
+    main:          './src/cli.ts',
+    bin:           { [vars.name]: './dist/cli.js' },
     publishConfig: publishConfig(vars),
-    nxMagic: { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
-    dependencies: {},
-    scripts: {
-      build: `${esbuild} && node ../../tools/generate-dist-package.mjs`,
-      test: 'jest --collectCoverage',
-      lint: 'eslint . -c ../../eslint.config.mjs',
-      doc: 'typedoc --tsconfig tsconfig.lib.json',
+    nxMagic:       { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
+    dependencies:  {},
+    scripts:       {
+      build:   `${esbuild} && node ../../tools/generate-dist-package.mjs`,
+      test:    'jest --collectCoverage',
+      lint:    'eslint . -c ../../eslint.config.mjs',
+      doc:     'typedoc --tsconfig tsconfig.lib.json',
       publish: 'npm publish ./dist',
     },
   })

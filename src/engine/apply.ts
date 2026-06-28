@@ -4,9 +4,9 @@ import { logger } from '../util/logger'
 import type { FileSpec } from './types'
 
 export interface ApplyResult {
-  created: string[]
+  created:     string[]
   overwritten: string[]
-  skipped: string[]
+  skipped:     string[]
 }
 
 /**

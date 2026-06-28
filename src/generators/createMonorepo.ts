@@ -11,16 +11,16 @@ import { toSlug } from '../util/strings'
 import { generateProject } from './scaffold'
 
 export interface NewOptions {
-  name?: string
-  scope?: string
+  name?:         string
+  scope?:        string
   organization?: string
-  project?: string
-  feed?: string
-  base?: string
+  project?:      string
+  feed?:         string
+  base?:         string
   /** Initial internal library name; empty string skips it. */
-  lib?: string
+  lib?:          string
   /** Non-interactive: accept provided values and defaults without prompting. */
-  yes?: boolean
+  yes?:          boolean
 }
 
 /** Interactive (or `--yes` non-interactive) `nx-magic new`: scaffold a monorepo. */
@@ -38,9 +38,9 @@ export async function runNew (options: NewOptions): Promise<void> {
   const artifactsFeed = await ask('Azure Artifacts feed', 'AUTO', options.feed)
   const defaultBase = await ask('Default git branch', DEFAULT_BASE, options.base)
 
-  const targetDir = resolve(process.cwd(), workspaceName)
-  if (fileExists(join(targetDir, 'package.json')) && !yes) {
-    const overwrite = await confirm({ message: `${targetDir} already contains a package.json. Continue and overwrite tool-owned files?`, default: false })
+  const targetDirectory = resolve(process.cwd(), workspaceName)
+  if (fileExists(join(targetDirectory, 'package.json')) && !yes) {
+    const overwrite = await confirm({ message: `${targetDirectory} already contains a package.json. Continue and overwrite tool-owned files?`, default: false })
     if (!overwrite) {
       logger.warn('Aborted.')
       return
@@ -53,16 +53,16 @@ export async function runNew (options: NewOptions): Promise<void> {
     scope,
     defaultBase,
     nodeVersion: DEFAULT_NODE_VERSION,
-    azure: { organization, project, artifactsFeed },
+    azure:       { organization, project, artifactsFeed },
   }
 
-  logger.step(`Creating monorepo in ${targetDir}`)
-  reportApply(applyFiles(targetDir, monorepoFiles(vars)))
-  saveConfig(targetDir, configFromVars(vars))
+  logger.step(`Creating monorepo in ${targetDirectory}`)
+  reportApply(applyFiles(targetDirectory, monorepoFiles(vars)))
+  saveConfig(targetDirectory, configFromVars(vars))
 
   const libName = await resolveInitialLib(options.lib, yes)
   if (libName) {
-    generateProject(targetDir, 'internal-lib', libName, configFromVars(vars))
+    generateProject(targetDirectory, 'internal-lib', libName, configFromVars(vars))
   }
 
   logger.success('Done. Next steps:')

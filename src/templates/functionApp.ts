@@ -5,20 +5,20 @@ import type { FileSpec, ProjectVars } from '../engine/types'
 
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
-    name: vars.packageName,
-    version: '0.0.0',
-    private: true,
-    type: 'commonjs',
-    main: 'dist/index.js',
+    name:         vars.packageName,
+    version:      '0.0.0',
+    private:      true,
+    type:         'commonjs',
+    main:         'dist/index.js',
     dependencies: {},
-    scripts: {
-      build: 'tsc -p tsconfig.app.json',
-      watch: 'tsc -p tsconfig.app.json -w',
-      start: 'func start',
+    scripts:      {
+      build:          'tsc -p tsconfig.app.json',
+      watch:          'tsc -p tsconfig.app.json -w',
+      start:          'func start',
       'clean:config': 'node ../../tools/clean-config.mjs',
-      lint: 'eslint . -c ../../eslint.config.mjs',
-      test: 'jest --collectCoverage',
-      doc: 'typedoc --tsconfig tsconfig.app.json',
+      lint:           'eslint . -c ../../eslint.config.mjs',
+      test:           'jest --collectCoverage',
+      doc:            'typedoc --tsconfig tsconfig.app.json',
     },
   })
 }
@@ -26,39 +26,39 @@ function appPackageJson (vars: ProjectVars): string {
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
-    options: { command: `npm run ${target} -w ${vars.packageName}` },
+    options:  { command: `npm run ${target} -w ${vars.packageName}` },
   })
 
   return toJson({
-    name: vars.name,
-    $schema: '../../node_modules/nx/schemas/project-schema.json',
-    sourceRoot: `apps/${vars.name}/src`,
+    name:        vars.name,
+    $schema:     '../../node_modules/nx/schemas/project-schema.json',
+    sourceRoot:  `apps/${vars.name}/src`,
     projectType: 'application',
-    tags: [TAGS.functionApp],
-    targets: {
+    tags:        [TAGS.functionApp],
+    targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
       serve: run('start'),
-      test: run('test'),
-      lint: run('lint'),
-      doc: run('doc'),
+      test:  run('test'),
+      lint:  run('lint'),
+      doc:   run('doc'),
     },
   })
 }
 
 function appTsconfig (): string {
   return toJson({
-    extends: '../../tsconfig.base.json',
+    extends:         '../../tsconfig.base.json',
     compilerOptions: {
-      baseUrl: '.',
-      rootDir: '.',
-      outDir: './dist',
-      module: 'commonjs',
+      baseUrl:          '.',
+      rootDir:          '.',
+      outDir:           './dist',
+      module:           'commonjs',
       moduleResolution: 'node',
-      target: 'es2022',
-      sourceMap: true,
-      declaration: false,
-      declarationMap: false,
-      esModuleInterop: true,
+      target:           'es2022',
+      sourceMap:        true,
+      declaration:      false,
+      declarationMap:   false,
+      esModuleInterop:  true,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**'],
   })
@@ -66,11 +66,11 @@ function appTsconfig (): string {
 
 function appTsconfigApp (): string {
   return toJson({
-    extends: './tsconfig.json',
+    extends:         './tsconfig.json',
     compilerOptions: {
-      rootDir: './src',
-      noEmit: false,
-      sourceMap: true,
+      rootDir:        './src',
+      noEmit:         false,
+      sourceMap:      true,
       removeComments: false,
     },
     exclude: ['./coverage/**', './dist/**', './doc/**', './node_modules/**', './src/**/*.test.ts'],
@@ -79,10 +79,10 @@ function appTsconfigApp (): string {
 
 function appTypedoc (): string {
   return toJson({
-    extends: ['../../typedoc.json'],
+    extends:     ['../../typedoc.json'],
     entryPoints: ['./src'],
-    out: 'doc',
-    exclude: ['./node_modules/**', './src/**/*.test.ts'],
+    out:         'doc',
+    exclude:     ['./node_modules/**', './src/**/*.test.ts'],
   })
 }
 
@@ -95,7 +95,7 @@ function hostJson (): string {
       },
     },
     extensionBundle: {
-      id: 'Microsoft.Azure.Functions.ExtensionBundle',
+      id:      'Microsoft.Azure.Functions.ExtensionBundle',
       version: '[4.*, 5.0.0)',
     },
   })
@@ -105,9 +105,9 @@ function localSettingsJson (): string {
   // Gitignored. The --inspect arg lets VSCode attach on :9229 for TS debugging.
   return toJson({
     IsEncrypted: false,
-    Values: {
-      FUNCTIONS_WORKER_RUNTIME: 'node',
-      AzureWebJobsStorage: '',
+    Values:      {
+      FUNCTIONS_WORKER_RUNTIME:         'node',
+      AzureWebJobsStorage:              '',
       languageWorkers__node__arguments: '--inspect=9229',
     },
   })

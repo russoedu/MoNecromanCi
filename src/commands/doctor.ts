@@ -34,11 +34,11 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
 
   const vars: MonorepoVars = {
     workspaceName: config.workspaceName,
-    displayName: config.displayName,
-    scope: config.scope,
-    defaultBase: config.defaultBase,
-    nodeVersion: config.nodeVersion,
-    azure: config.azure,
+    displayName:   config.displayName,
+    scope:         config.scope,
+    defaultBase:   config.defaultBase,
+    nodeVersion:   config.nodeVersion,
+    azure:         config.azure,
   }
 
   const specs: FileSpec[] = [...monorepoFiles(vars)]

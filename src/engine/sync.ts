@@ -15,10 +15,10 @@ export function checkFile (repoRoot: string, spec: FileSpec): FileStatus {
 }
 
 export interface SyncReport {
-  ok: string[]
+  ok:      string[]
   missing: string[]
-  drift: string[]
-  fixed: string[]
+  drift:   string[]
+  fixed:   string[]
 }
 
 /**

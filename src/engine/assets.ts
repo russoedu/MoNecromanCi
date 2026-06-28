@@ -37,8 +37,8 @@ export function readAsset (relativePath: string): string {
 }
 
 /** Lists every file under an asset directory as forward-slash relative paths. */
-export function listAssetFiles (relativeDir: string): string[] {
-  const base = join(assetsRoot(), relativeDir)
+export function listAssetFiles (relativeDirectory: string): string[] {
+  const base = join(assetsRoot(), relativeDirectory)
   const files: string[] = []
 
   const walk = (directory: string): void => {

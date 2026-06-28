@@ -12,9 +12,9 @@ export const DEFAULT_BASE = 'main'
 
 /** Canonical NX project tags used to classify projects in CI. */
 export const TAGS = {
-  functionApp: 'type:function-app',
-  reactApp: 'type:react-app',
+  functionApp:    'type:function-app',
+  reactApp:       'type:react-app',
   publishableLib: 'type:publishable-lib',
-  internalLib: 'type:internal-lib',
-  ignore: 'ci:ignore',
+  internalLib:    'type:internal-lib',
+  ignore:         'ci:ignore',
 } as const

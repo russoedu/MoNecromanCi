@@ -10,8 +10,8 @@ import { logger } from './util/logger'
 /** Reads the CLI version from the packaged package.json (next to dist/). */
 function readVersion (): string {
   try {
-    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }
-    return pkg.version ?? '0.0.0'
+    const package_ = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }
+    return package_.version ?? '0.0.0'
   } catch {
     return '0.0.0'
   }
@@ -36,23 +36,23 @@ program
   .option('--lib <name>', 'initial internal library name (empty string to skip)')
   .description('Scaffold a brand-new canonical NX monorepo')
   .action(async (name: string | undefined, options: {
-    yes?: boolean
-    scope?: string
-    org?: string
+    yes?:     boolean
+    scope?:   string
+    org?:     string
     project?: string
-    feed?: string
-    base?: string
-    lib?: string
+    feed?:    string
+    base?:    string
+    lib?:     string
   }) => {
     await runNew({
       name,
-      yes: options.yes,
-      scope: options.scope,
+      yes:          options.yes,
+      scope:        options.scope,
       organization: options.org,
-      project: options.project,
-      feed: options.feed,
-      base: options.base,
-      lib: options.lib,
+      project:      options.project,
+      feed:         options.feed,
+      base:         options.base,
+      lib:          options.lib,
     })
   })
 

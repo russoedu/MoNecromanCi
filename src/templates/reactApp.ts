@@ -4,20 +4,20 @@ import type { FileSpec, ProjectVars } from '../engine/types'
 
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
-    name: vars.packageName,
+    name:    vars.packageName,
     version: '0.0.0',
     private: true,
-    type: 'module',
+    type:    'module',
     scripts: {
-      dev: 'vite',
-      'build:dev': 'vite build --mode dev --outDir dist-dev',
-      'build:uat': 'vite build --mode uat --outDir dist-uat',
+      dev:          'vite',
+      'build:dev':  'vite build --mode dev --outDir dist-dev',
+      'build:uat':  'vite build --mode uat --outDir dist-uat',
       'build:prod': 'vite build --mode prod --outDir dist-prod',
-      'build:all': 'npm run build:dev && npm run build:uat && npm run build:prod',
-      build: 'npm run build:dev',
-      preview: 'vite preview',
-      lint: 'eslint . -c ../../eslint.config.mjs',
-      test: 'jest --collectCoverage',
+      'build:all':  'npm run build:dev && npm run build:uat && npm run build:prod',
+      build:        'npm run build:dev',
+      preview:      'vite preview',
+      lint:         'eslint . -c ../../eslint.config.mjs',
+      test:         'jest --collectCoverage',
     },
   })
 }
@@ -25,42 +25,42 @@ function appPackageJson (vars: ProjectVars): string {
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
-    options: { command: `npm run ${target} -w ${vars.packageName}` },
+    options:  { command: `npm run ${target} -w ${vars.packageName}` },
   })
 
   return toJson({
-    name: vars.name,
-    $schema: '../../node_modules/nx/schemas/project-schema.json',
-    sourceRoot: `apps/${vars.name}/src`,
+    name:        vars.name,
+    $schema:     '../../node_modules/nx/schemas/project-schema.json',
+    sourceRoot:  `apps/${vars.name}/src`,
     projectType: 'application',
-    tags: [TAGS.reactApp],
-    targets: {
+    tags:        [TAGS.reactApp],
+    targets:     {
       build: {
         executor: 'nx:run-commands',
-        outputs: ['{projectRoot}/dist-dev', '{projectRoot}/dist-uat', '{projectRoot}/dist-prod'],
-        options: { command: `npm run build -w ${vars.packageName}` },
+        outputs:  ['{projectRoot}/dist-dev', '{projectRoot}/dist-uat', '{projectRoot}/dist-prod'],
+        options:  { command: `npm run build -w ${vars.packageName}` },
       },
       serve: run('dev'),
-      test: run('test'),
-      lint: run('lint'),
+      test:  run('test'),
+      lint:  run('lint'),
     },
   })
 }
 
 function appTsconfig (): string {
   return toJson({
-    extends: '../../tsconfig.base.json',
+    extends:         '../../tsconfig.base.json',
     compilerOptions: {
-      target: 'es2022',
-      lib: ['es2022', 'DOM', 'DOM.Iterable'],
-      module: 'esnext',
-      moduleResolution: 'bundler',
-      jsx: 'react-jsx',
-      types: ['vite/client', 'node'],
-      noEmit: true,
-      sourceMap: true,
+      target:                       'es2022',
+      lib:                          ['es2022', 'DOM', 'DOM.Iterable'],
+      module:                       'esnext',
+      moduleResolution:             'bundler',
+      jsx:                          'react-jsx',
+      types:                        ['vite/client', 'node'],
+      noEmit:                       true,
+      sourceMap:                    true,
       allowSyntheticDefaultImports: true,
-      esModuleInterop: true,
+      esModuleInterop:              true,
     },
     include: ['src', 'vite.config.ts'],
   })
@@ -69,12 +69,12 @@ function appTsconfig (): string {
 function appTsconfigSpec (): string {
   // Used by ts-jest: CommonJS + react-jsx so .tsx tests transpile under Jest.
   return toJson({
-    extends: '../../tsconfig.jest.json',
+    extends:         '../../tsconfig.jest.json',
     compilerOptions: {
-      jsx: 'react-jsx',
-      module: 'commonjs',
+      jsx:              'react-jsx',
+      module:           'commonjs',
       moduleResolution: 'node',
-      types: ['jest', 'node'],
+      types:            ['jest', 'node'],
     },
   })
 }

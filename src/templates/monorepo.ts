@@ -5,67 +5,67 @@ import { ESLINT_CONFIG_MJS } from './eslintConfig'
 
 /** Pinned toolchain for generated monorepos (mirrors the proven JATO set). */
 const DEV_DEPENDENCIES: Record<string, string> = {
-  '@commitlint/cli': '^19.6.1',
+  '@commitlint/cli':                 '^19.6.1',
   '@commitlint/config-conventional': '^19.6.0',
-  '@eslint/markdown': '^7.5.1',
-  '@types/jest': '^30.0.0',
-  '@types/node': '^25.9.1',
-  esbuild: '^0.28.0',
-  eslint: '^9.39.4',
-  'eslint-plugin-jest': '^29.15.2',
-  'eslint-plugin-jsonc': '^3.2.0',
-  'eslint-plugin-react': '^7.37.5',
-  'eslint-plugin-react-hooks': '^7.1.1',
-  'eslint-plugin-react-refresh': '^0.5.2',
-  'eslint-plugin-unicorn': '^64.0.0',
-  'eslint-plugin-unused-imports': '^4.4.1',
-  'eslint-plugin-yml': '^3.4.0',
-  globals: '^17.6.0',
-  husky: '^9.1.7',
-  jest: '^30.4.2',
-  'jest-junit': '^17.0.0',
-  neostandard: '^0.13.0',
-  nx: '^22.7.5',
-  'ts-jest': '^29.4.11',
-  'tsc-alias': '^1.8.16',
-  tslib: '^2.8.1',
-  typedoc: '^0.28.19',
-  'typedoc-plugin-missing-exports': '^4.1.3',
-  typescript: '^6.0.3',
+  '@eslint/markdown':                '^7.5.1',
+  '@types/jest':                     '^30.0.0',
+  '@types/node':                     '^25.9.1',
+  esbuild:                           '^0.28.0',
+  eslint:                            '^9.39.4',
+  'eslint-plugin-jest':              '^29.15.2',
+  'eslint-plugin-jsonc':             '^3.2.0',
+  'eslint-plugin-react':             '^7.37.5',
+  'eslint-plugin-react-hooks':       '^7.1.1',
+  'eslint-plugin-react-refresh':     '^0.5.2',
+  'eslint-plugin-unicorn':           '^64.0.0',
+  'eslint-plugin-unused-imports':    '^4.4.1',
+  'eslint-plugin-yml':               '^3.4.0',
+  globals:                           '^17.6.0',
+  husky:                             '^9.1.7',
+  jest:                              '^30.4.2',
+  'jest-junit':                      '^17.0.0',
+  neostandard:                       '^0.13.0',
+  nx:                                '^22.7.5',
+  'ts-jest':                         '^29.4.11',
+  'tsc-alias':                       '^1.8.16',
+  tslib:                             '^2.8.1',
+  typedoc:                           '^0.28.19',
+  'typedoc-plugin-missing-exports':  '^4.1.3',
+  typescript:                        '^6.0.3',
 }
 
 function packageJson (vars: MonorepoVars): string {
   return toJson({
-    name: vars.workspaceName,
-    version: '0.0.0',
-    private: true,
-    license: 'UNLICENSED',
+    name:       vars.workspaceName,
+    version:    '0.0.0',
+    private:    true,
+    license:    'UNLICENSED',
     workspaces: ['apps/*', 'libs/*'],
-    scripts: {
-      build: 'nx run-many -t build --all',
-      'build:affected': 'nx affected -t build',
-      lint: 'nx run-many -t lint --all',
-      'lint:affected': 'nx affected -t lint',
-      test: 'nx run-many -t test --all',
-      'test:affected': 'nx affected -t test',
-      doc: 'nx run-many -t doc --all',
-      'doc:affected': 'nx affected -t doc',
-      affected: 'nx affected -t lint,test,build',
-      projects: 'nx show projects',
-      graph: 'nx graph',
-      'nx:reset': 'nx reset',
-      'pipeline:plan': 'node .build-templates/01-preparation.mjs',
+    scripts:    {
+      build:              'nx run-many -t build --all',
+      'build:affected':   'nx affected -t build',
+      lint:               'nx run-many -t lint --all',
+      'lint:affected':    'nx affected -t lint',
+      test:               'nx run-many -t test --all',
+      'test:affected':    'nx affected -t test',
+      doc:                'nx run-many -t doc --all',
+      'doc:affected':     'nx affected -t doc',
+      affected:           'nx affected -t lint,test,build',
+      projects:           'nx show projects',
+      graph:              'nx graph',
+      'nx:reset':         'nx reset',
+      'pipeline:plan':    'node .build-templates/01-preparation.mjs',
       'pipeline:package': 'node .build-templates/03-package-apps.mjs --dry-run',
-      release: 'nx release',
-      'release:version': 'nx release version',
-      'release:publish': 'nx release publish',
-      prepare: 'husky',
+      release:            'nx release',
+      'release:version':  'nx release version',
+      'release:publish':  'nx release publish',
+      prepare:            'husky',
     },
     dependencies: {
       tslib: '^2.8.1',
     },
     devDependencies: DEV_DEPENDENCIES,
-    engines: {
+    engines:         {
       node: `>=${vars.nodeVersion}`,
     },
   })
@@ -73,10 +73,10 @@ function packageJson (vars: MonorepoVars): string {
 
 function nxJson (vars: MonorepoVars): string {
   return toJson({
-    $schema: './node_modules/nx/schemas/nx-schema.json',
+    $schema:         './node_modules/nx/schemas/nx-schema.json',
     workspaceLayout: { appsDir: 'apps', libsDir: 'libs' },
-    defaultBase: vars.defaultBase,
-    namedInputs: {
+    defaultBase:     vars.defaultBase,
+    namedInputs:     {
       sharedGlobals: [
         '{workspaceRoot}/package.json',
         '{workspaceRoot}/package-lock.json',
@@ -85,7 +85,7 @@ function nxJson (vars: MonorepoVars): string {
         '{workspaceRoot}/jest.preset.mjs',
         '{workspaceRoot}/eslint.config.mjs',
       ],
-      default: ['{projectRoot}/**/*', 'sharedGlobals'],
+      default:    ['{projectRoot}/**/*', 'sharedGlobals'],
       production: [
         'default',
         '!{projectRoot}/coverage/**',
@@ -97,16 +97,16 @@ function nxJson (vars: MonorepoVars): string {
     },
     targetDefaults: {
       build: { dependsOn: ['^build'], inputs: ['production', '^production'], cache: true },
-      lint: { inputs: ['default', '^production'], cache: true },
-      test: { dependsOn: ['build'], inputs: ['default', '^production'], cache: true },
-      doc: { inputs: ['production', '^production'], cache: true },
+      lint:  { inputs: ['default', '^production'], cache: true },
+      test:  { dependsOn: ['build'], inputs: ['default', '^production'], cache: true },
+      doc:   { inputs: ['production', '^production'], cache: true },
     },
     release: {
       projectsRelationship: 'independent',
-      projects: ['tag:type:publishable-lib'],
-      releaseTagPattern: '{projectName}@{version}',
-      version: { conventionalCommits: true },
-      changelog: { projectChangelogs: true },
+      projects:             ['tag:type:publishable-lib'],
+      releaseTagPattern:    '{projectName}@{version}',
+      version:              { conventionalCommits: true },
+      changelog:            { projectChangelogs: true },
     },
     analytics: false,
   })
@@ -114,24 +114,24 @@ function nxJson (vars: MonorepoVars): string {
 
 function tsconfigBase (): string {
   return toJson({
-    $schema: 'https://json.schemastore.org/tsconfig',
+    $schema:         'https://json.schemastore.org/tsconfig',
     compilerOptions: {
-      target: 'es2024',
-      types: ['jest', 'node'],
-      sourceMap: true,
-      declaration: true,
-      declarationMap: true,
-      removeComments: false,
+      target:                           'es2024',
+      types:                            ['jest', 'node'],
+      sourceMap:                        true,
+      declaration:                      true,
+      declarationMap:                   true,
+      removeComments:                   false,
       forceConsistentCasingInFileNames: true,
-      isolatedModules: true,
-      noFallthroughCasesInSwitch: true,
-      noUnusedLocals: true,
-      noUnusedParameters: true,
-      resolveJsonModule: true,
-      skipLibCheck: true,
-      strict: true,
-      strictNullChecks: true,
-      strictPropertyInitialization: false,
+      isolatedModules:                  true,
+      noFallthroughCasesInSwitch:       true,
+      noUnusedLocals:                   true,
+      noUnusedParameters:               true,
+      resolveJsonModule:                true,
+      skipLibCheck:                     true,
+      strict:                           true,
+      strictNullChecks:                 true,
+      strictPropertyInitialization:     false,
     },
   })
 }
@@ -139,29 +139,29 @@ function tsconfigBase (): string {
 function tsconfigJest (): string {
   // sourceMap MUST be true so ts-jest emits maps and VSCode binds breakpoints.
   return toJson({
-    extends: './tsconfig.base.json',
+    extends:         './tsconfig.base.json',
     compilerOptions: {
-      target: 'es2022',
-      module: 'commonjs',
-      moduleResolution: 'node',
-      noEmit: false,
+      target:              'es2022',
+      module:              'commonjs',
+      moduleResolution:    'node',
+      noEmit:              false,
       emitDeclarationOnly: false,
-      declaration: false,
-      declarationMap: false,
-      sourceMap: true,
-      esModuleInterop: true,
+      declaration:         false,
+      declarationMap:      false,
+      sourceMap:           true,
+      esModuleInterop:     true,
     },
   })
 }
 
 function typedocJson (): string {
   return toJson({
-    $schema: 'https://typedoc.org/schema.json',
+    $schema:            'https://typedoc.org/schema.json',
     entryPointStrategy: 'expand',
-    plugin: ['typedoc-plugin-missing-exports'],
-    excludePrivate: false,
-    categorizeByGroup: true,
-    cleanOutputDir: true,
+    plugin:             ['typedoc-plugin-missing-exports'],
+    excludePrivate:     false,
+    categorizeByGroup:  true,
+    cleanOutputDir:     true,
   })
 }
 
@@ -277,7 +277,7 @@ const commitlintConfigMjs = `export default {
 }
 `
 
-const huskyCommitMsg = `npx --no -- commitlint --edit "$1"
+const huskyCommitMessage = `npx --no -- commitlint --edit "$1"
 `
 
 function readme (vars: MonorepoVars): string {
@@ -309,7 +309,7 @@ npx nx-magic add        # interactive: function-app | react-app | internal-lib |
 `
 }
 
-function nxReleaseDoc (vars: MonorepoVars): string {
+function nxReleaseDocument (vars: MonorepoVars): string {
   return `# Releasing publishable libraries & CLI tools
 
 This monorepo uses **\`nx release\`** with **independent** versioning driven by
@@ -366,19 +366,19 @@ then publishes affected publishable projects to the Azure Artifacts feed
 
 function codeWorkspace (vars: MonorepoVars): string {
   return toJson({
-    folders: [{ path: '.', name: vars.displayName }],
+    folders:  [{ path: '.', name: vars.displayName }],
     settings: {
       'eslint.useFlatConfig': true,
-      'eslint.validate': ['javascript', 'typescript', 'typescriptreact', 'json', 'jsonc', 'json5', 'yaml', 'markdown'],
-      'files.exclude': {
-        '**/.nx': true,
+      'eslint.validate':      ['javascript', 'typescript', 'typescriptreact', 'json', 'jsonc', 'json5', 'yaml', 'markdown'],
+      'files.exclude':        {
+        '**/.nx':          true,
         '**/node_modules': true,
-        '**/coverage': true,
-        '**/.azurite': true,
-        tmp: true,
+        '**/coverage':     true,
+        '**/.azurite':     true,
+        tmp:               true,
       },
       'typescript.tsdk': 'node_modules/typescript/lib',
-      'jest.runMode': 'on-demand',
+      'jest.runMode':    'on-demand',
     },
     extensions: {
       recommendations: [
@@ -390,56 +390,56 @@ function codeWorkspace (vars: MonorepoVars): string {
     },
     // NOTE: launch/tasks are TOP-LEVEL workspace keys (NOT under settings) so VSCode surfaces them.
     launch: {
-      version: '0.2.0',
+      version:        '0.2.0',
       configurations: [
         // --- breakpoint-capable debug configs ---
         {
-          name: 'Debug Jest (current file)',
-          type: 'node',
-          request: 'launch',
-          program: '${workspaceFolder}/node_modules/jest/bin/jest.js',
-          args: ['--runInBand', '--watchAll=false', '--runTestsByPath', '${relativeFile}'],
-          cwd: '${workspaceFolder}',
-          console: 'integratedTerminal',
-          internalConsoleOptions: 'neverOpen',
-          disableOptimisticBPs: true,
+          name:                      'Debug Jest (current file)',
+          type:                      'node',
+          request:                   'launch',
+          program:                   '${workspaceFolder}/node_modules/jest/bin/jest.js',
+          args:                      ['--runInBand', '--watchAll=false', '--runTestsByPath', '${relativeFile}'],
+          cwd:                       '${workspaceFolder}',
+          console:                   'integratedTerminal',
+          internalConsoleOptions:    'neverOpen',
+          disableOptimisticBPs:      true,
           resolveSourceMapLocations: null,
-          sourceMaps: true,
+          sourceMaps:                true,
         },
         {
-          name: 'Debug Jest (all)',
-          type: 'node',
-          request: 'launch',
-          program: '${workspaceFolder}/node_modules/jest/bin/jest.js',
-          args: ['--runInBand', '--watchAll=false'],
-          cwd: '${workspaceFolder}',
-          console: 'integratedTerminal',
-          internalConsoleOptions: 'neverOpen',
-          disableOptimisticBPs: true,
+          name:                      'Debug Jest (all)',
+          type:                      'node',
+          request:                   'launch',
+          program:                   '${workspaceFolder}/node_modules/jest/bin/jest.js',
+          args:                      ['--runInBand', '--watchAll=false'],
+          cwd:                       '${workspaceFolder}',
+          console:                   'integratedTerminal',
+          internalConsoleOptions:    'neverOpen',
+          disableOptimisticBPs:      true,
           resolveSourceMapLocations: null,
-          sourceMaps: true,
+          sourceMaps:                true,
         },
         {
           // Start the host first (in the app dir: `npm run start -w <app>`), then attach.
-          name: 'Debug Function App (attach :9229)',
-          type: 'node',
-          request: 'attach',
-          port: 9229,
-          restart: true,
-          sourceMaps: true,
+          name:                      'Debug Function App (attach :9229)',
+          type:                      'node',
+          request:                   'attach',
+          port:                      9229,
+          restart:                   true,
+          sourceMaps:                true,
           resolveSourceMapLocations: null,
-          outFiles: ['${workspaceFolder}/apps/*/dist/**/*.js'],
-          skipFiles: ['<node_internals>/**'],
+          outFiles:                  ['${workspaceFolder}/apps/*/dist/**/*.js'],
+          skipFiles:                 ['<node_internals>/**'],
         },
         {
           // Start the dev server first (`npm run dev -w <app>`), then launch the browser.
           // Or use the JavaScript Debug Terminal: run `npm run dev -w <app>` there.
-          name: 'Debug React (Edge)',
-          type: 'msedge',
-          request: 'launch',
-          url: 'http://localhost:5173',
-          webRoot: '${workspaceFolder}',
-          sourceMaps: true,
+          name:                      'Debug React (Edge)',
+          type:                      'msedge',
+          request:                   'launch',
+          url:                       'http://localhost:5173',
+          webRoot:                   '${workspaceFolder}',
+          sourceMaps:                true,
           resolveSourceMapLocations: null,
         },
         // --- convenience run configs (no breakpoints; quick npm scripts) ---
@@ -453,7 +453,7 @@ function codeWorkspace (vars: MonorepoVars): string {
     },
     tasks: {
       version: '2.0.0',
-      tasks: [
+      tasks:   [
         { label: 'build all', type: 'shell', command: 'npm run build', problemMatcher: ['$tsc'] },
         { label: 'test all', type: 'shell', command: 'npm run test', problemMatcher: [] },
         { label: 'lint all', type: 'shell', command: 'npm run lint', problemMatcher: [] },
@@ -470,8 +470,8 @@ function pipelineFiles (): FileSpec[] {
 
   for (const relativePath of listAssetFiles('build-templates')) {
     files.push({
-      path: `.build-templates/${relativePath}`,
-      content: readAsset(`build-templates/${relativePath}`),
+      path:      `.build-templates/${relativePath}`,
+      content:   readAsset(`build-templates/${relativePath}`),
       ownership: 'tool-owned',
     })
   }
@@ -499,9 +499,9 @@ export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
     toolOwned('.editorconfig', editorconfig),
     scaffold('.gitignore', gitignore),
     toolOwned('commitlint.config.mjs', commitlintConfigMjs),
-    scaffold('.husky/commit-msg', huskyCommitMsg),
+    scaffold('.husky/commit-msg', huskyCommitMessage),
     scaffold('README.md', readme(vars)),
-    scaffold('docs/nx-release.md', nxReleaseDoc(vars)),
+    scaffold('docs/nx-release.md', nxReleaseDocument(vars)),
     toolOwned(`${vars.displayName}.code-workspace`, codeWorkspace(vars)),
     ...pipelineFiles(),
     // Keep apps/ and libs/ present even before any project is added.

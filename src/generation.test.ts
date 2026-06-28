@@ -11,11 +11,11 @@ import { monorepoFiles } from './templates/monorepo'
 
 const vars: MonorepoVars = {
   workspaceName: 'demo',
-  displayName: 'Demo',
-  scope: '@demo',
-  defaultBase: 'main',
-  nodeVersion: '24',
-  azure: { organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
+  displayName:   'Demo',
+  scope:         '@demo',
+  defaultBase:   'main',
+  nodeVersion:   '24',
+  azure:         { organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
 }
 
 let repo: string
@@ -63,7 +63,7 @@ describe('monorepo scaffolding', () => {
 
   it('places launch at the workspace top level with a breakpoint-capable jest config', () => {
     const workspace = readJson<{
-      launch?: { configurations: Array<Record<string, unknown>> }
+      launch?:  { configurations: Array<Record<string, unknown>> }
       settings: Record<string, unknown>
     }>('Demo.code-workspace')
 
@@ -79,8 +79,8 @@ describe('monorepo scaffolding', () => {
 
 describe('project generation', () => {
   it('resolves an internal lib to its TypeScript source', () => {
-    const pkg = readJson<{ main: string }>('libs/helpers/package.json')
-    expect(pkg.main).toBe('./src/index.ts')
+    const package_ = readJson<{ main: string }>('libs/helpers/package.json')
+    expect(package_.main).toBe('./src/index.ts')
     const project = readJson<{ tags: string[] }>('libs/helpers/project.json')
     expect(project.tags).toContain('type:internal-lib')
   })
@@ -95,8 +95,8 @@ describe('project generation', () => {
   })
 
   it('gives the react app multi-env builds and adds react deps to the root', () => {
-    const pkg = readJson<{ scripts: Record<string, string> }>('apps/web/package.json')
-    expect(pkg.scripts['build:all']).toContain('build:uat')
+    const package_ = readJson<{ scripts: Record<string, string> }>('apps/web/package.json')
+    expect(package_.scripts['build:all']).toContain('build:uat')
     expect(exists('apps/web/.env.uat')).toBe(true)
     const root = readJson<{ dependencies: Record<string, string>, devDependencies: Record<string, string> }>('package.json')
     expect(root.dependencies.react).toBeDefined()
@@ -104,8 +104,8 @@ describe('project generation', () => {
   })
 
   it('marks a cli tool with a bin and the resolved-deps script', () => {
-    const pkg = readJson<{ bin: Record<string, string> }>('libs/mytool/package.json')
-    expect(pkg.bin.mytool).toBe('./dist/cli.js')
+    const package_ = readJson<{ bin: Record<string, string> }>('libs/mytool/package.json')
+    expect(package_.bin.mytool).toBe('./dist/cli.js')
     expect(exists('tools/generate-dist-package.mjs')).toBe(true)
   })
 })
