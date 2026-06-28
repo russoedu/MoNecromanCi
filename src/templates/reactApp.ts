@@ -162,7 +162,17 @@ function envFile (environment: string): string {
   return `VITE_ENVIRONMENT=${environment}\nVITE_API_URL=https://${environment}.example.com\n`
 }
 
-/** Files for a React (Vite) app at `apps/<name>` with dev/uat/prod builds. */
+/**
+ * Files for a React (Vite) app at `apps/<name>` with dev/uat/prod builds.
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The project's template inputs.
+ * @returns The full set of file specs for the React app.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function reactAppFiles (vars: ProjectVars): FileSpec[] {
   const root = `apps/${vars.name}`
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })

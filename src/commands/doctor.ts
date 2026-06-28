@@ -7,6 +7,14 @@ import { projectFiles } from '../generators/scaffold'
 import { monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
 
+/**
+ * Options accepted by {@link runDoctor}.
+ *
+ * @remarks
+ * Mirrors the CLI's `--fix` flag.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
 export interface DoctorOptions {
   apply: boolean
 }
@@ -14,9 +22,17 @@ export interface DoctorOptions {
 /**
  * Detects and (optionally) repairs configuration drift.
  *
+ * @remarks
  * Re-derives the canonical `tool-owned` files for the monorepo and every project
  * it discovers, then compares them to disk. `scaffold` files (package.json, src,
  * .env, …) are never touched.
+ *
+ * @param options - Whether to apply fixes (`apply: true`) or only report drift.
+ * @returns A promise that resolves once the report has been logged (and, when
+ * applying, the repo's tool-owned files repaired).
+ * @throws Propagates errors from the underlying file or config operations; the
+ * CLI entry point in `cli.ts` catches and reports them.
+ * @typeParam None - this function has no generic type parameters.
  */
 export async function runDoctor (options: DoctorOptions): Promise<void> {
   const repoRoot = process.cwd()

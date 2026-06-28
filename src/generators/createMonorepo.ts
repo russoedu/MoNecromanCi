@@ -10,6 +10,15 @@ import { confirm, promptText } from '../util/prompts'
 import { toSlug } from '../util/strings'
 import { generateProject } from './scaffold'
 
+/**
+ * Options accepted by {@link runNew}.
+ *
+ * @remarks
+ * Each field mirrors a CLI flag; omitted fields are prompted for unless `yes`
+ * is set.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
 export interface NewOptions {
   name?:         string
   scope?:        string
@@ -23,7 +32,19 @@ export interface NewOptions {
   yes?:          boolean
 }
 
-/** Interactive (or `--yes` non-interactive) `nx-magic new`: scaffold a monorepo. */
+/**
+ * Interactive (or `--yes` non-interactive) `nx-magic new`: scaffold a monorepo.
+ *
+ * @remarks
+ * Prompts for any value not supplied via `options` (unless `yes` is set), then
+ * writes the monorepo template files and, optionally, an initial library.
+ *
+ * @param options - Monorepo inputs supplied on the command line, if any.
+ * @returns A promise that resolves once the monorepo has been scaffolded.
+ * @throws Propagates errors from the underlying file or config operations; the
+ * CLI entry point in `cli.ts` catches and reports them.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export async function runNew (options: NewOptions): Promise<void> {
   const yes = options.yes ?? false
   const ask = async (message: string, fallback: string, provided?: string): Promise<string> =>
@@ -72,11 +93,11 @@ export async function runNew (options: NewOptions): Promise<void> {
 }
 
 /** Resolves the initial library name from flags/prompts (undefined = skip). */
-async function resolveInitialLib (provided: string | undefined, yes: boolean): Promise<string | undefined> {
+async function resolveInitialLib (provided: string | undefined, shouldAcceptDefaults: boolean): Promise<string | undefined> {
   if (provided !== undefined) {
     return provided === '' ? undefined : toSlug(provided)
   }
-  if (yes) {
+  if (shouldAcceptDefaults) {
     return 'helpers'
   }
 

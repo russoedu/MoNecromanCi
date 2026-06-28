@@ -39,7 +39,7 @@ describe('promptText', () => {
     mockInput.mockResolvedValue('value')
     await promptText('Name')
     const { validate } = mockInput.mock.calls[0][0] as { validate: (value: string) => boolean | string }
-    expect(validate('   ')).toBe('A value is required')
+    expect(validate(' '.repeat(3))).toBe('A value is required')
     expect(validate('  ok  ')).toBe(true)
   })
 })

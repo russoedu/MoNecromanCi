@@ -5,12 +5,32 @@ import { promptText, select } from '../util/prompts'
 import { toSlug } from '../util/strings'
 import { generateProject } from './scaffold'
 
+/**
+ * Options accepted by {@link runAdd}.
+ *
+ * @remarks
+ * Mirrors the CLI's `add <type> <name>` arguments.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
 export interface AddOptions {
   type?: string
   name?: string
 }
 
-/** Interactive `nx-magic add`: pick a project kind and scaffold it. */
+/**
+ * Interactive `nx-magic add`: pick a project kind and scaffold it.
+ *
+ * @remarks
+ * Prompts for any value not supplied via `options`, then delegates to
+ * {@link generateProject}.
+ *
+ * @param options - Project type/name supplied on the command line, if any.
+ * @returns A promise that resolves once the project has been scaffolded.
+ * @throws Propagates errors from the underlying file or config operations; the
+ * CLI entry point in `cli.ts` catches and reports them.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export async function runAdd (options: AddOptions): Promise<void> {
   const repoRoot = process.cwd()
 

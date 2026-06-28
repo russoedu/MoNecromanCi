@@ -1,4 +1,10 @@
-/** Minimal namespaced console logger used across the CLI. */
+/**
+ * Minimal namespaced console logger used across the CLI.
+ *
+ * @remarks
+ * Each method prefixes `message` with a small glyph to distinguish severity
+ * when scanning terminal output.
+ */
 export const logger = {
   info (message: string): void {
     console.log(message)

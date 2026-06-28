@@ -40,20 +40,20 @@ afterAll(() => {
 })
 
 const read = (path: string): string => readFileSync(join(repo, path), 'utf8')
-const exists = (path: string): boolean => existsSync(join(repo, path))
+const hasPath = (path: string): boolean => existsSync(join(repo, path))
 function readJson<T> (path: string): T {
   return JSON.parse(read(path)) as T
 }
 
 describe('monorepo scaffolding', () => {
   it('writes the central configs and vendored pipeline', () => {
-    expect(exists('nx.json')).toBe(true)
-    expect(exists('eslint.config.mjs')).toBe(true)
-    expect(exists('jest.preset.mjs')).toBe(true)
-    expect(exists('Demo.code-workspace')).toBe(true)
-    expect(exists('azure-pipelines.yml')).toBe(true)
-    expect(exists('.build-templates/03-package-apps.mjs')).toBe(true)
-    expect(exists('docs/nx-release.md')).toBe(true)
+    expect(hasPath('nx.json')).toBe(true)
+    expect(hasPath('eslint.config.mjs')).toBe(true)
+    expect(hasPath('jest.preset.mjs')).toBe(true)
+    expect(hasPath('Demo.code-workspace')).toBe(true)
+    expect(hasPath('azure-pipelines.yml')).toBe(true)
+    expect(hasPath('.build-templates/03-package-apps.mjs')).toBe(true)
+    expect(hasPath('docs/nx-release.md')).toBe(true)
   })
 
   it('enables source maps in the jest tsconfig (debug requirement)', () => {
@@ -86,10 +86,10 @@ describe('project generation', () => {
   })
 
   it('ships function-app configurations, clean:config and a root @azure/functions dep', () => {
-    expect(exists('apps/api/.configurations/dev.json')).toBe(true)
-    expect(exists('apps/api/.configurations/uat.json')).toBe(true)
-    expect(exists('apps/api/.configurations/prod.json')).toBe(true)
-    expect(exists('tools/clean-config.mjs')).toBe(true)
+    expect(hasPath('apps/api/.configurations/dev.json')).toBe(true)
+    expect(hasPath('apps/api/.configurations/uat.json')).toBe(true)
+    expect(hasPath('apps/api/.configurations/prod.json')).toBe(true)
+    expect(hasPath('tools/clean-config.mjs')).toBe(true)
     const root = readJson<{ dependencies: Record<string, string> }>('package.json')
     expect(root.dependencies['@azure/functions']).toBeDefined()
   })
@@ -97,7 +97,7 @@ describe('project generation', () => {
   it('gives the react app multi-env builds and adds react deps to the root', () => {
     const package_ = readJson<{ scripts: Record<string, string> }>('apps/web/package.json')
     expect(package_.scripts['build:all']).toContain('build:uat')
-    expect(exists('apps/web/.env.uat')).toBe(true)
+    expect(hasPath('apps/web/.env.uat')).toBe(true)
     const root = readJson<{ dependencies: Record<string, string>, devDependencies: Record<string, string> }>('package.json')
     expect(root.dependencies.react).toBeDefined()
     expect(root.devDependencies.vite).toBeDefined()
@@ -106,7 +106,7 @@ describe('project generation', () => {
   it('marks a cli tool with a bin and the resolved-deps script', () => {
     const package_ = readJson<{ bin: Record<string, string> }>('libs/mytool/package.json')
     expect(package_.bin.mytool).toBe('./dist/cli.js')
-    expect(exists('tools/generate-dist-package.mjs')).toBe(true)
+    expect(hasPath('tools/generate-dist-package.mjs')).toBe(true)
   })
 })
 

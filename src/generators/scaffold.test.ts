@@ -43,7 +43,7 @@ describe('projectFiles', () => {
 
   it('throws for an unimplemented kind', () => {
     expect(() => projectFiles('unknown' as ProjectKind, { kind: 'internal-lib', name: 'x', packageName: '@demo/x', scope: '@demo' }))
-      .toThrow("The 'unknown' generator is not implemented yet.")
+      .toThrow('The \'unknown\' generator is not implemented yet.')
   })
 })
 

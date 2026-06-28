@@ -1,3 +1,4 @@
+// eslint-disable-next-line tsdoc/syntax -- JSDoc type-cast convention recommended by ts-jest; not valid strict TSDoc.
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset:              'ts-jest',

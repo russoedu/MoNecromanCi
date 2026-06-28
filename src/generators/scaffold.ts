@@ -7,13 +7,13 @@ import { cliToolFiles, publishableLibFiles } from '../templates/publishableLib'
 import { reactAppFiles } from '../templates/reactApp'
 import { logger } from '../util/logger'
 
-interface RootDeps {
+interface RootDependencies {
   dependencies?:    Record<string, string>
   devDependencies?: Record<string, string>
 }
 
 /** Root dependencies each project kind requires (all deps live in the root). */
-const ROOT_DEPENDENCIES: Partial<Record<ProjectKind, RootDeps>> = {
+const ROOT_DEPENDENCIES: Partial<Record<ProjectKind, RootDependencies>> = {
   'function-app': {
     dependencies: { '@azure/functions': '^4.16.0' },
   },
@@ -54,7 +54,19 @@ function filesForKind (kind: ProjectKind, vars: ProjectVars): FileSpec[] {
   }
 }
 
-/** Public accessor used by `doctor` to recompute a project's expected files. */
+/**
+ * Public accessor used by `doctor` to recompute a project's expected files.
+ *
+ * @remarks
+ * Thin wrapper around the internal `filesForKind` dispatch.
+ *
+ * @param kind - The project kind to generate files for.
+ * @param vars - The project's template inputs.
+ * @returns The expected file specs for this project.
+ * @throws Throws when `kind` is not one of the implemented {@link ProjectKind}
+ * values.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function projectFiles (kind: ProjectKind, vars: ProjectVars): FileSpec[] {
   return filesForKind(kind, vars)
 }
@@ -74,7 +86,22 @@ function applyRootDependencies (repoRoot: string, kind: ProjectKind): void {
   }
 }
 
-/** Writes a single project's files into an existing monorepo. */
+/**
+ * Writes a single project's files into an existing monorepo.
+ *
+ * @remarks
+ * Also applies any root-level dependencies the project kind requires (see
+ * {@link addRootDependencies}).
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param kind - The project kind to generate.
+ * @param name - The kebab-case project name.
+ * @param config - The monorepo's `.nx-magic.json` stamp.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error raised while writing files, and
+ * throws when `kind` is not one of the implemented {@link ProjectKind} values.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function generateProject (repoRoot: string, kind: ProjectKind, name: string, config: NxMagicConfig): void {
   const vars: ProjectVars = {
     kind,

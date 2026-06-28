@@ -115,7 +115,17 @@ function distPackageScript (): FileSpec {
   }
 }
 
-/** Files for a publishable library at `libs/<name>` (published to Azure Artifacts). */
+/**
+ * Files for a publishable library at `libs/<name>` (published to Azure Artifacts).
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The project's template inputs.
+ * @returns The full set of file specs for the publishable library.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
   const buildCommand = `npm run build -w ${vars.packageName}`
@@ -146,7 +156,7 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     file('tsconfig.lib.json', tsconfigLib(), 'tool-owned'),
     file('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', typedoc(), 'tool-owned'),
-    file('src/index.ts', "export * from './greeter'\n", 'scaffold'),
+    file('src/index.ts', 'export * from \'./greeter\'\n', 'scaffold'),
     file('src/greeter.ts', greeterTs, 'scaffold'),
     file('src/greeter.test.ts', greeterTestTs, 'scaffold'),
     distPackageScript(),
@@ -177,7 +187,17 @@ export function greet (name: string): string {
 }
 `
 
-/** Files for an executable CLI tool (a publishable lib that also ships a bin). */
+/**
+ * Files for an executable CLI tool (a publishable lib that also ships a bin).
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The project's template inputs.
+ * @returns The full set of file specs for the CLI tool.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function cliToolFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
   const buildCommand = `npm run build -w ${vars.packageName}`

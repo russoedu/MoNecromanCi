@@ -1,22 +1,81 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-/** Creates a directory (and parents) if it does not already exist. */
+/**
+ * Creates a directory (and parents) if it does not already exist.
+ *
+ * @remarks
+ * No-op when the directory is already present.
+ *
+ * @param directory - Absolute path to ensure exists.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
+ * by the underlying `mkdirSync` call.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function ensureDirectory (directory: string): void {
   if (!existsSync(directory)) {
     mkdirSync(directory, { recursive: true })
   }
 }
 
-/** Writes a UTF-8 file, creating parent directories as needed. */
+/**
+ * Writes a UTF-8 file, creating parent directories as needed.
+ *
+ * @remarks
+ * Delegates directory creation to {@link ensureDirectory}.
+ *
+ * @param filePath - Absolute path of the file to write.
+ * @param content - UTF-8 text content to write.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
+ * by the underlying write.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function writeFileEnsured (filePath: string, content: string): void {
   ensureDirectory(dirname(filePath))
   writeFileSync(filePath, content, 'utf8')
 }
 
-/** Reads and parses a JSON file, returning `fallback` (or `undefined`) on any error. */
+/**
+ * Reads and parses a JSON file as `T`.
+ *
+ * @remarks
+ * Overload: returns `undefined` when the file is missing or invalid (no
+ * fallback supplied).
+ *
+ * @param filePath - Absolute path to the JSON file.
+ * @param fallback - Not provided in this overload.
+ * @returns The parsed value, or `undefined` on any error.
+ * @throws Never - read and parse errors are caught and `undefined` returned.
+ * @typeParam T - The shape of the expected parsed value.
+ */
 export function readJsonSafe<T> (filePath: string): T | undefined
+/**
+ * Reads and parses a JSON file as `T`, falling back to `fallback` on any error.
+ *
+ * @remarks
+ * Overload: always returns a value of type `T`.
+ *
+ * @param filePath - Absolute path to the JSON file.
+ * @param fallback - Value returned when the file is missing or invalid.
+ * @returns The parsed value, or `fallback` on any error.
+ * @throws Never - read and parse errors are caught and `fallback` returned.
+ * @typeParam T - The shape of the expected parsed value.
+ */
 export function readJsonSafe<T> (filePath: string, fallback: T): T
+/**
+ * Implementation for the {@link readJsonSafe} overloads above.
+ *
+ * @remarks
+ * Catches all read/parse errors and returns `fallback` (or `undefined`).
+ *
+ * @param filePath - Absolute path to the JSON file.
+ * @param fallback - Value returned when the file is missing or invalid.
+ * @returns The parsed value, or `fallback`/`undefined` on any error.
+ * @throws Never - read and parse errors are caught and replaced by `fallback`.
+ * @typeParam T - The shape of the expected parsed value.
+ */
 export function readJsonSafe<T> (filePath: string, fallback?: T): T | undefined {
   try {
     return JSON.parse(readFileSync(filePath, 'utf8')) as T
@@ -25,7 +84,17 @@ export function readJsonSafe<T> (filePath: string, fallback?: T): T | undefined 
   }
 }
 
-/** Returns the trimmed text content of a file, or an empty string. */
+/**
+ * Returns the trimmed text content of a file, or an empty string.
+ *
+ * @remarks
+ * Swallows all read errors (e.g. file not found) and returns `''` instead.
+ *
+ * @param filePath - Absolute path to the file to read.
+ * @returns The file's UTF-8 content, or `''` on any error.
+ * @throws Never - read errors are caught and an empty string returned.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function readTextSafe (filePath: string): string {
   try {
     return readFileSync(filePath, 'utf8')
@@ -34,7 +103,17 @@ export function readTextSafe (filePath: string): string {
   }
 }
 
-/** Serialises a value as pretty-printed JSON with a trailing newline. */
+/**
+ * Serialises a value as pretty-printed JSON with a trailing newline.
+ *
+ * @remarks
+ * Uses a 2-space indent to match the project's formatting conventions.
+ *
+ * @param value - The value to serialise.
+ * @returns The JSON string, terminated with `\n`.
+ * @throws Propagates any error `JSON.stringify` raises (e.g. circular references).
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function toJson (value: unknown): string {
   return `${JSON.stringify(value, undefined, 2)}\n`
 }

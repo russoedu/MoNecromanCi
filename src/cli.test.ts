@@ -21,7 +21,7 @@ jest.mock('commander', () => {
 
     command (nameAndArguments: string): FakeCommand {
       const subcommand = new FakeCommand()
-      subcommand.commandName = nameAndArguments.split(' ')[0]
+      subcommand.commandName = nameAndArguments.split(' ', 1)[0]
       this.subcommands.push(subcommand)
       return subcommand
     }
@@ -39,8 +39,8 @@ jest.mock('commander', () => {
     option (flags: string): this {
       const longFlagName = /--([\w-]+)/.exec(flags)?.[1] ?? ''
       const key = longFlagName.replaceAll(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
-      const takesValue = /[<[]/.test(flags.split(',').pop() ?? flags)
-      this.optionDefinitions.push({ key, flags, takesValue })
+      const isTakesValue = /[<[]/.test(flags.split(',').pop() ?? flags)
+      this.optionDefinitions.push({ key, flags, takesValue: isTakesValue })
       return this
     }
 

@@ -81,7 +81,14 @@ program
     await runUpdate()
   })
 
-program.parseAsync(process.argv).catch((error: unknown) => {
-  logger.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+/** Runs the CLI, reporting uncaught command errors instead of letting them crash the process. */
+async function main (): Promise<void> {
+  try {
+    await program.parseAsync(process.argv)
+  } catch (error) {
+    logger.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  }
+}
+
+main()

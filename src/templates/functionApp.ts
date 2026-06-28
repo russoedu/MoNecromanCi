@@ -156,7 +156,17 @@ app.http('hello', {
 const indexTs = `import './functions/hello'
 `
 
-/** Files for an Azure Function App at `apps/<name>`. */
+/**
+ * Files for an Azure Function App at `apps/<name>`.
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The project's template inputs.
+ * @returns The full set of file specs for the function app.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function functionAppFiles (vars: ProjectVars): FileSpec[] {
   const root = `apps/${vars.name}`
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })

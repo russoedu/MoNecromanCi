@@ -37,31 +37,51 @@ function kindFromProject (projectJson: Record<string, unknown>, packageJson: Rec
   return undefined
 }
 
-/** Scans apps/ and libs/ and returns the nx-magic project descriptors found. */
+function scanArea (areaDirectory: string, config: NxMagicConfig): ProjectVars[] {
+  const projects: ProjectVars[] = []
+  const entries = readdirSync(areaDirectory, { withFileTypes: true })
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+
+    const projectDirectory = join(areaDirectory, entry.name)
+    const projectJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'project.json'), {})
+    const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'package.json'), {})
+    const kind = kindFromProject(projectJson, packageJson)
+    if (!kind) {
+      continue
+    }
+
+    const packageName = typeof packageJson.name === 'string' ? packageJson.name : `${config.scope}/${entry.name}`
+    projects.push({ kind, name: entry.name, packageName, scope: config.scope, azure: config.azure })
+  }
+
+  return projects
+}
+
+/**
+ * Scans apps/ and libs/ and returns the nx-magic project descriptors found.
+ *
+ * @remarks
+ * Skips directories that don't carry a recognisable NX project/package kind
+ * (see `kindFromProject`).
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param config - The monorepo's `.nx-magic.json` stamp.
+ * @returns The discovered project descriptors.
+ * @throws Never - delegates to {@link readJsonSafe}, which swallows read/parse
+ * errors.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function discoverProjects (repoRoot: string, config: NxMagicConfig): ProjectVars[] {
   const projects: ProjectVars[] = []
 
   for (const area of ['apps', 'libs']) {
     const areaDirectory = join(repoRoot, area)
-    if (!existsSync(areaDirectory)) {
-      continue
-    }
-
-    for (const entry of readdirSync(areaDirectory, { withFileTypes: true })) {
-      if (!entry.isDirectory()) {
-        continue
-      }
-
-      const projectDirectory = join(areaDirectory, entry.name)
-      const projectJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'project.json'), {})
-      const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'package.json'), {})
-      const kind = kindFromProject(projectJson, packageJson)
-      if (!kind) {
-        continue
-      }
-
-      const packageName = typeof packageJson.name === 'string' ? packageJson.name : `${config.scope}/${entry.name}`
-      projects.push({ kind, name: entry.name, packageName, scope: config.scope, azure: config.azure })
+    if (existsSync(areaDirectory)) {
+      projects.push(...scanArea(areaDirectory, config))
     }
   }
 

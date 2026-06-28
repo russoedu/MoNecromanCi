@@ -113,7 +113,17 @@ describe('greet', () => {
 })
 `
 
-/** Returns every file for a new internal library at `libs/<name>`. */
+/**
+ * Returns every file for a new internal library at `libs/<name>`.
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The project's template inputs.
+ * @returns The full set of file specs for the internal library.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function internalLibFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
   const toolOwned = (path: string, content: string): FileSpec => ({ path: `${root}/${path}`, content, ownership: 'tool-owned' })
