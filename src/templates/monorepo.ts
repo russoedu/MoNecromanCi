@@ -1,37 +1,52 @@
 import { listAssetFiles, readAsset } from '../engine/assets'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, MonorepoVars } from '../engine/types'
-import { ESLINT_CONFIG_MJS } from './eslintConfig'
+import rootPackageJson from '../../package.json'
 
-/** Pinned toolchain for generated monorepos (mirrors the proven JATO set). */
+const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): string => rootPackageJson.devDependencies[name]
+
+/**
+ * Pinned toolchain for generated monorepos (mirrors the proven JATO set).
+ *
+ * Shared entries (ESLint/TS/Jest toolchain) reuse the exact versions nx-magic
+ * itself depends on, sourced from this package's own `devDependencies`, so the
+ * two never drift apart. Generated-repo-only packages (nx, esbuild, husky, the
+ * commitlint/typedoc tooling) are pinned here directly since nx-magic has no
+ * use for them itself.
+ */
 const DEV_DEPENDENCIES: Record<string, string> = {
-  '@commitlint/cli':                 '^19.6.1',
-  '@commitlint/config-conventional': '^19.6.0',
-  '@eslint/markdown':                '^7.5.1',
-  '@types/jest':                     '^30.0.0',
-  '@types/node':                     '^25.9.1',
-  esbuild:                           '^0.28.0',
-  eslint:                            '^9.39.4',
-  'eslint-plugin-jest':              '^29.15.2',
-  'eslint-plugin-jsonc':             '^3.2.0',
-  'eslint-plugin-react':             '^7.37.5',
-  'eslint-plugin-react-hooks':       '^7.1.1',
-  'eslint-plugin-react-refresh':     '^0.5.2',
-  'eslint-plugin-unicorn':           '^64.0.0',
-  'eslint-plugin-unused-imports':    '^4.4.1',
-  'eslint-plugin-yml':               '^3.4.0',
-  globals:                           '^17.6.0',
+  '@commitlint/cli':                 '^21.1.0',
+  '@commitlint/config-conventional': '^21.1.0',
+  '@eslint/markdown':                sharedDependency('@eslint/markdown'),
+  '@stylistic/eslint-plugin':        sharedDependency('@stylistic/eslint-plugin'),
+  '@types/jest':                     sharedDependency('@types/jest'),
+  '@types/node':                     sharedDependency('@types/node'),
+  esbuild:                           '^0.28.1',
+  eslint:                            sharedDependency('eslint'),
+  'eslint-plugin-jest':              sharedDependency('eslint-plugin-jest'),
+  'eslint-plugin-jsonc':             sharedDependency('eslint-plugin-jsonc'),
+  'eslint-plugin-n':                 sharedDependency('eslint-plugin-n'),
+  'eslint-plugin-promise':           sharedDependency('eslint-plugin-promise'),
+  'eslint-plugin-react':             sharedDependency('eslint-plugin-react'),
+  'eslint-plugin-react-hooks':       sharedDependency('eslint-plugin-react-hooks'),
+  'eslint-plugin-react-refresh':     sharedDependency('eslint-plugin-react-refresh'),
+  'eslint-plugin-tsdoc':             sharedDependency('eslint-plugin-tsdoc'),
+  'eslint-plugin-tsdoc-require-2':   sharedDependency('eslint-plugin-tsdoc-require-2'),
+  'eslint-plugin-unicorn':           sharedDependency('eslint-plugin-unicorn'),
+  'eslint-plugin-unused-imports':    sharedDependency('eslint-plugin-unused-imports'),
+  'eslint-plugin-yml':               sharedDependency('eslint-plugin-yml'),
+  globals:                           sharedDependency('globals'),
   husky:                             '^9.1.7',
-  jest:                              '^30.4.2',
+  jest:                              sharedDependency('jest'),
   'jest-junit':                      '^17.0.0',
-  neostandard:                       '^0.13.0',
-  nx:                                '^22.7.5',
-  'ts-jest':                         '^29.4.11',
-  'tsc-alias':                       '^1.8.16',
+  nx:                                '^23.0.1',
+  'ts-jest':                         sharedDependency('ts-jest'),
+  'tsc-alias':                       '^1.8.17',
   tslib:                             '^2.8.1',
   typedoc:                           '^0.28.19',
   'typedoc-plugin-missing-exports':  '^4.1.3',
-  typescript:                        '^6.0.3',
+  typescript:                        sharedDependency('typescript'),
+  'typescript-eslint':               sharedDependency('typescript-eslint'),
 }
 
 function packageJson (vars: MonorepoVars): string {
@@ -209,7 +224,7 @@ export function createConfig (projectName) {
 }
 `
 
-const jestSetupMjs = String.raw`process.env.TZ = 'UTC'
+const jestSetupMjs = `process.env.TZ = 'UTC'
 
 beforeAll(() => {
   jest.useFakeTimers()
@@ -221,7 +236,7 @@ afterAll(() => {
 })
 `
 
-const jestClearMjs = String.raw`afterEach(() => {
+const jestClearMjs = `afterEach(() => {
   jest.restoreAllMocks()
   jest.clearAllMocks()
   jest.resetModules()
@@ -236,7 +251,7 @@ function npmrc (vars: MonorepoVars): string {
     'registry=https://registry.npmjs.org/',
     `@${scopeName}:registry=https://${feedPath}`,
     // Single-quoted to keep ${NODE_AUTH_TOKEN} literal in the generated file.
-    `//${feedPath}:_authToken=` + '${NODE_AUTH_TOKEN}',
+    `//${feedPath}:_authToken=\${NODE_AUTH_TOKEN}`,
     '',
   ].join('\n')
 }
@@ -479,7 +494,17 @@ function pipelineFiles (): FileSpec[] {
   return files
 }
 
-/** Returns every root-level file for a fresh monorepo. */
+/**
+ * Returns every root-level file for a fresh monorepo.
+ *
+ * @remarks
+ * Generates both `tool-owned` config and `scaffold` source files.
+ *
+ * @param vars - The monorepo's template inputs.
+ * @returns The full set of file specs for the monorepo root.
+ * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
   const toolOwned = (path: string, content: string): FileSpec => ({ path, content, ownership: 'tool-owned' })
   const scaffold = (path: string, content: string): FileSpec => ({ path, content, ownership: 'scaffold' })
@@ -493,7 +518,7 @@ export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
     toolOwned('jest.preset.mjs', jestPresetMjs),
     toolOwned('jest.setup.mjs', jestSetupMjs),
     toolOwned('jest.clear.mjs', jestClearMjs),
-    toolOwned('eslint.config.mjs', ESLINT_CONFIG_MJS),
+    toolOwned('eslint.config.mjs', readAsset('eslint.config.mjs')),
     toolOwned('typedoc.json', typedocJson()),
     scaffold('.npmrc', npmrc(vars)),
     toolOwned('.editorconfig', editorconfig),
