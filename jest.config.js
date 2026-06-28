@@ -5,5 +5,8 @@ module.exports = {
   roots:               ['<rootDir>/src'],
   testMatch:           ['**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
-  clearMocks:          true,
+  coverageThreshold:   {
+    global: { statements: 85, branches: 85, functions: 85, lines: 85 },
+  },
+  clearMocks: true,
 }
