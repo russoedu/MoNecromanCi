@@ -10,7 +10,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 
 /**
@@ -29,6 +29,28 @@ export function isWindows () {
  */
 export function isAzure () {
   return String(process.env.TF_BUILD || '').toLowerCase() === 'true'
+}
+
+/**
+ * Returns whether the script is running inside a GitHub Actions workflow.
+ *
+ * @returns {boolean} Returns true when the GitHub Actions variables are present.
+ */
+export function isGitHub () {
+  return String(process.env.GITHUB_ACTIONS || '').toLowerCase() === 'true'
+}
+
+/**
+ * Appends a line to the file named by a GitHub Actions environment variable.
+ *
+ * @param {string} environmentName The env var holding the target file path (e.g. GITHUB_ENV).
+ * @param {string} line The line to append (a trailing newline is added).
+ */
+function appendGitHubLine (environmentName, line) {
+  const filePath = process.env[environmentName]
+  if (filePath) {
+    appendFileSync(filePath, `${line}\n`)
+  }
 }
 
 /**
@@ -204,7 +226,14 @@ export function writeJson (filePath, content) {
  */
 export function setVariable (name, value) {
   const stringValue = String(value ?? '')
-  process.stdout.write(`##vso[task.setvariable variable=${name}]${stringValue}\n`)
+
+  if (isGitHub()) {
+    // Persist to later steps in the same job; mirrors Azure's setvariable.
+    appendGitHubLine('GITHUB_ENV', `${name}=${stringValue}`)
+  } else {
+    process.stdout.write(`##vso[task.setvariable variable=${name}]${stringValue}\n`)
+  }
+
   process.env[name] = stringValue
 }
 
@@ -227,6 +256,11 @@ export function setVariables (variables) {
  * @param {string} buildNumber The build number to set.
  */
 export function setBuildNumber (buildNumber) {
+  if (isGitHub()) {
+    appendGitHubLine('GITHUB_OUTPUT', `build-number=${buildNumber}`)
+    return
+  }
+
   process.stdout.write(`##vso[build.updatebuildnumber]${buildNumber}\n`)
 }
 
@@ -236,6 +270,14 @@ export function setBuildNumber (buildNumber) {
  * @param {string} tag The build tag to add.
  */
 export function addBuildTag (tag) {
+  if (isGitHub()) {
+    // No build-tag concept on GitHub; surface as an annotation + a step output a
+    // downstream deploy job/workflow can react to. Drops are the real handoff.
+    process.stdout.write(`::notice title=build-tag::${tag}\n`)
+    appendGitHubLine('GITHUB_OUTPUT', `build-tag-${tag.replaceAll(/[^a-zA-Z0-9_-]+/g, '-')}=true`)
+    return
+  }
+
   process.stdout.write(`##vso[build.addbuildtag]${tag}\n`)
 }
 
@@ -245,5 +287,13 @@ export function addBuildTag (tag) {
  * @param {string} summaryPath The summary file path.
  */
 export function uploadSummary (summaryPath) {
+  if (isGitHub()) {
+    const stepSummary = process.env.GITHUB_STEP_SUMMARY
+    if (stepSummary && existsSync(summaryPath)) {
+      appendFileSync(stepSummary, `${readFileSync(summaryPath, 'utf8')}\n`)
+    }
+    return
+  }
+
   process.stdout.write(`##vso[task.uploadsummary]${summaryPath}\n`)
 }

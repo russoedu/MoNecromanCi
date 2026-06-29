@@ -1,7 +1,10 @@
 import { join } from 'node:path'
 import { STAMP_FILE, TEMPLATE_VERSION } from './constants'
 import { fileExists, readJsonSafe, toJson, writeFileEnsured } from './fsx'
-import type { MonorepoVars, NxMagicConfig } from './types'
+import type { CiProvider, MonorepoVars, NxMagicConfig, RegistryConfig } from './types'
+
+/** The raw on-disk stamp shape, where v1 fields may be missing pre-migration. */
+type RawConfig = Omit<NxMagicConfig, 'ci' | 'registry'> & { ci?: CiProvider, registry?: RegistryConfig }
 
 /**
  * Absolute path to a repo's `.nx-magic.json` stamp.
@@ -33,14 +36,23 @@ export function isManagedRepo (repoRoot: string): boolean {
   return fileExists(stampPath(repoRoot))
 }
 
+/** Upgrades a legacy v1 stamp (Azure-only `azure` field) to the `ci`/`registry` shape. */
+function migrateConfig (raw: RawConfig): NxMagicConfig {
+  const registry: RegistryConfig = raw.registry
+    ?? (raw.azure ? { kind: 'azure-artifacts', ...raw.azure } : { kind: 'npm' })
+
+  return { ...raw, ci: raw.ci ?? 'azure', registry }
+}
+
 /**
  * Loads the `.nx-magic.json` stamp, or `undefined` when absent/invalid.
  *
  * @remarks
- * Returns early when {@link isManagedRepo} reports no stamp file.
+ * Returns early when {@link isManagedRepo} reports no stamp file. Legacy v1
+ * stamps are migrated to the current `ci`/`registry` shape via `migrateConfig`.
  *
  * @param repoRoot - Absolute path to the repo root.
- * @returns The parsed stamp, or `undefined` when missing or invalid JSON.
+ * @returns The parsed (and migrated) stamp, or `undefined` when missing/invalid.
  * @throws Never - delegates to {@link readJsonSafe}, which swallows parse errors.
  * @typeParam None - this function has no generic type parameters.
  */
@@ -49,7 +61,8 @@ export function loadConfig (repoRoot: string): NxMagicConfig | undefined {
     return undefined
   }
 
-  return readJsonSafe<NxMagicConfig>(stampPath(repoRoot))
+  const raw = readJsonSafe<RawConfig | undefined>(stampPath(repoRoot), undefined)
+  return raw ? migrateConfig(raw) : undefined
 }
 
 /**
@@ -88,6 +101,7 @@ export function configFromVars (vars: MonorepoVars): NxMagicConfig {
     scope:           vars.scope,
     defaultBase:     vars.defaultBase,
     nodeVersion:     vars.nodeVersion,
-    azure:           vars.azure,
+    ci:              vars.ci,
+    registry:        vars.registry,
   }
 }

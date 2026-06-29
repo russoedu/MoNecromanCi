@@ -24,8 +24,20 @@ function kindFromProject (projectJson: Record<string, unknown>, packageJson: Rec
   if (tags.includes(TAGS.functionApp)) {
     return 'function-app'
   }
+  if (tags.includes(TAGS.nodeApp)) {
+    return 'node-app'
+  }
   if (tags.includes(TAGS.reactApp)) {
     return 'react-app'
+  }
+  if (tags.includes(TAGS.vueApp)) {
+    return 'vue-app'
+  }
+  if (tags.includes(TAGS.svelteApp)) {
+    return 'svelte-app'
+  }
+  if (tags.includes(TAGS.nextjsApp)) {
+    return 'nextjs-app'
   }
   if (tags.includes(TAGS.internalLib)) {
     return 'internal-lib'
@@ -55,7 +67,7 @@ function scanArea (areaDirectory: string, config: NxMagicConfig): ProjectVars[] 
     }
 
     const packageName = typeof packageJson.name === 'string' ? packageJson.name : `${config.scope}/${entry.name}`
-    projects.push({ kind, name: entry.name, packageName, scope: config.scope, azure: config.azure })
+    projects.push({ kind, name: entry.name, packageName, scope: config.scope, registry: config.registry })
   }
 
   return projects

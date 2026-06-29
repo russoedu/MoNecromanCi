@@ -54,7 +54,8 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     scope:         config.scope,
     defaultBase:   config.defaultBase,
     nodeVersion:   config.nodeVersion,
-    azure:         config.azure,
+    ci:            config.ci,
+    registry:      config.registry,
   }
 
   const specs: FileSpec[] = [...monorepoFiles(vars)]

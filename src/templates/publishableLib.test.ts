@@ -8,7 +8,7 @@ function readPackageJson (files: ReturnType<typeof publishableLibFiles>): { publ
 
 describe('publishableLibFiles', () => {
   it('sets a publishConfig registry when azure coordinates are provided', () => {
-    const vars: ProjectVars = { kind: 'publishable-lib', name: 'sdk', packageName: '@demo/sdk', scope: '@demo', azure: { organization: 'org', project: 'proj', artifactsFeed: 'feed' } }
+    const vars: ProjectVars = { kind: 'publishable-lib', name: 'sdk', packageName: '@demo/sdk', scope: '@demo', registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' } }
     const package_ = readPackageJson(publishableLibFiles(vars))
     expect(package_.publishConfig).toEqual({ registry: 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/' })
   })
