@@ -1,21 +1,12 @@
 import { readAsset } from '../engine/assets'
 import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
+import { registryUrl } from '../engine/registry'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
-/** Builds the Azure Artifacts npm registry URL for a project, if configured. */
-function registryUrl (vars: ProjectVars): string | undefined {
-  if (!vars.azure) {
-    return undefined
-  }
-
-  const { organization, project, artifactsFeed } = vars.azure
-  return `https://pkgs.dev.azure.com/${organization}/${project}/_packaging/${artifactsFeed}/npm/registry/`
-}
-
 function publishConfig (vars: ProjectVars): Record<string, string> | undefined {
-  const registry = registryUrl(vars)
-  return registry ? { registry } : undefined
+  const url = vars.registry ? registryUrl(vars.registry) : undefined
+  return url ? { registry: url } : undefined
 }
 
 function tsconfig (): string {
@@ -89,7 +80,15 @@ function projectJson (vars: ProjectVars, buildCommand: string): string {
   })
 }
 
-const greeterTs = `/** Returns a friendly greeting for the given name. */
+const greeterTs = `/**
+ * Returns a friendly greeting for the given name.
+ *
+ * @remarks The package's public API entry point.
+ * @param name - The name to greet (surrounding whitespace is trimmed).
+ * @returns The greeting text.
+ * @throws Never - performs no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function greet (name: string): string {
   const trimmed = name.trim() // ← breakpoint here works under "Debug Jest (current file)"
 
@@ -181,7 +180,15 @@ describe('greet', () => {
 })
 `
 
-const cliGreeterTs = `/** Returns the greeting printed by the CLI. */
+const cliGreeterTs = `/**
+ * Returns the greeting printed by the CLI.
+ *
+ * @remarks Replace with your own command logic.
+ * @param name - The name to greet.
+ * @returns The greeting text.
+ * @throws Never - performs no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function greet (name: string): string {
   return 'Hello, ' + name + '!'
 }

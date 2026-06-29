@@ -40,7 +40,11 @@ export const DEFAULT_BASE = 'main'
  */
 export const TAGS = {
   functionApp:    'type:function-app',
+  nodeApp:        'type:node-app',
   reactApp:       'type:react-app',
+  vueApp:         'type:vue-app',
+  svelteApp:      'type:svelte-app',
+  nextjsApp:      'type:nextjs-app',
   publishableLib: 'type:publishable-lib',
   internalLib:    'type:internal-lib',
   ignore:         'ci:ignore',

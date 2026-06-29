@@ -1,8 +1,11 @@
 import { applyFiles, reportApply } from '../engine/apply'
 import { addRootDependencies } from '../engine/rootPackage'
 import type { FileSpec, NxMagicConfig, ProjectKind, ProjectVars } from '../engine/types'
+import { svelteAppFiles, vueAppFiles } from '../templates/frontendApp'
 import { functionAppFiles } from '../templates/functionApp'
 import { internalLibFiles } from '../templates/internalLib'
+import { nextAppFiles } from '../templates/nextApp'
+import { nodeAppFiles } from '../templates/nodeApp'
 import { cliToolFiles, publishableLibFiles } from '../templates/publishableLib'
 import { reactAppFiles } from '../templates/reactApp'
 import { logger } from '../util/logger'
@@ -17,9 +20,24 @@ const ROOT_DEPENDENCIES: Partial<Record<ProjectKind, RootDependencies>> = {
   'function-app': {
     dependencies: { '@azure/functions': '^4.16.0' },
   },
+  'node-app': {
+    devDependencies: { tsx: '^4.20.6' },
+  },
+  'vue-app': {
+    dependencies:    { vue: '^3.5.13' },
+    devDependencies: { '@vitejs/plugin-vue': '^5.2.4', vite: '^6.0.7' },
+  },
+  'svelte-app': {
+    devDependencies: { '@sveltejs/vite-plugin-svelte': '^5.0.3', svelte: '^5.19.0', vite: '^6.0.7' },
+  },
+  'nextjs-app': {
+    dependencies:    { next: '^15.1.4', react: '^19.2.0', 'react-dom': '^19.2.0' },
+    devDependencies: { '@types/react': '^19.2.0', '@types/react-dom': '^19.2.0', 'dotenv-cli': '^8.0.0' },
+  },
   'react-app': {
     dependencies:    { react: '^19.2.0', 'react-dom': '^19.2.0' },
     devDependencies: {
+      '@testing-library/dom':      '^10.4.0',
       '@testing-library/jest-dom': '^6.6.3',
       '@testing-library/react':    '^16.1.0',
       '@types/react':              '^19.2.0',
@@ -45,8 +63,20 @@ function filesForKind (kind: ProjectKind, vars: ProjectVars): FileSpec[] {
     case 'function-app': {
       return functionAppFiles(vars)
     }
+    case 'node-app': {
+      return nodeAppFiles(vars)
+    }
     case 'react-app': {
       return reactAppFiles(vars)
+    }
+    case 'vue-app': {
+      return vueAppFiles(vars)
+    }
+    case 'svelte-app': {
+      return svelteAppFiles(vars)
+    }
+    case 'nextjs-app': {
+      return nextAppFiles(vars)
     }
     default: {
       throw new Error(`The '${kind as string}' generator is not implemented yet.`)
@@ -108,7 +138,7 @@ export function generateProject (repoRoot: string, kind: ProjectKind, name: stri
     name,
     packageName: `${config.scope}/${name}`,
     scope:       config.scope,
-    azure:       config.azure,
+    registry:    config.registry,
   }
 
   logger.step(`Adding ${kind} '${name}' (${vars.packageName})`)

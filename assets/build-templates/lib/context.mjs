@@ -23,9 +23,12 @@ export const CONTEXT_FILE_PATH = path.join(WORKSPACE_ROOT, '.build-templates', '
 export const PROJECT_TAG_ALIASES = {
   externalPackages: ['type:publishable-lib', 'external lib', 'external package', 'external', 'publishable lib', 'publishable package', 'publishable'],
   functionApps:     ['type:function-app', 'api', 'function', 'function app', 'function-app', 'backend', 'back-end'],
+  nodeApps:         ['type:node-app', 'node', 'node app', 'node-app', 'service', 'server'],
   ignore:           ['ci:ignore', 'ignore'],
   internalPackages: ['type:internal-lib', 'internal lib', 'internal package', 'internal'],
-  reactApps:        ['type:react-app', 'react app', 'react', 'frontend', 'front-end', 'app'],
+  // Frontend multi-env apps (Vite-built React/Vue/Svelte and Next.js) all build
+  // dev/uat/prod outputs and are packaged identically (zip each dist-* directory).
+  reactApps:        ['type:react-app', 'type:vue-app', 'type:svelte-app', 'type:nextjs-app', 'react app', 'react', 'vue', 'svelte', 'next', 'nextjs', 'frontend', 'front-end', 'app'],
 }
 
 /**
@@ -204,6 +207,7 @@ export function classifyProject (project) {
     type: {
       externalPackage: !ignored && hasTagAlias(tags, PROJECT_TAG_ALIASES.externalPackages),
       functionApp:     !ignored && hasTagAlias(tags, PROJECT_TAG_ALIASES.functionApps),
+      nodeApp:         !ignored && hasTagAlias(tags, PROJECT_TAG_ALIASES.nodeApps),
       internalPackage: !ignored && hasTagAlias(tags, PROJECT_TAG_ALIASES.internalPackages),
       reactApp:        !ignored && hasTagAlias(tags, PROJECT_TAG_ALIASES.reactApps),
     },
@@ -223,6 +227,10 @@ export function describeProjectType (project) {
 
   if (project.type.functionApp) {
     return 'function-app'
+  }
+
+  if (project.type.nodeApp) {
+    return 'node-app'
   }
 
   if (project.type.reactApp) {
@@ -251,7 +259,7 @@ export function describeProjectAction (project) {
     return 'skip'
   }
 
-  if (project.type.functionApp || project.type.reactApp) {
+  if (project.type.functionApp || project.type.nodeApp || project.type.reactApp) {
     return 'build + zip + drop'
   }
 
@@ -314,6 +322,7 @@ export function buildContextManifest (input) {
     groups: {
       externalPackages: affected.filter(project => project.type.externalPackage).map(project => project.name),
       functionApps:     affected.filter(project => project.type.functionApp).map(project => project.name),
+      nodeApps:         affected.filter(project => project.type.nodeApp).map(project => project.name),
       ignoredProjects:  projects.filter(project => project.ignored).map(project => project.name),
       internalPackages: affected.filter(project => project.type.internalPackage).map(project => project.name),
       reactApps:        affected.filter(project => project.type.reactApp).map(project => project.name),

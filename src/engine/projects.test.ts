@@ -12,7 +12,8 @@ const config: NxMagicConfig = {
   scope:           '@demo',
   defaultBase:     'main',
   nodeVersion:     '24',
-  azure:           { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  ci:              'azure',
+  registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
 }
 
 let repoRoot: string
@@ -65,7 +66,7 @@ describe('discoverProjects', () => {
   it('identifies a function-app', () => {
     writeProject('apps', 'api', { tags: [TAGS.functionApp] }, { name: '@demo/api' })
     expect(discoverProjects(repoRoot, config)).toEqual([
-      { kind: 'function-app', name: 'api', packageName: '@demo/api', scope: '@demo', azure: config.azure },
+      { kind: 'function-app', name: 'api', packageName: '@demo/api', scope: '@demo', registry: config.registry },
     ])
   })
 

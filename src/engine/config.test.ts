@@ -11,7 +11,8 @@ const vars: MonorepoVars = {
   scope:         '@demo',
   defaultBase:   'main',
   nodeVersion:   '24',
-  azure:         { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  ci:            'azure',
+  registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
 }
 
 let repoRoot: string
@@ -67,7 +68,8 @@ describe('configFromVars', () => {
       scope:           '@demo',
       defaultBase:     'main',
       nodeVersion:     '24',
-      azure:           { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      ci:              'azure',
+      registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
     })
   })
 })

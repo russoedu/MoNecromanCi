@@ -1,4 +1,3 @@
-import { readAsset } from '../engine/assets'
 import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
@@ -12,13 +11,13 @@ function appPackageJson (vars: ProjectVars): string {
     main:         'dist/index.js',
     dependencies: {},
     scripts:      {
-      build:          'tsc -p tsconfig.app.json',
-      watch:          'tsc -p tsconfig.app.json -w',
-      start:          'func start',
-      'clean:config': 'node ../../tools/clean-config.mjs',
-      lint:           'eslint . -c ../../eslint.config.mjs',
-      test:           'jest --collectCoverage',
-      doc:            'typedoc --tsconfig tsconfig.app.json',
+      build: 'tsc -p tsconfig.app.json',
+      watch: 'tsc -p tsconfig.app.json -w',
+      start: 'node dist/index.js',
+      dev:   'tsx watch src/index.ts',
+      lint:  'eslint . -c ../../eslint.config.mjs',
+      test:  'jest --collectCoverage',
+      doc:   'typedoc --tsconfig tsconfig.app.json',
     },
   })
 }
@@ -34,7 +33,7 @@ function appProjectJson (vars: ProjectVars): string {
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
     sourceRoot:  `apps/${vars.name}/src`,
     projectType: 'application',
-    tags:        [TAGS.functionApp],
+    tags:        [TAGS.nodeApp],
     targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
       serve: run('start'),
@@ -86,43 +85,10 @@ function appTypedoc (): string {
   })
 }
 
-function hostJson (): string {
-  return toJson({
-    version: '2.0',
-    logging: {
-      applicationInsights: {
-        samplingSettings: { isEnabled: true, excludedTypes: 'Request' },
-      },
-    },
-    extensionBundle: {
-      id:      'Microsoft.Azure.Functions.ExtensionBundle',
-      version: '[4.*, 5.0.0)',
-    },
-  })
-}
+const serverTs = `import { IncomingMessage, ServerResponse } from 'node:http'
 
-function localSettingsJson (): string {
-  // Gitignored. The --inspect arg lets VSCode attach on :9229 for TS debugging.
-  return toJson({
-    IsEncrypted: false,
-    Values:      {
-      FUNCTIONS_WORKER_RUNTIME:         'node',
-      AzureWebJobsStorage:              '',
-      languageWorkers__node__arguments: '--inspect=9229',
-    },
-  })
-}
-
-function configurationFile (environment: string): string {
-  return toJson([
-    { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node', slotSetting: false },
-    { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~24', slotSetting: false },
-    { name: 'ENVIRONMENT', value: environment, slotSetting: false },
-  ])
-}
-
-const greetingTs = `/**
- * Builds the greeting returned by the sample HTTP function.
+/**
+ * Builds the greeting returned by the server.
  *
  * @remarks Pure string helper — replace with your own logic.
  * @param name - The name to greet.
@@ -133,9 +99,37 @@ const greetingTs = `/**
 export function buildGreeting (name: string): string {
   return 'Hello, ' + name + '!'
 }
+
+/**
+ * Handles an HTTP request, replying with a plain-text greeting.
+ *
+ * @remarks Swap in Express, Koa, Fastify, Nest or any framework you prefer.
+ * @param request - The incoming HTTP request.
+ * @param response - The HTTP response to write to.
+ * @returns Nothing.
+ * @throws Never - failures surface through the Node HTTP server.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function handleRequest (request: IncomingMessage, response: ServerResponse): void {
+  const requestUrl = new URL(request.url ?? '/', 'http://localhost')
+  const name = requestUrl.searchParams.get('name') ?? 'world'
+
+  response.writeHead(200, { 'content-type': 'text/plain' })
+  response.end(buildGreeting(name))
+}
 `
 
-const greetingTestTs = `import { buildGreeting } from './greeting'
+const indexTs = `import { createServer } from 'node:http'
+import { handleRequest } from './server'
+
+const port = Number(process.env.PORT ?? 3000)
+
+createServer(handleRequest).listen(port, () => {
+  console.log('Server listening on http://localhost:' + port)
+})
+`
+
+const serverTestTs = `import { buildGreeting } from './server'
 
 describe('buildGreeting', () => {
   it('greets a name', () => {
@@ -144,46 +138,19 @@ describe('buildGreeting', () => {
 })
 `
 
-const helloTs = `import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
-import { buildGreeting } from '../greeting'
-
 /**
- * Sample HTTP-triggered function.
- *
- * @remarks Registered with the Functions host via the app.http call below.
- * @param request - The incoming HTTP request.
- * @param context - The Azure Functions invocation context.
- * @returns The HTTP response payload.
- * @throws Never - failures are surfaced by the Functions host.
- * @typeParam None - this function has no generic type parameters.
- */
-export async function hello (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  context.log('HTTP function processed a request for ' + request.url)
-  const name = request.query.get('name') ?? 'world'
-
-  return { body: buildGreeting(name) }
-}
-
-// app.http performs the Azure Functions v4 registration at import time.
-// eslint-disable-next-line unicorn/no-top-level-side-effects
-app.http('hello', { methods: ['GET'], authLevel: 'anonymous', handler: hello })
-`
-
-const indexTs = `import './functions/hello'
-`
-
-/**
- * Files for an Azure Function App at `apps/<name>`.
+ * Files for a generic Node.js app at `apps/<name>`.
  *
  * @remarks
- * Generates both `tool-owned` config and `scaffold` source files.
+ * A framework-agnostic TS HTTP server (node:http) the user extends with any
+ * framework. Generates both `tool-owned` config and `scaffold` source files.
  *
  * @param vars - The project's template inputs.
- * @returns The full set of file specs for the function app.
+ * @returns The full set of file specs for the Node app.
  * @throws Never - performs no I/O; callers (e.g. {@link applyFiles}) handle writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export function functionAppFiles (vars: ProjectVars): FileSpec[] {
+export function nodeAppFiles (vars: ProjectVars): FileSpec[] {
   const root = `apps/${vars.name}`
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })
 
@@ -192,17 +159,10 @@ export function functionAppFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', appProjectJson(vars), 'tool-owned'),
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('tsconfig.app.json', appTsconfigApp(), 'tool-owned'),
-    file('host.json', hostJson(), 'scaffold'),
-    file('local.settings.json', localSettingsJson(), 'scaffold'),
     file('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
-    file('.configurations/dev.json', configurationFile('dev'), 'scaffold'),
-    file('.configurations/uat.json', configurationFile('uat'), 'scaffold'),
-    file('.configurations/prod.json', configurationFile('prod'), 'scaffold'),
     file('src/index.ts', indexTs, 'scaffold'),
-    file('src/greeting.ts', greetingTs, 'scaffold'),
-    file('src/greeting.test.ts', greetingTestTs, 'scaffold'),
-    file('src/functions/hello.ts', helloTs, 'scaffold'),
-    { path: 'tools/clean-config.mjs', content: readAsset('scripts/clean-config.mjs'), ownership: 'tool-owned' },
+    file('src/server.ts', serverTs, 'scaffold'),
+    file('src/server.test.ts', serverTestTs, 'scaffold'),
   ]
 }

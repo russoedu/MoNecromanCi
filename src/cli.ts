@@ -6,6 +6,7 @@ import { runDoctor } from './commands/doctor'
 import { runNew } from './commands/new'
 import { runUpdate } from './commands/update'
 import { logger } from './util/logger'
+import type { CiProvider, RegistryConfig } from './engine/types'
 
 /** Reads the CLI version from the packaged package.json (next to dist/). */
 function readVersion (): string {
@@ -29,6 +30,9 @@ program
   .argument('[name]', 'monorepo name')
   .option('-y, --yes', 'non-interactive: accept provided values and defaults')
   .option('--scope <scope>', 'npm scope, e.g. @auto')
+  .option('--ci <provider>', 'CI provider: azure | github | both')
+  .option('--registry <kind>', 'registry: azure-artifacts | github-packages | npm')
+  .option('--owner <owner>', 'GitHub owner for the github-packages registry')
   .option('--org <org>', 'Azure DevOps organization')
   .option('--project <project>', 'Azure DevOps project')
   .option('--feed <feed>', 'Azure Artifacts feed')
@@ -36,18 +40,24 @@ program
   .option('--lib <name>', 'initial internal library name (empty string to skip)')
   .description('Scaffold a brand-new canonical NX monorepo')
   .action(async (name: string | undefined, options: {
-    yes?:     boolean
-    scope?:   string
-    org?:     string
-    project?: string
-    feed?:    string
-    base?:    string
-    lib?:     string
+    yes?:      boolean
+    scope?:    string
+    ci?:       string
+    registry?: string
+    owner?:    string
+    org?:      string
+    project?:  string
+    feed?:     string
+    base?:     string
+    lib?:      string
   }) => {
     await runNew({
       name,
       yes:          options.yes,
       scope:        options.scope,
+      ci:           options.ci as CiProvider | undefined,
+      registry:     options.registry as RegistryConfig['kind'] | undefined,
+      owner:        options.owner,
       organization: options.org,
       project:      options.project,
       feed:         options.feed,

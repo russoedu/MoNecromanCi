@@ -52,7 +52,11 @@ export async function runAdd (options: AddOptions): Promise<void> {
       { name: 'Publishable library', value: 'publishable-lib' },
       { name: 'CLI tool', value: 'cli-tool' },
       { name: 'Azure Function App', value: 'function-app' },
+      { name: 'Node.js app (generic server)', value: 'node-app' },
       { name: 'React app', value: 'react-app' },
+      { name: 'Vue app', value: 'vue-app' },
+      { name: 'Svelte app', value: 'svelte-app' },
+      { name: 'Next.js app (full-stack)', value: 'nextjs-app' },
     ],
   })
 

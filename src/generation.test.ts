@@ -15,7 +15,8 @@ const vars: MonorepoVars = {
   scope:         '@demo',
   defaultBase:   'main',
   nodeVersion:   '24',
-  azure:         { organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
+  ci:            'azure',
+  registry:      { kind: 'azure-artifacts', organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
 }
 
 let repo: string
@@ -30,7 +31,11 @@ beforeAll(() => {
   generateProject(repo, 'publishable-lib', 'sdk', config)
   generateProject(repo, 'cli-tool', 'mytool', config)
   generateProject(repo, 'function-app', 'api', config)
+  generateProject(repo, 'node-app', 'svc', config)
   generateProject(repo, 'react-app', 'web', config)
+  generateProject(repo, 'vue-app', 'shop', config)
+  generateProject(repo, 'svelte-app', 'widget', config)
+  generateProject(repo, 'nextjs-app', 'portal', config)
 })
 
 afterAll(() => {
@@ -107,6 +112,67 @@ describe('project generation', () => {
     const package_ = readJson<{ bin: Record<string, string> }>('libs/mytool/package.json')
     expect(package_.bin.mytool).toBe('./dist/cli.js')
     expect(hasPath('tools/generate-dist-package.mjs')).toBe(true)
+  })
+
+  it('scaffolds a generic node app tagged type:node-app with a tsx dev dependency', () => {
+    expect(hasPath('apps/svc/src/index.ts')).toBe(true)
+    expect(readJson<{ tags: string[] }>('apps/svc/project.json').tags).toContain('type:node-app')
+    expect(readJson<{ devDependencies: Record<string, string> }>('package.json').devDependencies.tsx).toBeDefined()
+  })
+
+  it('scaffolds Vue and Svelte apps with their SFCs and root deps', () => {
+    expect(hasPath('apps/shop/src/App.vue')).toBe(true)
+    expect(hasPath('apps/widget/src/App.svelte')).toBe(true)
+    expect(readJson<{ tags: string[] }>('apps/shop/project.json').tags).toContain('type:vue-app')
+    expect(readJson<{ tags: string[] }>('apps/widget/project.json').tags).toContain('type:svelte-app')
+    const root = readJson<{ dependencies: Record<string, string>, devDependencies: Record<string, string> }>('package.json')
+    expect(root.dependencies.vue).toBeDefined()
+    expect(root.devDependencies.svelte).toBeDefined()
+  })
+
+  it('scaffolds a full-stack Next.js app with the multi-env build script', () => {
+    expect(hasPath('apps/portal/src/app/page.tsx')).toBe(true)
+    expect(hasPath('tools/next-build.mjs')).toBe(true)
+    expect(readJson<{ tags: string[] }>('apps/portal/project.json').tags).toContain('type:nextjs-app')
+    const package_ = readJson<{ scripts: Record<string, string> }>('apps/portal/package.json')
+    expect(package_.scripts['build:all']).toContain('build:uat')
+    expect(readJson<{ dependencies: Record<string, string> }>('package.json').dependencies.next).toBeDefined()
+  })
+})
+
+describe('CI providers', () => {
+  const pathsFor = (ci: MonorepoVars['ci']): Set<string> => new Set(monorepoFiles({ ...vars, ci }).map((file) => file.path))
+
+  it('emits only the Azure pipeline for ci=azure', () => {
+    const paths = pathsFor('azure')
+    expect(paths.has('azure-pipelines.yml')).toBe(true)
+    expect(paths.has('.github/workflows/ci.yml')).toBe(false)
+  })
+
+  it('emits only the GitHub workflow for ci=github', () => {
+    const paths = pathsFor('github')
+    expect(paths.has('.github/workflows/ci.yml')).toBe(true)
+    expect(paths.has('azure-pipelines.yml')).toBe(false)
+  })
+
+  it('emits both workflows for ci=both and always vendors the shared engine', () => {
+    const paths = pathsFor('both')
+    expect(paths.has('azure-pipelines.yml')).toBe(true)
+    expect(paths.has('.github/workflows/ci.yml')).toBe(true)
+    expect(paths.has('.build-templates/03-package-apps.mjs')).toBe(true)
+  })
+})
+
+describe('registry', () => {
+  const npmrcFor = (registry: MonorepoVars['registry']): string =>
+    monorepoFiles({ ...vars, registry }).find((file) => file.path === '.npmrc')?.content ?? ''
+
+  it('scopes GitHub Packages at npm.pkg.github.com', () => {
+    expect(npmrcFor({ kind: 'github-packages', owner: 'acme' })).toContain('@demo:registry=https://npm.pkg.github.com/')
+  })
+
+  it('scopes Azure Artifacts at the configured feed', () => {
+    expect(npmrcFor(vars.registry)).toContain('pkgs.dev.azure.com/org/Automation/_packaging/FEED/npm/registry/')
   })
 })
 

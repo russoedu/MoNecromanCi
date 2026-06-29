@@ -1,6 +1,7 @@
 import { listAssetFiles, readAsset } from '../engine/assets'
 import { toJson } from '../engine/fsx'
-import type { FileSpec, MonorepoVars } from '../engine/types'
+import { npmrcContent } from '../engine/registry'
+import type { FileSpec, MonorepoVars, RegistryConfig } from '../engine/types'
 import rootPackageJson from '../../package.json'
 
 const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): string => rootPackageJson.devDependencies[name]
@@ -131,6 +132,7 @@ function tsconfigBase (): string {
   return toJson({
     $schema:         'https://json.schemastore.org/tsconfig',
     compilerOptions: {
+      ignoreDeprecations:               '6.0',
       target:                           'es2024',
       types:                            ['jest', 'node'],
       sourceMap:                        true,
@@ -244,16 +246,7 @@ const jestClearMjs = `afterEach(() => {
 `
 
 function npmrc (vars: MonorepoVars): string {
-  const scopeName = vars.scope.replace(/^@/, '')
-  const feedPath = `pkgs.dev.azure.com/${vars.azure.organization}/${vars.azure.project}/_packaging/${vars.azure.artifactsFeed}/npm/registry/`
-
-  return [
-    'registry=https://registry.npmjs.org/',
-    `@${scopeName}:registry=https://${feedPath}`,
-    // Single-quoted to keep ${NODE_AUTH_TOKEN} literal in the generated file.
-    `//${feedPath}:_authToken=\${NODE_AUTH_TOKEN}`,
-    '',
-  ].join('\n')
+  return npmrcContent(vars.registry, vars.scope)
 }
 
 const editorconfig = `root = true
@@ -280,6 +273,8 @@ doc/
 .nx/
 tmp/
 .azurite/
+.next/
+next-env.d.ts
 .pipeline-out/
 .pipeline-staging/
 *.log
@@ -324,7 +319,24 @@ npx nx-magic add        # interactive: function-app | react-app | internal-lib |
 `
 }
 
+/** Human label for a registry, used in the generated nx-release doc. */
+function registryLabelFor (registry: RegistryConfig): string {
+  switch (registry.kind) {
+    case 'azure-artifacts': {
+      return 'the Azure Artifacts feed `' + registry.artifactsFeed + '`'
+    }
+    case 'github-packages': {
+      return 'GitHub Packages'
+    }
+    default: {
+      return 'the public npm registry'
+    }
+  }
+}
+
 function nxReleaseDocument (vars: MonorepoVars): string {
+  const registryLabel = registryLabelFor(vars.registry)
+
   return `# Releasing publishable libraries & CLI tools
 
 This monorepo uses **\`nx release\`** with **independent** versioning driven by
@@ -351,7 +363,7 @@ with \`fix(my-lib): …\`.
 \`\`\`sh
 npm run release            # interactive: version + changelog + (optional) publish
 npm run release:version    # bump versions + write changelogs from commits
-npm run release:publish    # publish what changed to Azure Artifacts
+npm run release:publish    # publish what changed to the configured registry
 npx nx release --dry-run   # preview everything, change nothing
 \`\`\`
 
@@ -373,9 +385,9 @@ npx nx release version 1.0.0 --projects=my-lib --first-release
 
 ## CI
 
-On \`${vars.defaultBase}\` (non-PR builds), the pipeline runs \`nx release version --yes\`
-then publishes affected publishable projects to the Azure Artifacts feed
-(\`${vars.azure.artifactsFeed}\`). See the pipeline step \`04-publish-libs\`.
+On \`${vars.defaultBase}\` (non-PR builds), CI runs \`nx release version --yes\`
+then publishes affected publishable projects to ${registryLabel}. See the publish
+step (\`04-publish-libs\`, or the GitHub Actions \`publish\` job).
 `
 }
 
@@ -435,8 +447,10 @@ function codeWorkspace (vars: MonorepoVars): string {
           sourceMaps:                true,
         },
         {
-          // Start the host first (in the app dir: `npm run start -w <app>`), then attach.
-          name:                      'Debug Function App (attach :9229)',
+          // Function App: run `func start` (inspects via local.settings.json), then attach.
+          // Node app: run `node --inspect=9229 dist/index.js` (after build), then attach;
+          // or run `npm run dev -w <app>` in a JavaScript Debug Terminal for source-level tsx.
+          name:                      'Debug Function/Node App (attach :9229)',
           type:                      'node',
           request:                   'attach',
           port:                      9229,
@@ -449,10 +463,21 @@ function codeWorkspace (vars: MonorepoVars): string {
         {
           // Start the dev server first (`npm run dev -w <app>`), then launch the browser.
           // Or use the JavaScript Debug Terminal: run `npm run dev -w <app>` there.
-          name:                      'Debug React (Edge)',
+          name:                      'Debug React/Vue/Svelte (Edge)',
           type:                      'msedge',
           request:                   'launch',
           url:                       'http://localhost:5173',
+          webRoot:                   '${workspaceFolder}',
+          sourceMaps:                true,
+          resolveSourceMapLocations: null,
+        },
+        {
+          // Next.js dev server runs on :3000. For server-side breakpoints, run
+          // `npm run dev -w <app>` in a JavaScript Debug Terminal instead.
+          name:                      'Debug Next.js (Edge)',
+          type:                      'msedge',
+          request:                   'launch',
+          url:                       'http://localhost:3000',
           webRoot:                   '${workspaceFolder}',
           sourceMaps:                true,
           resolveSourceMapLocations: null,
@@ -477,18 +502,23 @@ function codeWorkspace (vars: MonorepoVars): string {
   })
 }
 
-/** Vendored Azure pipeline: azure-pipelines.yml + the .build-templates scripts. */
-function pipelineFiles (): FileSpec[] {
-  const files: FileSpec[] = [
-    { path: 'azure-pipelines.yml', content: readAsset('azure-pipelines.yml'), ownership: 'tool-owned' },
-  ]
+/**
+ * Vendored CI: the shared `.build-templates` engine (always) plus the workflow
+ * wrapper(s) for the selected provider(s) — Azure Pipelines and/or GitHub Actions.
+ */
+function pipelineFiles (vars: MonorepoVars): FileSpec[] {
+  const files: FileSpec[] = Array.from(listAssetFiles('build-templates'), relativePath => ({
+    path:      `.build-templates/${relativePath}`,
+    content:   readAsset(`build-templates/${relativePath}`),
+    ownership: 'tool-owned',
+  }))
 
-  for (const relativePath of listAssetFiles('build-templates')) {
-    files.push({
-      path:      `.build-templates/${relativePath}`,
-      content:   readAsset(`build-templates/${relativePath}`),
-      ownership: 'tool-owned',
-    })
+  if (vars.ci === 'azure' || vars.ci === 'both') {
+    files.push({ path: 'azure-pipelines.yml', content: readAsset('azure-pipelines.yml'), ownership: 'tool-owned' })
+  }
+
+  if (vars.ci === 'github' || vars.ci === 'both') {
+    files.push({ path: '.github/workflows/ci.yml', content: readAsset('github/workflows/ci.yml'), ownership: 'tool-owned' })
   }
 
   return files
@@ -528,7 +558,7 @@ export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
     scaffold('README.md', readme(vars)),
     scaffold('docs/nx-release.md', nxReleaseDocument(vars)),
     toolOwned(`${vars.displayName}.code-workspace`, codeWorkspace(vars)),
-    ...pipelineFiles(),
+    ...pipelineFiles(vars),
     // Keep apps/ and libs/ present even before any project is added.
     scaffold('apps/.gitkeep', ''),
     scaffold('libs/.gitkeep', ''),

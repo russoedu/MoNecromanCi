@@ -385,18 +385,19 @@ function generateRuntimeManifest (input) {
  * ------------------------------------------------------------------------- */
 
 /**
- * Builds, stages and zips a single Azure Function app.
+ * Builds a server app, stages dist + a discovered runtime `package.json` (with
+ * internal libs vendored), installs production deps, and zips the result.
  *
- * The unzipped app (incl. node_modules) is staged in `directories.stageRoot`
- * (a scratch area), and only the final zip lands in `directories.dropRoot`
- * (the published artifact folder).
+ * The unzipped app (incl. node_modules) is staged in `stageRootBase/<name>`
+ * (a scratch area), and only the final zip lands in `dropRoot` (the published
+ * artifact folder). Shared by Azure Function apps and generic Node apps.
  *
- * @param {Record<string, any>} project The function app project data.
- * @param {{dropRoot: string, configRoot: string, stageRoot: string}} directories The output directories.
+ * @param {Record<string, any>} project The server app project data.
+ * @param {string} dropRoot The published artifact directory.
+ * @param {string} stageRootBase The scratch staging base directory.
+ * @returns {string} Returns the resolved app root path.
  */
-function packageFunctionApp (project, directories) {
-  section(`Function app: ${project.name}`)
-
+function stageAndZipServerApp (project, dropRoot, stageRootBase) {
   runNxInherit(`run ${project.name}:build`)
 
   const appRoot = path.join(SOURCES_DIR, project.root)
@@ -405,7 +406,7 @@ function packageFunctionApp (project, directories) {
     throw new Error(`[${project.name}] dist folder not found: ${distRoot}`)
   }
 
-  const stageRoot = path.join(directories.stageRoot, project.name)
+  const stageRoot = path.join(stageRootBase, project.name)
   recreateDirectory(stageRoot)
   cpSync(distRoot, path.join(stageRoot, 'dist'), { recursive: true })
 
@@ -422,10 +423,25 @@ function packageFunctionApp (project, directories) {
     runInherit(`${NPM_BIN} install --userconfig ${shellEscape(NPM_USER_CONFIG)} --prefix ${shellEscape(stageRoot)} --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline`)
   }
 
-  const zipPath = path.join(directories.dropRoot, `${project.name}-${BUILD_ID}.zip`)
+  const zipPath = path.join(dropRoot, `${project.name}-${BUILD_ID}.zip`)
   zipDirectoryContents(stageRoot, zipPath)
   log(`[${project.name}] packaged: ${zipPath}`)
   addBuildTag(project.name)
+
+  return appRoot
+}
+
+/**
+ * Builds, stages and zips a single Azure Function app, then stages its
+ * (whitespace-stripped) environment configuration files for the release pipeline.
+ *
+ * @param {Record<string, any>} project The function app project data.
+ * @param {{dropRoot: string, configRoot: string, stageRoot: string}} directories The output directories.
+ */
+function packageFunctionApp (project, directories) {
+  section(`Function app: ${project.name}`)
+
+  const appRoot = stageAndZipServerApp(project, directories.dropRoot, directories.stageRoot)
 
   const scripts = readJsonSafe(path.join(appRoot, 'package.json')).scripts || {}
   if (scripts['clean:config'] && project.packageName) {
@@ -437,6 +453,18 @@ function packageFunctionApp (project, directories) {
     cpSync(configSource, path.join(directories.configRoot, project.name), { recursive: true })
     log(`[${project.name}] configurations staged`)
   }
+}
+
+/**
+ * Builds, stages and zips a single generic Node.js app (no Functions host or
+ * environment configuration files).
+ *
+ * @param {Record<string, any>} project The Node app project data.
+ * @param {{dropRoot: string, stageRoot: string}} directories The output directories.
+ */
+function packageNodeApp (project, directories) {
+  section(`Node app: ${project.name}`)
+  stageAndZipServerApp(project, directories.dropRoot, directories.stageRoot)
 }
 
 /**
@@ -489,12 +517,14 @@ function main () {
 
   const context = loadContext()
   const functionApps = selectAffected(context, project => project.type.functionApp)
+  const nodeApps = selectAffected(context, project => project.type.nodeApp)
   const reactApps = selectAffected(context, project => project.type.reactApp)
 
   log(`Function apps (${functionApps.length}): ${functionApps.map(project => project.name).join(', ') || 'none'}`)
+  log(`Node apps (${nodeApps.length}): ${nodeApps.map(project => project.name).join(', ') || 'none'}`)
   log(`React apps (${reactApps.length}): ${reactApps.map(project => project.name).join(', ') || 'none'}`)
 
-  if (functionApps.length === 0 && reactApps.length === 0) {
+  if (functionApps.length === 0 && nodeApps.length === 0 && reactApps.length === 0) {
     banner('[03] No affected apps to package')
     return
   }
@@ -503,6 +533,10 @@ function main () {
     dropRoot:   path.join(STAGING_DIR, 'function-apps'),
     configRoot: path.join(STAGING_DIR, 'function-app-configurations'),
     stageRoot:  path.join(STAGE_AREA, 'function-apps'),
+  }
+  const nodeDirectories = {
+    dropRoot:  path.join(STAGING_DIR, 'node-apps'),
+    stageRoot: path.join(STAGE_AREA, 'node-apps'),
   }
   const reactDirectories = { artifactRoot: path.join(STAGING_DIR, 'react-apps') }
 
@@ -516,6 +550,15 @@ function main () {
     }
   }
 
+  if (nodeApps.length > 0) {
+    recreateDirectory(nodeDirectories.dropRoot)
+    recreateDirectory(nodeDirectories.stageRoot)
+
+    for (const project of nodeApps) {
+      packageNodeApp(project, nodeDirectories)
+    }
+  }
+
   if (reactApps.length > 0) {
     recreateDirectory(reactDirectories.artifactRoot)
 
@@ -524,7 +567,7 @@ function main () {
     }
   }
 
-  banner(`[03] Packaging complete — ${functionApps.length} function app(s), ${reactApps.length} React app(s)`)
+  banner(`[03] Packaging complete — ${functionApps.length} function app(s), ${nodeApps.length} node app(s), ${reactApps.length} React app(s)`)
 }
 
 main()
