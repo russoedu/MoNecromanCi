@@ -1,6 +1,6 @@
 # MoNecromanCI
 
-> **MO**no(repo) + necro**MAN**cy + **CI**. The CLI command is `monecromanci` (short alias `mnci`).
+> **MO**no(repo) + **NECROMAN**cy + **CI**. The CLI command is `monecromanci` (short alias `mnci`).
 
 An interactive CLI that **summons**, **conjures**, **raises** and **validates** NX
 monorepos — Node + TypeScript, Jest, ESLint, real VSCode `.ts` debugging, and a
