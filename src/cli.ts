@@ -5,6 +5,7 @@ import { runAdd } from './commands/add'
 import { runDoctor } from './commands/doctor'
 import { runNew } from './commands/new'
 import { runUpdate } from './commands/update'
+import { runValidate } from './commands/validate'
 import { logger } from './util/logger'
 import type { CiProvider, RegistryConfig } from './engine/types'
 
@@ -21,12 +22,13 @@ function readVersion (): string {
 const program = new Command()
 
 program
-  .name('nx-magic')
-  .description('Create and fix NX monorepos for Azure DevOps')
+  .name('monecromanci')
+  .description('MoNecromanCI — summon, conjure, raise and validate NX monorepos')
   .version(readVersion())
 
 program
   .command('new')
+  .alias('summon')
   .argument('[name]', 'monorepo name')
   .option('-y, --yes', 'non-interactive: accept provided values and defaults')
   .option('--scope <scope>', 'npm scope, e.g. @auto')
@@ -68,6 +70,7 @@ program
 
 program
   .command('add')
+  .alias('conjure')
   .argument('[type]', 'function-app | react-app | internal-lib | publishable-lib | cli-tool')
   .argument('[name]', 'project name')
   .description('Add a new project to the current monorepo')
@@ -77,7 +80,7 @@ program
 
 program
   .command('doctor')
-  .alias('fix')
+  .aliases(['fix', 'raise'])
   .option('--fix', 'apply fixes instead of only reporting')
   .description('Detect and repair configuration drift in the current monorepo')
   .action(async (options: { fix?: boolean }) => {
@@ -86,9 +89,19 @@ program
 
 program
   .command('update')
+  .alias('ascend')
   .description('Re-sync tool-owned files to the latest templates and apply migrations')
   .action(async () => {
     await runUpdate()
+  })
+
+program
+  .command('validate')
+  .alias('ritual')
+  .option('--all', 'run every project (nx run-many) instead of only affected')
+  .description('Run lint/test/build locally (nx affected) before pushing to CI')
+  .action(async (options: { all?: boolean }) => {
+    await runValidate({ all: options.all ?? false })
   })
 
 /** Runs the CLI, reporting uncaught command errors instead of letting them crash the process. */

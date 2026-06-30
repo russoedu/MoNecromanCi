@@ -1,8 +1,11 @@
-# nx-magic
+# MoNecromanCI
 
-An interactive CLI that creates and **fixes** NX monorepos — Node + TypeScript,
-Jest, ESLint, real VSCode `.ts` debugging, and a complete CI pipeline (Azure
-DevOps **and/or** GitHub Actions), with near-zero per-project configuration.
+> **MO**no(repo) + necro**MAN**cy + **CI**. The CLI command is `monecromanci` (short alias `mnci`).
+
+An interactive CLI that **summons**, **conjures**, **raises** and **validates** NX
+monorepos — Node + TypeScript, Jest, ESLint, real VSCode `.ts` debugging, and a
+complete CI pipeline (Azure DevOps **and/or** GitHub Actions), with near-zero
+per-project configuration.
 
 It generates nine project kinds and keeps every repo's tool-owned config in sync:
 
@@ -20,14 +23,18 @@ It generates nine project kinds and keeps every repo's tool-owned config in sync
 
 ## Commands
 
+Every command keeps its plain name and gains a necromancy-themed alias (in the
+comment below) — use whichever reads better to you:
+
 ```sh
-nx-magic new [name]     # scaffold a brand-new monorepo (prompts: CI provider, registry, scope, …)
-nx-magic add [type]     # internal-lib | publishable-lib | cli-tool | function-app | node-app | react-app | vue-app | svelte-app | nextjs-app
-nx-magic doctor [--fix] # detect (and with --fix, repair) tool-owned config drift
-nx-magic update         # doctor --fix + re-stamp the template version
+monecromanci new [name]       # summon  · scaffold a brand-new monorepo (prompts: CI provider, registry, scope, …)
+monecromanci add [type]       # conjure · internal-lib | publishable-lib | cli-tool | function-app | node-app | react-app | vue-app | svelte-app | nextjs-app
+monecromanci doctor [--fix]   # raise   · detect (and with --fix, repair) tool-owned config drift
+monecromanci update           # ascend  · doctor --fix + re-stamp the template version
+monecromanci validate [--all] # ritual  · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
 ```
 
-`new` is fully scriptable: `nx-magic new demo --yes --ci github --registry github-packages --owner acme`.
+`new` is fully scriptable: `monecromanci new demo --yes --ci github --registry github-packages --owner acme`.
 
 ## CI providers & registry (chosen per repo)
 
@@ -54,7 +61,7 @@ level (where VSCode actually reads them): "Debug Jest (current file)"
 App attach config (`:9229`), and browser configs for Vite (`:5173`) and Next.js
 (`:3000`) — plus the `Orta.vscode-jest` extension for per-test Debug lenses.
 
-## Developing nx-magic
+## Developing MoNecromanCI
 
 ```sh
 npm install --legacy-peer-deps   # ESLint 10 leads some plugins' peer ranges
@@ -71,6 +78,7 @@ cd demo
 node ../dist/cli.js add nextjs-app web   # or any other kind
 npm install
 npm run lint && npm test && npm run build
+node ../dist/cli.js validate             # (ritual) nx affected -t lint test build
 # In VSCode: open demo.code-workspace, set a breakpoint in a *.test.ts, run
 # "Debug Jest (current file)" → it should pause on the breakpoint.
 ```

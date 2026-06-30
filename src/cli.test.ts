@@ -12,7 +12,7 @@ jest.mock('commander', () => {
     private readonly argumentNames:     string[] = []
     private readonly optionDefinitions: OptionDefinition[] = []
     private commandName = ''
-    private aliasName?:                 string
+    private readonly aliasNames:        string[] = []
     private actionHandler?:             ActionHandler
 
     name (): this { return this }
@@ -27,7 +27,12 @@ jest.mock('commander', () => {
     }
 
     alias (aliasName: string): this {
-      this.aliasName = aliasName
+      this.aliasNames.push(aliasName)
+      return this
+    }
+
+    aliases (aliasNames: string[]): this {
+      this.aliasNames.push(...aliasNames)
       return this
     }
 
@@ -51,7 +56,7 @@ jest.mock('commander', () => {
 
     async parseAsync (argv: string[]): Promise<this> {
       const [commandToken, ...rest] = argv.slice(2)
-      const subcommand = this.subcommands.find((entry) => entry.commandName === commandToken || entry.aliasName === commandToken)
+      const subcommand = this.subcommands.find((entry) => entry.commandName === commandToken || entry.aliasNames.includes(commandToken))
       if (!subcommand) return this
 
       const options: Record<string, unknown> = {}
@@ -81,6 +86,7 @@ jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
 jest.mock('./commands/add', () => ({ runAdd: jest.fn() }))
 jest.mock('./commands/doctor', () => ({ runDoctor: jest.fn() }))
 jest.mock('./commands/update', () => ({ runUpdate: jest.fn() }))
+jest.mock('./commands/validate', () => ({ runValidate: jest.fn() }))
 
 const flush = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve))
@@ -88,10 +94,11 @@ const flush = async (): Promise<void> => {
 }
 
 interface CommandMocks {
-  runNew:    jest.MockedFunction<typeof import('./commands/new').runNew>
-  runAdd:    jest.MockedFunction<typeof import('./commands/add').runAdd>
-  runDoctor: jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
-  runUpdate: jest.MockedFunction<typeof import('./commands/update').runUpdate>
+  runNew:      jest.MockedFunction<typeof import('./commands/new').runNew>
+  runAdd:      jest.MockedFunction<typeof import('./commands/add').runAdd>
+  runDoctor:   jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
+  runUpdate:   jest.MockedFunction<typeof import('./commands/update').runUpdate>
+  runValidate: jest.MockedFunction<typeof import('./commands/validate').runValidate>
 }
 
 /**
@@ -106,16 +113,19 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     const { runAdd } = await import('./commands/add')
     const { runDoctor } = await import('./commands/doctor')
     const { runUpdate } = await import('./commands/update')
+    const { runValidate } = await import('./commands/validate')
     mocks = {
-      runNew:    jest.mocked(runNew),
-      runAdd:    jest.mocked(runAdd),
-      runDoctor: jest.mocked(runDoctor),
-      runUpdate: jest.mocked(runUpdate),
+      runNew:      jest.mocked(runNew),
+      runAdd:      jest.mocked(runAdd),
+      runDoctor:   jest.mocked(runDoctor),
+      runUpdate:   jest.mocked(runUpdate),
+      runValidate: jest.mocked(runValidate),
     }
     mocks.runNew.mockResolvedValue()
     mocks.runAdd.mockResolvedValue()
     mocks.runDoctor.mockResolvedValue()
     mocks.runUpdate.mockResolvedValue()
+    mocks.runValidate.mockResolvedValue()
     configure?.(mocks)
 
     await import('./cli')
@@ -192,11 +202,32 @@ describe('cli', () => {
     expect(mocks.runAdd).toHaveBeenCalledWith({ type: 'internal-lib', name: 'foo' })
   })
 
-  it('maps --fix to apply on the doctor command, including its alias', async () => {
+  it('maps --fix to apply on the doctor command, including its fix and raise aliases', async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {})
-    process.argv = ['node', 'cli.js', 'fix', '--fix']
+    process.argv = ['node', 'cli.js', 'raise', '--fix']
     const mocks = await loadCli()
     expect(mocks.runDoctor).toHaveBeenCalledWith({ apply: true })
+  })
+
+  it('routes the magic alias "summon" to runNew', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'summon', 'demo', '--yes', '--scope', '@demo']
+    const mocks = await loadCli()
+    expect(mocks.runNew).toHaveBeenCalledWith(expect.objectContaining({ name: 'demo', yes: true, scope: '@demo' }))
+  })
+
+  it('routes validate to runValidate with the affected default', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'validate']
+    const mocks = await loadCli()
+    expect(mocks.runValidate).toHaveBeenCalledWith({ all: false })
+  })
+
+  it('maps --all on the ritual alias to runValidate', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'ritual', '--all']
+    const mocks = await loadCli()
+    expect(mocks.runValidate).toHaveBeenCalledWith({ all: true })
   })
 
   it('logs the error message and sets a failing exit code when a command rejects', async () => {

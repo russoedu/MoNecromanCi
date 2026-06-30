@@ -19,7 +19,7 @@ export interface AddOptions {
 }
 
 /**
- * Interactive `nx-magic add`: pick a project kind and scaffold it.
+ * Interactive `monecromanci add`: pick a project kind and scaffold it.
  *
  * @remarks
  * Prompts for any value not supplied via `options`, then delegates to
@@ -35,13 +35,13 @@ export async function runAdd (options: AddOptions): Promise<void> {
   const repoRoot = process.cwd()
 
   if (!isManagedRepo(repoRoot)) {
-    logger.error('No .nx-magic.json found here. Run this from the monorepo root, or create one with `nx-magic new`.')
+    logger.error('No .monecromanci.json found here. Run this from the monorepo root, or create one with `monecromanci new`.')
     return
   }
 
   const config = loadConfig(repoRoot)
   if (!config) {
-    logger.error('Could not read .nx-magic.json.')
+    logger.error('Could not read .monecromanci.json.')
     return
   }
 

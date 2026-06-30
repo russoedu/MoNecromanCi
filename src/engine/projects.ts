@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { TAGS } from './constants'
 import { readJsonSafe } from './fsx'
-import type { NxMagicConfig, ProjectKind, ProjectVars } from './types'
+import type { MonecromanciConfig, ProjectKind, ProjectVars } from './types'
 
 function readTags (projectJson: Record<string, unknown>): string[] {
   return Array.isArray(projectJson.tags) ? projectJson.tags.map(String) : []
@@ -13,11 +13,11 @@ function hasBin (packageJson: Record<string, unknown>): boolean {
     return true
   }
 
-  const nxMagic = packageJson.nxMagic as { dist?: { bin?: unknown } } | undefined
-  return Boolean(nxMagic?.dist?.bin)
+  const marker = packageJson.monecromanci as { dist?: { bin?: unknown } } | undefined
+  return Boolean(marker?.dist?.bin)
 }
 
-/** Infers a project's nx-magic kind from its tags (and bin for CLI vs lib). */
+/** Infers a project's MoNecromanCI kind from its tags (and bin for CLI vs lib). */
 function kindFromProject (projectJson: Record<string, unknown>, packageJson: Record<string, unknown>): ProjectKind | undefined {
   const tags = readTags(projectJson)
 
@@ -49,7 +49,7 @@ function kindFromProject (projectJson: Record<string, unknown>, packageJson: Rec
   return undefined
 }
 
-function scanArea (areaDirectory: string, config: NxMagicConfig): ProjectVars[] {
+function scanArea (areaDirectory: string, config: MonecromanciConfig): ProjectVars[] {
   const projects: ProjectVars[] = []
   const entries = readdirSync(areaDirectory, { withFileTypes: true })
 
@@ -74,20 +74,20 @@ function scanArea (areaDirectory: string, config: NxMagicConfig): ProjectVars[] 
 }
 
 /**
- * Scans apps/ and libs/ and returns the nx-magic project descriptors found.
+ * Scans apps/ and libs/ and returns the MoNecromanCI project descriptors found.
  *
  * @remarks
  * Skips directories that don't carry a recognisable NX project/package kind
  * (see `kindFromProject`).
  *
  * @param repoRoot - Absolute path to the monorepo root.
- * @param config - The monorepo's `.nx-magic.json` stamp.
+ * @param config - The monorepo's `.monecromanci.json` stamp.
  * @returns The discovered project descriptors.
  * @throws Never - delegates to {@link readJsonSafe}, which swallows read/parse
  * errors.
  * @typeParam None - this function has no generic type parameters.
  */
-export function discoverProjects (repoRoot: string, config: NxMagicConfig): ProjectVars[] {
+export function discoverProjects (repoRoot: string, config: MonecromanciConfig): ProjectVars[] {
   const projects: ProjectVars[] = []
 
   for (const area of ['apps', 'libs']) {

@@ -7,7 +7,7 @@ import { addRootDependencies } from './rootPackage'
 let repoRoot: string
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-rootpkg-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-rootpkg-'))
 })
 
 afterEach(() => {

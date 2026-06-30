@@ -135,7 +135,7 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     main:          './src/index.ts',
     types:         './src/index.ts',
     publishConfig: publishConfig(vars),
-    nxMagic:       { dist: { main: './index.js', types: './index.d.ts' } },
+    monecromanci:  { dist: { main: './index.js', types: './index.d.ts' } },
     dependencies:  {},
     scripts:       {
       build:   'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
@@ -216,7 +216,7 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     main:          './src/cli.ts',
     bin:           { [vars.name]: './dist/cli.js' },
     publishConfig: publishConfig(vars),
-    nxMagic:       { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
+    monecromanci:  { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
     dependencies:  {},
     scripts:       {
       build:   `${esbuild} && node ../../tools/generate-dist-package.mjs`,

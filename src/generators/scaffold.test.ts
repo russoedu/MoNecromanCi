@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readJsonSafe } from '../engine/fsx'
-import type { NxMagicConfig, ProjectKind } from '../engine/types'
+import type { MonecromanciConfig, ProjectKind } from '../engine/types'
 import { generateProject, projectFiles } from './scaffold'
 
-const config: NxMagicConfig = {
+const config: MonecromanciConfig = {
   templateVersion: '0.1.0',
   workspaceName:   'demo',
   displayName:     'Demo',
@@ -20,7 +20,7 @@ let repoRoot: string
 let currentLogSpy: jest.SpyInstance
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-scaffold-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-scaffold-'))
   currentLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
 })
 

@@ -22,7 +22,7 @@ const vars: MonorepoVars = {
 let repo: string
 
 beforeAll(() => {
-  repo = mkdtempSync(join(tmpdir(), 'nx-magic-'))
+  repo = mkdtempSync(join(tmpdir(), 'monecromanci-'))
   applyFiles(repo, monorepoFiles(vars))
   saveConfig(repo, configFromVars(vars))
 

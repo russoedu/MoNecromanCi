@@ -18,7 +18,7 @@ const vars: MonorepoVars = {
 let repoRoot: string
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-config-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-config-'))
 })
 
 afterEach(() => {
@@ -26,8 +26,8 @@ afterEach(() => {
 })
 
 describe('stampPath', () => {
-  it('points at .nx-magic.json under the repo root', () => {
-    expect(stampPath(repoRoot)).toBe(join(repoRoot, '.nx-magic.json'))
+  it('points at .monecromanci.json under the repo root', () => {
+    expect(stampPath(repoRoot)).toBe(join(repoRoot, '.monecromanci.json'))
   })
 })
 
