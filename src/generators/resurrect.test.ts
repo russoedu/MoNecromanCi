@@ -175,4 +175,43 @@ describe('runResurrect', () => {
     expect(isManagedRepo(repoRoot)).toBe(true)
     expect(existsSync(join(repoRoot, 'nx.json'))).toBe(true)
   })
+
+  it('reports an all-managed repo instead of offering candidates on re-runs', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+    writeRoot()
+    writeProject('libs', 'done', { private: true })
+    writeFileSync(join(repoRoot, 'libs', 'done', 'project.json'), JSON.stringify({ tags: ['type:internal-lib'] }))
+    await runResurrect() // first run stamps the repo
+
+    logSpy.mockClear()
+    mockSelect.mockClear()
+    await runResurrect()
+
+    expect(mockSelect).not.toHaveBeenCalled()
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Nothing to resurrect'))
+  })
+
+  it('stamps a GitHub Packages registry when that kind is selected', async () => {
+    writeRoot()
+    mockSelect.mockImplementation(async (options) => {
+      const { message, choices } = options as { message: string, choices: Array<{ value: unknown }> }
+      return (message === 'Package registry' ? 'github-packages' : (choices[0] as { value: unknown }).value) as never
+    })
+
+    await runResurrect()
+
+    expect(loadConfig(repoRoot)?.registry).toEqual({ kind: 'github-packages', owner: 'my-org' })
+  })
+
+  it('stamps the public npm registry when that kind is selected', async () => {
+    writeRoot()
+    mockSelect.mockImplementation(async (options) => {
+      const { message, choices } = options as { message: string, choices: Array<{ value: unknown }> }
+      return (message === 'Package registry' ? 'npm' : (choices[0] as { value: unknown }).value) as never
+    })
+
+    await runResurrect()
+
+    expect(loadConfig(repoRoot)?.registry).toEqual({ kind: 'npm' })
+  })
 })

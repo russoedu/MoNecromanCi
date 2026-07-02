@@ -64,6 +64,7 @@ function allDependencies (packageJson: Record<string, unknown>): Record<string, 
   }
 }
 
+/** Whether the project directory holds a vite config file of any extension. */
 function hasViteConfig (projectDirectory: string): boolean {
   return ['vite.config.ts', 'vite.config.js', 'vite.config.mjs', 'vite.config.mts']
     .some((name) => fileExists(join(projectDirectory, name)))

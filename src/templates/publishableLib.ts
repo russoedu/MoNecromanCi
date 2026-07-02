@@ -4,11 +4,13 @@ import { toJson } from '../engine/fsx'
 import { registryUrl } from '../engine/registry'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds the package.json publishConfig for the configured registry, if any. */
 function publishConfig (vars: ProjectVars): Record<string, string> | undefined {
   const url = vars.registry ? registryUrl(vars.registry) : undefined
   return url ? { registry: url } : undefined
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function tsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -34,6 +36,7 @@ function tsconfig (): string {
   })
 }
 
+/** Builds the emit tsconfig used by the build target. */
 function tsconfigLib (): string {
   return toJson({
     extends:         './tsconfig.json',
@@ -50,6 +53,7 @@ function tsconfigLib (): string {
   })
 }
 
+/** Builds the typedoc.json extending the repo-level config. */
 function typedoc (): string {
   return toJson({
     extends:     ['../../typedoc.json'],
@@ -59,6 +63,7 @@ function typedoc (): string {
   })
 }
 
+/** Builds the NX project.json with build/test/lint/doc targets. */
 function projectJson (vars: ProjectVars, buildCommand: string): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',

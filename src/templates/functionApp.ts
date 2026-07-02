@@ -3,6 +3,7 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
     name:         vars.packageName,
@@ -23,6 +24,7 @@ function appPackageJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the NX project.json with build/serve/test/lint/doc targets. */
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
@@ -45,6 +47,7 @@ function appProjectJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -64,6 +67,7 @@ function appTsconfig (): string {
   })
 }
 
+/** Builds the emit tsconfig used by the build target. */
 function appTsconfigApp (): string {
   return toJson({
     extends:         './tsconfig.json',
@@ -77,6 +81,7 @@ function appTsconfigApp (): string {
   })
 }
 
+/** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
     extends:     ['../../typedoc.json'],
@@ -86,6 +91,7 @@ function appTypedoc (): string {
   })
 }
 
+/** Builds the Azure Functions host.json. */
 function hostJson (): string {
   return toJson({
     version: '2.0',
@@ -101,6 +107,7 @@ function hostJson (): string {
   })
 }
 
+/** Builds the gitignored local.settings.json (opens :9229 for debugging). */
 function localSettingsJson (): string {
   // Gitignored. The --inspect arg lets VSCode attach on :9229 for TS debugging.
   return toJson({
@@ -113,6 +120,7 @@ function localSettingsJson (): string {
   })
 }
 
+/** Builds a per-environment Azure app-settings configuration file. */
 function configurationFile (environment: string): string {
   return toJson([
     { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node', slotSetting: false },

@@ -4,6 +4,7 @@ import { npmrcContent } from '../engine/registry'
 import type { FileSpec, MonorepoVars, RegistryConfig } from '../engine/types'
 import rootPackageJson from '../../package.json'
 
+/** Looks up a toolchain version from this package's own devDependencies. */
 const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): string => rootPackageJson.devDependencies[name]
 
 /**
@@ -52,6 +53,7 @@ export const DEV_DEPENDENCIES: Record<string, string> = {
   'typescript-eslint':               sharedDependency('typescript-eslint'),
 }
 
+/** Builds the root package.json: workspaces, shared scripts and pinned toolchain. */
 function packageJson (vars: MonorepoVars): string {
   return toJson({
     name:       vars.workspaceName,
@@ -89,6 +91,7 @@ function packageJson (vars: MonorepoVars): string {
   })
 }
 
+/** Builds nx.json with shared cache inputs, target defaults and release config. */
 function nxJson (vars: MonorepoVars): string {
   return toJson({
     $schema:         './node_modules/nx/schemas/nx-schema.json',
@@ -130,6 +133,7 @@ function nxJson (vars: MonorepoVars): string {
   })
 }
 
+/** Builds the strict shared tsconfig.base.json. */
 function tsconfigBase (): string {
   return toJson({
     $schema:         'https://json.schemastore.org/tsconfig',
@@ -155,6 +159,7 @@ function tsconfigBase (): string {
   })
 }
 
+/** Builds tsconfig.jest.json (CommonJS + source maps so ts-jest debugging works). */
 function tsconfigJest (): string {
   // sourceMap MUST be true so ts-jest emits maps and VSCode binds breakpoints.
   return toJson({
@@ -173,6 +178,7 @@ function tsconfigJest (): string {
   })
 }
 
+/** Builds the repo-level typedoc.json. */
 function typedocJson (): string {
   return toJson({
     $schema:            'https://typedoc.org/schema.json',
@@ -247,6 +253,7 @@ const jestClearMjs = `afterEach(() => {
 })
 `
 
+/** Builds the root .npmrc for the configured publish registry. */
 function npmrc (vars: MonorepoVars): string {
   return npmrcContent(vars.registry, vars.scope)
 }
@@ -292,6 +299,7 @@ const commitlintConfigMjs = `export default {
 const huskyCommitMessage = `npx --no -- commitlint --edit "$1"
 `
 
+/** Builds the generated repo's README.md. */
 function readme (vars: MonorepoVars): string {
   return `# ${vars.displayName}
 
@@ -336,6 +344,7 @@ function registryLabelFor (registry: RegistryConfig): string {
   }
 }
 
+/** Builds the nx-release how-to document for the configured registry. */
 function nxReleaseDocument (vars: MonorepoVars): string {
   const registryLabel = registryLabelFor(vars.registry)
 
@@ -393,6 +402,7 @@ step (\`04-publish-libs\`, or the GitHub Actions \`publish\` job).
 `
 }
 
+/** Builds the VSCode .code-workspace file. */
 function codeWorkspace (vars: MonorepoVars): string {
   return toJson({
     folders:  [{ path: '.', name: vars.displayName }],

@@ -2,6 +2,7 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
     name:    vars.packageName,
@@ -22,6 +23,7 @@ function appPackageJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the NX project.json with build/serve/test/lint targets. */
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
@@ -47,6 +49,7 @@ function appProjectJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -66,6 +69,7 @@ function appTsconfig (): string {
   })
 }
 
+/** Builds the ts-jest tsconfig so .tsx tests transpile under Jest. */
 function appTsconfigSpec (): string {
   // Used by ts-jest: CommonJS + react-jsx so .tsx tests transpile under Jest.
   return toJson({
@@ -88,6 +92,7 @@ export default defineConfig({ plugins: [react()], server: { port: 5173 }, build:
 const viteEnvDts = `/// <reference types="vite/client" />
 `
 
+/** Builds the Vite index.html entry page. */
 function indexHtml (vars: ProjectVars): string {
   return `<!doctype html>
 <html lang="en">
@@ -148,6 +153,7 @@ describe('App', () => {
 })
 `
 
+/** Builds the project's jest config (jsdom + ts-jest for .tsx). */
 const jestConfigMjs = (name: string): string => String.raw`import { createConfig } from '../../jest.preset.mjs'
 
 const base = createConfig('${name}')
@@ -155,6 +161,7 @@ const base = createConfig('${name}')
 export default { ...base, testEnvironment: 'jsdom', transform: { '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: './tsconfig.spec.json' }] } }
 `
 
+/** Builds a per-environment .env file. */
 function envFile (environment: string): string {
   return `VITE_ENVIRONMENT=${environment}\nVITE_API_URL=https://${environment}.example.com\n`
 }

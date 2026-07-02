@@ -57,6 +57,39 @@ describe('loadConfig', () => {
     writeFileSync(stampPath(repoRoot), '{ not valid json', 'utf8')
     expect(loadConfig(repoRoot)).toBeUndefined()
   })
+
+  it('migrates a legacy v1 stamp (azure field) to the ci/registry shape', () => {
+    writeFileSync(stampPath(repoRoot), JSON.stringify({
+      templateVersion: '0.1.0',
+      workspaceName:   'legacy',
+      displayName:     'Legacy',
+      scope:           '@legacy',
+      defaultBase:     'main',
+      nodeVersion:     '24',
+      azure:           { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+    }), 'utf8')
+
+    const config = loadConfig(repoRoot)
+
+    expect(config?.ci).toBe('azure')
+    expect(config?.registry).toEqual({ kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' })
+  })
+
+  it('migrates a legacy stamp without azure coordinates to the public npm registry', () => {
+    writeFileSync(stampPath(repoRoot), JSON.stringify({
+      templateVersion: '0.1.0',
+      workspaceName:   'legacy',
+      displayName:     'Legacy',
+      scope:           '@legacy',
+      defaultBase:     'main',
+      nodeVersion:     '24',
+    }), 'utf8')
+
+    const config = loadConfig(repoRoot)
+
+    expect(config?.ci).toBe('azure')
+    expect(config?.registry).toEqual({ kind: 'npm' })
+  })
 })
 
 describe('configFromVars', () => {
