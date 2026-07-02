@@ -23,18 +23,42 @@ It generates nine project kinds and keeps every repo's tool-owned config in sync
 
 ## Commands
 
-Every command keeps its plain name and gains a necromancy-themed alias (in the
+Run it **bare** to get the interactive menu — every command, one arrow-key pick away:
+
+```sh
+monecromanci        # or mnci — choose Summon, Conjure, Resurrect, Raise, Ascend or Ritual interactively
+```
+
+Every command also keeps its plain name and gains a necromancy-themed alias (in the
 comment below) — use whichever reads better to you:
 
 ```sh
-monecromanci new [name]       # summon  · scaffold a brand-new monorepo (prompts: CI provider, registry, scope, …)
-monecromanci add [type]       # conjure · internal-lib | publishable-lib | cli-tool | function-app | node-app | react-app | vue-app | svelte-app | nextjs-app
-monecromanci doctor [--fix]   # raise   · detect (and with --fix, repair) tool-owned config drift
-monecromanci update           # ascend  · doctor --fix + re-stamp the template version
-monecromanci validate [--all] # ritual  · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
+monecromanci new [name]       # summon    · scaffold a brand-new monorepo (prompts: CI provider, registry, scope, …)
+monecromanci add [type]       # conjure   · internal-lib | publishable-lib | cli-tool | function-app | node-app | react-app | vue-app | svelte-app | nextjs-app
+monecromanci resurrect        # adopt     · adopt an existing monorepo: detect its projects and apply the canonical config
+monecromanci doctor [--fix]   # raise/fix · detect (and with --fix, repair) tool-owned config drift
+monecromanci update           # ascend    · doctor --fix + re-stamp the template version
+monecromanci validate [--all] # ritual    · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
 ```
 
 `new` is fully scriptable: `monecromanci new demo --yes --ci github --registry github-packages --owner acme`.
+
+## Resurrect an existing monorepo
+
+`resurrect` brings a repo that wasn't born from MoNecromanCI under management.
+It scans `apps/` and `libs/`, guesses each project's kind from its files and
+dependencies (host.json, next/vue/svelte/react deps, `bin` entries,
+`publishConfig`, …) and **asks you to confirm every guess** — the signals help,
+but you decide. After a hard are-you-sure confirmation it shows a checkbox list
+of the confirmed projects (`a` selects all, `i` inverts, space toggles one),
+then applies the canonical tool-owned config to the root and each selected
+project, merges missing `scripts`/`workspaces`/`engines` into your manifests
+(drifted scripts are reported, never overwritten), and pins the toolchain
+versions the generated ESLint config requires. **Your source code is never
+touched** — no sample files are planted. Projects you leave unselected stay
+unmanaged and are offered again the next time you run `resurrect`; repo-level
+prompts pre-fill from what it detects (CI files, registry URLs, scope,
+`engines.node`, git default branch).
 
 ## CI providers & registry (chosen per repo)
 
