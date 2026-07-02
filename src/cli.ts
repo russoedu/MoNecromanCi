@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { Command } from 'commander'
 import { runAdd } from './commands/add'
 import { runDoctor } from './commands/doctor'
+import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
 import { runResurrect } from './commands/resurrect'
 import { runUpdate } from './commands/update'
@@ -116,6 +117,12 @@ program
 /** Runs the CLI, reporting uncaught command errors instead of letting them crash the process. */
 async function main (): Promise<void> {
   try {
+    // Bare `monecromanci` opens the interactive menu instead of printing help.
+    if (process.argv.length <= 2) {
+      await runInteractive()
+      return
+    }
+
     await program.parseAsync(process.argv)
   } catch (error) {
     logger.error(error instanceof Error ? error.message : String(error))
