@@ -33,7 +33,7 @@ export interface NewOptions {
 }
 
 /**
- * Interactive (or `--yes` non-interactive) `nx-magic new`: scaffold a monorepo.
+ * Interactive (or `--yes` non-interactive) `monecromanci new`: scaffold a monorepo.
  *
  * @remarks
  * Prompts for any value not supplied via `options` (unless `yes` is set), then

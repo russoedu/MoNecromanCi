@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TAGS } from './constants'
 import { discoverProjects } from './projects'
-import type { NxMagicConfig } from './types'
+import type { MonecromanciConfig } from './types'
 
-const config: NxMagicConfig = {
+const config: MonecromanciConfig = {
   templateVersion: '0.1.0',
   workspaceName:   'demo',
   displayName:     'Demo',
@@ -18,7 +18,7 @@ const config: NxMagicConfig = {
 let repoRoot: string
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-projects-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-projects-'))
 })
 
 afterEach(() => {
@@ -89,8 +89,8 @@ describe('discoverProjects', () => {
     expect(discoverProjects(repoRoot, config)[0].kind).toBe('cli-tool')
   })
 
-  it('identifies a cli-tool via nxMagic.dist.bin when no top-level bin is set', () => {
-    writeProject('libs', 'mytool', { tags: [TAGS.publishableLib] }, { name: '@demo/mytool', nxMagic: { dist: { bin: { mytool: './cli.js' } } } })
+  it('identifies a cli-tool via monecromanci.dist.bin when no top-level bin is set', () => {
+    writeProject('libs', 'mytool', { tags: [TAGS.publishableLib] }, { name: '@demo/mytool', monecromanci: { dist: { bin: { mytool: './cli.js' } } } })
     expect(discoverProjects(repoRoot, config)[0].kind).toBe('cli-tool')
   })
 

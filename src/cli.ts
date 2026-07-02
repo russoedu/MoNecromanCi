@@ -20,7 +20,7 @@ function readVersion (): string {
 const program = new Command()
 
 program
-  .name('nx-magic')
+  .name('monecromanci')
   .description('Create and fix NX monorepos for Azure DevOps')
   .version(readVersion())
 

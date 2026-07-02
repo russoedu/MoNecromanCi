@@ -13,7 +13,7 @@
  * Run from a project directory (cwd = project root) after the build emits dist:
  *   tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs
  *
- * Dist field overrides (main/types/bin) come from `nxMagic.dist` in the project
+ * Dist field overrides (main/types/bin) come from `monecromanci.dist` in the project
  * package.json.
  */
 import { builtinModules } from 'node:module'
@@ -174,7 +174,7 @@ if (missing.length > 0) {
   throw new Error(`Missing version for: ${missing.join(', ')} — add them to the root package.json`)
 }
 
-const dist = sourceManifest.nxMagic?.dist ?? {}
+const dist = sourceManifest.monecromanci?.dist ?? {}
 const distManifest = {
   name: sourceManifest.name,
   version: sourceManifest.version,

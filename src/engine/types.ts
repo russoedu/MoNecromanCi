@@ -1,5 +1,5 @@
 /**
- * The five kinds of project nx-magic can generate.
+ * The five kinds of project MoNecromanCi can generate.
  *
  * @remarks
  * Drives which generator and template set {@link generateProject} uses.
@@ -28,14 +28,14 @@ export interface AzureConfig {
 }
 
 /**
- * Contents of the per-repo `.nx-magic.json` stamp.
+ * Contents of the per-repo `.monecromanci.json` stamp.
  *
  * @remarks
  * Read and written by {@link loadConfig} and {@link saveConfig}.
  *
  * @typeParam None - this interface has no generic type parameters.
  */
-export interface NxMagicConfig {
+export interface MonecromanciConfig {
   templateVersion: string
   workspaceName:   string
   displayName:     string

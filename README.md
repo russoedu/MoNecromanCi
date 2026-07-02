@@ -1,4 +1,4 @@
-# nx-magic
+# MoNecromanCi
 
 An interactive CLI that creates and **fixes** NX monorepos for Azure DevOps —
 Node + TypeScript, Jest, ESLint, VSCode debugging, and a complete Azure pipeline,
@@ -17,10 +17,10 @@ It generates five project kinds and keeps every repo's tool-owned config in sync
 ## Commands
 
 ```sh
-nx-magic new [name]     # scaffold a brand-new monorepo (interactive)
-nx-magic add [type]     # add internal-lib | publishable-lib | cli-tool | function-app | react-app
-nx-magic doctor [--fix] # detect (and with --fix, repair) tool-owned config drift
-nx-magic update         # doctor --fix + re-stamp the template version
+monecromanci new [name]     # scaffold a brand-new monorepo (interactive)
+monecromanci add [type]     # add internal-lib | publishable-lib | cli-tool | function-app | react-app
+monecromanci doctor [--fix] # detect (and with --fix, repair) tool-owned config drift
+monecromanci update         # doctor --fix + re-stamp the template version
 ```
 
 ## What's centralised
@@ -40,7 +40,7 @@ level, where VSCode actually reads them): "Debug Jest (current file)"
 attach config (`:9229`), and a React browser config — plus the `Orta.vscode-jest`
 extension for per-test Debug lenses.
 
-## Developing nx-magic
+## Developing MoNecromanCi
 
 ```sh
 npm install
@@ -58,6 +58,6 @@ npm install
 npm run lint && npm test && npm run build
 # In VSCode: open demo.code-workspace, set a breakpoint in a *.test.ts, run
 # "Debug Jest (current file)" → it should pause on the breakpoint.
-npx nx-magic add internal-lib shared
+npx monecromanci add internal-lib shared
 npm run pipeline:package         # local dry-run of the packaging step
 ```

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TAGS, TEMPLATE_VERSION } from '../engine/constants'
-import type { NxMagicConfig } from '../engine/types'
+import type { MonecromanciConfig } from '../engine/types'
 
 jest.mock('../engine/sync', () => ({ syncToolOwned: jest.fn() }))
 
@@ -11,7 +11,7 @@ import { loadConfig, saveConfig } from '../engine/config'
 import { syncToolOwned } from '../engine/sync'
 import { runDoctor } from './doctor'
 
-const config: NxMagicConfig = {
+const config: MonecromanciConfig = {
   templateVersion: '0.0.1',
   workspaceName:   'demo',
   displayName:     'Demo',
@@ -29,7 +29,7 @@ let warnSpy: jest.SpyInstance
 let errorSpy: jest.SpyInstance
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-doctor-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-doctor-'))
   jest.spyOn(process, 'cwd').mockReturnValue(repoRoot)
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
@@ -42,9 +42,9 @@ afterEach(() => {
 })
 
 describe('runDoctor', () => {
-  it('errors when the directory is not an nx-magic repo', async () => {
+  it('errors when the directory is not a MoNecromanCi repo', async () => {
     await runDoctor({ apply: false })
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .nx-magic.json found'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .monecromanci.json found'))
     expect(mockSyncToolOwned).not.toHaveBeenCalled()
   })
 
@@ -54,7 +54,7 @@ describe('runDoctor', () => {
       throw new Error('bad json')
     })
     await runDoctor({ apply: false })
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read .nx-magic.json'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read .monecromanci.json'))
   })
 
   it('reports everything in sync when there are no issues', async () => {

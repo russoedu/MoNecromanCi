@@ -7,7 +7,7 @@ import type { FileSpec } from './types'
 let repoRoot: string
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-sync-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-sync-'))
 })
 
 afterEach(() => {

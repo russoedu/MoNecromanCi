@@ -38,13 +38,13 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   const repoRoot = process.cwd()
 
   if (!isManagedRepo(repoRoot)) {
-    logger.error('No .nx-magic.json found here. Run `doctor` from an nx-magic monorepo root.')
+    logger.error('No .monecromanci.json found here. Run `doctor` from a MoNecromanCi monorepo root.')
     return
   }
 
   const config = loadConfig(repoRoot)
   if (!config) {
-    logger.error('Could not read .nx-magic.json.')
+    logger.error('Could not read .monecromanci.json.')
     return
   }
 

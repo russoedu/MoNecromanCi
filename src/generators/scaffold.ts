@@ -1,6 +1,6 @@
 import { applyFiles, reportApply } from '../engine/apply'
 import { addRootDependencies } from '../engine/rootPackage'
-import type { FileSpec, NxMagicConfig, ProjectKind, ProjectVars } from '../engine/types'
+import type { FileSpec, MonecromanciConfig, ProjectKind, ProjectVars } from '../engine/types'
 import { functionAppFiles } from '../templates/functionApp'
 import { internalLibFiles } from '../templates/internalLib'
 import { cliToolFiles, publishableLibFiles } from '../templates/publishableLib'
@@ -96,13 +96,13 @@ function applyRootDependencies (repoRoot: string, kind: ProjectKind): void {
  * @param repoRoot - Absolute path to the monorepo root.
  * @param kind - The project kind to generate.
  * @param name - The kebab-case project name.
- * @param config - The monorepo's `.nx-magic.json` stamp.
+ * @param config - The monorepo's `.monecromanci.json` stamp.
  * @returns Nothing.
  * @throws Propagates any Node.js `fs` error raised while writing files, and
  * throws when `kind` is not one of the implemented {@link ProjectKind} values.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generateProject (repoRoot: string, kind: ProjectKind, name: string, config: NxMagicConfig): void {
+export function generateProject (repoRoot: string, kind: ProjectKind, name: string, config: MonecromanciConfig): void {
   const vars: ProjectVars = {
     kind,
     name,

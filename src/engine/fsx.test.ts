@@ -6,7 +6,7 @@ import { ensureDirectory, fileExists, readJsonSafe, readTextSafe, toJson, writeF
 let directory: string
 
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), 'nx-magic-fsx-'))
+  directory = mkdtempSync(join(tmpdir(), 'monecromanci-fsx-'))
 })
 
 afterEach(() => {

@@ -30,7 +30,7 @@ let logSpy: jest.SpyInstance
 let errorSpy: jest.SpyInstance
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), 'nx-magic-addproject-'))
+  repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-addproject-'))
   jest.spyOn(process, 'cwd').mockReturnValue(repoRoot)
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
@@ -46,9 +46,9 @@ function readManifest (): Record<string, unknown> {
 }
 
 describe('runAdd', () => {
-  it('errors when the directory is not an nx-magic repo', async () => {
+  it('errors when the directory is not a MoNecromanCi repo', async () => {
     await runAdd({ type: 'internal-lib', name: 'foo' })
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .nx-magic.json found'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .monecromanci.json found'))
     expect(mockSelect).not.toHaveBeenCalled()
   })
 
@@ -58,7 +58,7 @@ describe('runAdd', () => {
       throw new Error('bad json')
     })
     await runAdd({ type: 'internal-lib', name: 'foo' })
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read .nx-magic.json'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Could not read .monecromanci.json'))
   })
 
   it('uses the provided type and name without prompting', async () => {

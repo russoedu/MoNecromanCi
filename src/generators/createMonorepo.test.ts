@@ -19,7 +19,7 @@ let logSpy: jest.SpyInstance
 let warnSpy: jest.SpyInstance
 
 beforeEach(() => {
-  cwdDirectory = mkdtempSync(join(tmpdir(), 'nx-magic-new-'))
+  cwdDirectory = mkdtempSync(join(tmpdir(), 'monecromanci-new-'))
   jest.spyOn(process, 'cwd').mockReturnValue(cwdDirectory)
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})

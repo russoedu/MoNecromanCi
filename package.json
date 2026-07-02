@@ -1,9 +1,9 @@
 {
-  "name": "nx-magic",
+  "name": "monecromanci",
   "version": "0.0.0",
   "description": "Interactive CLI to create and fix NX monorepos for Azure DevOps (function apps, React apps, internal/publishable libs, CLI tools).",
   "bin": {
-    "nx-magic": "./dist/cli.js",
+    "monecromanci": "./dist/cli.js",
     "nxm": "./dist/cli.js"
   },
   "files": [

@@ -1,5 +1,5 @@
 /**
- * Version stamp written into `.nx-magic.json`; bump when templates change.
+ * Version stamp written into `.monecromanci.json`; bump when templates change.
  *
  * @remarks
  * `doctor`/`update` compare this against the stamp on disk to know whether a
@@ -13,13 +13,13 @@ export const TEMPLATE_VERSION = '0.1.0'
  * @remarks
  * Lives at the repo root, alongside `package.json`.
  */
-export const STAMP_FILE = '.nx-magic.json'
+export const STAMP_FILE = '.monecromanci.json'
 
 /**
  * Default Node major version targeted by generated monorepos.
  *
  * @remarks
- * Used as the fallback when `nx-magic new` runs non-interactively.
+ * Used as the fallback when `monecromanci new` runs non-interactively.
  */
 export const DEFAULT_NODE_VERSION = '24'
 
@@ -27,7 +27,7 @@ export const DEFAULT_NODE_VERSION = '24'
  * Default git base branch used by Nx affected detection.
  *
  * @remarks
- * Used as the fallback when `nx-magic new` runs non-interactively.
+ * Used as the fallback when `monecromanci new` runs non-interactively.
  */
 export const DEFAULT_BASE = 'main'
 

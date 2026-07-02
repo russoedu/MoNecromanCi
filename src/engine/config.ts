@@ -1,10 +1,10 @@
 import { join } from 'node:path'
 import { STAMP_FILE, TEMPLATE_VERSION } from './constants'
 import { fileExists, readJsonSafe, toJson, writeFileEnsured } from './fsx'
-import type { MonorepoVars, NxMagicConfig } from './types'
+import type { MonorepoVars, MonecromanciConfig } from './types'
 
 /**
- * Absolute path to a repo's `.nx-magic.json` stamp.
+ * Absolute path to a repo's `.monecromanci.json` stamp.
  *
  * @remarks
  * Pure path join; does not check whether the file exists.
@@ -19,10 +19,10 @@ export function stampPath (repoRoot: string): string {
 }
 
 /**
- * Returns whether the given directory looks like an nx-magic monorepo.
+ * Returns whether the given directory looks like a MoNecromanCi monorepo.
  *
  * @remarks
- * Checks only for the presence of the `.nx-magic.json` stamp file.
+ * Checks only for the presence of the `.monecromanci.json` stamp file.
  *
  * @param repoRoot - Absolute path to the repo root.
  * @returns `true` when the stamp file exists.
@@ -34,7 +34,7 @@ export function isManagedRepo (repoRoot: string): boolean {
 }
 
 /**
- * Loads the `.nx-magic.json` stamp, or `undefined` when absent/invalid.
+ * Loads the `.monecromanci.json` stamp, or `undefined` when absent/invalid.
  *
  * @remarks
  * Returns early when {@link isManagedRepo} reports no stamp file.
@@ -44,16 +44,16 @@ export function isManagedRepo (repoRoot: string): boolean {
  * @throws Never - delegates to {@link readJsonSafe}, which swallows parse errors.
  * @typeParam None - this function has no generic type parameters.
  */
-export function loadConfig (repoRoot: string): NxMagicConfig | undefined {
+export function loadConfig (repoRoot: string): MonecromanciConfig | undefined {
   if (!isManagedRepo(repoRoot)) {
     return undefined
   }
 
-  return readJsonSafe<NxMagicConfig>(stampPath(repoRoot))
+  return readJsonSafe<MonecromanciConfig>(stampPath(repoRoot))
 }
 
 /**
- * Writes the `.nx-magic.json` stamp for a repo.
+ * Writes the `.monecromanci.json` stamp for a repo.
  *
  * @remarks
  * Overwrites any existing stamp file.
@@ -65,7 +65,7 @@ export function loadConfig (repoRoot: string): NxMagicConfig | undefined {
  * while writing the file.
  * @typeParam None - this function has no generic type parameters.
  */
-export function saveConfig (repoRoot: string, config: NxMagicConfig): void {
+export function saveConfig (repoRoot: string, config: MonecromanciConfig): void {
   writeFileEnsured(stampPath(repoRoot), toJson(config))
 }
 
@@ -80,7 +80,7 @@ export function saveConfig (repoRoot: string, config: NxMagicConfig): void {
  * @throws Never - performs no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function configFromVars (vars: MonorepoVars): NxMagicConfig {
+export function configFromVars (vars: MonorepoVars): MonecromanciConfig {
   return {
     templateVersion: TEMPLATE_VERSION,
     workspaceName:   vars.workspaceName,
