@@ -137,4 +137,20 @@ describe('runNew', () => {
     expect(readdirSync(join(target, 'libs'))).toEqual(['.gitkeep'])
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Done. Next steps:'))
   })
+
+  it('configures a GitHub Packages registry (owner drives the default scope)', async () => {
+    const target = join(cwdDirectory, 'gh-repo')
+    await runNew({ name: 'GH Repo', ci: 'github', registry: 'github-packages', owner: 'acme', base: 'main', lib: '', yes: true })
+
+    const config = loadConfig(target)
+    expect(config?.registry).toEqual({ kind: 'github-packages', owner: 'acme' })
+    expect(config?.scope).toBe('@acme')
+  })
+
+  it('configures the public npm registry with no scoped .npmrc entries', async () => {
+    const target = join(cwdDirectory, 'npm-repo')
+    await runNew({ name: 'Npm Repo', ci: 'github', registry: 'npm', scope: '@open', base: 'main', lib: '', yes: true })
+
+    expect(loadConfig(target)?.registry).toEqual({ kind: 'npm' })
+  })
 })

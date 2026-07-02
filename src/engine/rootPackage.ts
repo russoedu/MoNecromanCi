@@ -4,6 +4,7 @@ import { logger } from '../util/logger'
 
 type DependencySection = 'dependencies' | 'devDependencies'
 
+/** Shared merge core: adds entries, overwriting existing versions only when pinning. */
 function mergeDependencies (
   repoRoot: string,
   dependencies: Record<string, string>,

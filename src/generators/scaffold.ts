@@ -49,6 +49,7 @@ const ROOT_DEPENDENCIES: Partial<Record<ProjectKind, RootDependencies>> = {
   },
 }
 
+/** Dispatches to the per-kind template file set. */
 function filesForKind (kind: ProjectKind, vars: ProjectVars): FileSpec[] {
   switch (kind) {
     case 'internal-lib': {

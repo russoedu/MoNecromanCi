@@ -2,6 +2,7 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
     name:         vars.packageName,
@@ -22,6 +23,7 @@ function appPackageJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the NX project.json with build/serve/test/lint/doc targets. */
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
@@ -44,6 +46,7 @@ function appProjectJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -63,6 +66,7 @@ function appTsconfig (): string {
   })
 }
 
+/** Builds the emit tsconfig used by the build target. */
 function appTsconfigApp (): string {
   return toJson({
     extends:         './tsconfig.json',
@@ -76,6 +80,7 @@ function appTsconfigApp (): string {
   })
 }
 
+/** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
     extends:     ['../../typedoc.json'],

@@ -19,6 +19,7 @@ interface FrontendFramework {
   envContent:       string
 }
 
+/** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
     name:    vars.packageName,
@@ -39,6 +40,7 @@ function appPackageJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the NX project.json with build/serve/test/lint targets. */
 function appProjectJson (vars: ProjectVars, framework: FrontendFramework): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
@@ -64,6 +66,7 @@ function appProjectJson (vars: ProjectVars, framework: FrontendFramework): strin
   })
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -82,6 +85,7 @@ function appTsconfig (): string {
   })
 }
 
+/** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
     extends:     ['../../typedoc.json'],
@@ -91,6 +95,7 @@ function appTypedoc (): string {
   })
 }
 
+/** Builds the vite config for the chosen framework plugin. */
 function viteConfig (framework: FrontendFramework): string {
   return `${framework.vitePluginImport}
 import { defineConfig } from 'vite'
@@ -99,6 +104,7 @@ export default defineConfig({ plugins: [${framework.vitePluginCall}], server: { 
 `
 }
 
+/** Builds the Vite index.html entry page. */
 function indexHtml (vars: ProjectVars, framework: FrontendFramework): string {
   return `<!doctype html>
 <html lang="en">
@@ -138,6 +144,7 @@ describe('greet', () => {
 })
 `
 
+/** Builds a per-environment .env file. */
 function envFile (environment: string): string {
   return `VITE_ENVIRONMENT=${environment}\nVITE_API_URL=https://${environment}.example.com\n`
 }
@@ -208,6 +215,7 @@ declare module '*.svelte' {
 `,
 }
 
+/** Assembles the file set shared by the Vue and Svelte app kinds. */
 function frontendAppFiles (vars: ProjectVars, framework: FrontendFramework): FileSpec[] {
   const root = `apps/${vars.name}`
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })

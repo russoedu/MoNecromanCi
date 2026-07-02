@@ -3,8 +3,10 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds the dotenv-wrapped per-environment Next.js build script line. */
 const buildEnvScript = (environment: string): string => `dotenv -e .env.${environment} -- node ../../tools/next-build.mjs ${environment}`
 
+/** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
     name:    vars.packageName,
@@ -25,6 +27,7 @@ function appPackageJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the NX project.json with build/serve/test/lint targets. */
 function appProjectJson (vars: ProjectVars): string {
   const run = (target: string): { executor: string, options: { command: string } } => ({
     executor: 'nx:run-commands',
@@ -50,6 +53,7 @@ function appProjectJson (vars: ProjectVars): string {
   })
 }
 
+/** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
     extends:         '../../tsconfig.base.json',
@@ -71,6 +75,7 @@ function appTsconfig (): string {
   })
 }
 
+/** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
     extends:     ['../../typedoc.json'],
@@ -88,6 +93,7 @@ const nextConfig = { output: process.env.NEXT_OUTPUT === 'export' ? 'export' : '
 export default nextConfig
 `
 
+/** Builds the root layout component source. */
 function layoutTsx (vars: ProjectVars): string {
   return `import type { ReactNode } from 'react'
 
@@ -139,6 +145,7 @@ describe('greet', () => {
 })
 `
 
+/** Builds a per-environment .env file. */
 function envFile (environment: string): string {
   return `NEXT_PUBLIC_ENVIRONMENT=${environment}\nNEXT_PUBLIC_API_URL=https://${environment}.example.com\n`
 }

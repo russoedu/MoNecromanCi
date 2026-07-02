@@ -4,10 +4,12 @@ import { TAGS } from './constants'
 import { readJsonSafe } from './fsx'
 import type { MonecromanciConfig, ProjectKind, ProjectVars } from './types'
 
+/** Reads the tags array from a parsed project.json. */
 function readTags (projectJson: Record<string, unknown>): string[] {
   return Array.isArray(projectJson.tags) ? projectJson.tags.map(String) : []
 }
 
+/** Whether the package declares a bin (top-level or via monecromanci.dist). */
 function hasBin (packageJson: Record<string, unknown>): boolean {
   if (packageJson.bin) {
     return true
@@ -49,6 +51,7 @@ function kindFromProject (projectJson: Record<string, unknown>, packageJson: Rec
   return undefined
 }
 
+/** Collects the managed project descriptors found in one area folder. */
 function scanArea (areaDirectory: string, config: MonecromanciConfig): ProjectVars[] {
   const projects: ProjectVars[] = []
   const entries = readdirSync(areaDirectory, { withFileTypes: true })
