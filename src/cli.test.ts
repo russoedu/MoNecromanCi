@@ -88,6 +88,7 @@ jest.mock('./commands/doctor', () => ({ runDoctor: jest.fn() }))
 jest.mock('./commands/update', () => ({ runUpdate: jest.fn() }))
 jest.mock('./commands/resurrect', () => ({ runResurrect: jest.fn() }))
 jest.mock('./commands/validate', () => ({ runValidate: jest.fn() }))
+jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
 
 const flush = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve))
@@ -95,12 +96,13 @@ const flush = async (): Promise<void> => {
 }
 
 interface CommandMocks {
-  runNew:       jest.MockedFunction<typeof import('./commands/new').runNew>
-  runAdd:       jest.MockedFunction<typeof import('./commands/add').runAdd>
-  runDoctor:    jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
-  runUpdate:    jest.MockedFunction<typeof import('./commands/update').runUpdate>
-  runResurrect: jest.MockedFunction<typeof import('./commands/resurrect').runResurrect>
-  runValidate:  jest.MockedFunction<typeof import('./commands/validate').runValidate>
+  runNew:         jest.MockedFunction<typeof import('./commands/new').runNew>
+  runAdd:         jest.MockedFunction<typeof import('./commands/add').runAdd>
+  runDoctor:      jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
+  runUpdate:      jest.MockedFunction<typeof import('./commands/update').runUpdate>
+  runResurrect:   jest.MockedFunction<typeof import('./commands/resurrect').runResurrect>
+  runValidate:    jest.MockedFunction<typeof import('./commands/validate').runValidate>
+  runInteractive: jest.MockedFunction<typeof import('./commands/interactive').runInteractive>
 }
 
 /**
@@ -117,13 +119,15 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     const { runUpdate } = await import('./commands/update')
     const { runResurrect } = await import('./commands/resurrect')
     const { runValidate } = await import('./commands/validate')
+    const { runInteractive } = await import('./commands/interactive')
     mocks = {
-      runNew:       jest.mocked(runNew),
-      runAdd:       jest.mocked(runAdd),
-      runDoctor:    jest.mocked(runDoctor),
-      runUpdate:    jest.mocked(runUpdate),
-      runResurrect: jest.mocked(runResurrect),
-      runValidate:  jest.mocked(runValidate),
+      runNew:         jest.mocked(runNew),
+      runAdd:         jest.mocked(runAdd),
+      runDoctor:      jest.mocked(runDoctor),
+      runUpdate:      jest.mocked(runUpdate),
+      runResurrect:   jest.mocked(runResurrect),
+      runValidate:    jest.mocked(runValidate),
+      runInteractive: jest.mocked(runInteractive),
     }
     mocks.runNew.mockResolvedValue()
     mocks.runAdd.mockResolvedValue()
@@ -131,6 +135,7 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     mocks.runUpdate.mockResolvedValue()
     mocks.runResurrect.mockResolvedValue()
     mocks.runValidate.mockResolvedValue()
+    mocks.runInteractive.mockResolvedValue()
     configure?.(mocks)
 
     await import('./cli')
@@ -219,6 +224,23 @@ describe('cli', () => {
     process.argv = ['node', 'cli.js', 'adopt']
     const mocks = await loadCli()
     expect(mocks.runResurrect).toHaveBeenCalled()
+  })
+
+  it('opens the interactive menu when invoked with no arguments', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js']
+    const mocks = await loadCli()
+    expect(mocks.runInteractive).toHaveBeenCalled()
+    expect(mocks.runDoctor).not.toHaveBeenCalled()
+  })
+
+  it('reports interactive-menu failures through the shared error handler', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js']
+    await loadCli((mocks) => mocks.runInteractive.mockReset().mockRejectedValue(new Error('menu boom')))
+    expect(errorSpy).toHaveBeenCalledWith('✗ menu boom')
+    expect(process.exitCode).toBe(1)
   })
 
   it('routes the magic alias "summon" to runNew', async () => {
