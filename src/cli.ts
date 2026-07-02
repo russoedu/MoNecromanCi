@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import { runAdd } from './commands/add'
 import { runDoctor } from './commands/doctor'
 import { runNew } from './commands/new'
+import { runResurrect } from './commands/resurrect'
 import { runUpdate } from './commands/update'
 import { runValidate } from './commands/validate'
 import { logger } from './util/logger'
@@ -93,6 +94,14 @@ program
   .description('Re-sync tool-owned files to the latest templates and apply migrations')
   .action(async () => {
     await runUpdate()
+  })
+
+program
+  .command('resurrect')
+  .alias('adopt')
+  .description('Adopt an existing monorepo: detect its projects and apply MoNecromanCI\'s canonical config')
+  .action(async () => {
+    await runResurrect()
   })
 
 program

@@ -9,13 +9,15 @@ const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): s
 /**
  * Pinned toolchain for generated monorepos (mirrors the proven JATO set).
  *
+ * @remarks
  * Shared entries (ESLint/TS/Jest toolchain) reuse the exact versions MoNecromanCI
  * itself depends on, sourced from this package's own `devDependencies`, so the
  * two never drift apart. Generated-repo-only packages (nx, esbuild, husky, the
  * commitlint/typedoc tooling) are pinned here directly since MoNecromanCI has no
- * use for them itself.
+ * use for them itself. Exported so `resurrect` can force-pin these versions in
+ * an adopted repo.
  */
-const DEV_DEPENDENCIES: Record<string, string> = {
+export const DEV_DEPENDENCIES: Record<string, string> = {
   '@commitlint/cli':                 '^21.1.0',
   '@commitlint/config-conventional': '^21.1.0',
   '@eslint/markdown':                sharedDependency('@eslint/markdown'),
