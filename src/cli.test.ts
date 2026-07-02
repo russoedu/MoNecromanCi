@@ -81,6 +81,7 @@ jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
 jest.mock('./commands/add', () => ({ runAdd: jest.fn() }))
 jest.mock('./commands/doctor', () => ({ runDoctor: jest.fn() }))
 jest.mock('./commands/update', () => ({ runUpdate: jest.fn() }))
+jest.mock('./commands/resurrect', () => ({ runResurrect: jest.fn() }))
 
 const flush = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve))
@@ -88,10 +89,11 @@ const flush = async (): Promise<void> => {
 }
 
 interface CommandMocks {
-  runNew:    jest.MockedFunction<typeof import('./commands/new').runNew>
-  runAdd:    jest.MockedFunction<typeof import('./commands/add').runAdd>
-  runDoctor: jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
-  runUpdate: jest.MockedFunction<typeof import('./commands/update').runUpdate>
+  runNew:       jest.MockedFunction<typeof import('./commands/new').runNew>
+  runAdd:       jest.MockedFunction<typeof import('./commands/add').runAdd>
+  runDoctor:    jest.MockedFunction<typeof import('./commands/doctor').runDoctor>
+  runUpdate:    jest.MockedFunction<typeof import('./commands/update').runUpdate>
+  runResurrect: jest.MockedFunction<typeof import('./commands/resurrect').runResurrect>
 }
 
 /**
@@ -106,16 +108,19 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     const { runAdd } = await import('./commands/add')
     const { runDoctor } = await import('./commands/doctor')
     const { runUpdate } = await import('./commands/update')
+    const { runResurrect } = await import('./commands/resurrect')
     mocks = {
-      runNew:    jest.mocked(runNew),
-      runAdd:    jest.mocked(runAdd),
-      runDoctor: jest.mocked(runDoctor),
-      runUpdate: jest.mocked(runUpdate),
+      runNew:       jest.mocked(runNew),
+      runAdd:       jest.mocked(runAdd),
+      runDoctor:    jest.mocked(runDoctor),
+      runUpdate:    jest.mocked(runUpdate),
+      runResurrect: jest.mocked(runResurrect),
     }
     mocks.runNew.mockResolvedValue()
     mocks.runAdd.mockResolvedValue()
     mocks.runDoctor.mockResolvedValue()
     mocks.runUpdate.mockResolvedValue()
+    mocks.runResurrect.mockResolvedValue()
     configure?.(mocks)
 
     await import('./cli')
@@ -197,6 +202,13 @@ describe('cli', () => {
     process.argv = ['node', 'cli.js', 'fix', '--fix']
     const mocks = await loadCli()
     expect(mocks.runDoctor).toHaveBeenCalledWith({ apply: true })
+  })
+
+  it('dispatches resurrect, including its adopt alias', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'adopt']
+    const mocks = await loadCli()
+    expect(mocks.runResurrect).toHaveBeenCalled()
   })
 
   it('logs the error message and sets a failing exit code when a command rejects', async () => {

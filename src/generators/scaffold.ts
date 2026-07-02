@@ -71,7 +71,21 @@ export function projectFiles (kind: ProjectKind, vars: ProjectVars): FileSpec[] 
   return filesForKind(kind, vars)
 }
 
-function applyRootDependencies (repoRoot: string, kind: ProjectKind): void {
+/**
+ * Merges the root-level dependencies a project kind requires into the
+ * monorepo's package.json.
+ *
+ * @remarks
+ * No-op for kinds with no entry in `ROOT_DEPENDENCIES` (only react apps and
+ * function apps require extra root deps). Existing versions are never changed.
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param kind - The project kind whose root dependencies to apply.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error raised while writing package.json.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function applyRootDependencies (repoRoot: string, kind: ProjectKind): void {
   const root = ROOT_DEPENDENCIES[kind]
   if (!root) {
     return
