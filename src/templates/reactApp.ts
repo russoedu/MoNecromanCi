@@ -82,11 +82,7 @@ function appTsconfigSpec (): string {
 const viteConfigTs = `import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-export default defineConfig({
-  plugins: [react()],
-  server: { port: 5173 },
-  build: { sourcemap: true },
-})
+export default defineConfig({ plugins: [react()], server: { port: 5173 }, build: { sourcemap: true } })
 `
 
 const viteEnvDts = `/// <reference types="vite/client" />
@@ -116,14 +112,21 @@ import { App } from './App'
 const environment = import.meta.env.VITE_ENVIRONMENT ?? 'local'
 console.info('Starting app in ' + environment + ' mode')
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.querySelector('#root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 )
 `
 
-const appTsx = `/** Root application component. */
+const appTsx = `/**
+ * Root application component.
+ *
+ * @remarks The app's UI entry point, rendered by main.tsx.
+ * @returns The rendered application markup.
+ * @throws Never - a pure render.
+ * @typeParam None - this component has no generic type parameters.
+ */
 export function App () {
   return (
     <main>
@@ -149,13 +152,7 @@ const jestConfigMjs = (name: string): string => String.raw`import { createConfig
 
 const base = createConfig('${name}')
 
-export default {
-  ...base,
-  testEnvironment: 'jsdom',
-  transform: {
-    '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: './tsconfig.spec.json' }],
-  },
-}
+export default { ...base, testEnvironment: 'jsdom', transform: { '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: './tsconfig.spec.json' }] } }
 `
 
 function envFile (environment: string): string {

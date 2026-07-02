@@ -17,7 +17,7 @@ describe('assetsRoot', () => {
 
     await jest.isolateModulesAsync(async () => {
       const fresh = await import('./assets')
-      expect(() => fresh.assetsRoot()).toThrow('MoNecromanCi assets directory not found')
+      expect(() => fresh.assetsRoot()).toThrow('MoNecromanCI assets directory not found')
     })
   })
 })

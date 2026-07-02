@@ -38,7 +38,7 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   const repoRoot = process.cwd()
 
   if (!isManagedRepo(repoRoot)) {
-    logger.error('No .monecromanci.json found here. Run `doctor` from a MoNecromanCi monorepo root.')
+    logger.error('No .monecromanci.json found here. Run `doctor` from a MoNecromanCI monorepo root.')
     return
   }
 
@@ -54,7 +54,8 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     scope:         config.scope,
     defaultBase:   config.defaultBase,
     nodeVersion:   config.nodeVersion,
-    azure:         config.azure,
+    ci:            config.ci,
+    registry:      config.registry,
   }
 
   const specs: FileSpec[] = [...monorepoFiles(vars)]

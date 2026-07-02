@@ -13,19 +13,31 @@ function hasBin (packageJson: Record<string, unknown>): boolean {
     return true
   }
 
-  const monecromanci = packageJson.monecromanci as { dist?: { bin?: unknown } } | undefined
-  return Boolean(monecromanci?.dist?.bin)
+  const marker = packageJson.monecromanci as { dist?: { bin?: unknown } } | undefined
+  return Boolean(marker?.dist?.bin)
 }
 
-/** Infers a project's MoNecromanCi kind from its tags (and bin for CLI vs lib). */
+/** Infers a project's MoNecromanCI kind from its tags (and bin for CLI vs lib). */
 function kindFromProject (projectJson: Record<string, unknown>, packageJson: Record<string, unknown>): ProjectKind | undefined {
   const tags = readTags(projectJson)
 
   if (tags.includes(TAGS.functionApp)) {
     return 'function-app'
   }
+  if (tags.includes(TAGS.nodeApp)) {
+    return 'node-app'
+  }
   if (tags.includes(TAGS.reactApp)) {
     return 'react-app'
+  }
+  if (tags.includes(TAGS.vueApp)) {
+    return 'vue-app'
+  }
+  if (tags.includes(TAGS.svelteApp)) {
+    return 'svelte-app'
+  }
+  if (tags.includes(TAGS.nextjsApp)) {
+    return 'nextjs-app'
   }
   if (tags.includes(TAGS.internalLib)) {
     return 'internal-lib'
@@ -55,14 +67,14 @@ function scanArea (areaDirectory: string, config: MonecromanciConfig): ProjectVa
     }
 
     const packageName = typeof packageJson.name === 'string' ? packageJson.name : `${config.scope}/${entry.name}`
-    projects.push({ kind, name: entry.name, packageName, scope: config.scope, azure: config.azure })
+    projects.push({ kind, name: entry.name, packageName, scope: config.scope, registry: config.registry })
   }
 
   return projects
 }
 
 /**
- * Scans apps/ and libs/ and returns the MoNecromanCi project descriptors found.
+ * Scans apps/ and libs/ and returns the MoNecromanCI project descriptors found.
  *
  * @remarks
  * Skips directories that don't carry a recognisable NX project/package kind

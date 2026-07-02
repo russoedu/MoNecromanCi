@@ -3,7 +3,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_BASE, TAGS } from './constants'
 import { fileExists, readJsonSafe, readTextSafe } from './fsx'
-import type { AzureConfig, MonorepoVars, ProjectKind } from './types'
+import type { AzureConfig, CiProvider, MonorepoVars, ProjectKind, RegistryConfig } from './types'
 
 /**
  * A project-kind guess plus the signals that produced it.
@@ -74,18 +74,21 @@ function hasViteConfig (projectDirectory: string): boolean {
  *
  * @remarks
  * Heuristic only — resurrect always asks the user to confirm. Signals, in
- * priority order: `host.json`/`@azure/functions` (function-app), react deps or
- * a vite config + index.html (react-app), a `bin` field (cli-tool), a
- * `publishConfig` or a non-private package (publishable-lib), and otherwise
- * internal-lib.
+ * priority order: `host.json`/`@azure/functions` (function-app), a `next`
+ * dependency (nextjs-app, checked before react since Next.js apps depend on
+ * react too), `vue`/`svelte` deps, react deps or a vite config + index.html
+ * (react-app). Anything else in apps/ falls back to node-app; in libs/, a
+ * `bin` field means cli-tool, a `publishConfig` or non-private package means
+ * publishable-lib, and otherwise internal-lib.
  *
  * @param projectDirectory - Absolute path to the project folder.
+ * @param area - Which area folder the project lives in (drives the fallback).
  * @returns The guessed kind plus the evidence that produced it.
  * @throws Never - delegates to {@link readJsonSafe}, which swallows read/parse
  * errors.
  * @typeParam None - this function has no generic type parameters.
  */
-export function detectKind (projectDirectory: string): DetectedKind {
+export function detectKind (projectDirectory: string, area: 'apps' | 'libs'): DetectedKind {
   const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'package.json'), {})
   const dependencies = allDependencies(packageJson)
   const evidence: string[] = []
@@ -100,6 +103,16 @@ export function detectKind (projectDirectory: string): DetectedKind {
     return { kind: 'function-app', evidence }
   }
 
+  if (dependencies.next) {
+    return { kind: 'nextjs-app', evidence: ['depends on next'] }
+  }
+  if (dependencies.vue) {
+    return { kind: 'vue-app', evidence: ['depends on vue'] }
+  }
+  if (dependencies.svelte) {
+    return { kind: 'svelte-app', evidence: ['depends on svelte'] }
+  }
+
   if (dependencies.react || dependencies['react-dom']) {
     evidence.push('depends on react')
   }
@@ -108,6 +121,10 @@ export function detectKind (projectDirectory: string): DetectedKind {
   }
   if (evidence.length > 0) {
     return { kind: 'react-app', evidence }
+  }
+
+  if (area === 'apps') {
+    return { kind: 'node-app', evidence: ['app without frontend or Azure Functions signals'] }
   }
 
   const monecromanci = packageJson.monecromanci as { dist?: { bin?: unknown } } | undefined
@@ -179,7 +196,7 @@ function scanAreaForCandidates (repoRoot: string, area: 'apps' | 'libs', scan: C
       name:        entry.name,
       path,
       packageName: typeof packageJson.name === 'string' ? packageJson.name : undefined,
-      detected:    detectKind(projectDirectory),
+      detected:    detectKind(projectDirectory, area),
     })
   }
 }
@@ -268,8 +285,10 @@ function detectScope (candidates: CandidateProject[]): string | undefined {
  * Nothing here is trusted blindly — every value is only used as the default of
  * an interactive prompt. Sources: root package.json `name` (workspace/display
  * name), the most common `@scope` among project package names, `engines.node`
- * digits, git's origin/HEAD symref (default branch), and any Azure Artifacts
- * registry URL found in `.npmrc` or a project's `publishConfig`.
+ * digits, git's origin/HEAD symref (default branch), existing CI files
+ * (`.github/workflows` and/or `azure-pipelines.yml`), and any Azure Artifacts
+ * or GitHub Packages registry URL found in `.npmrc` or a project's
+ * `publishConfig`.
  *
  * @param repoRoot - Absolute path to the repo root.
  * @param candidates - The projects found by {@link findCandidates}.
@@ -302,6 +321,11 @@ export function detectRepoDefaults (repoRoot: string, candidates: CandidateProje
 
   defaults.defaultBase = detectDefaultBase(repoRoot)
 
+  const ci = detectCi(repoRoot)
+  if (ci) {
+    defaults.ci = ci
+  }
+
   const registrySources = [
     readTextSafe(join(repoRoot, '.npmrc')),
     ...candidates.map((candidate) => {
@@ -310,13 +334,38 @@ export function detectRepoDefaults (repoRoot: string, candidates: CandidateProje
       return publishConfig?.registry ?? ''
     }),
   ]
-  for (const source of registrySources) {
-    const azure = azureFromText(source)
-    if (azure) {
-      defaults.azure = azure
-      break
-    }
+  const registry = detectRegistry(registrySources, defaults.scope)
+  if (registry) {
+    defaults.registry = registry
   }
 
   return defaults
+}
+
+/** Infers the CI provider(s) from the CI files already present in the repo. */
+function detectCi (repoRoot: string): CiProvider | undefined {
+  const hasGithub = existsSync(join(repoRoot, '.github', 'workflows'))
+  const hasAzure = fileExists(join(repoRoot, 'azure-pipelines.yml'))
+
+  if (hasGithub && hasAzure) {
+    return 'both'
+  }
+  if (hasGithub) {
+    return 'github'
+  }
+  return hasAzure ? 'azure' : undefined
+}
+
+/** Infers the publish registry from registry URLs found in .npmrc/publishConfig. */
+function detectRegistry (sources: string[], scope: string | undefined): RegistryConfig | undefined {
+  for (const source of sources) {
+    const azure = azureFromText(source)
+    if (azure) {
+      return { kind: 'azure-artifacts', ...azure }
+    }
+    if (source.includes('npm.pkg.github.com')) {
+      return { kind: 'github-packages', owner: scope ? scope.replace(/^@/, '') : 'my-org' }
+    }
+  }
+  return undefined
 }

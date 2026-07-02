@@ -13,8 +13,8 @@
  * Run from a project directory (cwd = project root) after the build emits dist:
  *   tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs
  *
- * Dist field overrides (main/types/bin) come from `monecromanci.dist` in the project
- * package.json.
+ * Dist field overrides (main/types/bin) come from `monecromanci.dist` in the
+ * project package.json.
  */
 import { builtinModules } from 'node:module'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'

@@ -4,6 +4,7 @@ steps:
     condition: >
       and(succeeded(),
           or(eq(variables['HAS_FUNCTION_APPS'], 'true'),
+             eq(variables['HAS_NODE_APPS'], 'true'),
              eq(variables['HAS_REACT_APPS'], 'true')))
 
   - task: PublishBuildArtifacts@1
@@ -20,6 +21,13 @@ steps:
       targetPath: $(Build.ArtifactStagingDirectory)/function-app-configurations
       artifact: config-function-apps
       publishLocation: pipeline
+
+  - task: PublishBuildArtifacts@1
+    displayName: "[03] Publish Node app artifacts"
+    condition: and(succeeded(), eq(variables['HAS_NODE_APPS'], 'true'))
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/node-apps
+      ArtifactName: drop-node-apps
 
   - task: PublishBuildArtifacts@1
     displayName: "[03] Publish React app artifacts"

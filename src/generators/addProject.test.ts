@@ -22,7 +22,8 @@ const vars: MonorepoVars = {
   scope:         '@demo',
   defaultBase:   'main',
   nodeVersion:   '24',
-  azure:         { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  ci:            'azure',
+  registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
 }
 
 let repoRoot: string
@@ -46,7 +47,7 @@ function readManifest (): Record<string, unknown> {
 }
 
 describe('runAdd', () => {
-  it('errors when the directory is not a MoNecromanCi repo', async () => {
+  it('errors when the directory is not a MoNecromanCI repo', async () => {
     await runAdd({ type: 'internal-lib', name: 'foo' })
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .monecromanci.json found'))
     expect(mockSelect).not.toHaveBeenCalled()

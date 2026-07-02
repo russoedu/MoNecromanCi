@@ -96,7 +96,15 @@ function libTypedoc (): string {
 const indexTs = `export * from './greeter'
 `
 
-const greeterTs = `/** Returns a friendly greeting for the given name. */
+const greeterTs = `/**
+ * Returns a friendly greeting for the given name.
+ *
+ * @remarks Demonstrates step-into-source debugging across internal libraries.
+ * @param name - The name to greet (surrounding whitespace is trimmed).
+ * @returns The greeting text.
+ * @throws Never - performs no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
 export function greet (name: string): string {
   const trimmed = name.trim() // ← set a breakpoint here, then run "Debug Jest (current file)"
 

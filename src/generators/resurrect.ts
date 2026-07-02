@@ -7,7 +7,7 @@ import type { CandidateProject } from '../engine/detect'
 import { fileExists } from '../engine/fsx'
 import { mergeManifest, setRootDependencies } from '../engine/rootPackage'
 import type { ManifestTemplate } from '../engine/rootPackage'
-import type { MonecromanciConfig, MonorepoVars, ProjectKind, ProjectVars } from '../engine/types'
+import type { CiProvider, MonecromanciConfig, MonorepoVars, ProjectKind, ProjectVars, RegistryConfig } from '../engine/types'
 import { DEV_DEPENDENCIES, monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
 import { checkbox, confirm, promptText, select } from '../util/prompts'
@@ -19,7 +19,11 @@ const KIND_LABELS: Record<ProjectKind, string> = {
   'publishable-lib': 'Publishable library',
   'cli-tool':        'CLI tool',
   'function-app':    'Azure Function App',
+  'node-app':        'Node.js app (generic server)',
   'react-app':       'React app',
+  'vue-app':         'Vue app',
+  'svelte-app':      'Svelte app',
+  'nextjs-app':      'Next.js app (full-stack)',
 }
 
 /** The area folder each kind's templates hardcode. */
@@ -28,7 +32,11 @@ const KIND_AREAS: Record<ProjectKind, 'apps' | 'libs'> = {
   'publishable-lib': 'libs',
   'cli-tool':        'libs',
   'function-app':    'apps',
+  'node-app':        'apps',
   'react-app':       'apps',
+  'vue-app':         'apps',
+  'svelte-app':      'apps',
+  'nextjs-app':      'apps',
 }
 
 /** Asks the user to confirm (or correct) a candidate's detected kind. */
@@ -58,16 +66,60 @@ async function confirmKind (candidate: CandidateProject): Promise<ProjectKind | 
   return answer
 }
 
+/** A select that lists the detected value first, marked as such. */
+async function selectWithDetected<T extends string> (message: string, choices: Array<{ name: string, value: T }>, detected: T | undefined): Promise<T> {
+  const ordered = detected
+    ? [
+        { name: `${choices.find((choice) => choice.value === detected)?.name ?? detected} (detected)`, value: detected },
+        ...choices.filter((choice) => choice.value !== detected),
+      ]
+    : choices
+  return await select<T>({ message, choices: ordered })
+}
+
+/** Prompts for the publish registry, defaulting to whatever could be detected. */
+async function promptRegistry (ci: CiProvider, detected: RegistryConfig | undefined): Promise<RegistryConfig> {
+  const fallbackKind: RegistryConfig['kind'] = detected?.kind ?? (ci === 'github' ? 'github-packages' : 'azure-artifacts')
+  const kind = await selectWithDetected<RegistryConfig['kind']>('Package registry', [
+    { name: 'Azure Artifacts', value: 'azure-artifacts' },
+    { name: 'GitHub Packages', value: 'github-packages' },
+    { name: 'Public npm', value: 'npm' },
+  ], fallbackKind)
+
+  if (kind === 'azure-artifacts') {
+    const detectedAzure = detected?.kind === 'azure-artifacts' ? detected : undefined
+    const organization = await promptText('Azure DevOps organization', detectedAzure?.organization ?? 'my-org')
+    const project = await promptText('Azure DevOps project', detectedAzure?.project ?? 'Automation')
+    const artifactsFeed = await promptText('Azure Artifacts feed', detectedAzure?.artifactsFeed ?? 'AUTO')
+    return { kind, organization, project, artifactsFeed }
+  }
+
+  if (kind === 'github-packages') {
+    const detectedOwner = detected?.kind === 'github-packages' ? detected.owner : undefined
+    const owner = await promptText('GitHub owner (org or user)', detectedOwner ?? 'my-org')
+    return { kind, owner }
+  }
+
+  return { kind: 'npm' }
+}
+
 /** Prompts for the stamp inputs, defaulting to whatever could be detected. */
 async function promptRepoVars (repoRoot: string, candidates: CandidateProject[]): Promise<MonorepoVars> {
   const defaults = detectRepoDefaults(repoRoot, candidates)
 
   const displayName = await promptText('Monorepo name', defaults.displayName ?? 'My Monorepo')
-  const scopeInput = await promptText('npm scope', defaults.scope ?? '@auto')
+
+  const ci = await selectWithDetected<CiProvider>('CI provider', [
+    { name: 'Azure DevOps Pipelines', value: 'azure' },
+    { name: 'GitHub Actions', value: 'github' },
+    { name: 'Both', value: 'both' },
+  ], defaults.ci ?? 'azure')
+
+  const registry = await promptRegistry(ci, defaults.registry)
+
+  const defaultScope = defaults.scope ?? (registry.kind === 'github-packages' ? `@${registry.owner}` : '@auto')
+  const scopeInput = await promptText('npm scope', defaultScope)
   const scope = scopeInput.startsWith('@') ? scopeInput : `@${scopeInput}`
-  const organization = await promptText('Azure DevOps organization', defaults.azure?.organization ?? 'my-org')
-  const project = await promptText('Azure DevOps project', defaults.azure?.project ?? 'Automation')
-  const artifactsFeed = await promptText('Azure Artifacts feed', defaults.azure?.artifactsFeed ?? 'AUTO')
   const defaultBase = await promptText('Default git branch', defaults.defaultBase ?? DEFAULT_BASE)
 
   return {
@@ -76,7 +128,8 @@ async function promptRepoVars (repoRoot: string, candidates: CandidateProject[])
     scope,
     defaultBase,
     nodeVersion:   defaults.nodeVersion ?? DEFAULT_NODE_VERSION,
-    azure:         { organization, project, artifactsFeed },
+    ci,
+    registry,
   }
 }
 
@@ -115,7 +168,7 @@ function resurrectProject (repoRoot: string, candidate: CandidateProject, kind: 
     name:        candidate.name,
     packageName: candidate.packageName ?? `${config.scope}/${candidate.name}`,
     scope:       config.scope,
-    azure:       config.azure,
+    registry:    config.registry,
   }
 
   logger.step(`Resurrecting ${kind} '${candidate.path}' (${vars.packageName})`)
@@ -196,7 +249,8 @@ export async function runResurrect (): Promise<void> {
         scope:         existingConfig.scope,
         defaultBase:   existingConfig.defaultBase,
         nodeVersion:   existingConfig.nodeVersion,
-        azure:         existingConfig.azure,
+        ci:            existingConfig.ci,
+        registry:      existingConfig.registry,
       }
     : await promptRepoVars(repoRoot, scan.candidates)
 

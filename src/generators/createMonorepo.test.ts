@@ -7,12 +7,14 @@ import { runNew } from './createMonorepo'
 jest.mock('../util/prompts', () => ({
   confirm:    jest.fn(),
   promptText: jest.fn(),
+  select:     jest.fn(),
 }))
 
-import { confirm, promptText } from '../util/prompts'
+import { confirm, promptText, select } from '../util/prompts'
 
 const mockConfirm = jest.mocked(confirm)
 const mockPromptText = jest.mocked(promptText)
+const mockSelect = jest.mocked(select)
 
 let cwdDirectory: string
 let logSpy: jest.SpyInstance
@@ -23,6 +25,11 @@ beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue(cwdDirectory)
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+  // CI provider + registry kind prompts: default to Azure DevOps / Azure Artifacts.
+  mockSelect.mockImplementation((options) => {
+    const { message } = options as { message: string }
+    return Promise.resolve(message === 'CI provider' ? 'azure' : 'azure-artifacts') as never
+  })
 })
 
 afterEach(() => {
@@ -114,7 +121,9 @@ describe('runNew', () => {
     expect(mockPromptText).toHaveBeenCalledWith('Azure DevOps organization', 'my-org')
     expect(mockPromptText).toHaveBeenCalledWith('npm scope', '@auto')
     const target = join(cwdDirectory, 'partial')
-    expect(loadConfig(target)?.azure.organization).toBe('my-org')
+    const registry = loadConfig(target)?.registry
+    expect(registry?.kind).toBe('azure-artifacts')
+    expect(registry?.kind === 'azure-artifacts' && registry.organization).toBe('my-org')
   })
 
   it('skips the initial library when the prompt is declined', async () => {

@@ -36,7 +36,7 @@ export const assetsRoot = (() => {
       directory = parent
     }
 
-    throw new Error('MoNecromanCi assets directory not found')
+    throw new Error('MoNecromanCI assets directory not found')
   }
 })()
 

@@ -1,10 +1,10 @@
 {
   "name": "monecromanci",
-  "version": "0.0.0",
-  "description": "Interactive CLI to create and fix NX monorepos for Azure DevOps (function apps, React apps, internal/publishable libs, CLI tools).",
+  "version": "0.1.1",
+  "description": "MoNecromanCI — interactive CLI to summon, conjure, raise and validate NX monorepos (Azure DevOps & GitHub Actions): function/node apps, React/Vue/Svelte/Next.js apps, internal/publishable libs, CLI tools.",
   "bin": {
     "monecromanci": "./dist/cli.js",
-    "nxm": "./dist/cli.js"
+    "mnci": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -13,6 +13,7 @@
     "node": "^22.13.0 || >=24"
   },
   "scripts": {
+    "prepack": "npm run build",
     "build": "tsup && node scripts/copyAssets.mjs",
     "dev": "tsup --watch",
     "lint": "eslint .",

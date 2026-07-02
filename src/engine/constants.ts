@@ -5,7 +5,7 @@
  * `doctor`/`update` compare this against the stamp on disk to know whether a
  * repo's tool-owned files need re-syncing.
  */
-export const TEMPLATE_VERSION = '0.1.0'
+export const TEMPLATE_VERSION = '0.2.0'
 
 /**
  * Name of the per-repo manifest that records how a repo was generated.
@@ -40,7 +40,11 @@ export const DEFAULT_BASE = 'main'
  */
 export const TAGS = {
   functionApp:    'type:function-app',
+  nodeApp:        'type:node-app',
   reactApp:       'type:react-app',
+  vueApp:         'type:vue-app',
+  svelteApp:      'type:svelte-app',
+  nextjsApp:      'type:nextjs-app',
   publishableLib: 'type:publishable-lib',
   internalLib:    'type:internal-lib',
   ignore:         'ci:ignore',

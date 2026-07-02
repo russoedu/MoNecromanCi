@@ -29,42 +29,60 @@ function writeProject (area: 'apps' | 'libs', name: string, packageJson: Record<
 describe('detectKind', () => {
   it('detects a function app from host.json and @azure/functions', () => {
     const directory = writeProject('apps', 'func', { private: true, dependencies: { '@azure/functions': '^4.0.0' } }, { 'host.json': '{}' })
-    const detected = detectKind(directory)
+    const detected = detectKind(directory, 'apps')
     expect(detected.kind).toBe('function-app')
     expect(detected.evidence).toEqual(['has host.json', 'depends on @azure/functions'])
   })
 
+  it('detects a nextjs app before react (next apps depend on react too)', () => {
+    const directory = writeProject('apps', 'full', { private: true, dependencies: { next: '^15.0.0', react: '^19.0.0' } })
+    expect(detectKind(directory, 'apps')).toEqual({ kind: 'nextjs-app', evidence: ['depends on next'] })
+  })
+
+  it('detects vue and svelte apps from their framework dependency', () => {
+    const vue = writeProject('apps', 'vueapp', { private: true, dependencies: { vue: '^3.5.0' } })
+    expect(detectKind(vue, 'apps').kind).toBe('vue-app')
+
+    const svelte = writeProject('apps', 'svapp', { private: true, devDependencies: { svelte: '^5.0.0' } })
+    expect(detectKind(svelte, 'apps').kind).toBe('svelte-app')
+  })
+
   it('detects a react app from a react dependency', () => {
     const directory = writeProject('apps', 'web', { private: true, dependencies: { react: '^19.0.0' } })
-    expect(detectKind(directory)).toEqual({ kind: 'react-app', evidence: ['depends on react'] })
+    expect(detectKind(directory, 'apps')).toEqual({ kind: 'react-app', evidence: ['depends on react'] })
   })
 
   it('detects a react app from a vite config plus index.html', () => {
     const directory = writeProject('apps', 'site', { private: true }, { 'vite.config.ts': '', 'index.html': '<html></html>' })
-    expect(detectKind(directory)).toEqual({ kind: 'react-app', evidence: ['has a vite config and index.html'] })
+    expect(detectKind(directory, 'apps')).toEqual({ kind: 'react-app', evidence: ['has a vite config and index.html'] })
+  })
+
+  it('falls back to node-app for an apps/ project with no frontend signals', () => {
+    const directory = writeProject('apps', 'server', { private: true, dependencies: { express: '^5.0.0' } })
+    expect(detectKind(directory, 'apps').kind).toBe('node-app')
   })
 
   it('detects a cli tool from a bin field', () => {
     const directory = writeProject('libs', 'tool', { private: true, bin: { tool: './cli.js' } })
-    expect(detectKind(directory).kind).toBe('cli-tool')
+    expect(detectKind(directory, 'libs').kind).toBe('cli-tool')
   })
 
   it('detects a cli tool from monecromanci.dist.bin', () => {
     const directory = writeProject('libs', 'tool2', { private: true, monecromanci: { dist: { bin: { tool2: './cli.js' } } } })
-    expect(detectKind(directory).kind).toBe('cli-tool')
+    expect(detectKind(directory, 'libs').kind).toBe('cli-tool')
   })
 
   it('detects a publishable lib from publishConfig or a non-private package', () => {
     const published = writeProject('libs', 'pub', { private: true, publishConfig: { registry: 'https://example.com' } })
-    expect(detectKind(published).kind).toBe('publishable-lib')
+    expect(detectKind(published, 'libs').kind).toBe('publishable-lib')
 
     const nonPrivate = writeProject('libs', 'open', { name: '@demo/open' })
-    expect(detectKind(nonPrivate)).toEqual({ kind: 'publishable-lib', evidence: ['is not marked private'] })
+    expect(detectKind(nonPrivate, 'libs')).toEqual({ kind: 'publishable-lib', evidence: ['is not marked private'] })
   })
 
   it('falls back to internal-lib for a private package with no app signals', () => {
     const directory = writeProject('libs', 'helpers', { private: true })
-    expect(detectKind(directory).kind).toBe('internal-lib')
+    expect(detectKind(directory, 'libs').kind).toBe('internal-lib')
   })
 })
 
@@ -118,16 +136,16 @@ describe('detectRepoDefaults', () => {
     expect(defaults.defaultBase).toBe('main')
   })
 
-  it('parses Azure coordinates from .npmrc registry URLs', () => {
+  it('parses an Azure Artifacts registry from .npmrc registry URLs', () => {
     writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'plain' }))
     writeFileSync(join(repoRoot, '.npmrc'), '@acme:registry=https://pkgs.dev.azure.com/my-org/MyProject/_packaging/MyFeed/npm/registry/\n')
 
     const defaults = detectRepoDefaults(repoRoot, [])
 
-    expect(defaults.azure).toEqual({ organization: 'my-org', project: 'MyProject', artifactsFeed: 'MyFeed' })
+    expect(defaults.registry).toEqual({ kind: 'azure-artifacts', organization: 'my-org', project: 'MyProject', artifactsFeed: 'MyFeed' })
   })
 
-  it('parses Azure coordinates from a project publishConfig when .npmrc has none', () => {
+  it('parses an Azure Artifacts registry from a project publishConfig when .npmrc has none', () => {
     writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'plain' }))
     writeProject('libs', 'pub', {
       name:          '@acme/pub',
@@ -136,7 +154,30 @@ describe('detectRepoDefaults', () => {
 
     const defaults = detectRepoDefaults(repoRoot, candidatesFor())
 
-    expect(defaults.azure).toEqual({ organization: 'org2', project: 'Proj2', artifactsFeed: 'Feed2' })
+    expect(defaults.registry).toEqual({ kind: 'azure-artifacts', organization: 'org2', project: 'Proj2', artifactsFeed: 'Feed2' })
+  })
+
+  it('detects a GitHub Packages registry and derives the owner from the scope', () => {
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: '@acme/legacy' }))
+    writeFileSync(join(repoRoot, '.npmrc'), '@acme:registry=https://npm.pkg.github.com/\n')
+
+    const defaults = detectRepoDefaults(repoRoot, [])
+
+    expect(defaults.registry).toEqual({ kind: 'github-packages', owner: 'acme' })
+  })
+
+  it('infers the CI provider from existing CI files', () => {
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'plain' }))
+    expect(detectRepoDefaults(repoRoot, []).ci).toBeUndefined()
+
+    writeFileSync(join(repoRoot, 'azure-pipelines.yml'), '')
+    expect(detectRepoDefaults(repoRoot, []).ci).toBe('azure')
+
+    mkdirSync(join(repoRoot, '.github', 'workflows'), { recursive: true })
+    expect(detectRepoDefaults(repoRoot, []).ci).toBe('both')
+
+    rmSync(join(repoRoot, 'azure-pipelines.yml'))
+    expect(detectRepoDefaults(repoRoot, []).ci).toBe('github')
   })
 
   it('reads the default branch from git origin/HEAD when available', () => {
@@ -155,7 +196,7 @@ describe('detectRepoDefaults', () => {
     expect(defaults.workspaceName).toBeUndefined()
     expect(defaults.scope).toBeUndefined()
     expect(defaults.nodeVersion).toBeUndefined()
-    expect(defaults.azure).toBeUndefined()
+    expect(defaults.registry).toBeUndefined()
     expect(defaults.defaultBase).toBe('main')
   })
 })

@@ -18,7 +18,8 @@ const config: MonecromanciConfig = {
   scope:           '@demo',
   defaultBase:     'main',
   nodeVersion:     '24',
-  azure:           { organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  ci:              'azure',
+  registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
 }
 
 const mockSyncToolOwned = jest.mocked(syncToolOwned)
@@ -42,7 +43,7 @@ afterEach(() => {
 })
 
 describe('runDoctor', () => {
-  it('errors when the directory is not a MoNecromanCi repo', async () => {
+  it('errors when the directory is not a MoNecromanCI repo', async () => {
     await runDoctor({ apply: false })
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No .monecromanci.json found'))
     expect(mockSyncToolOwned).not.toHaveBeenCalled()
