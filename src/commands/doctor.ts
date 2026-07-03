@@ -1,5 +1,6 @@
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { TEMPLATE_VERSION } from '../engine/constants'
+import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
 import { syncToolOwned } from '../engine/sync'
 import type { FileSpec, MonorepoVars } from '../engine/types'
@@ -47,6 +48,9 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     logger.error('Could not read .monecromanci.json.')
     return
   }
+
+  // The guide travels with every command, even a report-only doctor run.
+  syncGuide(repoRoot)
 
   const vars: MonorepoVars = {
     workspaceName: config.workspaceName,

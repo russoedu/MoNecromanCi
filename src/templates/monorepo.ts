@@ -568,6 +568,7 @@ export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
     toolOwned('commitlint.config.mjs', commitlintConfigMjs),
     scaffold('.husky/commit-msg', huskyCommitMessage),
     scaffold('README.md', readme(vars)),
+    toolOwned('MoNecromanCi.md', readAsset('MoNecromanCi.md')),
     scaffold('docs/nx-release.md', nxReleaseDocument(vars)),
     toolOwned(`${vars.displayName}.code-workspace`, codeWorkspace(vars)),
     ...pipelineFiles(vars),
