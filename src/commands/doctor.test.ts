@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TAGS, TEMPLATE_VERSION } from '../engine/constants'
@@ -35,6 +35,8 @@ beforeEach(() => {
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+  // Generated repos always carry this in their scaffold .npmrc.
+  writeFileSync(join(repoRoot, '.npmrc'), 'legacy-peer-deps=true\n')
 })
 
 afterEach(() => {
@@ -83,7 +85,7 @@ describe('runDoctor', () => {
     mockSyncToolOwned.mockReturnValue({ ok: [], missing: ['m.json'], drift: [], fixed: ['m.json'] })
     await runDoctor({ apply: true })
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fixed:   m.json'))
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`Repaired 1 file(s); stamped template version ${TEMPLATE_VERSION}`))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`Repaired 1 issue(s); stamped template version ${TEMPLATE_VERSION}`))
     expect(loadConfig(repoRoot)?.templateVersion).toBe(TEMPLATE_VERSION)
   })
 
@@ -93,6 +95,35 @@ describe('runDoctor', () => {
     mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['d.json'], fixed: ['d.json'] })
     await runDoctor({ apply: true })
     expect(saveConfigSpy).toHaveBeenCalledWith(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
+  })
+
+  it('flags superseded lint packages and a missing legacy-peer-deps as issues', async () => {
+    saveConfig(repoRoot, config)
+    rmSync(join(repoRoot, '.npmrc'))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { 'eslint-config-standard': '^17.1.0' } }))
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: false })
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('superseded lint package \'eslint-config-standard\''))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing legacy-peer-deps'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('2 issue(s) found'))
+    // Report-only: nothing was changed.
+    expect(existsSync(join(repoRoot, '.npmrc'))).toBe(false)
+  })
+
+  it('removes superseded lint packages and repairs .npmrc with --fix', async () => {
+    saveConfig(repoRoot, config)
+    rmSync(join(repoRoot, '.npmrc'))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { 'eslint-config-standard': '^17.1.0', eslint: '^10.6.0' } }))
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: true })
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed superseded lint package \'eslint-config-standard\''))
+    const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
+    expect(manifest.devDependencies).toEqual({ eslint: '^10.6.0' })
+    expect(readFileSync(join(repoRoot, '.npmrc'), 'utf8')).toContain('legacy-peer-deps=true')
   })
 
   it('includes discovered projects specs alongside the monorepo specs', async () => {

@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { applyFiles, reportApply } from '../engine/apply'
 import { configFromVars, isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { DEFAULT_BASE, DEFAULT_NODE_VERSION } from '../engine/constants'
+import { ensureLegacyPeerDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { detectRepoDefaults, findCandidates } from '../engine/detect'
 import type { CandidateProject } from '../engine/detect'
 import { fileExists } from '../engine/fsx'
@@ -156,6 +157,15 @@ function resurrectRoot (repoRoot: string, vars: MonorepoVars): void {
   const pinned = setRootDependencies(repoRoot, DEV_DEPENDENCIES, 'devDependencies')
   if (pinned.length > 0) {
     logger.step(`pinned toolchain versions: ${pinned.join(', ')}`)
+  }
+
+  const removed = removeSupersededDependencies(repoRoot)
+  if (removed.length > 0) {
+    logger.step(`removed superseded lint packages: ${removed.join(', ')} (replaced by the tool-owned eslint.config.mjs)`)
+  }
+  if (isLegacyPeerDependenciesMissing(repoRoot)) {
+    ensureLegacyPeerDependencies(repoRoot)
+    logger.step('added legacy-peer-deps=true to .npmrc')
   }
 
   saveConfig(repoRoot, configFromVars(vars))
