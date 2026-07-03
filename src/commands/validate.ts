@@ -1,4 +1,5 @@
 import { isManagedRepo } from '../engine/config'
+import { syncGuide } from '../engine/guide'
 import { runShell } from '../util/exec'
 import { logger } from '../util/logger'
 
@@ -35,6 +36,8 @@ export async function runValidate (options: ValidateOptions): Promise<void> {
     logger.error('No .monecromanci.json found here. Run `validate` from a MoNecromanCI monorepo root.')
     return
   }
+
+  syncGuide(repoRoot)
 
   const arguments_ = ['nx', options.all ? 'run-many' : 'affected', '-t', 'lint', 'test', 'build']
 

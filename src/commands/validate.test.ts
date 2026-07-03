@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { saveConfig } from '../engine/config'
@@ -53,6 +53,7 @@ describe('runValidate', () => {
     mockRunShell.mockReturnValue(0)
     await runValidate({ all: false })
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['nx', 'affected', '-t', 'lint', 'test', 'build'], repoRoot)
+    expect(existsSync(join(repoRoot, 'MoNecromanCi.md'))).toBe(true)
   })
 
   it('runs nx run-many when --all is set', async () => {

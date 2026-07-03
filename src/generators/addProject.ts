@@ -1,4 +1,5 @@
 import { isManagedRepo, loadConfig } from '../engine/config'
+import { syncGuide } from '../engine/guide'
 import type { ProjectKind } from '../engine/types'
 import { logger } from '../util/logger'
 import { promptText, select } from '../util/prompts'
@@ -62,5 +63,6 @@ export async function runAdd (options: AddOptions): Promise<void> {
 
   const name = toSlug(options.name ?? await promptText('Project name'))
   generateProject(repoRoot, kind, name, config)
+  syncGuide(repoRoot)
   logger.success('Done. Run `npm install` to link the new workspace, then `npm run graph`.')
 }

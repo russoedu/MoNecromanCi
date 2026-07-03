@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TAGS, TEMPLATE_VERSION } from '../engine/constants'
@@ -65,6 +65,8 @@ describe('runDoctor', () => {
     await runDoctor({ apply: false })
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Everything is in sync (1 tool-owned files checked)'))
     expect(saveConfigSpy).not.toHaveBeenCalled()
+    // The guide travels with every command, even a report-only doctor run.
+    expect(existsSync(join(repoRoot, 'MoNecromanCi.md'))).toBe(true)
   })
 
   it('reports issues without writing fixes when apply is false', async () => {
