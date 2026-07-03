@@ -1,5 +1,6 @@
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { TEMPLATE_VERSION } from '../engine/constants'
+import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
 import { syncToolOwned } from '../engine/sync'
@@ -79,7 +80,8 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     logger.success(`fixed:   ${path}`)
   }
 
-  const issues = report.missing.length + report.drift.length
+  const dependencyIssues = checkDependencyHealth(repoRoot, options.apply)
+  const issues = report.missing.length + report.drift.length + dependencyIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -92,5 +94,48 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   saveConfig(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
-  logger.success(`Repaired ${report.fixed.length} file(s); stamped template version ${TEMPLATE_VERSION}.`)
+  logger.success(`Repaired ${issues} issue(s); stamped template version ${TEMPLATE_VERSION}.`)
+}
+
+/**
+ * Reports (and with `shouldApply`, repairs) dependency problems that break
+ * `npm install` even when every tool-owned file is in sync.
+ *
+ * @remarks
+ * Two checks: superseded lint packages left over from before adoption (they
+ * peer-conflict with the pinned toolchain — e.g. `eslint-config-standard`
+ * requires `eslint-plugin-n@^15||^16` while the toolchain pins `^18`), and a
+ * `.npmrc` missing `legacy-peer-deps=true` (ESLint 10 is ahead of some
+ * plugins' declared peer ranges).
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param shouldApply - Whether to repair the problems or only report them.
+ * @returns The number of issues found.
+ * @throws Propagates any Node.js `fs` error raised while repairing.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkDependencyHealth (repoRoot: string, shouldApply: boolean): number {
+  let issues = 0
+
+  const superseded = shouldApply ? removeSupersededDependencies(repoRoot) : findSupersededDependencies(repoRoot)
+  for (const name of superseded) {
+    issues += 1
+    if (shouldApply) {
+      logger.success(`removed superseded lint package '${name}' (replaced by the tool-owned eslint.config.mjs)`)
+    } else {
+      logger.warn(`superseded lint package '${name}' conflicts with the pinned toolchain — \`npm install\` will fail until it is removed`)
+    }
+  }
+
+  if (isLegacyPeerDependenciesMissing(repoRoot)) {
+    issues += 1
+    if (shouldApply) {
+      ensureLegacyPeerDependencies(repoRoot)
+      logger.success('added legacy-peer-deps=true to .npmrc (ESLint 10 is ahead of some plugins\' peer ranges)')
+    } else {
+      logger.warn('.npmrc is missing legacy-peer-deps=true — `npm install` may fail on ESLint peer ranges')
+    }
+  }
+
+  return issues
 }

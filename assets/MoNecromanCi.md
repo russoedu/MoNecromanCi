@@ -53,7 +53,7 @@ below. Each command also has a necromancy alias — use whichever reads better:
 | `monecromanci new [name]`      | `summon`    | Scaffold a brand-new monorepo (prompts: CI provider, registry, scope, base branch, initial lib). Scriptable: `--yes --ci github --registry github-packages --owner acme`. |
 | `monecromanci add [type]`      | `conjure`   | Add a project: `internal-lib`, `publishable-lib`, `cli-tool`, `function-app`, `node-app`, `react-app`, `vue-app`, `svelte-app`, `nextjs-app`. |
 | `monecromanci resurrect`       | `adopt`     | Adopt an existing monorepo: detect projects under `apps/`/`libs/`, confirm each kind, pick which to manage, apply the canonical config. Re-run anytime to adopt the rest. |
-| `monecromanci doctor [--fix]`  | `raise`, `fix` | Compare every tool-owned file against canonical; report drift (and repair it with `--fix`). |
+| `monecromanci doctor [--fix]`  | `raise`, `fix` | Compare every tool-owned file against canonical and check dependency health (superseded lint packages, missing `legacy-peer-deps`); report issues (and repair them with `--fix`). |
 | `monecromanci update`          | `ascend`    | `doctor --fix` + re-stamp the template version — run after upgrading MoNecromanCI itself. |
 | `monecromanci validate [--all]`| `ritual`    | Run `nx affected -t lint test build` locally (`--all` = every project) before pushing to CI. |
 
