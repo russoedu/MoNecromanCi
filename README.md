@@ -39,6 +39,8 @@ monecromanci resurrect        # adopt     · adopt an existing monorepo: detect 
 monecromanci doctor [--fix]   # raise/fix · detect (and with --fix, repair) tool-owned config drift
 monecromanci update           # ascend    · doctor --fix + re-stamp the template version
 monecromanci validate [--all] # ritual    · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
+monecromanci spell            # scry      · list the projects with uncommitted changes + a ready-made commit scope
+monecromanci spellbook        # grimoire  · write (or refresh) the MoNecromanCi.md guide at the repo root
 ```
 
 `new` is fully scriptable: `monecromanci new demo --yes --ci github --registry github-packages --owner acme`.
