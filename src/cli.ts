@@ -6,8 +6,11 @@ import { runDoctor } from './commands/doctor'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
 import { runResurrect } from './commands/resurrect'
+import { runSpellbook } from './commands/spellbook'
 import { runUpdate } from './commands/update'
 import { runValidate } from './commands/validate'
+import { isManagedRepo } from './engine/config'
+import { syncGuide } from './engine/guide'
 import { logger } from './util/logger'
 import type { CiProvider, RegistryConfig } from './engine/types'
 
@@ -26,7 +29,7 @@ const program = new Command()
 program
   .name('monecromanci')
   .description('MoNecromanCI — summon, conjure, raise and validate NX monorepos')
-  .version(readVersion())
+  .version(readVersion(), '-v, --version', 'display the version')
 
 program
   .command('new')
@@ -114,11 +117,45 @@ program
     await runValidate({ all: options.all ?? false })
   })
 
+program
+  .command('spellbook')
+  .alias('grimoire')
+  .description('Write (or refresh) the MoNecromanCi.md guide at the repo root')
+  .action(async () => {
+    await runSpellbook()
+  })
+
+/**
+ * Refreshes the in-repo guide after every command run.
+ *
+ * @remarks
+ * Safety net on top of the per-command syncs: whatever command just ran (and
+ * however it ended), a managed repo always leaves with an up-to-date
+ * `MoNecromanCi.md`. Failures here never mask the command's own outcome.
+ *
+ * @param None - this function takes no parameters.
+ * @returns Nothing.
+ * @throws Never - errors are swallowed so the guide refresh cannot change the
+ * command's result.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function refreshGuide (): void {
+  try {
+    const repoRoot = process.cwd()
+    if (isManagedRepo(repoRoot)) {
+      syncGuide(repoRoot)
+    }
+  } catch {
+    // Never let the guide refresh mask the command's own outcome.
+  }
+}
+
 /** Runs the CLI, reporting uncaught command errors instead of letting them crash the process. */
 async function main (): Promise<void> {
   try {
-    // Bare `monecromanci` opens the interactive menu instead of printing help.
+    // Bare `monecromanci` shows a welcome banner and the interactive menu.
     if (process.argv.length <= 2) {
+      logger.info(`Welcome to MoNecromanCI v${readVersion()} — necromancy for NX monorepos.`)
       await runInteractive()
       return
     }
@@ -127,6 +164,8 @@ async function main (): Promise<void> {
   } catch (error) {
     logger.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
+  } finally {
+    refreshGuide()
   }
 }
 
