@@ -90,6 +90,7 @@ jest.mock('./commands/resurrect', () => ({ runResurrect: jest.fn() }))
 jest.mock('./commands/validate', () => ({ runValidate: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
 jest.mock('./commands/spellbook', () => ({ runSpellbook: jest.fn() }))
+jest.mock('./commands/spell', () => ({ runSpell: jest.fn() }))
 jest.mock('./engine/config', () => ({ isManagedRepo: jest.fn(() => false) }))
 jest.mock('./engine/guide', () => ({ syncGuide: jest.fn() }))
 
@@ -107,6 +108,7 @@ interface CommandMocks {
   runValidate:    jest.MockedFunction<typeof import('./commands/validate').runValidate>
   runInteractive: jest.MockedFunction<typeof import('./commands/interactive').runInteractive>
   runSpellbook:   jest.MockedFunction<typeof import('./commands/spellbook').runSpellbook>
+  runSpell:       jest.MockedFunction<typeof import('./commands/spell').runSpell>
   isManagedRepo:  jest.MockedFunction<typeof import('./engine/config').isManagedRepo>
   syncGuide:      jest.MockedFunction<typeof import('./engine/guide').syncGuide>
 }
@@ -127,6 +129,7 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     const { runValidate } = await import('./commands/validate')
     const { runInteractive } = await import('./commands/interactive')
     const { runSpellbook } = await import('./commands/spellbook')
+    const { runSpell } = await import('./commands/spell')
     const { isManagedRepo } = await import('./engine/config')
     const { syncGuide } = await import('./engine/guide')
     mocks = {
@@ -138,6 +141,7 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
       runValidate:    jest.mocked(runValidate),
       runInteractive: jest.mocked(runInteractive),
       runSpellbook:   jest.mocked(runSpellbook),
+      runSpell:       jest.mocked(runSpell),
       isManagedRepo:  jest.mocked(isManagedRepo),
       syncGuide:      jest.mocked(syncGuide),
     }
@@ -149,6 +153,7 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     mocks.runValidate.mockResolvedValue()
     mocks.runInteractive.mockResolvedValue()
     mocks.runSpellbook.mockResolvedValue()
+    mocks.runSpell.mockResolvedValue()
     mocks.isManagedRepo.mockReturnValue(false)
     configure?.(mocks)
 
@@ -260,6 +265,13 @@ describe('cli', () => {
     process.argv = ['node', 'cli.js', 'grimoire']
     const mocks = await loadCli()
     expect(mocks.runSpellbook).toHaveBeenCalled()
+  })
+
+  it('dispatches spell, including its scry alias', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'scry']
+    const mocks = await loadCli()
+    expect(mocks.runSpell).toHaveBeenCalled()
   })
 
   it('refreshes the guide after any command when the repo is managed', async () => {

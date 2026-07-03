@@ -3,6 +3,7 @@ import { runAdd } from './add'
 import { runDoctor } from './doctor'
 import { runNew } from './new'
 import { runResurrect } from './resurrect'
+import { runSpell } from './spell'
 import { runSpellbook } from './spellbook'
 import { runUpdate } from './update'
 import { runValidate } from './validate'
@@ -22,6 +23,7 @@ type MenuAction
     | 'doctor'
     | 'update'
     | 'validate'
+    | 'spell'
     | 'spellbook'
     | 'exit'
 
@@ -52,6 +54,7 @@ export async function runInteractive (): Promise<void> {
       { name: 'Raise — detect and repair config drift (doctor)', value: 'doctor' },
       { name: 'Ascend — re-sync tool-owned files to the latest templates (update)', value: 'update' },
       { name: 'Ritual — run lint/test/build locally before pushing (validate)', value: 'validate' },
+      { name: 'Spell — list changed projects as a ready-made commit scope (spell)', value: 'spell' },
       { name: 'Spellbook — write the MoNecromanCi.md guide at the repo root (spellbook)', value: 'spellbook' },
       { name: 'Exit', value: 'exit' },
     ],
@@ -82,6 +85,10 @@ export async function runInteractive (): Promise<void> {
     case 'validate': {
       const all = await confirm({ message: 'Validate every project (--all)? Choosing no runs only affected projects.', default: false })
       await runValidate({ all })
+      break
+    }
+    case 'spell': {
+      await runSpell()
       break
     }
     case 'spellbook': {

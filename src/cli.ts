@@ -6,6 +6,7 @@ import { runDoctor } from './commands/doctor'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
 import { runResurrect } from './commands/resurrect'
+import { runSpell } from './commands/spell'
 import { runSpellbook } from './commands/spellbook'
 import { runUpdate } from './commands/update'
 import { runValidate } from './commands/validate'
@@ -123,6 +124,14 @@ program
   .description('Write (or refresh) the MoNecromanCi.md guide at the repo root')
   .action(async () => {
     await runSpellbook()
+  })
+
+program
+  .command('spell')
+  .alias('scry')
+  .description('List the projects with uncommitted changes, as a ready-made commit scope')
+  .action(async () => {
+    await runSpell()
   })
 
 /**
