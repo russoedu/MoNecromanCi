@@ -3,6 +3,7 @@ jest.mock('./add', () => ({ runAdd: jest.fn() }))
 jest.mock('./doctor', () => ({ runDoctor: jest.fn() }))
 jest.mock('./new', () => ({ runNew: jest.fn() }))
 jest.mock('./resurrect', () => ({ runResurrect: jest.fn() }))
+jest.mock('./spellbook', () => ({ runSpellbook: jest.fn() }))
 jest.mock('./update', () => ({ runUpdate: jest.fn() }))
 jest.mock('./validate', () => ({ runValidate: jest.fn() }))
 
@@ -12,6 +13,7 @@ import { runDoctor } from './doctor'
 import { runInteractive } from './interactive'
 import { runNew } from './new'
 import { runResurrect } from './resurrect'
+import { runSpellbook } from './spellbook'
 import { runUpdate } from './update'
 import { runValidate } from './validate'
 
@@ -29,15 +31,16 @@ describe('runInteractive', () => {
     await runInteractive()
 
     const { choices } = mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
-    expect(choices.map((choice) => choice.value)).toEqual(['new', 'add', 'resurrect', 'doctor', 'update', 'validate', 'exit'])
+    expect(choices.map((choice) => choice.value)).toEqual(['new', 'add', 'resurrect', 'doctor', 'update', 'validate', 'spellbook', 'exit'])
   })
 
-  it('dispatches new/add/resurrect/update to their interactive flows', async () => {
+  it('dispatches new/add/resurrect/update/spellbook to their flows', async () => {
     for (const [action, mock] of [
       ['new', runNew],
       ['add', runAdd],
       ['resurrect', runResurrect],
       ['update', runUpdate],
+      ['spellbook', runSpellbook],
     ] as const) {
       mockSelect.mockResolvedValueOnce(action as never)
       await runInteractive()
@@ -72,7 +75,7 @@ describe('runInteractive', () => {
 
     await runInteractive()
 
-    for (const mock of [runNew, runAdd, runResurrect, runDoctor, runUpdate, runValidate]) {
+    for (const mock of [runNew, runAdd, runResurrect, runDoctor, runUpdate, runValidate, runSpellbook]) {
       expect(mock).not.toHaveBeenCalled()
     }
   })

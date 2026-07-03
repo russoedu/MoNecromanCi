@@ -89,6 +89,9 @@ jest.mock('./commands/update', () => ({ runUpdate: jest.fn() }))
 jest.mock('./commands/resurrect', () => ({ runResurrect: jest.fn() }))
 jest.mock('./commands/validate', () => ({ runValidate: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
+jest.mock('./commands/spellbook', () => ({ runSpellbook: jest.fn() }))
+jest.mock('./engine/config', () => ({ isManagedRepo: jest.fn(() => false) }))
+jest.mock('./engine/guide', () => ({ syncGuide: jest.fn() }))
 
 const flush = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve))
@@ -103,6 +106,9 @@ interface CommandMocks {
   runResurrect:   jest.MockedFunction<typeof import('./commands/resurrect').runResurrect>
   runValidate:    jest.MockedFunction<typeof import('./commands/validate').runValidate>
   runInteractive: jest.MockedFunction<typeof import('./commands/interactive').runInteractive>
+  runSpellbook:   jest.MockedFunction<typeof import('./commands/spellbook').runSpellbook>
+  isManagedRepo:  jest.MockedFunction<typeof import('./engine/config').isManagedRepo>
+  syncGuide:      jest.MockedFunction<typeof import('./engine/guide').syncGuide>
 }
 
 /**
@@ -120,6 +126,9 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     const { runResurrect } = await import('./commands/resurrect')
     const { runValidate } = await import('./commands/validate')
     const { runInteractive } = await import('./commands/interactive')
+    const { runSpellbook } = await import('./commands/spellbook')
+    const { isManagedRepo } = await import('./engine/config')
+    const { syncGuide } = await import('./engine/guide')
     mocks = {
       runNew:         jest.mocked(runNew),
       runAdd:         jest.mocked(runAdd),
@@ -128,6 +137,9 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
       runResurrect:   jest.mocked(runResurrect),
       runValidate:    jest.mocked(runValidate),
       runInteractive: jest.mocked(runInteractive),
+      runSpellbook:   jest.mocked(runSpellbook),
+      isManagedRepo:  jest.mocked(isManagedRepo),
+      syncGuide:      jest.mocked(syncGuide),
     }
     mocks.runNew.mockResolvedValue()
     mocks.runAdd.mockResolvedValue()
@@ -136,6 +148,8 @@ async function loadCli (configure?: (mocks: CommandMocks) => void): Promise<Comm
     mocks.runResurrect.mockResolvedValue()
     mocks.runValidate.mockResolvedValue()
     mocks.runInteractive.mockResolvedValue()
+    mocks.runSpellbook.mockResolvedValue()
+    mocks.isManagedRepo.mockReturnValue(false)
     configure?.(mocks)
 
     await import('./cli')
@@ -232,6 +246,47 @@ describe('cli', () => {
     const mocks = await loadCli()
     expect(mocks.runInteractive).toHaveBeenCalled()
     expect(mocks.runDoctor).not.toHaveBeenCalled()
+  })
+
+  it('greets with a welcome banner including the version on bare invocation', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js']
+    await loadCli()
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/Welcome to MoNecromanCI v\d+\.\d+\.\d+/))
+  })
+
+  it('dispatches spellbook, including its grimoire alias', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'grimoire']
+    const mocks = await loadCli()
+    expect(mocks.runSpellbook).toHaveBeenCalled()
+  })
+
+  it('refreshes the guide after any command when the repo is managed', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'doctor']
+    const mocks = await loadCli((loaded) => loaded.isManagedRepo.mockReturnValue(true))
+    expect(mocks.syncGuide).toHaveBeenCalledWith(process.cwd())
+  })
+
+  it('does not write the guide outside a managed repo', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'doctor']
+    const mocks = await loadCli()
+    expect(mocks.syncGuide).not.toHaveBeenCalled()
+  })
+
+  it('never lets a guide-refresh failure mask the command outcome', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    process.argv = ['node', 'cli.js', 'doctor']
+    const mocks = await loadCli((loaded) => {
+      loaded.isManagedRepo.mockReturnValue(true)
+      loaded.syncGuide.mockImplementation(() => {
+        throw new Error('assets missing')
+      })
+    })
+    expect(mocks.runDoctor).toHaveBeenCalled()
+    expect(process.exitCode).not.toBe(1)
   })
 
   it('reports interactive-menu failures through the shared error handler', async () => {
