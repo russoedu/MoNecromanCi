@@ -56,7 +56,7 @@ below. Each command also has a necromancy alias — use whichever reads better:
 | `monecromanci doctor [--fix]`  | `raise`, `fix` | Compare every tool-owned file against canonical and check dependency health (superseded lint packages, missing `legacy-peer-deps`); report issues (and repair them with `--fix`). |
 | `monecromanci update`          | `ascend`    | `doctor --fix` + re-stamp the template version — run after upgrading MoNecromanCI itself. |
 | `monecromanci validate [--all]`| `ritual`    | Run `nx affected -t lint test build` locally (`--all` = every project) before pushing to CI. |
-| `monecromanci spell`           | `scry`      | List the projects with uncommitted changes (grouped by `apps/`/`libs/`/root) plus a ready-made conventional-commit scope, e.g. `feat(jato.index,web): …`. |
+| `monecromanci spell`           | `scry`      | List the projects with uncommitted changes (grouped by `apps/`/`libs/`/root) plus a ready-made conventional-commit scope, e.g. `feat(jato.index,web): …`. Also prints advisory ⚠ possible-breaking-change hints — removed exports/changed signatures in publishable libs, `engines`/peer-dependency/`bin` contract changes — and suggests the `!` marker when any are found. Hints are heuristic: renames across files can be false positives, and behavioural breaks are invisible to any diff — the final call is yours. |
 | `monecromanci spellbook`       | `grimoire`  | Write (or refresh) this `MoNecromanCi.md` guide at the repo root. |
 
 ## Versioning & releases (conventional commits)

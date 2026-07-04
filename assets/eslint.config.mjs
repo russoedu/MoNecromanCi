@@ -171,6 +171,8 @@ const projectRules = {
   'unicorn/no-null':                     'off',
   'unicorn/prefer-top-level-await':      'off',
   'unicorn/prefer-module':               'off',
+  // Verb-prefixed helpers like ensureX/syncX legitimately return booleans.
+  'unicorn/consistent-boolean-name':     'off',
   'unicorn/name-replacements':            ['error', {
     ignore:                   [/err/i, /dev/i, /db/i, /(pre)?(pro?d)/i, /conf(ig)?/i, /env/i, /dist/i, /req/i, /res/i, /lib/i, /vars?/i, /Props/],
     checkShorthandProperties: false,

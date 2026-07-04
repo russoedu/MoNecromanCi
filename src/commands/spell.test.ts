@@ -5,11 +5,14 @@ import { saveConfig } from '../engine/config'
 import type { MonecromanciConfig } from '../engine/types'
 
 jest.mock('../engine/changes', () => ({ changedProjects: jest.fn() }))
+jest.mock('../engine/breaking', () => ({ breakingHints: jest.fn() }))
 
+import { breakingHints } from '../engine/breaking'
 import { changedProjects } from '../engine/changes'
 import { runSpell } from './spell'
 
 const mockChangedProjects = jest.mocked(changedProjects)
+const mockBreakingHints = jest.mocked(breakingHints)
 
 const config: MonecromanciConfig = {
   templateVersion: '0.2.0',
@@ -30,7 +33,9 @@ beforeEach(() => {
   repoRoot = mkdtempSync(join(tmpdir(), 'monecromanci-spell-'))
   jest.spyOn(process, 'cwd').mockReturnValue(repoRoot)
   logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+  jest.spyOn(console, 'warn').mockImplementation(() => {})
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+  mockBreakingHints.mockReturnValue({})
 })
 
 afterEach(() => {
@@ -69,5 +74,22 @@ describe('runSpell', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('libs/jato.index/src/index.ts'))
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Suggested scope: jato.index,web,root'))
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('feat(jato.index,web,root):'))
+  })
+
+  it('prints breaking-change hints and suggests the ! marker when any are found', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    saveConfig(repoRoot, config)
+    mockChangedProjects.mockReturnValue([
+      { name: 'jato.index', path: 'libs/jato.index', files: ['libs/jato.index/src/index.ts'] },
+    ])
+    mockBreakingHints.mockReturnValue({
+      'jato.index': ['export removed in libs/jato.index/src/index.ts: function greet'],
+    })
+
+    await runSpell()
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('possible breaking change — export removed'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('feat(jato.index)!:'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Hints are advisory'))
   })
 })
