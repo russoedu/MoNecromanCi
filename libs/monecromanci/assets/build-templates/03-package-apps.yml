@@ -1,0 +1,37 @@
+steps:
+  - script: node .build-templates/03-package-apps.mjs
+    displayName: "[03] Build, package and stage affected apps"
+    condition: >
+      and(succeeded(),
+          or(eq(variables['HAS_FUNCTION_APPS'], 'true'),
+             eq(variables['HAS_NODE_APPS'], 'true'),
+             eq(variables['HAS_REACT_APPS'], 'true')))
+
+  - task: PublishBuildArtifacts@1
+    displayName: "[03] Publish function app artifacts"
+    condition: and(succeeded(), eq(variables['HAS_FUNCTION_APPS'], 'true'))
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/function-apps
+      ArtifactName: drop-function-apps
+
+  - task: PublishPipelineArtifact@1
+    displayName: "[03] Publish function app configurations"
+    condition: and(succeeded(), eq(variables['HAS_FUNCTION_APPS'], 'true'))
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/function-app-configurations
+      artifact: config-function-apps
+      publishLocation: pipeline
+
+  - task: PublishBuildArtifacts@1
+    displayName: "[03] Publish Node app artifacts"
+    condition: and(succeeded(), eq(variables['HAS_NODE_APPS'], 'true'))
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/node-apps
+      ArtifactName: drop-node-apps
+
+  - task: PublishBuildArtifacts@1
+    displayName: "[03] Publish React app artifacts"
+    condition: and(succeeded(), eq(variables['HAS_REACT_APPS'], 'true'))
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/react-apps
+      ArtifactName: drop-react-apps

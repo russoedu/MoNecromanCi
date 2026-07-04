@@ -1,0 +1,12 @@
+{
+  "templateVersion": "0.2.0",
+  "workspaceName": "mo-necroman-ci-monorepo",
+  "displayName": "MoNecromanCI Monorepo",
+  "scope": "@monecromanci",
+  "defaultBase": "main",
+  "nodeVersion": "22",
+  "ci": "github",
+  "registry": {
+    "kind": "npm"
+  }
+}

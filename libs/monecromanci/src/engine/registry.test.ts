@@ -27,6 +27,7 @@ describe('npmrcContent', () => {
     expect(content).toContain('legacy-peer-deps=true')
     expect(content).toContain('@auto:registry=https://pkgs.dev.azure.com/my-org/MyProject/_packaging/MyFeed/npm/registry/')
 
+    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
     expect(content).toContain('//pkgs.dev.azure.com/my-org/MyProject/_packaging/MyFeed/npm/registry/:_authToken=${NODE_AUTH_TOKEN}')
     expect(content.endsWith('\n')).toBe(true)
   })
@@ -36,6 +37,7 @@ describe('npmrcContent', () => {
 
     expect(content).toContain('@acme:registry=https://npm.pkg.github.com/')
 
+    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
     expect(content).toContain('//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}')
   })
 

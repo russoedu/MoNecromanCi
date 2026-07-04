@@ -1,0 +1,51 @@
+steps:
+  - checkout: self
+    fetchDepth: 0
+    persistCredentials: true
+
+  - task: PowerShell@2
+    displayName: "[01] Fetch all refs for affected detection"
+    inputs:
+      targetType: inline
+      script: |
+        Write-Host "=== Fetching all refs and tags ===" -ForegroundColor Cyan
+        git fetch --all --prune --tags
+        Write-Host "=== Recent commits ===" -ForegroundColor Cyan
+        git log --oneline -10
+
+  - task: UseNode@1
+    displayName: "[01] Use Node.js 24"
+    inputs:
+      version: 24.x
+
+  - task: PowerShell@2
+    displayName: "[01] Ensure npm cache directory exists"
+    inputs:
+      targetType: inline
+      script: New-Item -ItemType Directory -Path "$(Pipeline.Workspace)/.npm" -Force | Out-Null
+
+  - task: Cache@2
+    displayName: "[01] Restore npm cache"
+    inputs:
+      key: npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/package-lock.json
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+      path: $(Pipeline.Workspace)/.npm
+
+  # Authenticate against the registries declared in the repo's .npmrc. This
+  # injects credentials so the plain `npm ci` below works for any feed/registry.
+  - task: npmAuthenticate@0
+    displayName: "[01] Authenticate npm registry"
+    inputs:
+      workingFile: .npmrc
+
+  # Dependencies are installed BEFORE affected detection so Nx computes the
+  # project graph with the workspace's pinned Nx version (never a downloaded one).
+  - script: npm ci
+    displayName: "[01] Install monorepo dependencies"
+    workingDirectory: $(Build.SourcesDirectory)
+    env:
+      HUSKY: 0
+
+  - script: node .build-templates/01-preparation.mjs
+    displayName: "[01] Resolve context, affected projects and execution plan"

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "noEmit": false,
+    "emitDeclarationOnly": false,
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "removeComments": false
+  },
+  "exclude": [
+    "./coverage/**",
+    "./dist/**",
+    "./doc/**",
+    "./node_modules/**",
+    "./src/**/*.test.ts"
+  ]
+}

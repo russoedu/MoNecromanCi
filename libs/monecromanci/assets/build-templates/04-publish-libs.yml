@@ -1,0 +1,20 @@
+steps:
+  - task: npmAuthenticate@0
+    displayName: "[04] Authenticate npm registry"
+    condition: and(succeeded(), eq(variables['HAS_PUBLISHABLE_LIBS'], 'true'))
+    inputs:
+      workingFile: .npmrc
+
+  # Versions are set manually in each library's package.json. This step only
+  # publishes (skipping versions already on the registry), so it runs on a
+  # publish branch (master or main) for non-PR builds. The script re-checks these.
+  - script: node .build-templates/04-publish-libs.mjs
+    displayName: "[04] Publish affected libraries"
+    condition: >
+      and(succeeded(),
+          eq(variables['HAS_PUBLISHABLE_LIBS'], 'true'),
+          ne(variables['Build.Reason'], 'PullRequest'),
+          or(eq(variables['Build.SourceBranchName'], 'master'),
+             eq(variables['Build.SourceBranchName'], 'main')))
+    env:
+      NODE_AUTH_TOKEN: $(NODE_AUTH_TOKEN)
