@@ -1,3 +1,4 @@
+/* eslint-disable no-template-curly-in-string -- this file builds file templates that legitimately embed ${...} placeholders (VSCode variables, auth tokens). */
 import { listAssetFiles, readAsset } from '../engine/assets'
 import { toJson } from '../engine/fsx'
 import { npmrcContent } from '../engine/registry'

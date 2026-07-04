@@ -1,0 +1,10 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPointStrategy": "expand",
+  "plugin": [
+    "typedoc-plugin-missing-exports"
+  ],
+  "excludePrivate": false,
+  "categorizeByGroup": true,
+  "cleanOutputDir": true
+}

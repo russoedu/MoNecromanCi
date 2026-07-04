@@ -1,0 +1,171 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "MoNecromanCI Monorepo"
+    }
+  ],
+  "settings": {
+    "eslint.useFlatConfig": true,
+    "eslint.validate": [
+      "javascript",
+      "typescript",
+      "typescriptreact",
+      "json",
+      "jsonc",
+      "json5",
+      "yaml",
+      "markdown"
+    ],
+    "files.exclude": {
+      "**/.nx": true,
+      "**/node_modules": true,
+      "**/coverage": true,
+      "**/.azurite": true,
+      "tmp": true
+    },
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "jest.runMode": "on-demand"
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "orta.vscode-jest",
+      "ms-azuretools.vscode-azurefunctions",
+      "ms-edgedevtools.vscode-edge-devtools"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug Jest (current file)",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
+        "args": [
+          "--runInBand",
+          "--watchAll=false",
+          "--runTestsByPath",
+          "${relativeFile}"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "disableOptimisticBPs": true,
+        "resolveSourceMapLocations": null,
+        "sourceMaps": true
+      },
+      {
+        "name": "Debug Jest (all)",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
+        "args": [
+          "--runInBand",
+          "--watchAll=false"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "disableOptimisticBPs": true,
+        "resolveSourceMapLocations": null,
+        "sourceMaps": true
+      },
+      {
+        "name": "Debug Function/Node App (attach :9229)",
+        "type": "node",
+        "request": "attach",
+        "port": 9229,
+        "restart": true,
+        "sourceMaps": true,
+        "resolveSourceMapLocations": null,
+        "outFiles": [
+          "${workspaceFolder}/apps/*/dist/**/*.js"
+        ],
+        "skipFiles": [
+          "<node_internals>/**"
+        ]
+      },
+      {
+        "name": "Debug React/Vue/Svelte (Edge)",
+        "type": "msedge",
+        "request": "launch",
+        "url": "http://localhost:5173",
+        "webRoot": "${workspaceFolder}",
+        "sourceMaps": true,
+        "resolveSourceMapLocations": null
+      },
+      {
+        "name": "Debug Next.js (Edge)",
+        "type": "msedge",
+        "request": "launch",
+        "url": "http://localhost:3000",
+        "webRoot": "${workspaceFolder}",
+        "sourceMaps": true,
+        "resolveSourceMapLocations": null
+      },
+      {
+        "name": "Run: build (all)",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run build"
+      },
+      {
+        "name": "Run: build (affected)",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run build:affected"
+      },
+      {
+        "name": "Run: test (all)",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run test"
+      },
+      {
+        "name": "Run: lint (all)",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run lint"
+      },
+      {
+        "name": "Run: docs (all)",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run doc"
+      },
+      {
+        "name": "Run: graph",
+        "type": "node-terminal",
+        "request": "launch",
+        "command": "npm run graph"
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "build all",
+        "type": "shell",
+        "command": "npm run build",
+        "problemMatcher": [
+          "$tsc"
+        ]
+      },
+      {
+        "label": "test all",
+        "type": "shell",
+        "command": "npm run test",
+        "problemMatcher": []
+      },
+      {
+        "label": "lint all",
+        "type": "shell",
+        "command": "npm run lint",
+        "problemMatcher": []
+      }
+    ]
+  }
+}

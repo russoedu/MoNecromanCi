@@ -1,0 +1,24 @@
+steps:
+  - script: node .build-templates/02-quality-control.mjs
+    displayName: "[02] Run affected projects lint, test and build"
+    condition: and(succeeded(), eq(variables['HAS_AFFECTED'], 'true'))
+
+  - task: PublishTestResults@2
+    displayName: "[02] Publish affected projects test results"
+    condition: and(succeededOrFailed(), eq(variables['HAS_AFFECTED'], 'true'))
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: "**/coverage/test-results.xml"
+      searchFolder: $(Build.SourcesDirectory)
+      mergeTestResults: true
+      failTaskOnFailedTests: true
+      testRunTitle: Affected Tests
+
+  - task: PublishCodeCoverageResults@2
+    displayName: "[02] Publish affected projects coverage results"
+    condition: and(succeededOrFailed(), eq(variables['HAS_AFFECTED'], 'true'))
+    inputs:
+      summaryFileLocation: "$(Build.SourcesDirectory)/**/coverage/cobertura-coverage.xml"
+      pathToSources: $(Build.SourcesDirectory)
+      reportDirectory: "$(Build.SourcesDirectory)/**/coverage"
+      failIfCoverageEmpty: false
