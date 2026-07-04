@@ -65,6 +65,13 @@ function resolvePipelineProjects (projectNames, affectedSet, branchName) {
 /**
  * Resolves the build number from releasable project versions.
  *
+ * Kept deliberately short: pipeline run numbers have hard length limits
+ * (Azure DevOps caps them at 255 characters) and joining every released
+ * package blows past it on multi-package releases. The number carries the
+ * first releasable project (alphabetically, for determinism) plus a count;
+ * the full per-project version list lives in the run summary produced by
+ * 06-summary.mjs.
+ *
  * @param {Record<string, any>} context The context manifest.
  * @returns {string} Returns the build number.
  */
@@ -73,12 +80,16 @@ function resolveBuildNumber (context) {
     .filter(project => !project.ignored)
     .filter(project => project.type.functionApp || project.type.reactApp || project.type.externalPackage)
     .filter(project => project.affected && project.version)
+    .sort((left, right) => left.name.localeCompare(right.name))
 
   if (releasable.length === 0) {
     return process.env.BUILD_BUILDNUMBER || 'monorepo-no-affected'
   }
 
-  return releasable.map(project => `${project.name}_${project.version}`).join('-')
+  const [first] = releasable
+  const suffix = releasable.length > 1 ? `_and_${releasable.length - 1}_more` : ''
+
+  return `${first.name}_${first.version}${suffix}`.slice(0, 255)
 }
 
 /**
