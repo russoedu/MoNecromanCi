@@ -39,7 +39,7 @@ monecromanci resurrect        # adopt     · adopt an existing monorepo: detect 
 monecromanci doctor [--fix]   # raise/fix · detect (and with --fix, repair) tool-owned config drift
 monecromanci update           # ascend    · doctor --fix + re-stamp the template version
 monecromanci validate [--all] # ritual    · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
-monecromanci spell            # scry      · list the projects with uncommitted changes + a ready-made commit scope
+monecromanci spell            # scry      · changed projects + commit scope + advisory breaking-change hints (suggests the ! marker)
 monecromanci spellbook        # grimoire  · write (or refresh) the MoNecromanCi.md guide at the repo root
 ```
 
