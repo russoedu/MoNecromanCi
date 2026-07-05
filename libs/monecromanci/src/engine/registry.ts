@@ -29,9 +29,10 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  * Builds the `.npmrc` body for a registry configuration.
  *
  * @remarks
- * Always points the default registry at public npm, then adds a scoped registry
- * plus auth-token line for Azure Artifacts / GitHub Packages. The
- * `${NODE_AUTH_TOKEN}` placeholder is kept literal (the CI authenticates it).
+ * Always points the default registry at public npm, then adds an auth-token
+ * line: a scoped registry + token for Azure Artifacts / GitHub Packages, or a
+ * default-registry token for public npm. The `${NODE_AUTH_TOKEN}` placeholder is
+ * kept literal (the CI authenticates it).
  *
  * @param registry - The monorepo's resolved registry configuration.
  * @param scope - The npm scope (e.g. `@auto`) the scoped registry applies to.
@@ -51,6 +52,10 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   if (url) {
     const host = url.replace(/^https:\/\//, '')
     lines.push(`@${scopeName}:registry=${url}`, `//${host}:_authToken=\${NODE_AUTH_TOKEN}`)
+  } else {
+    // Public npm: authenticate the default registry so CI can publish. The token
+    // stays a literal placeholder locally (anonymous reads) and is filled in CI.
+    lines.push(`//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}`)
   }
 
   lines.push('')

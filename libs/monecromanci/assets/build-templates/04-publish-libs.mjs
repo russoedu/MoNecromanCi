@@ -9,10 +9,12 @@
  * version already present on the registry. It does not bump versions, create
  * tags, or push commits.
  *
- * What ships is the built `dist/` folder only (transpiled `*.js` + `*.d.ts` +
- * source maps and the generated `dist/package.json`), never the source tree —
- * the project's build emits `dist/` and `tools/generate-dist-package.mjs` writes
- * its clean, publishable manifest.
+ * What ships is the built `dist/` folder (transpiled `*.js` + `*.d.ts` + source
+ * maps and the generated `dist/package.json`) whenever the build emits that
+ * manifest — the publishable-lib convention, via `tools/generate-dist-package.mjs`.
+ * A project that packages itself from its root through a `files` allow-list (e.g.
+ * a bundled CLI) is published from its root instead. A root with neither a
+ * `dist/package.json` nor a `files` list is refused, never shipped raw.
  *
  * Gated by the YAML step to non-PR builds on a release branch (master/main).
  */
@@ -115,16 +117,22 @@ function publishLibrary (project, results) {
   log(`[${project.name}] building before publish`)
   runNxInherit(`run ${project.name}:build`)
 
-  // Publish the built dist/ folder, not the project root: the source tree carries
-  // no `files` allow-list, so publishing from projectRoot would ship the raw
-  // `*.ts`, tests and configs instead of the compiled output.
+  // Choose what to publish:
+  //  • dist/ when the build emitted its own dist/package.json — the MoNecromanCI
+  //    publishable-lib convention (compiled *.js + *.d.ts + maps + clean manifest).
+  //  • otherwise the project root, but ONLY if package.json has a `files`
+  //    allow-list (e.g. a bundled CLI that packages `dist` itself). Publishing a
+  //    root with no allow-list would ship the raw *.ts sources, tests and configs.
   const distDir = path.join(projectRoot, 'dist')
-  if (!existsSync(distDir)) {
-    throw new Error(`[${project.name}] build produced no dist/ at ${distDir} — cannot publish`)
+  const hasDistManifest = existsSync(path.join(distDir, 'package.json'))
+  const publishTarget = hasDistManifest ? distDir : projectRoot
+
+  if (!hasDistManifest && !Array.isArray(packageJson.files)) {
+    throw new Error(`[${project.name}] no dist/package.json and no "files" allow-list in package.json — refusing to publish the raw source tree`)
   }
 
-  log(`[${project.name}] publishing ${packageName}@${packageVersion} from dist/`)
-  runInherit(`${NPM_BIN} publish ${shellEscape(distDir)} --userconfig ${shellEscape(NPM_USER_CONFIG)}`, { cwd: projectRoot })
+  log(`[${project.name}] publishing ${packageName}@${packageVersion} from ${hasDistManifest ? 'dist/' : 'project root (files allow-list)'}`)
+  runInherit(`${NPM_BIN} publish ${shellEscape(publishTarget)} --userconfig ${shellEscape(NPM_USER_CONFIG)}`, { cwd: projectRoot })
   results.published.push(`${packageName}@${packageVersion}`)
 }
 
