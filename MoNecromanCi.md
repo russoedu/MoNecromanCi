@@ -94,6 +94,31 @@ npm run release:publish    # only publish what was already versioned
 See `docs/nx-release.md` for the registry-specific details (auth, first
 publish, CI publishing).
 
+### Adopting a repo with published history
+
+`nx release` reads each project's current version from a **git tag** named
+`{projectName}@{version}` (the `releaseTagPattern` in `nx.json`). A repo brought
+in with `resurrect` from outside MoNecromanCI has none of those tags, so for any
+project **already published to a registry**, nx would compute the next version
+from the scaffold `0.0.0` and clash with the higher version already on the feed
+— `npm publish` then refuses to move the `latest` tag backwards.
+
+Seed a one-time baseline, once, per already-published project (skip projects
+that were never published — nx tags them on their first release):
+
+```sh
+# tag name uses the NX PROJECT name (project.json "name"), not the npm package name
+git tag -a "atlassian@1.10.21" -m "release baseline"   # use each project's CURRENT published version
+# …repeat per published project…
+git push origin --tags
+```
+
+Also set each project's `package.json` `version` to match its baseline tag (so
+nothing publishes `0.0.0` in the meantime), then confirm with
+`npx nx release version --dry-run` — it should now compute from the real current
+version instead of `0.0.0`. After this, conventional commits drive versions
+normally.
+
 ## Generated monorepo structure
 
 ```text

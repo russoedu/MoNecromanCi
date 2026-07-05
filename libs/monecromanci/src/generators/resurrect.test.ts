@@ -101,6 +101,22 @@ describe('runResurrect', () => {
     // Per-project scripts merged into the existing manifests.
     expect((readJson('apps/func/package.json').scripts as Record<string, string>).lint).toBeDefined()
     expect((readJson('apps/func/package.json').name as string)).toBe('@demo/func')
+
+    // No publishable project adopted here → no release-baseline block.
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('seed a release baseline'))
+  })
+
+  it('prints release-baseline tag instructions for adopted publishable projects', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+    writeRoot()
+    writeProject('libs', 'sdk', { name: '@demo/sdk', publishConfig: { registry: 'https://example.com' } })
+
+    await runResurrect()
+
+    expect((readJson('libs/sdk/project.json').tags as string[])).toEqual(['type:publishable-lib'])
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('seed a release baseline'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('git tag -a "sdk@<current-version>"'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('git push origin --tags'))
   })
 
   it('aborts without changing anything when the hard confirmation is declined', async () => {
