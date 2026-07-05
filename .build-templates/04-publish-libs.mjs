@@ -9,9 +9,15 @@
  * version already present on the registry. It does not bump versions, create
  * tags, or push commits.
  *
+ * What ships is the built `dist/` folder only (transpiled `*.js` + `*.d.ts` +
+ * source maps and the generated `dist/package.json`), never the source tree —
+ * the project's build emits `dist/` and `tools/generate-dist-package.mjs` writes
+ * its clean, publishable manifest.
+ *
  * Gated by the YAML step to non-PR builds on a release branch (master/main).
  */
 
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import {
@@ -109,8 +115,16 @@ function publishLibrary (project, results) {
   log(`[${project.name}] building before publish`)
   runNxInherit(`run ${project.name}:build`)
 
-  log(`[${project.name}] publishing ${packageName}@${packageVersion}`)
-  runInherit(`${NPM_BIN} publish --userconfig ${shellEscape(NPM_USER_CONFIG)}`, { cwd: projectRoot })
+  // Publish the built dist/ folder, not the project root: the source tree carries
+  // no `files` allow-list, so publishing from projectRoot would ship the raw
+  // `*.ts`, tests and configs instead of the compiled output.
+  const distDir = path.join(projectRoot, 'dist')
+  if (!existsSync(distDir)) {
+    throw new Error(`[${project.name}] build produced no dist/ at ${distDir} — cannot publish`)
+  }
+
+  log(`[${project.name}] publishing ${packageName}@${packageVersion} from dist/`)
+  runInherit(`${NPM_BIN} publish ${shellEscape(distDir)} --userconfig ${shellEscape(NPM_USER_CONFIG)}`, { cwd: projectRoot })
   results.published.push(`${packageName}@${packageVersion}`)
 }
 

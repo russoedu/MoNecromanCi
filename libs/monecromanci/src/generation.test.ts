@@ -176,6 +176,18 @@ describe('registry', () => {
   })
 })
 
+describe('publish pipeline', () => {
+  it('publishes the built dist/ folder, not the source project root', () => {
+    const pipeline = read('.build-templates/04-publish-libs.mjs')
+
+    // The publish target is the dist directory the build emits…
+    expect(pipeline).toMatch(/const distDir = path\.join\(projectRoot, 'dist'\)/)
+    expect(pipeline).toMatch(/publish \$\{shellEscape\(distDir\)\}/)
+    // …never the bare project root (which would pack raw *.ts sources + configs).
+    expect(pipeline).not.toMatch(/\bpublish --userconfig/)
+  })
+})
+
 describe('doctor', () => {
   it('reports zero drift immediately after generation (templates are idempotent)', () => {
     const config = configFromVars(vars)
