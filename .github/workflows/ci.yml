@@ -19,6 +19,10 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # Job-level env may only use the github/needs/strategy/matrix/vars/inputs
+    # contexts. The runner- and secrets-derived values live in the "Configure
+    # CI environment" step below (step `run` permits both), exported via
+    # $GITHUB_ENV so every later step still sees them.
     env:
       BUILD_REASON: ${{ github.event_name == 'pull_request' && 'PullRequest' || 'IndividualCI' }}
       BUILD_SOURCEBRANCHNAME: ${{ github.ref_name }}
@@ -26,8 +30,6 @@ jobs:
       SYSTEM_PULLREQUEST_TARGETBRANCH: ${{ github.base_ref }}
       BUILD_SOURCESDIRECTORY: ${{ github.workspace }}
       BUILD_BUILDID: ${{ github.run_id }}
-      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ runner.temp }}/artifacts
-      NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN || github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +39,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Configure CI environment
+        run: |
+          echo "BUILD_ARTIFACTSTAGINGDIRECTORY=${{ runner.temp }}/artifacts" >> "$GITHUB_ENV"
+          echo "NODE_AUTH_TOKEN=${{ secrets.NODE_AUTH_TOKEN || github.token }}" >> "$GITHUB_ENV"
       - name: Prepare artifact staging directory
         run: mkdir -p "$BUILD_ARTIFACTSTAGINGDIRECTORY"
       - name: Install dependencies
