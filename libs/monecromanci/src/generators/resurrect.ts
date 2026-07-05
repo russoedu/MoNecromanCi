@@ -299,4 +299,43 @@ export async function runResurrect (): Promise<void> {
   logger.success(`Resurrected the root config and ${selected.length} project(s). Next steps:`)
   logger.info('  npm install')
   logger.info('  monecromanci doctor')
+  reportReleaseBaselines(selected)
+}
+
+/** The project kinds that `nx release` versions and publishes. */
+const PUBLISHABLE_KINDS = new Set<ProjectKind>(['publishable-lib', 'cli-tool'])
+
+/**
+ * Prints release-baseline instructions for adopted publishable projects.
+ *
+ * @remarks
+ * `nx release` derives each project's next version from a git tag named
+ * `{projectName}@{version}`. A repo adopted from outside MoNecromanCI has no
+ * such tags, so — for any project already published to a registry — nx would
+ * compute from the scaffold `0.0.0` and clash with the higher version already
+ * on the feed (`npm publish` then refuses to move the `latest` tag backwards).
+ * This prints the one-time baseline seeding a maintainer must do; brand-new
+ * projects with no published history can ignore it.
+ *
+ * @param selected - The projects the run adopted, with their confirmed kinds.
+ * @returns Nothing.
+ * @throws Never - only writes to the logger.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function reportReleaseBaselines (selected: { candidate: CandidateProject, kind: ProjectKind }[]): void {
+  const publishable = selected.filter((entry) => PUBLISHABLE_KINDS.has(entry.kind))
+  if (publishable.length === 0) {
+    return
+  }
+
+  logger.info('')
+  logger.warn('Publishable project(s) adopted — seed a release baseline before your first release.')
+  logger.info('  nx release derives each version from a git tag `<project>@<version>`. This repo has')
+  logger.info('  no such tags yet, so any project already published to a registry needs a one-time')
+  logger.info('  baseline at its CURRENT published version (skip this for projects never published):')
+  for (const entry of publishable) {
+    logger.info(`    git tag -a "${entry.candidate.name}@<current-version>" -m "release baseline"   # then set ${entry.candidate.path}/package.json version to match`)
+  }
+  logger.info('  git push origin --tags')
+  logger.info('  Verify with `npx nx release version --dry-run`. See MoNecromanCi.md → "Adopting a repo with published history".')
 }
