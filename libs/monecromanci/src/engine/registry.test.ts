@@ -41,11 +41,14 @@ describe('npmrcContent', () => {
     expect(content).toContain('//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}')
   })
 
-  it('emits no scoped registry or token line for public npm', () => {
+  it('authenticates the default registry (no scoped registry) for public npm', () => {
     const content = npmrcContent(npm, '@auto')
 
     expect(content).toContain('registry=https://registry.npmjs.org/')
-    expect(content).not.toContain(':_authToken')
+    // Public npm needs the default-registry token so CI can publish…
+    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
+    expect(content).toContain('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}')
+    // …but no scoped registry line.
     expect(content).not.toContain('@auto:registry')
   })
 })

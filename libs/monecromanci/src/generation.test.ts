@@ -180,10 +180,12 @@ describe('publish pipeline', () => {
   it('publishes the built dist/ folder, not the source project root', () => {
     const pipeline = read('.build-templates/04-publish-libs.mjs')
 
-    // The publish target is the dist directory the build emits…
+    // Publishes dist/ when the build emitted a dist/package.json, else the root…
     expect(pipeline).toMatch(/const distDir = path\.join\(projectRoot, 'dist'\)/)
-    expect(pipeline).toMatch(/publish \$\{shellEscape\(distDir\)\}/)
-    // …never the bare project root (which would pack raw *.ts sources + configs).
+    expect(pipeline).toMatch(/hasDistManifest \? distDir : projectRoot/)
+    expect(pipeline).toMatch(/publish \$\{shellEscape\(publishTarget\)\}/)
+    // …and refuses a bare project root with no `files` allow-list (raw sources).
+    expect(pipeline).toMatch(/Array\.isArray\(packageJson\.files\)/)
     expect(pipeline).not.toMatch(/\bpublish --userconfig/)
   })
 })
