@@ -9,17 +9,20 @@ per-project configuration.
 
 It generates nine project kinds and keeps every repo's tool-owned config in sync:
 
-| Kind              | What you get                                                            |
-| ----------------- | ----------------------------------------------------------------------- |
-| `internal-lib`    | Source-resolved (`main → src/index.ts`) so you step into it while debugging and "find references" works across libs. |
-| `publishable-lib` | Published via `nx release`; `dist/package.json` gets **real, resolved dependencies** even though all deps live in the root. |
-| `cli-tool`        | A publishable lib that also ships a bundled `bin` (esbuild + shebang).   |
-| `function-app`    | Azure Functions v4, `.configurations/{dev,uat,prod}.json`, `clean:config` whitespace-strip, attach-debugging. |
-| `node-app`        | A framework-agnostic TS HTTP server (node:http) you extend with Express/Koa/Fastify/Nest/…; built, dependency-traced and zipped like a function app. |
-| `react-app`       | Vite with `dev`/`uat`/`prod` builds (`dist-dev`/`dist-uat`/`dist-prod`) and browser debugging. |
-| `vue-app`         | Vue 3 + Vite, same multi-env builds.                                    |
-| `svelte-app`      | Svelte 5 + Vite, same multi-env builds.                                 |
-| `nextjs-app`      | Full-stack Next.js (App Router). Per-env builds assemble `dist-<env>` in **server** (standalone) or **static-export** mode (`NEXT_OUTPUT`). |
+| Kind              | Nx tag                 | What you get                                                            |
+| ----------------- | ---------------------- | ----------------------------------------------------------------------- |
+| `internal-lib`    | `type:internal-lib`    | Source-resolved (`main → src/index.ts`) so you step into it while debugging and "find references" works across libs. |
+| `publishable-lib` | `type:publishable-lib` | Published via `nx release`; `dist/package.json` gets **real, resolved dependencies** even though all deps live in the root. |
+| `cli-tool`        | `type:publishable-lib` | A publishable lib that also ships a bundled `bin` (esbuild + shebang). Shares its tag with `publishable-lib` — the `bin` field is what tells them apart. |
+| `function-app`    | `type:function-app`    | Azure Functions v4, `.configurations/{dev,uat,prod}.json`, `clean:config` whitespace-strip, attach-debugging. |
+| `node-app`        | `type:node-app`        | A framework-agnostic TS HTTP server (node:http) you extend with Express/Koa/Fastify/Nest/…; built, dependency-traced and zipped like a function app. |
+| `react-app`       | `type:react-app`       | Vite with `dev`/`uat`/`prod` builds (`dist-dev`/`dist-uat`/`dist-prod`) and browser debugging. |
+| `vue-app`         | `type:vue-app`         | Vue 3 + Vite, same multi-env builds.                                    |
+| `svelte-app`      | `type:svelte-app`      | Svelte 5 + Vite, same multi-env builds.                                 |
+| `nextjs-app`      | `type:nextjs-app`      | Full-stack Next.js (App Router). Per-env builds assemble `dist-<env>` in **server** (standalone) or **static-export** mode (`NEXT_OUTPUT`). |
+
+A project tagged `ci:ignore` is excluded from the pipeline entirely (never
+built, packaged, versioned or published).
 
 ## Commands
 
@@ -41,6 +44,7 @@ monecromanci update           # ascend    · doctor --fix + re-stamp the templat
 monecromanci validate [--all] # ritual    · run lint/test/build locally (nx affected; --all = run-many) before pushing to CI
 monecromanci spell            # scry      · changed projects + commit scope + advisory breaking-change hints (suggests the ! marker)
 monecromanci spellbook        # grimoire  · write (or refresh) the MoNecromanCi.md guide at the repo root
+monecromanci release          # foretell  · preview the next automated release (nx release version --dry-run) — no changes made
 ```
 
 `new` is fully scriptable: `monecromanci new demo --yes --ci github --registry github-packages --owner acme`.
