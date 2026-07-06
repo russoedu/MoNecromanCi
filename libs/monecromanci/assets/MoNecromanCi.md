@@ -58,6 +58,7 @@ below. Each command also has a necromancy alias — use whichever reads better:
 | `monecromanci validate [--all]`| `ritual`    | Run `nx affected -t lint test build` locally (`--all` = every project) before pushing to CI. |
 | `monecromanci spell`           | `scry`      | List the projects with uncommitted changes (grouped by `apps/`/`libs/`/root) plus a ready-made conventional-commit scope, e.g. `feat(jato.index,web): …`. Also prints advisory ⚠ possible-breaking-change hints — removed exports/changed signatures in publishable libs, `engines`/peer-dependency/`bin` contract changes — and suggests the `!` marker when any are found. Hints are heuristic: renames across files can be false positives, and behavioural breaks are invisible to any diff — the final call is yours. |
 | `monecromanci spellbook`       | `grimoire`  | Write (or refresh) this `MoNecromanCi.md` guide at the repo root. |
+| `monecromanci release`         | `foretell`  | Preview the next automated release — fetches tags, then runs `nx release version --dry-run` to show the version bump each publishable project would get, without changing anything. |
 
 ## Versioning & releases (conventional commits)
 
@@ -97,7 +98,7 @@ publish, CI publishing).
 ### Adopting a repo with published history
 
 `nx release` reads each project's current version from a **git tag** named
-`{projectName}@{version}` (the `releaseTagPattern` in `nx.json`). A repo brought
+`{projectName}@{version}` (`release.releaseTag.pattern` in `nx.json`). A repo brought
 in with `resurrect` from outside MoNecromanCI has none of those tags, so for any
 project **already published to a registry**, nx would compute the next version
 from the scaffold `0.0.0` and clash with the higher version already on the feed
@@ -156,20 +157,23 @@ npm run pipeline:plan                # dry-run what CI would do
 
 ## Project kinds
 
-| Kind              | What you get |
-| ----------------- | ------------ |
-| `internal-lib`    | Source-resolved (`main → src/index.ts`): debuggers step into it, "find references" works across libs. Never published. |
-| `publishable-lib` | Built to `dist/` with declarations; `dist/package.json` gets real resolved deps; released by `nx release`. |
-| `cli-tool`        | A publishable lib that also ships a bundled `bin` (esbuild). |
-| `function-app`    | Azure Functions v4, per-env `.configurations/*.json`, attach debugging on `:9229`. |
-| `node-app`        | Framework-agnostic TS HTTP server — extend with Express/Koa/Fastify/Nest/…; packaged like a function app. |
-| `react-app`       | Vite; `dev`/`uat`/`prod` builds to `dist-dev`/`dist-uat`/`dist-prod`; browser debugging on `:5173`. |
-| `vue-app`         | Vue 3 + Vite, same multi-env builds. |
-| `svelte-app`      | Svelte 5 + Vite, same multi-env builds. |
-| `nextjs-app`      | Next.js App Router; per-env builds in server (standalone) or static-export mode (`NEXT_OUTPUT`). |
+| Kind              | Nx tag                    | What you get |
+| ----------------- | ------------------------- | ------------ |
+| `internal-lib`    | `type:internal-lib`       | Source-resolved (`main → src/index.ts`): debuggers step into it, "find references" works across libs. Never published. |
+| `publishable-lib` | `type:publishable-lib`    | Built to `dist/` with declarations; `dist/package.json` gets real resolved deps; released by `nx release`. |
+| `cli-tool`        | `type:publishable-lib`    | A publishable lib that also ships a bundled `bin` (esbuild). Shares its tag with `publishable-lib` — both release the same way; the `bin` field is what tells them apart. |
+| `function-app`    | `type:function-app`       | Azure Functions v4, per-env `.configurations/*.json`, attach debugging on `:9229`. |
+| `node-app`        | `type:node-app`           | Framework-agnostic TS HTTP server — extend with Express/Koa/Fastify/Nest/…; packaged like a function app. |
+| `react-app`       | `type:react-app`          | Vite; `dev`/`uat`/`prod` builds to `dist-dev`/`dist-uat`/`dist-prod`; browser debugging on `:5173`. |
+| `vue-app`         | `type:vue-app`            | Vue 3 + Vite, same multi-env builds. |
+| `svelte-app`      | `type:svelte-app`         | Svelte 5 + Vite, same multi-env builds. |
+| `nextjs-app`      | `type:nextjs-app`         | Next.js App Router; per-env builds in server (standalone) or static-export mode (`NEXT_OUTPUT`). |
 
 Every project answers the same four targets — `build`, `test`, `lint` and, for
 backend/lib kinds, `doc` (typedoc) — so `nx affected` composes them uniformly.
+A project tagged `ci:ignore` instead is excluded from the pipeline entirely
+(never built, packaged, versioned or published) — useful for a project that
+lives in the workspace but isn't ready to be managed yet.
 
 ## CI & registry
 

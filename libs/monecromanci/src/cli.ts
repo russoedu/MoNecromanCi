@@ -5,6 +5,7 @@ import { runAdd } from './commands/add'
 import { runDoctor } from './commands/doctor'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
+import { runRelease } from './commands/release'
 import { runResurrect } from './commands/resurrect'
 import { runSpell } from './commands/spell'
 import { runSpellbook } from './commands/spellbook'
@@ -132,6 +133,14 @@ program
   .description('List the projects with uncommitted changes, as a ready-made commit scope')
   .action(async () => {
     await runSpell()
+  })
+
+program
+  .command('release')
+  .alias('foretell')
+  .description('Preview the next automated release (nx release version --dry-run) — no changes made')
+  .action(async () => {
+    await runRelease()
   })
 
 /**

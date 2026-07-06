@@ -2,6 +2,7 @@ import { confirm, select } from '../util/prompts'
 import { runAdd } from './add'
 import { runDoctor } from './doctor'
 import { runNew } from './new'
+import { runRelease } from './release'
 import { runResurrect } from './resurrect'
 import { runSpell } from './spell'
 import { runSpellbook } from './spellbook'
@@ -25,6 +26,7 @@ type MenuAction
     | 'validate'
     | 'spell'
     | 'spellbook'
+    | 'release'
     | 'exit'
 
 /**
@@ -56,6 +58,7 @@ export async function runInteractive (): Promise<void> {
       { name: 'Ritual — run lint/test/build locally before pushing (validate)', value: 'validate' },
       { name: 'Spell — list changed projects as a ready-made commit scope (spell)', value: 'spell' },
       { name: 'Spellbook — write the MoNecromanCi.md guide at the repo root (spellbook)', value: 'spellbook' },
+      { name: 'Foretell — preview the next automated release, no changes made (release)', value: 'release' },
       { name: 'Exit', value: 'exit' },
     ],
   })
@@ -93,6 +96,10 @@ export async function runInteractive (): Promise<void> {
     }
     case 'spellbook': {
       await runSpellbook()
+      break
+    }
+    case 'release': {
+      await runRelease()
       break
     }
     default: // 'exit' — nothing to do.
