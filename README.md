@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="libs/monecromanci/logo.svg" alt="MoNecromanCI logo" width="160">
+</p>
+
 # MoNecromanCI
 
 > **MO**no(repo) + **NECROMAN**cy + **CI**. An interactive CLI that summons,

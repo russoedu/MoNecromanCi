@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./logo.svg" alt="MoNecromanCI logo" width="160">
+</p>
+
 # MoNecromanCI
 
 > **MO**no(repo) + **NECROMAN**cy + **CI**. The CLI command is `monecromanci` (short alias `mnci`).
