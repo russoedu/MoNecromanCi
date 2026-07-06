@@ -1,6 +1,6 @@
 {
   "name": "monecromanci",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "MoNecromanCI — interactive CLI to summon, conjure, raise and validate NX monorepos (Azure DevOps & GitHub Actions): function/node apps, React/Vue/Svelte/Next.js apps, internal/publishable libs, CLI tools.",
   "bin": {
     "monecromanci": "./dist/cli.js",
