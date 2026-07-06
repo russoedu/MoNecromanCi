@@ -4,6 +4,13 @@
 
 # MoNecromanCI
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/monecromanci"><img src="https://img.shields.io/npm/v/monecromanci.svg" alt="npm version"></a>
+  <a href="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml"><img src="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/russoedu/MoNecromanCi/main/.github/badges/coverage.json" alt="coverage"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/monecromanci.svg" alt="license"></a>
+</p>
+
 > **MO**no(repo) + **NECROMAN**cy + **CI**. An interactive CLI that summons,
 > conjures, raises and validates NX monorepos — Node + TypeScript, Jest,
 > ESLint, real VSCode `.ts` debugging, and a complete CI pipeline (Azure DevOps
