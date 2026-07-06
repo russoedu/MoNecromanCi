@@ -66,6 +66,29 @@ describe('monorepo scaffolding', () => {
     expect(tsconfig.compilerOptions.sourceMap).toBe(true)
   })
 
+  it('configures nx release with the current (non-deprecated) tag schema and a disk fallback', () => {
+    const nxConfig = readJson<{ release: {
+      releaseTagPattern?: string
+      releaseTag?:        { pattern?: string }
+      version:            { conventionalCommits?: boolean, fallbackCurrentVersionResolver?: string }
+    } }>('nx.json')
+
+    // The flat `releaseTagPattern` key was removed in Nx 23 (moved to nested
+    // `releaseTag.pattern`); keeping it breaks `nx release version` entirely.
+    expect(nxConfig.release.releaseTagPattern).toBeUndefined()
+    expect(nxConfig.release.releaseTag?.pattern).toBe('{projectName}@{version}')
+    expect(nxConfig.release.version.conventionalCommits).toBe(true)
+    // A brand-new project (or one adopted with no seeded baseline tag) has no
+    // matching git tag yet; this lets version resolution fall back to disk
+    // instead of nx release version hard-erroring.
+    expect(nxConfig.release.version.fallbackCurrentVersionResolver).toBe('disk')
+  })
+
+  it('pins @nx/js so nx release can version JS/TS projects', () => {
+    const package_ = readJson<{ devDependencies: Record<string, string> }>('package.json')
+    expect(package_.devDependencies['@nx/js']).toBeDefined()
+  })
+
   it('places launch at the workspace top level with a breakpoint-capable jest config', () => {
     const workspace = readJson<{
       launch?:  { configurations: Array<Record<string, unknown>> }
@@ -197,6 +220,19 @@ describe('publish pipeline', () => {
     // caught up front, before the registry is ever touched.
     expect(pipeline).toMatch(/lifecycleHookNames = \['prepublish', 'publish', 'postpublish'\]/)
     expect(pipeline).toMatch(/collidingHook/)
+  })
+
+  it('bumps, tags and pushes affected publishable projects via nx release before publishing', () => {
+    const pipeline = read('.build-templates/04-publish-libs.mjs')
+
+    // Scoped to the affected publishable projects, computed from conventional
+    // commits since each one's last release tag; commits + tags + pushes the result.
+    expect(pipeline).toMatch(/nx release version --projects=/)
+    expect(pipeline).toMatch(/--git-commit\b/)
+    expect(pipeline).toMatch(/--git-tag\b/)
+    expect(pipeline).toMatch(/--git-push\b/)
+    // Versioning must run before the publish loop, not after.
+    expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('const results = { published: [], skipped: [] }'))
   })
 })
 

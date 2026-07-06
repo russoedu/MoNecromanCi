@@ -3,11 +3,15 @@
 /**
  * Step 04 — Publish libraries.
  *
- * Versions are managed manually: a developer sets the `version` in each
- * library's `package.json`. This step publishes every affected
- * `type:publishable-lib` at the version already declared on disk, skipping any
- * version already present on the registry. It does not bump versions, create
- * tags, or push commits.
+ * Versions are decided automatically: `nx release version` reads the
+ * Conventional Commit messages since each affected publishable project's last
+ * release tag, computes the bump (patch/minor/major), writes the new version
+ * (and changelog) to disk, then commits, tags (`{project}@{version}`) and
+ * pushes the result back to the release branch — before anything is built or
+ * published. A project with no releasable commits since its last tag is left
+ * untouched. A project with no matching tag yet (never released) falls back to
+ * whatever version is on disk (see `release.version.fallbackCurrentVersionResolver`
+ * in `nx.json`), so a brand-new project needs no manual bootstrapping.
  *
  * What ships is the built `dist/` folder (transpiled `*.js` + `*.d.ts` + source
  * maps and the generated `dist/package.json`) whenever the build emits that
@@ -23,6 +27,8 @@
  * post-upload failure.
  *
  * Gated by the YAML step to non-PR builds on a release branch (master/main).
+ * Pushing the version-bump commit/tags needs write access back to the repo — see
+ * `docs/nx-release.md` for the permission each CI provider needs.
  */
 
 import { existsSync } from 'node:fs'
@@ -73,6 +79,31 @@ function isReleaseBranch () {
   const current = String(process.env.BUILD_SOURCEBRANCHNAME || runSafe('git rev-parse --abbrev-ref HEAD')).trim().toLowerCase()
 
   return allowed.includes(current)
+}
+
+/**
+ * Sets a local (repo-scoped) git identity so `nx release version` can commit,
+ * only if one isn't already configured (never touches the machine's global config).
+ */
+function ensureGitIdentity () {
+  if (!runSafe('git config user.email')) {
+    run('git config user.email "monecromanci-ci@users.noreply.github.com"')
+    run('git config user.name "MoNecromanCI CI"')
+  }
+}
+
+/**
+ * Bumps, tags and pushes the affected publishable projects from their
+ * Conventional Commit history since each one's last release tag.
+ *
+ * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
+ */
+function bumpVersions (publishableLibraries) {
+  ensureGitIdentity()
+
+  const projects = publishableLibraries.map(project => project.name).join(',')
+  section('Version (nx release)')
+  runInherit(`npx nx release version --projects=${shellEscape(projects)} --git-commit --git-commit-message ${shellEscape('chore(release): publish')} --git-tag --git-push --verbose`)
 }
 
 /**
@@ -156,10 +187,10 @@ function publishLibrary (project, results) {
 }
 
 /**
- * Runs the manual-version publish workflow.
+ * Runs the version-then-publish workflow.
  */
 function main () {
-  banner('[04] Publish libraries (versions managed manually in package.json)')
+  banner('[04] Publish libraries (versioned from conventional commits)')
 
   const context = loadContext()
   const publishableLibraries = selectAffected(context, project => project.type.externalPackage)
@@ -170,16 +201,18 @@ function main () {
   }
 
   if (isPullRequest()) {
-    warn('Pull request build — skipping publish (validation only).')
+    warn('Pull request build — skipping version bump and publish (validation only).')
     return
   }
 
   if (!isReleaseBranch()) {
-    warn(`Branch "${process.env.BUILD_SOURCEBRANCHNAME || '(unknown)'}" is not a publish branch (${process.env.RELEASE_BRANCHES || 'master,main'}) — skipping publish.`)
+    warn(`Branch "${process.env.BUILD_SOURCEBRANCHNAME || '(unknown)'}" is not a publish branch (${process.env.RELEASE_BRANCHES || 'master,main'}) — skipping version bump and publish.`)
     return
   }
 
   log(`Candidates (${publishableLibraries.length}): ${publishableLibraries.map(project => project.name).join(', ')}`)
+
+  bumpVersions(publishableLibraries)
 
   const results = { published: [], skipped: [] }
   for (const project of publishableLibraries) {

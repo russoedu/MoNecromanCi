@@ -68,9 +68,12 @@
     "projects": [
       "tag:type:publishable-lib"
     ],
-    "releaseTagPattern": "{projectName}@{version}",
+    "releaseTag": {
+      "pattern": "{projectName}@{version}"
+    },
     "version": {
-      "conventionalCommits": true
+      "conventionalCommits": true,
+      "fallbackCurrentVersionResolver": "disk"
     },
     "changelog": {
       "projectChangelogs": true
