@@ -3,6 +3,12 @@ steps:
     fetchDepth: 0
     persistCredentials: true
 
+  # Azure Pipelines checks out the build SHA in detached HEAD state by default
+  # (unlike GitHub Actions), which makes `nx release version --git-push`'s plain
+  # `git push origin` fail later with "You are not currently on a branch."
+  - script: git checkout -B $(Build.SourceBranchName)
+    displayName: "[01] Attach HEAD to the source branch (Azure checkout detaches by default)"
+
   - task: PowerShell@2
     displayName: "[01] Fetch all refs for affected detection"
     inputs:
