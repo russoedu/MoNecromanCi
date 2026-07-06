@@ -5,9 +5,12 @@ steps:
     inputs:
       workingFile: .npmrc
 
-  # Versions are set manually in each library's package.json. This step only
-  # publishes (skipping versions already on the registry), so it runs on a
-  # publish branch (master or main) for non-PR builds. The script re-checks these.
+  # Versions are computed by `nx release version` from conventional commits, then
+  # committed, tagged and pushed back to the branch before publishing. Requires the
+  # "Project Collection Build Service" account to have Contribute permission on
+  # this repo (Project Settings -> Repositories -> Security) since the checkout's
+  # persistCredentials is what lets the script push. Runs on a publish branch
+  # (master or main) for non-PR builds; the script re-checks these.
   - script: node .build-templates/04-publish-libs.mjs
     displayName: "[04] Publish affected libraries"
     condition: >

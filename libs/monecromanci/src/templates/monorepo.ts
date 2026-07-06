@@ -23,6 +23,7 @@ export const DEV_DEPENDENCIES: Record<string, string> = {
   '@commitlint/cli':                 '^21.1.0',
   '@commitlint/config-conventional': '^21.1.0',
   '@eslint/markdown':                sharedDependency('@eslint/markdown'),
+  '@nx/js':                          '^23.0.1',
   '@stylistic/eslint-plugin':        sharedDependency('@stylistic/eslint-plugin'),
   '@types/jest':                     sharedDependency('@types/jest'),
   '@types/node':                     sharedDependency('@types/node'),
@@ -126,8 +127,8 @@ function nxJson (vars: MonorepoVars): string {
     release: {
       projectsRelationship: 'independent',
       projects:             ['tag:type:publishable-lib'],
-      releaseTagPattern:    '{projectName}@{version}',
-      version:              { conventionalCommits: true },
+      releaseTag:           { pattern: '{projectName}@{version}' },
+      version:              { conventionalCommits: true, fallbackCurrentVersionResolver: 'disk' },
       changelog:            { projectChangelogs: true },
     },
     analytics: false,
@@ -389,7 +390,9 @@ why published packages declare their dependencies even though project
 
 ## First release
 
-For a project that has never been released, set its starting version once:
+A brand-new project has no release tag yet, so version resolution falls back to
+whatever is on disk (the scaffold \`0.0.0\`) and bumps from there — no manual step
+needed. To force a specific starting version instead:
 
 \`\`\`sh
 npx nx release version 1.0.0 --projects=my-lib --first-release
@@ -397,9 +400,22 @@ npx nx release version 1.0.0 --projects=my-lib --first-release
 
 ## CI
 
-On \`${vars.defaultBase}\` (non-PR builds), CI runs \`nx release version --yes\`
-then publishes affected publishable projects to ${registryLabel}. See the publish
-step (\`04-publish-libs\`, or the GitHub Actions \`publish\` job).
+On \`${vars.defaultBase}\` (non-PR builds), the publish step (\`04-publish-libs\`)
+scopes \`nx release version\` to the affected publishable projects, letting it
+compute each one's bump from conventional commits, write the version + changelog,
+commit, create a release tag (the \`release.releaseTag.pattern\` from \`nx.json\`)
+and push the result back to \`${vars.defaultBase}\` — then publishes the newly
+versioned projects to ${registryLabel}. A project with no releasable commits
+since its last tag is left untouched.
+
+This needs write access back to the repository:
+
+- **GitHub Actions**: the workflow's \`permissions.contents\` must be \`write\`
+  (already set by this template).
+- **Azure DevOps**: the pipeline's checkout already sets \`persistCredentials:
+  true\`, but the **Project Collection Build Service** account additionally needs
+  **Contribute** permission on the repo — a one-time setting under *Project
+  Settings → Repositories → Security* that only a project admin can grant.
 `
 }
 

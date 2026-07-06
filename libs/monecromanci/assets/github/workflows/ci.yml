@@ -13,7 +13,9 @@ on:
     paths-ignore: ['docs/**', '**/*.md']
 
 permissions:
-  contents: read
+  # write: [04] Publish libraries pushes the version-bump commit + release tags
+  # that `nx release version` creates from conventional commits.
+  contents: write
   packages: write
 
 jobs:

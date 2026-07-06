@@ -38,7 +38,9 @@ why published packages declare their dependencies even though project
 
 ## First release
 
-For a project that has never been released, set its starting version once:
+A brand-new project has no release tag yet, so version resolution falls back to
+whatever is on disk (the scaffold `0.0.0`) and bumps from there — no manual step
+needed. To force a specific starting version instead:
 
 ```sh
 npx nx release version 1.0.0 --projects=my-lib --first-release
@@ -46,6 +48,19 @@ npx nx release version 1.0.0 --projects=my-lib --first-release
 
 ## CI
 
-On `main` (non-PR builds), CI runs `nx release version --yes`
-then publishes affected publishable projects to the public npm registry. See the publish
-step (`04-publish-libs`, or the GitHub Actions `publish` job).
+On `main` (non-PR builds), the publish step (`04-publish-libs`) scopes
+`nx release version` to the affected publishable projects, letting it compute
+each one's bump from conventional commits, write the version + changelog,
+commit, create a release tag (the `release.releaseTag.pattern` from `nx.json`)
+and push the result back to `main` — then publishes the newly versioned
+projects to the public npm registry. A project with no releasable commits since
+its last tag is left untouched.
+
+This needs write access back to the repository:
+
+- **GitHub Actions**: the workflow's `permissions.contents` must be `write`
+  (already set by this template).
+- **Azure DevOps**: the pipeline's checkout already sets `persistCredentials:
+  true`, but the **Project Collection Build Service** account additionally needs
+  **Contribute** permission on the repo — a one-time setting under *Project
+  Settings → Repositories → Security* that only a project admin can grant.
