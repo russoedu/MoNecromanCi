@@ -188,6 +188,16 @@ describe('publish pipeline', () => {
     expect(pipeline).toMatch(/Array\.isArray\(packageJson\.files\)/)
     expect(pipeline).not.toMatch(/\bpublish --userconfig/)
   })
+
+  it('refuses to publish a manifest with a publish-lifecycle-hook script', () => {
+    const pipeline = read('.build-templates/04-publish-libs.mjs')
+
+    // npm auto-runs "publish"/"postpublish"/"prepublish" as lifecycle hooks right
+    // after the upload; a mismatched one fails the command post-hoc. Must be
+    // caught up front, before the registry is ever touched.
+    expect(pipeline).toMatch(/lifecycleHookNames = \['prepublish', 'publish', 'postpublish'\]/)
+    expect(pipeline).toMatch(/collidingHook/)
+  })
 })
 
 describe('doctor', () => {

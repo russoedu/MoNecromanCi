@@ -16,6 +16,12 @@
  * a bundled CLI) is published from its root instead. A root with neither a
  * `dist/package.json` nor a `files` list is refused, never shipped raw.
  *
+ * Before publishing, the target manifest is checked for a `publish`/`postpublish`/
+ * `prepublish` script — npm runs these as lifecycle hooks right after the upload,
+ * and a stale or mismatched one can fail the whole command even though the package
+ * already reached the registry. Caught up front instead of surfacing as a cryptic
+ * post-upload failure.
+ *
  * Gated by the YAML step to non-PR builds on a release branch (master/main).
  */
 
@@ -129,6 +135,19 @@ function publishLibrary (project, results) {
 
   if (!hasDistManifest && !Array.isArray(packageJson.files)) {
     throw new Error(`[${project.name}] no dist/package.json and no "files" allow-list in package.json — refusing to publish the raw source tree`)
+  }
+
+  // npm treats a script literally named "publish" (or "postpublish"/"prepublish") as
+  // a publish lifecycle hook: it re-invokes that script right after the tarball is
+  // uploaded, using THIS manifest's scripts. If the target manifest carries one and
+  // it doesn't hold up on its own (e.g. it points at a dist/ with no package.json),
+  // the whole `npm publish` command fails even though the upload already succeeded.
+  // Catch this before touching the registry rather than after a half-successful publish.
+  const publishManifest = hasDistManifest ? readJsonSafe(path.join(distDir, 'package.json')) : packageJson
+  const lifecycleHookNames = ['prepublish', 'publish', 'postpublish']
+  const collidingHook = lifecycleHookNames.find(name => typeof publishManifest.scripts?.[name] === 'string')
+  if (collidingHook) {
+    throw new Error(`[${project.name}] the manifest being published has a "${collidingHook}" script — npm runs this automatically as a publish lifecycle hook, which can recurse or fail unexpectedly. Rename or remove it.`)
   }
 
   log(`[${project.name}] publishing ${packageName}@${packageVersion} from ${hasDistManifest ? 'dist/' : 'project root (files allow-list)'}`)
