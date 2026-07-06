@@ -234,6 +234,22 @@ describe('publish pipeline', () => {
     // Versioning must run before the publish loop, not after.
     expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('const results = { published: [], skipped: [] }'))
   })
+
+  it('re-attaches Azure\'s detached HEAD before the git-push-dependent release step runs', () => {
+    const preparation = read('.build-templates/01-preparation.yml')
+
+    // `checkout: self` leaves Azure Pipelines on a detached HEAD, which makes
+    // nx release version --git-push's plain `git push origin` fail later with
+    // "You are not currently on a branch." Must re-attach right after checkout,
+    // before anything else runs.
+    const checkoutIndex = preparation.indexOf('checkout: self')
+    const attachIndex = preparation.indexOf('git checkout -B $(Build.SourceBranchName)')
+    const fetchReferencesIndex = preparation.indexOf('[01] Fetch all refs for affected detection')
+
+    expect(checkoutIndex).toBeGreaterThan(-1)
+    expect(attachIndex).toBeGreaterThan(checkoutIndex)
+    expect(fetchReferencesIndex).toBeGreaterThan(attachIndex)
+  })
 })
 
 describe('doctor', () => {
