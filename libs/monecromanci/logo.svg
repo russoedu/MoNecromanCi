@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#161616"/>
+
+  <!-- outer ring: 8 thick ticks, radius 78, center (100,100) -->
+  <g stroke="#7020D0" stroke-width="10" stroke-linecap="round">
+    <line x1="100" y1="18" x2="100" y2="36"/>
+    <line x1="158" y1="42" x2="146" y2="54"/>
+    <line x1="182" y1="100" x2="164" y2="100"/>
+    <line x1="158" y1="158" x2="146" y2="146"/>
+    <line x1="100" y1="182" x2="100" y2="164"/>
+    <line x1="42" y1="158" x2="54" y2="146"/>
+    <line x1="18" y1="100" x2="36" y2="100"/>
+    <line x1="42" y1="42" x2="54" y2="54"/>
+  </g>
+
+  <!-- solid inner ring, bold -->
+  <circle cx="100" cy="100" r="58" fill="none" stroke="#7020D0" stroke-width="6"/>
+
+  <!-- center node: glow halo + solid core -->
+  <circle cx="100" cy="100" r="34" fill="#FF8A00" opacity="0.30"/>
+  <circle cx="100" cy="100" r="20" fill="#FF8A00"/>
+
+  <!-- 3 satellite nodes, bold connectors -->
+  <g stroke="#2ECC71" stroke-width="6">
+    <line x1="100" y1="100" x2="100" y2="52"/>
+    <line x1="100" y1="100" x2="142" y2="124"/>
+    <line x1="100" y1="100" x2="58" y2="124"/>
+  </g>
+  <g fill="#2ECC71">
+    <circle cx="100" cy="52" r="11"/>
+    <circle cx="142" cy="124" r="11"/>
+    <circle cx="58" cy="124" r="11"/>
+  </g>
+</svg>
