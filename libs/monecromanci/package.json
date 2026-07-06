@@ -1,6 +1,6 @@
 {
   "name": "monecromanci",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "MoNecromanCI — interactive CLI to summon, conjure, raise and validate NX monorepos (Azure DevOps & GitHub Actions): function/node apps, React/Vue/Svelte/Next.js apps, internal/publishable libs, CLI tools.",
   "bin": {
     "monecromanci": "./dist/cli.js",
@@ -23,8 +23,7 @@
     "test:e2e": "node e2e/dependencyInjection.e2e.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "start": "node dist/cli.js",
-    "doc": "typedoc --tsconfig tsconfig.lib.json",
-    "publish": "npm publish ./dist"
+    "doc": "typedoc --tsconfig tsconfig.lib.json"
   },
   "keywords": [
     "nx",
