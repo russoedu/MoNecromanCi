@@ -1,12 +1,12 @@
 import { join, resolve } from 'node:path'
 import { applyFiles, reportApply } from '../engine/apply'
 import { configFromVars, saveConfig } from '../engine/config'
-import { DEFAULT_BASE, DEFAULT_NODE_VERSION } from '../engine/constants'
+import { DEFAULT_BASE, DEFAULT_NODE_VERSION, DEFAULT_TRIGGER_BRANCHES } from '../engine/constants'
 import { fileExists } from '../engine/fsx'
 import type { CiProvider, MonorepoVars, RegistryConfig } from '../engine/types'
 import { monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
-import { confirm, promptText, select } from '../util/prompts'
+import { confirm, promptBranchList, promptText, select, splitBranchList } from '../util/prompts'
 import { toSlug } from '../util/strings'
 import { generateProject } from './scaffold'
 
@@ -30,6 +30,8 @@ export interface NewOptions {
   project?:      string
   feed?:         string
   base?:         string
+  /** Comma-separated branches that trigger CI, e.g. "main,dev". */
+  branches?:     string
   /** Initial internal library name; empty string skips it. */
   lib?:          string
   /** Non-interactive: accept provided values and defaults without prompting. */
@@ -73,6 +75,10 @@ export async function runNew (options: NewOptions): Promise<void> {
   const scope = scopeInput.startsWith('@') ? scopeInput : `@${scopeInput}`
   const defaultBase = await ask('Default git branch', DEFAULT_BASE, options.base)
 
+  const triggerBranches = options.branches
+    ? splitBranchList(options.branches)
+    : (yes ? DEFAULT_TRIGGER_BRANCHES : await promptBranchList('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES))
+
   const targetDirectory = resolve(process.cwd(), workspaceName)
   if (fileExists(join(targetDirectory, 'package.json')) && !yes) {
     const overwrite = await confirm({ message: `${targetDirectory} already contains a package.json. Continue and overwrite tool-owned files?`, default: false })
@@ -90,6 +96,7 @@ export async function runNew (options: NewOptions): Promise<void> {
     nodeVersion: DEFAULT_NODE_VERSION,
     ci,
     registry,
+    triggerBranches,
   }
 
   logger.step(`Creating monorepo in ${targetDirectory}`)

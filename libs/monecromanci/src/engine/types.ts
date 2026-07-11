@@ -70,16 +70,22 @@ export type RegistryConfig
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface MonecromanciConfig {
-  templateVersion: string
-  workspaceName:   string
-  displayName:     string
-  scope:           string
-  defaultBase:     string
-  nodeVersion:     string
-  ci:              CiProvider
-  registry:        RegistryConfig
+  templateVersion:  string
+  workspaceName:    string
+  displayName:      string
+  scope:            string
+  defaultBase:      string
+  nodeVersion:      string
+  ci:               CiProvider
+  registry:         RegistryConfig
+  /**
+   * Branches that trigger the CI pipeline. `undefined` on stamps written
+   * before this setting existed — `doctor`/`resurrect`/`update` prompt for it
+   * once, then persist it here.
+   */
+  triggerBranches?: string[]
   /** Legacy v1 field; migrated to {@link MonecromanciConfig.registry} on load. */
-  azure?:          AzureConfig
+  azure?:           AzureConfig
 }
 
 /**
@@ -92,14 +98,16 @@ export interface MonecromanciConfig {
  */
 export interface MonorepoVars {
   /** kebab-case workspace slug, also the root package name. */
-  workspaceName: string
+  workspaceName:   string
   /** Human-friendly name used in the `.code-workspace` folder label. */
-  displayName:   string
-  scope:         string
-  defaultBase:   string
-  nodeVersion:   string
-  ci:            CiProvider
-  registry:      RegistryConfig
+  displayName:     string
+  scope:           string
+  defaultBase:     string
+  nodeVersion:     string
+  ci:              CiProvider
+  registry:        RegistryConfig
+  /** Branches that trigger the CI pipeline (both Azure Pipelines and GitHub Actions). */
+  triggerBranches: string[]
 }
 
 /**

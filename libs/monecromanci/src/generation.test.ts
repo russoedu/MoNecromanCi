@@ -10,13 +10,14 @@ import { generateProject, projectFiles } from './generators/scaffold'
 import { monorepoFiles } from './templates/monorepo'
 
 const vars: MonorepoVars = {
-  workspaceName: 'demo',
-  displayName:   'Demo',
-  scope:         '@demo',
-  defaultBase:   'main',
-  nodeVersion:   '24',
-  ci:            'azure',
-  registry:      { kind: 'azure-artifacts', organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
+  workspaceName:   'demo',
+  displayName:     'Demo',
+  scope:           '@demo',
+  defaultBase:     'main',
+  nodeVersion:     '24',
+  ci:              'azure',
+  registry:        { kind: 'azure-artifacts', organization: 'org', project: 'Automation', artifactsFeed: 'FEED' },
+  triggerBranches: ['dev', 'main'],
 }
 
 let repo: string
@@ -183,6 +184,18 @@ describe('CI providers', () => {
     expect(paths.has('azure-pipelines.yml')).toBe(true)
     expect(paths.has('.github/workflows/ci.yml')).toBe(true)
     expect(paths.has('.build-templates/03-package-apps.mjs')).toBe(true)
+  })
+
+  it('renders the configured trigger branches into both pipeline files', () => {
+    const files = monorepoFiles({ ...vars, ci: 'both', triggerBranches: ['main', 'release'] })
+    const azurePipelines = files.find((file) => file.path === 'azure-pipelines.yml')?.content ?? ''
+    const githubWorkflow = files.find((file) => file.path === '.github/workflows/ci.yml')?.content ?? ''
+
+    expect(azurePipelines).toMatch(/trigger:\n {2}branches:\n {4}include: \[main, release\]/)
+    expect(azurePipelines).toMatch(/pr:\n {2}branches:\n {4}include: \[main, release\]/)
+    expect(githubWorkflow).toContain('branches: [main, release]')
+    expect(azurePipelines).not.toContain('dev, development, uat, master')
+    expect(githubWorkflow).not.toContain('dev, development, uat, master')
   })
 })
 

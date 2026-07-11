@@ -46,6 +46,7 @@ program
   .option('--project <project>', 'Azure DevOps project')
   .option('--feed <feed>', 'Azure Artifacts feed')
   .option('--base <branch>', 'default git branch')
+  .option('--branches <list>', 'comma-separated branches that trigger CI, e.g. main,dev')
   .option('--lib <name>', 'initial internal library name (empty string to skip)')
   .description('Scaffold a brand-new canonical NX monorepo')
   .action(async (name: string | undefined, options: {
@@ -58,6 +59,7 @@ program
     project?:  string
     feed?:     string
     base?:     string
+    branches?: string
     lib?:      string
   }) => {
     await runNew({
@@ -71,6 +73,7 @@ program
       project:      options.project,
       feed:         options.feed,
       base:         options.base,
+      branches:     options.branches,
       lib:          options.lib,
     })
   })

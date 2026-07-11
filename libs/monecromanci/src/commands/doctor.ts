@@ -1,13 +1,14 @@
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
-import { TEMPLATE_VERSION } from '../engine/constants'
+import { DEFAULT_TRIGGER_BRANCHES, TEMPLATE_VERSION } from '../engine/constants'
 import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
 import { syncToolOwned } from '../engine/sync'
-import type { FileSpec, MonorepoVars } from '../engine/types'
+import type { FileSpec, MonecromanciConfig, MonorepoVars } from '../engine/types'
 import { projectFiles } from '../generators/scaffold'
 import { monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
+import { promptBranchList } from '../util/prompts'
 
 /**
  * Options accepted by {@link runDoctor}.
@@ -44,7 +45,7 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     return
   }
 
-  const config = loadConfig(repoRoot)
+  let config = loadConfig(repoRoot)
   if (!config) {
     logger.error('Could not read .monecromanci.json.')
     return
@@ -52,6 +53,11 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
 
   // The guide travels with every command, even a report-only doctor run.
   syncGuide(repoRoot)
+
+  const { triggerBranches, wasMissing } = await resolveTriggerBranches(repoRoot, config, options.apply)
+  if (wasMissing && options.apply) {
+    config = { ...config, triggerBranches }
+  }
 
   const vars: MonorepoVars = {
     workspaceName: config.workspaceName,
@@ -61,6 +67,7 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     nodeVersion:   config.nodeVersion,
     ci:            config.ci,
     registry:      config.registry,
+    triggerBranches,
   }
 
   const specs: FileSpec[] = [...monorepoFiles(vars)]
@@ -81,7 +88,8 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   const dependencyIssues = checkDependencyHealth(repoRoot, options.apply)
-  const issues = report.missing.length + report.drift.length + dependencyIssues
+  const configIssues = wasMissing ? 1 : 0
+  const issues = report.missing.length + report.drift.length + dependencyIssues + configIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -95,6 +103,39 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
 
   saveConfig(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
   logger.success(`Repaired ${issues} issue(s); stamped template version ${TEMPLATE_VERSION}.`)
+}
+
+/**
+ * Resolves the branches that should trigger CI, prompting once if the stamp
+ * doesn't have them yet.
+ *
+ * @remarks
+ * Only prompts (and persists immediately) when `apply` is set — a report-only
+ * `doctor` stays side-effect-free and instead flags the missing setting as
+ * one more issue, using the default only to compute the drift preview.
+ *
+ * @param repoRoot - Absolute path to the repo root.
+ * @param config - The loaded stamp.
+ * @param apply - Whether this run applies fixes (`--fix`, or `update`/`ascend`).
+ * @returns The resolved branch list, and whether it was missing beforehand.
+ * @throws Propagates any error `promptBranchList` raises (e.g. when stdin is
+ * not a TTY) or that `saveConfig` raises writing the stamp.
+ * @typeParam None - this function has no generic type parameters.
+ */
+async function resolveTriggerBranches (repoRoot: string, config: MonecromanciConfig, apply: boolean): Promise<{ triggerBranches: string[], wasMissing: boolean }> {
+  if (config.triggerBranches?.length) {
+    return { triggerBranches: config.triggerBranches, wasMissing: false }
+  }
+
+  if (!apply) {
+    logger.warn('triggerBranches not set — run with --fix to choose which branches trigger CI')
+    return { triggerBranches: DEFAULT_TRIGGER_BRANCHES, wasMissing: true }
+  }
+
+  const triggerBranches = await promptBranchList('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES)
+  saveConfig(repoRoot, { ...config, triggerBranches })
+  logger.success('set triggerBranches in .monecromanci.json')
+  return { triggerBranches, wasMissing: true }
 }
 
 /**

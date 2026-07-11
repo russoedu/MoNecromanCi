@@ -32,6 +32,16 @@ export const DEFAULT_NODE_VERSION = '24'
 export const DEFAULT_BASE = 'main'
 
 /**
+ * Default branches that trigger the CI pipeline (both Azure Pipelines and
+ * GitHub Actions).
+ *
+ * @remarks
+ * Matches the list every generated repo used before this became configurable,
+ * so accepting the default causes zero drift for anyone upgrading.
+ */
+export const DEFAULT_TRIGGER_BRANCHES = ['dev', 'development', 'uat', 'master', 'main']
+
+/**
  * Canonical NX project tags used to classify projects in CI.
  *
  * @remarks

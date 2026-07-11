@@ -7,16 +7,19 @@ import { DEV_DEPENDENCIES } from '../templates/monorepo'
 import { runResurrect } from './resurrect'
 
 jest.mock('../util/prompts', () => ({
-  checkbox:   jest.fn(),
-  confirm:    jest.fn(),
-  promptText: jest.fn(),
-  select:     jest.fn(),
+  checkbox:         jest.fn(),
+  confirm:          jest.fn(),
+  promptBranchList: jest.fn(),
+  promptText:       jest.fn(),
+  select:           jest.fn(),
 }))
 
-import { checkbox, confirm, promptText, select } from '../util/prompts'
+import { DEFAULT_TRIGGER_BRANCHES } from '../engine/constants'
+import { checkbox, confirm, promptBranchList, promptText, select } from '../util/prompts'
 
 const mockCheckbox = jest.mocked(checkbox)
 const mockConfirm = jest.mocked(confirm)
+const mockPromptBranchList = jest.mocked(promptBranchList)
 const mockPromptText = jest.mocked(promptText)
 const mockSelect = jest.mocked(select)
 
@@ -37,6 +40,7 @@ beforeEach(() => {
   mockSelect.mockImplementation(async ({ choices }) => (choices[0] as { value: unknown }).value)
   mockConfirm.mockResolvedValue(true)
   mockCheckbox.mockImplementation(async ({ choices }) => choices.map((choice) => (choice as { value: unknown }).value))
+  mockPromptBranchList.mockResolvedValue(DEFAULT_TRIGGER_BRANCHES)
 })
 
 afterEach(() => {
@@ -79,6 +83,7 @@ describe('runResurrect', () => {
 
     expect(isManagedRepo(repoRoot)).toBe(true)
     expect(loadConfig(repoRoot)?.workspaceName).toBe('legacy')
+    expect(loadConfig(repoRoot)?.triggerBranches).toEqual(DEFAULT_TRIGGER_BRANCHES)
     expect(existsSync(join(repoRoot, 'nx.json'))).toBe(true)
     expect(existsSync(join(repoRoot, 'eslint.config.mjs'))).toBe(true)
 
@@ -152,6 +157,46 @@ describe('runResurrect', () => {
     expect(mockSelect).toHaveBeenCalledTimes(1)
     expect(mockSelect.mock.calls[0][0].message).toContain('libs/helpers')
     expect((readJson('libs/helpers/project.json').tags as string[])).toEqual(['type:internal-lib'])
+  })
+
+  it('prompts for CI trigger branches when an already-managed stamp predates the setting', async () => {
+    writeRoot()
+    writeFileSync(join(repoRoot, '.monecromanci.json'), JSON.stringify({
+      templateVersion: '0.2.0',
+      workspaceName:   'legacy',
+      displayName:     'Legacy',
+      scope:           '@demo',
+      defaultBase:     'main',
+      nodeVersion:     '24',
+      ci:              'azure',
+      registry:        { kind: 'npm' },
+    }))
+    mockPromptBranchList.mockResolvedValue(['main', 'release'])
+
+    await runResurrect()
+
+    expect(mockPromptBranchList).toHaveBeenCalledWith('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES)
+    expect(loadConfig(repoRoot)?.triggerBranches).toEqual(['main', 'release'])
+  })
+
+  it('does not re-prompt for CI trigger branches once an already-managed stamp already has them', async () => {
+    writeRoot()
+    writeFileSync(join(repoRoot, '.monecromanci.json'), JSON.stringify({
+      templateVersion: '0.2.0',
+      workspaceName:   'legacy',
+      displayName:     'Legacy',
+      scope:           '@demo',
+      defaultBase:     'main',
+      nodeVersion:     '24',
+      ci:              'azure',
+      registry:        { kind: 'npm' },
+      triggerBranches: ['main'],
+    }))
+
+    await runResurrect()
+
+    expect(mockPromptBranchList).not.toHaveBeenCalled()
+    expect(loadConfig(repoRoot)?.triggerBranches).toEqual(['main'])
   })
 
   it('skips a project whose confirmed kind contradicts its area folder', async () => {

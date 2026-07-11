@@ -5,14 +5,18 @@ import { isManagedRepo, loadConfig } from '../engine/config'
 import { runNew } from './createMonorepo'
 
 jest.mock('../util/prompts', () => ({
-  confirm:    jest.fn(),
-  promptText: jest.fn(),
-  select:     jest.fn(),
+  confirm:          jest.fn(),
+  promptBranchList: jest.fn(),
+  promptText:       jest.fn(),
+  select:           jest.fn(),
+  splitBranchList:  (raw: string) => [...new Set(raw.split(',').map((branch) => branch.trim()).filter(Boolean))],
 }))
 
-import { confirm, promptText, select } from '../util/prompts'
+import { DEFAULT_TRIGGER_BRANCHES } from '../engine/constants'
+import { confirm, promptBranchList, promptText, select } from '../util/prompts'
 
 const mockConfirm = jest.mocked(confirm)
+const mockPromptBranchList = jest.mocked(promptBranchList)
 const mockPromptText = jest.mocked(promptText)
 const mockSelect = jest.mocked(select)
 
@@ -30,6 +34,7 @@ beforeEach(() => {
     const { message } = options as { message: string }
     return Promise.resolve(message === 'CI provider' ? 'azure' : 'azure-artifacts') as never
   })
+  mockPromptBranchList.mockResolvedValue(DEFAULT_TRIGGER_BRANCHES)
 })
 
 afterEach(() => {
@@ -124,6 +129,25 @@ describe('runNew', () => {
     const registry = loadConfig(target)?.registry
     expect(registry?.kind).toBe('azure-artifacts')
     expect(registry?.kind === 'azure-artifacts' && registry.organization).toBe('my-org')
+  })
+
+  it('prompts for CI trigger branches when not provided, and persists the answer', async () => {
+    mockPromptText.mockImplementation(async (message, fallback) => fallback ?? message)
+    mockPromptBranchList.mockResolvedValue(['main', 'release'])
+
+    await runNew({ name: 'Branchy', project: 'proj', feed: 'feed', base: 'main', lib: '' })
+
+    expect(mockPromptBranchList).toHaveBeenCalledWith('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES)
+    const target = join(cwdDirectory, 'branchy')
+    expect(loadConfig(target)?.triggerBranches).toEqual(['main', 'release'])
+  })
+
+  it('splits --branches instead of prompting', async () => {
+    const target = join(cwdDirectory, 'flagged')
+    await runNew({ name: 'Flagged', base: 'main', lib: '', branches: 'main, dev , dev', yes: true })
+
+    expect(mockPromptBranchList).not.toHaveBeenCalled()
+    expect(loadConfig(target)?.triggerBranches).toEqual(['main', 'dev'])
   })
 
   it('skips the initial library when the prompt is declined', async () => {

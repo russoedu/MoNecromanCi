@@ -1,14 +1,16 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { TAGS, TEMPLATE_VERSION } from '../engine/constants'
+import { DEFAULT_TRIGGER_BRANCHES, TAGS, TEMPLATE_VERSION } from '../engine/constants'
 import type { MonecromanciConfig } from '../engine/types'
 
 jest.mock('../engine/sync', () => ({ syncToolOwned: jest.fn() }))
+jest.mock('../util/prompts', () => ({ promptBranchList: jest.fn() }))
 
 import * as configModule from '../engine/config'
 import { loadConfig, saveConfig } from '../engine/config'
 import { syncToolOwned } from '../engine/sync'
+import { promptBranchList } from '../util/prompts'
 import { runDoctor } from './doctor'
 
 const config: MonecromanciConfig = {
@@ -20,9 +22,11 @@ const config: MonecromanciConfig = {
   nodeVersion:     '24',
   ci:              'azure',
   registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  triggerBranches: ['dev', 'main'],
 }
 
 const mockSyncToolOwned = jest.mocked(syncToolOwned)
+const mockPromptBranchList = jest.mocked(promptBranchList)
 
 let repoRoot: string
 let logSpy: jest.SpyInstance
@@ -138,5 +142,38 @@ describe('runDoctor', () => {
 
     const specs = mockSyncToolOwned.mock.calls[0][1]
     expect(specs.some((spec) => spec.path.includes('helpers'))).toBe(true)
+  })
+
+  it('flags missing triggerBranches as an issue without prompting when apply is false', async () => {
+    saveConfig(repoRoot, { ...config, triggerBranches: undefined })
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: false })
+
+    expect(mockPromptBranchList).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('triggerBranches not set'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+    expect(loadConfig(repoRoot)?.triggerBranches).toBeUndefined()
+  })
+
+  it('prompts for and persists triggerBranches when missing and apply is true', async () => {
+    saveConfig(repoRoot, { ...config, triggerBranches: undefined })
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+    mockPromptBranchList.mockResolvedValue(['main', 'release'])
+
+    await runDoctor({ apply: true })
+
+    expect(mockPromptBranchList).toHaveBeenCalledWith('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES)
+    expect(loadConfig(repoRoot)?.triggerBranches).toEqual(['main', 'release'])
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Repaired 1 issue(s)'))
+  })
+
+  it('does not prompt for triggerBranches once it is already set', async () => {
+    saveConfig(repoRoot, config)
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: true })
+
+    expect(mockPromptBranchList).not.toHaveBeenCalled()
   })
 })
