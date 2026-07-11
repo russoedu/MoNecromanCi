@@ -80,7 +80,7 @@ jobs:
           git config user.name "MoNecromanCI CI"
           git add .github/badges/coverage.json
           git diff --staged --quiet || git commit -m "chore: update coverage badge [skip ci]"
-          git push
+          git push || echo "::warning::Could not push the coverage badge update (main is branch-protected) — badge may be stale until manually refreshed."
       - name: "[05] Publish documentation"
         if: ${{ vars.PUBLISH_DOCS == 'true' }}
         run: node .build-templates/05-publish-documentation.mjs
