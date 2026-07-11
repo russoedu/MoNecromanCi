@@ -1,10 +1,9 @@
-import { readAsset } from '../engine/assets'
 import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
 /** Builds the dotenv-wrapped per-environment Next.js build script line. */
-const buildEnvScript = (environment: string): string => `dotenv -e .env.${environment} -- node ../../tools/next-build.mjs ${environment}`
+const buildEnvScript = (environment: string): string => `dotenv -e .env.${environment} -- node ../../node_modules/monecromanci-toolchain/scripts/next-build.mjs ${environment}`
 
 /** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
@@ -56,7 +55,7 @@ function appProjectJson (vars: ProjectVars): string {
 /** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
-    extends:         'monecromanci/tsconfig.base.json',
+    extends:         'monecromanci-toolchain/tsconfig.base.json',
     compilerOptions: {
       target:           'es2022',
       lib:              ['es2022', 'dom', 'dom.iterable'],
@@ -78,7 +77,7 @@ function appTsconfig (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
-    extends:     ['monecromanci/typedoc.json'],
+    extends:     ['monecromanci-toolchain/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -154,10 +153,10 @@ function envFile (environment: string): string {
  * Files for a full-stack Next.js app at `apps/<name>`.
  *
  * @remarks
- * App Router with dev/uat/prod builds assembled into `dist-<env>` by the
- * vendored `tools/next-build.mjs` (server-standalone by default, or static
- * export via `NEXT_OUTPUT=export`). The page/layout are built by Next; jest
- * covers the shared TS helper.
+ * App Router with dev/uat/prod builds assembled into `dist-<env>` by
+ * `monecromanci-toolchain/scripts/next-build.mjs` (server-standalone by
+ * default, or static export via `NEXT_OUTPUT=export`). The page/layout are
+ * built by Next; jest covers the shared TS helper.
  *
  * @param vars - The project's template inputs.
  * @returns The full set of file specs for the Next.js app.
@@ -173,7 +172,7 @@ export function nextAppFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', appProjectJson(vars), 'tool-owned'),
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('next.config.mjs', nextConfig, 'scaffold'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('.env.dev', envFile('dev'), 'scaffold'),
     file('.env.uat', envFile('uat'), 'scaffold'),
@@ -182,6 +181,5 @@ export function nextAppFiles (vars: ProjectVars): FileSpec[] {
     file('src/app/page.tsx', pageTsx, 'scaffold'),
     file('src/greeting.ts', greetingTs, 'scaffold'),
     file('src/greeting.test.ts', greetingTestTs, 'scaffold'),
-    { path: 'tools/next-build.mjs', content: readAsset('scripts/next-build.mjs'), ownership: 'tool-owned' },
   ]
 }

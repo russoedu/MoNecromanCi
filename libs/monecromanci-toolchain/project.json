@@ -1,0 +1,19 @@
+{
+  "name": "monecromanci-toolchain",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/monecromanci-toolchain",
+  "projectType": "library",
+  "tags": [
+    "type:publishable-lib"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:noop"
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "{projectRoot}"
+      }
+    }
+  }
+}

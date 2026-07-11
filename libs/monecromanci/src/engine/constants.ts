@@ -43,8 +43,9 @@ export const DEFAULT_TRIGGER_BRANCHES = ['dev', 'development', 'uat', 'master', 
 
 /**
  * Repo-root paths a prior template version generated but the current one no
- * longer does, now that MoNecromanCI is a devDependency and this content is
- * referenced from `node_modules/monecromanci` instead of vendored.
+ * longer does, now that `monecromanci-toolchain` is a devDependency and this
+ * content is referenced from `node_modules/monecromanci-toolchain` instead
+ * of vendored.
  *
  * @remarks
  * `doctor` uses this to clean up already-generated repos. Deliberately a
@@ -60,10 +61,12 @@ export const OBSOLETE_TOOL_OWNED_PATHS = [
   'jest.setup.mjs',
   'jest.clear.mjs',
   'typedoc.json',
-  // The shared CI engine and the resolved-deps script: both now called
-  // straight out of node_modules/monecromanci instead of being vendored.
+  // The shared CI engine and the per-project helper scripts: all now called
+  // straight out of node_modules/monecromanci-toolchain instead of being vendored.
   '.build-templates',
   'tools/generate-dist-package.mjs',
+  'tools/clean-config.mjs',
+  'tools/next-build.mjs',
 ]
 
 /**
