@@ -127,22 +127,24 @@ normally.
 │   └── <app>/                   #   project.json, tsconfig(s), src/, jest config
 ├── libs/                        # libraries (internal + publishable + CLI tools)
 │   └── <lib>/                   #   same shape; publishable libs add typedoc.json
-├── .build-templates/            # vendored CI engine (plan/lint-test/package/publish/docs/summary)
 ├── .configurations/             # (function/node apps) per-env Azure app settings
 ├── .husky/                      # commit-msg hook → commitlint
 ├── .vscode is in *.code-workspace  # workspace file carries the debug configs
 ├── docs/nx-release.md           # how releasing works against your registry
-├── tools/                       # vendored helper scripts (dist package, config cleaning, …)
 ├── MoNecromanCi.md              # ← this document (tool-owned)
 ├── nx.json                      # caching, affected, release config (tool-owned)
-├── tsconfig.base.json           # strict shared compiler options (tool-owned)
-├── tsconfig.jest.json           # CommonJS + source maps for ts-jest (tool-owned)
-├── jest.preset.mjs / setup / clear  # shared Jest factory (tool-owned)
-├── eslint.config.mjs            # the single flat config for every project (tool-owned)
+├── eslint.config.mjs            # re-exports monecromanci-toolchain's config (tool-owned)
 ├── azure-pipelines.yml          # and/or .github/workflows/ci.yml, per your CI choice
 ├── .npmrc                       # registry + auth-token placeholder (scaffold)
 └── package.json                 # ALL dependencies + the scripts below (scaffold)
 ```
+
+The `tsconfig.base.json`/`tsconfig.jest.json`/`jest.preset.mjs` (+ `setup`/
+`clear`)/`typedoc.json` configs and the CI engine scripts/per-project helper
+scripts all live in `node_modules/monecromanci-toolchain` — a devDependency
+of every generated repo — instead of being vendored into it. Per-project
+files (`tsconfig.json`, `jest.config.mjs`, `typedoc.json`) `extend`/`import`
+from there.
 
 Root scripts you will use daily:
 
@@ -180,8 +182,9 @@ lives in the workspace but isn't ready to be managed yet.
 Chosen when the repo was created (or resurrected) and recorded in the stamp:
 
 - **CI provider**: Azure DevOps Pipelines, GitHub Actions, or both. The
-  `.build-templates/*.mjs` scripts are the single engine; the YAML files are
-  thin wrappers, so both providers run identical logic.
+  `node_modules/monecromanci-toolchain/build-templates/*.mjs` scripts are the
+  single engine; the YAML files are thin wrappers, so both providers run
+  identical logic.
 - **Registry**: Azure Artifacts, GitHub Packages, or public npm. The `.npmrc`,
   each publishable project's `publishConfig` and `docs/nx-release.md` are
   generated to match. Auth uses the `NODE_AUTH_TOKEN` environment variable.

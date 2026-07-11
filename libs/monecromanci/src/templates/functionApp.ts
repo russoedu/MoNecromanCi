@@ -1,4 +1,3 @@
-import { readAsset } from '../engine/assets'
 import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
@@ -16,7 +15,7 @@ function appPackageJson (vars: ProjectVars): string {
       build:          'tsc -p tsconfig.app.json',
       watch:          'tsc -p tsconfig.app.json -w',
       start:          'func start',
-      'clean:config': 'node ../../tools/clean-config.mjs',
+      'clean:config': 'node ../../node_modules/monecromanci-toolchain/scripts/clean-config.mjs',
       lint:           'eslint . -c ../../eslint.config.mjs',
       test:           'jest --collectCoverage',
       doc:            'typedoc --tsconfig tsconfig.app.json',
@@ -50,7 +49,7 @@ function appProjectJson (vars: ProjectVars): string {
 /** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
-    extends:         'monecromanci/tsconfig.base.json',
+    extends:         'monecromanci-toolchain/tsconfig.base.json',
     compilerOptions: {
       baseUrl:          '.',
       rootDir:          '.',
@@ -84,7 +83,7 @@ function appTsconfigApp (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
-    extends:     ['monecromanci/typedoc.json'],
+    extends:     ['monecromanci-toolchain/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -202,7 +201,7 @@ export function functionAppFiles (vars: ProjectVars): FileSpec[] {
     file('tsconfig.app.json', appTsconfigApp(), 'tool-owned'),
     file('host.json', hostJson(), 'scaffold'),
     file('local.settings.json', localSettingsJson(), 'scaffold'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('.configurations/dev.json', configurationFile('dev'), 'scaffold'),
     file('.configurations/uat.json', configurationFile('uat'), 'scaffold'),
@@ -211,6 +210,5 @@ export function functionAppFiles (vars: ProjectVars): FileSpec[] {
     file('src/greeting.ts', greetingTs, 'scaffold'),
     file('src/greeting.test.ts', greetingTestTs, 'scaffold'),
     file('src/functions/hello.ts', helloTs, 'scaffold'),
-    { path: 'tools/clean-config.mjs', content: readAsset('scripts/clean-config.mjs'), ownership: 'tool-owned' },
   ]
 }

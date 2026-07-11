@@ -2,7 +2,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyFiles } from './engine/apply'
-import { readAsset } from './engine/assets'
 import { configFromVars, saveConfig } from './engine/config'
 import { discoverProjects } from './engine/projects'
 import { syncToolOwned } from './engine/sync'
@@ -51,6 +50,7 @@ const hasPath = (path: string): boolean => existsSync(join(repo, path))
 function readJson<T> (path: string): T {
   return JSON.parse(read(path)) as T
 }
+const readToolchainAsset = (path: string): string => readFileSync(join(__dirname, '../../monecromanci-toolchain', path), 'utf8')
 
 describe('monorepo scaffolding', () => {
   it('writes the central configs', () => {
@@ -61,19 +61,19 @@ describe('monorepo scaffolding', () => {
     expect(hasPath('docs/nx-release.md')).toBe(true)
   })
 
-  it('no longer vendors configs/scripts now referenced from the monecromanci package', () => {
-    for (const path of ['tsconfig.base.json', 'tsconfig.jest.json', 'jest.preset.mjs', 'jest.setup.mjs', 'jest.clear.mjs', 'typedoc.json', '.build-templates', 'tools/generate-dist-package.mjs']) {
+  it('no longer vendors configs/scripts now referenced from the monecromanci-toolchain package', () => {
+    for (const path of ['tsconfig.base.json', 'tsconfig.jest.json', 'jest.preset.mjs', 'jest.setup.mjs', 'jest.clear.mjs', 'typedoc.json', '.build-templates', 'tools/generate-dist-package.mjs', 'tools/clean-config.mjs', 'tools/next-build.mjs']) {
       expect(hasPath(path)).toBe(false)
     }
   })
 
-  it('re-exports the canonical ESLint config from the monecromanci package', () => {
+  it('re-exports the canonical ESLint config from the monecromanci-toolchain package', () => {
     const eslintConfig = read('eslint.config.mjs')
-    expect(eslintConfig).toMatch(/export \{ default \} from 'monecromanci\/eslint\.config\.mjs'/)
+    expect(eslintConfig).toMatch(/export \{ default \} from 'monecromanci-toolchain\/eslint\.config\.mjs'/)
   })
 
   it('enables source maps in the package\'s own jest tsconfig (debug requirement)', () => {
-    const tsconfig = JSON.parse(readAsset('tsconfig.jest.json')) as { compilerOptions: { sourceMap: boolean } }
+    const tsconfig = JSON.parse(readToolchainAsset('tsconfig.jest.json')) as { compilerOptions: { sourceMap: boolean } }
     expect(tsconfig.compilerOptions.sourceMap).toBe(true)
   })
 
@@ -109,9 +109,10 @@ describe('monorepo scaffolding', () => {
     expect(package_.devDependencies['@nx/js']).toBeDefined()
   })
 
-  it('adds monecromanci itself as a devDependency, and eslint (the binary) without its plugin packages', () => {
+  it('adds monecromanci and monecromanci-toolchain as devDependencies, and eslint (the binary) without its plugin packages', () => {
     const package_ = readJson<{ devDependencies: Record<string, string> }>('package.json')
     expect(package_.devDependencies.monecromanci).toBeDefined()
+    expect(package_.devDependencies['monecromanci-toolchain']).toBeDefined()
     expect(package_.devDependencies.eslint).toBeDefined()
     for (const name of ['eslint-plugin-jest', 'eslint-plugin-unicorn', '@stylistic/eslint-plugin', '@eslint/markdown', 'globals', 'typescript-eslint']) {
       expect(package_.devDependencies[name]).toBeUndefined()
@@ -142,22 +143,24 @@ describe('project generation', () => {
     expect(project.tags).toContain('type:internal-lib')
   })
 
-  it('extends every project\'s tsconfig/jest/typedoc from the monecromanci package, not a local file', () => {
+  it('extends every project\'s tsconfig/jest/typedoc from the monecromanci-toolchain package, not a local file', () => {
     const tsconfig = readJson<{ extends: string }>('libs/helpers/tsconfig.json')
-    expect(tsconfig.extends).toBe('monecromanci/tsconfig.base.json')
+    expect(tsconfig.extends).toBe('monecromanci-toolchain/tsconfig.base.json')
 
     const jestConfig = read('libs/helpers/jest.config.mjs')
-    expect(jestConfig).toContain('from \'monecromanci/jest.preset.mjs\'')
+    expect(jestConfig).toContain('from \'monecromanci-toolchain/jest.preset.mjs\'')
 
     const typedoc = readJson<{ extends: string[] }>('libs/helpers/typedoc.json')
-    expect(typedoc.extends).toEqual(['monecromanci/typedoc.json'])
+    expect(typedoc.extends).toEqual(['monecromanci-toolchain/typedoc.json'])
   })
 
-  it('ships function-app configurations, clean:config and a root @azure/functions dep', () => {
+  it('ships function-app configurations, a clean:config script resolved from node_modules, and a root @azure/functions dep', () => {
     expect(hasPath('apps/api/.configurations/dev.json')).toBe(true)
     expect(hasPath('apps/api/.configurations/uat.json')).toBe(true)
     expect(hasPath('apps/api/.configurations/prod.json')).toBe(true)
-    expect(hasPath('tools/clean-config.mjs')).toBe(true)
+    expect(hasPath('tools/clean-config.mjs')).toBe(false)
+    const package_ = readJson<{ scripts: Record<string, string> }>('apps/api/package.json')
+    expect(package_.scripts['clean:config']).toContain('node_modules/monecromanci-toolchain/scripts/clean-config.mjs')
     const root = readJson<{ dependencies: Record<string, string> }>('package.json')
     expect(root.dependencies['@azure/functions']).toBeDefined()
   })
@@ -174,7 +177,7 @@ describe('project generation', () => {
   it('marks a cli tool with a bin and a build script that resolves the deps script from node_modules', () => {
     const package_ = readJson<{ bin: Record<string, string>, scripts: Record<string, string> }>('libs/mytool/package.json')
     expect(package_.bin.mytool).toBe('./dist/cli.js')
-    expect(package_.scripts.build).toContain('node ../../node_modules/monecromanci/dist/assets/scripts/generate-dist-package.mjs')
+    expect(package_.scripts.build).toContain('node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs')
   })
 
   it('scaffolds a generic node app tagged type:node-app with a tsx dev dependency', () => {
@@ -193,12 +196,13 @@ describe('project generation', () => {
     expect(root.devDependencies.svelte).toBeDefined()
   })
 
-  it('scaffolds a full-stack Next.js app with the multi-env build script', () => {
+  it('scaffolds a full-stack Next.js app with the multi-env build script resolved from node_modules', () => {
     expect(hasPath('apps/portal/src/app/page.tsx')).toBe(true)
-    expect(hasPath('tools/next-build.mjs')).toBe(true)
+    expect(hasPath('tools/next-build.mjs')).toBe(false)
     expect(readJson<{ tags: string[] }>('apps/portal/project.json').tags).toContain('type:nextjs-app')
     const package_ = readJson<{ scripts: Record<string, string> }>('apps/portal/package.json')
     expect(package_.scripts['build:all']).toContain('build:uat')
+    expect(package_.scripts['build:dev']).toContain('node_modules/monecromanci-toolchain/scripts/next-build.mjs')
     expect(readJson<{ dependencies: Record<string, string> }>('package.json').dependencies.next).toBeDefined()
   })
 })
@@ -225,13 +229,13 @@ describe('CI providers', () => {
     expect(paths.has('.build-templates/03-package-apps.mjs')).toBe(false)
   })
 
-  it('calls the shared engine straight out of node_modules/monecromanci in both pipeline files', () => {
+  it('calls the shared engine straight out of node_modules/monecromanci-toolchain in both pipeline files', () => {
     const files = monorepoFiles({ ...vars, ci: 'both' })
     const azurePipelines = files.find((file) => file.path === 'azure-pipelines.yml')?.content ?? ''
     const githubWorkflow = files.find((file) => file.path === '.github/workflows/ci.yml')?.content ?? ''
 
     for (const step of ['01-preparation', '02-quality-control', '03-package-apps', '04-publish-libs', '05-publish-documentation', '06-summary']) {
-      const scriptPath = `node_modules/monecromanci/dist/assets/build-templates/${step}.mjs`
+      const scriptPath = `node_modules/monecromanci-toolchain/build-templates/${step}.mjs`
       expect(azurePipelines).toContain(scriptPath)
       expect(githubWorkflow).toContain(scriptPath)
     }
@@ -265,7 +269,7 @@ describe('registry', () => {
 
 describe('publish pipeline', () => {
   it('delegates publishing to nx release publish instead of hand-rolling npm publish', () => {
-    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
+    const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // Nx's own nx-release-publish executor already resolves the dist-vs-root
     // manifest (via the target's packageRoot option in nx.json), builds first
@@ -277,7 +281,7 @@ describe('publish pipeline', () => {
   })
 
   it('refuses to publish a manifest with a publish-lifecycle-hook script', () => {
-    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
+    const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // npm auto-runs "publish"/"postpublish"/"prepublish" as lifecycle hooks right
     // after the upload; a mismatched one fails the command post-hoc. Must be
@@ -288,7 +292,7 @@ describe('publish pipeline', () => {
   })
 
   it('bumps and tags (never commits) affected publishable projects via nx release before publishing', () => {
-    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
+    const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
     // commits since each one's last release tag; tags + pushes the tag only,

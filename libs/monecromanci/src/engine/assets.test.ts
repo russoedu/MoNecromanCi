@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { assetsRoot, listAssetFiles, readAsset } from './assets'
 
 describe('assetsRoot', () => {
@@ -24,14 +23,14 @@ describe('assetsRoot', () => {
 
 describe('readAsset', () => {
   it('reads a bundled asset file as UTF-8 text', () => {
-    expect(readAsset(join('build-templates', 'README.md')).length).toBeGreaterThan(0)
+    expect(readAsset('MoNecromanCi.md').length).toBeGreaterThan(0)
   })
 })
 
 describe('listAssetFiles', () => {
   it('lists nested files as forward-slash relative paths', () => {
-    const files = listAssetFiles('build-templates')
-    expect(files).toContain('README.md')
+    const files = listAssetFiles('github')
+    expect(files).toContain('workflows/ci.yml')
     expect(files.some((file) => file.includes('/'))).toBe(true)
     expect(files.every((file) => !file.includes('\\'))).toBe(true)
   })

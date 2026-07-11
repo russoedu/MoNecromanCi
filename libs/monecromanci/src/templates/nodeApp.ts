@@ -49,7 +49,7 @@ function appProjectJson (vars: ProjectVars): string {
 /** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
-    extends:         'monecromanci/tsconfig.base.json',
+    extends:         'monecromanci-toolchain/tsconfig.base.json',
     compilerOptions: {
       baseUrl:          '.',
       rootDir:          '.',
@@ -83,7 +83,7 @@ function appTsconfigApp (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
-    extends:     ['monecromanci/typedoc.json'],
+    extends:     ['monecromanci-toolchain/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -164,7 +164,7 @@ export function nodeAppFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', appProjectJson(vars), 'tool-owned'),
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('tsconfig.app.json', appTsconfigApp(), 'tool-owned'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('src/index.ts', indexTs, 'scaffold'),
     file('src/server.ts', serverTs, 'scaffold'),

@@ -92,6 +92,12 @@ for (const [kind, name] of projects) {
  * Offline module resolution. The temp parent node_modules is symlinked to the
  * repo toolchain (tsc, esbuild, nx, commander, tslib). The workspace scope dir
  * holds symlinks to the workspace packages, plus a hand-made fake external.
+ * monecromanci-toolchain is symlinked directly into the workspace's own
+ * node_modules too: per-project build/lint/jest scripts resolve it via an
+ * explicit `../../node_modules/monecromanci-toolchain/...` path (two levels
+ * up from libs/<project>, i.e. the workspace root), which is a literal
+ * filesystem path, not a specifier — it does not benefit from Node's
+ * parent-directory node_modules walk-up the way bare imports do.
  * ------------------------------------------------------------------------- */
 
 symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(temporary, 'node_modules'), 'dir')
@@ -101,6 +107,7 @@ mkdirSync(path.join(workspaceModules, SCOPE), { recursive: true })
 for (const name of ['core', 'beta', 'alpha', 'cli']) {
   symlinkSync(path.join(workspace, 'libs', name), path.join(workspaceModules, SCOPE, name), 'dir')
 }
+symlinkSync(path.join(REPO_ROOT, 'libs', 'monecromanci-toolchain'), path.join(workspaceModules, 'monecromanci-toolchain'), 'dir')
 
 const fakeExternal = path.join(workspaceModules, '@e2e-ext', 'tool')
 mkdirSync(fakeExternal, { recursive: true })
@@ -190,6 +197,7 @@ const appProject = (name, type) => ({
   version:     '0.0.0',
   type:        { functionApp: type === 'fapp', nodeApp: type === 'napp', reactApp: false, externalPackage: false, internalPackage: false },
 })
+mkdirSync(path.join(workspace, '.build-templates'), { recursive: true })
 writeJson(path.join(workspace, '.build-templates', '01-preparation.context.json'), {
   affectedProjects: ['fapp', 'napp'],
   hasAffected:      true,
@@ -197,7 +205,7 @@ writeJson(path.join(workspace, '.build-templates', '01-preparation.context.json'
 })
 
 console.log('▸ packaging apps `fapp`, `napp` (03-package-apps --dry-run)')
-run('node', ['.build-templates/03-package-apps.mjs', '--dry-run'], workspace, { NX_DAEMON: 'false', HUSKY: '0' })
+run('node', ['node_modules/monecromanci-toolchain/build-templates/03-package-apps.mjs', '--dry-run'], workspace, { NX_DAEMON: 'false', HUSKY: '0' })
 
 /* ---------------------------------------------------------------------------
  * Assertions

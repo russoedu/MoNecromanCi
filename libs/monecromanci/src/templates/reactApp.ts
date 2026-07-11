@@ -52,7 +52,7 @@ function appProjectJson (vars: ProjectVars): string {
 /** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
-    extends:         'monecromanci/tsconfig.base.json',
+    extends:         'monecromanci-toolchain/tsconfig.base.json',
     compilerOptions: {
       target:                       'es2022',
       lib:                          ['es2022', 'DOM', 'DOM.Iterable'],
@@ -154,7 +154,7 @@ describe('App', () => {
 `
 
 /** Builds the project's jest config (jsdom + ts-jest for .tsx). */
-const jestConfigMjs = (name: string): string => String.raw`import { createConfig } from 'monecromanci/jest.preset.mjs'
+const jestConfigMjs = (name: string): string => String.raw`import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'
 
 const base = createConfig('${name}')
 
