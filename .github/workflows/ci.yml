@@ -69,8 +69,11 @@ jobs:
         run: node .build-templates/04-publish-libs.mjs
       # Hand-maintained (not part of the shared .build-templates/* engine): a
       # README coverage badge, specific to this repo being MoNecromanCI's own
-      # published npm package. Re-check this step after any `doctor --fix`/
-      # `update` run — ci.yml is otherwise fully tool-owned and regenerated.
+      # published npm package. Pushed to the dedicated, unprotected "badges"
+      # branch (not main) so branch-protection rules on main never block it —
+      # the README's badge URL reads the file straight from that branch.
+      # Re-check this step after any `doctor --fix`/`update` run — ci.yml is
+      # otherwise fully tool-owned and regenerated.
       - name: "[07] Coverage badge"
         if: ${{ github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch }}
         run: |
@@ -80,7 +83,7 @@ jobs:
           git config user.name "MoNecromanCI CI"
           git add .github/badges/coverage.json
           git diff --staged --quiet || git commit -m "chore: update coverage badge [skip ci]"
-          git push || echo "::warning::Could not push the coverage badge update (main is branch-protected) — badge may be stale until manually refreshed."
+          git push --force origin HEAD:badges || echo "::warning::Could not push the coverage badge update to the badges branch — badge may be stale until manually refreshed."
       - name: "[05] Publish documentation"
         if: ${{ vars.PUBLISH_DOCS == 'true' }}
         run: node .build-templates/05-publish-documentation.mjs
