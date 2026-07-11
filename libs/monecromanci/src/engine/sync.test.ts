@@ -28,6 +28,16 @@ describe('checkFile', () => {
     writeFileSync(join(repoRoot, 'a.txt'), 'OLD', 'utf8')
     expect(checkFile(repoRoot, { path: 'a.txt', content: 'NEW', ownership: 'tool-owned' })).toBe('drift')
   })
+
+  it('is ok when the only difference is CRLF vs LF line endings', () => {
+    writeFileSync(join(repoRoot, 'a.txt'), 'line1\r\nline2\r\n', 'utf8')
+    expect(checkFile(repoRoot, { path: 'a.txt', content: 'line1\nline2\n', ownership: 'tool-owned' })).toBe('ok')
+  })
+
+  it('is still drift when real content differs, even with different line endings', () => {
+    writeFileSync(join(repoRoot, 'a.txt'), 'line1\r\nline2\r\n', 'utf8')
+    expect(checkFile(repoRoot, { path: 'a.txt', content: 'line1\nCHANGED\n', ownership: 'tool-owned' })).toBe('drift')
+  })
 })
 
 describe('syncToolOwned', () => {

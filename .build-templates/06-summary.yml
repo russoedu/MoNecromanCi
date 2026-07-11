@@ -1,4 +1,0 @@
-steps:
-  - script: node .build-templates/06-summary.mjs
-    displayName: "[06] Publish build summary"
-    condition: succeededOrFailed()

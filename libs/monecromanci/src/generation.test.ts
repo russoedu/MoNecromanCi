@@ -239,29 +239,38 @@ describe('publish pipeline', () => {
     const pipeline = read('.build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
-    // commits since each one's last release tag; commits + tags + pushes the result.
+    // commits since each one's last release tag; tags + pushes the result on
+    // both providers. GitHub also commits the bump; Azure skips the commit
+    // (repos there commonly protect the release branch against direct
+    // pushes) and only pushes the tag.
     expect(pipeline).toMatch(/nx release version --projects=/)
-    expect(pipeline).toMatch(/--git-commit\b/)
-    expect(pipeline).toMatch(/--git-tag\b/)
-    expect(pipeline).toMatch(/--git-push\b/)
+    expect(pipeline).toMatch(/if \(isAzure\(\)\)/)
+    expect(pipeline).toMatch(/--no-git-commit --git-tag --git-push\b/)
+    expect(pipeline).toMatch(/--git-commit --git-commit-message .* --git-tag --git-push\b/)
     // Versioning must run before the publish loop, not after.
     expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('const results = { published: [], skipped: [] }'))
   })
 
-  it('re-attaches Azure\'s detached HEAD before the git-push-dependent release step runs', () => {
-    const preparation = read('.build-templates/01-preparation.yml')
+  it('re-attaches Azure\'s detached HEAD before the release step runs, in a single self-contained pipeline file', () => {
+    const pipeline = read('azure-pipelines.yml')
 
-    // `checkout: self` leaves Azure Pipelines on a detached HEAD, which makes
-    // nx release version --git-push's plain `git push origin` fail later with
-    // "You are not currently on a branch." Must re-attach right after checkout,
-    // before anything else runs.
-    const checkoutIndex = preparation.indexOf('checkout: self')
-    const attachIndex = preparation.indexOf('git checkout -B $(Build.SourceBranchName)')
-    const fetchReferencesIndex = preparation.indexOf('[01] Fetch all refs for affected detection')
+    // `checkout: self` leaves Azure Pipelines on a detached HEAD; re-attach right
+    // after checkout, before anything else runs. Everything else (the six former
+    // .build-templates/NN-*.yml step-template wrappers) is inlined directly here
+    // too, mirroring how ci.yml is already a single self-contained file.
+    const checkoutIndex = pipeline.indexOf('checkout: self')
+    const attachIndex = pipeline.indexOf('git checkout -B $(Build.SourceBranchName)')
+    const fetchReferencesIndex = pipeline.indexOf('[01] Fetch all refs for affected detection')
+    const publishIndex = pipeline.indexOf('[04] Publish affected libraries')
+    const summaryIndex = pipeline.indexOf('[06] Publish build summary')
 
     expect(checkoutIndex).toBeGreaterThan(-1)
     expect(attachIndex).toBeGreaterThan(checkoutIndex)
     expect(fetchReferencesIndex).toBeGreaterThan(attachIndex)
+    expect(publishIndex).toBeGreaterThan(fetchReferencesIndex)
+    expect(summaryIndex).toBeGreaterThan(publishIndex)
+    expect(hasPath('.build-templates/01-preparation.yml')).toBe(false)
+    expect(hasPath('.build-templates/04-publish-libs.yml')).toBe(false)
   })
 })
 

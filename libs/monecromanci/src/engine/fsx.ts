@@ -104,6 +104,22 @@ export function readTextSafe (filePath: string): string {
 }
 
 /**
+ * Normalises CRLF line endings to LF.
+ *
+ * @remarks
+ * Used to compare tool-owned file content without treating a pure
+ * line-ending difference (e.g. a file edited on Windows) as real drift.
+ *
+ * @param text - The text to normalise.
+ * @returns The text with every `\r\n` replaced by `\n`.
+ * @throws Never - performs no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function normalizeEol (text: string): string {
+  return text.replaceAll('\r\n', '\n')
+}
+
+/**
  * Serialises a value as pretty-printed JSON with a trailing newline.
  *
  * @remarks

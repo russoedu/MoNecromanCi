@@ -70,22 +70,30 @@ export type RegistryConfig
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface MonecromanciConfig {
-  templateVersion:  string
-  workspaceName:    string
-  displayName:      string
-  scope:            string
-  defaultBase:      string
-  nodeVersion:      string
-  ci:               CiProvider
-  registry:         RegistryConfig
+  templateVersion:      string
+  workspaceName:        string
+  displayName:          string
+  scope:                string
+  defaultBase:          string
+  nodeVersion:          string
+  ci:                   CiProvider
+  registry:             RegistryConfig
   /**
    * Branches that trigger the CI pipeline. `undefined` on stamps written
    * before this setting existed — `doctor`/`resurrect`/`update` prompt for it
    * once, then persist it here.
    */
-  triggerBranches?: string[]
+  triggerBranches?:     string[]
+  /**
+   * Per-file drift resolution remembered from `doctor`'s interactive prompt,
+   * keyed by the file's repo-relative path (the same strings used in
+   * {@link FileSpec.path}/`SyncReport.drift`). `'always'` silently re-applies
+   * the canonical content on every future run; `'never'` silently leaves the
+   * file alone. Absent (or no entry for a path) means "ask when drifted."
+   */
+  fileSyncPreferences?: Record<string, 'always' | 'never'>
   /** Legacy v1 field; migrated to {@link MonecromanciConfig.registry} on load. */
-  azure?:           AzureConfig
+  azure?:               AzureConfig
 }
 
 /**
