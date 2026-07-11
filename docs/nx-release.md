@@ -34,7 +34,15 @@ npx nx release --dry-run   # preview everything, change nothing
 correct `dist/package.json`: it resolves real dependency versions from the **root**
 package.json (all deps live there) and from internal workspace packages. This is
 why published packages declare their dependencies even though project
-`package.json` files keep `dependencies: {}`. Publishing runs `npm publish ./dist`.
+`package.json` files keep `dependencies: {}`.
+
+Publishing itself is delegated to `nx release publish`, which builds each
+project first (the `nx-release-publish` target's `dependsOn: ['build']` in
+`nx.json`), resolves what to publish from that target's `packageRoot` option
+(`dist/{projectRoot}` by default), and natively skips anything already on the
+registry. `monecromanci` itself publishes from the project root instead (it
+predates the template's `tsup` + `files` allow-list build), so its own
+`project.json` overrides `packageRoot` to `.`.
 
 ## First release
 
@@ -50,11 +58,19 @@ npx nx release version 1.0.0 --projects=my-lib --first-release
 
 On `main` (non-PR builds), the publish step (`04-publish-libs`) scopes
 `nx release version` to the affected publishable projects, letting it compute
-each one's bump from conventional commits, write the version + changelog,
-commit, create a release tag (the `release.releaseTag.pattern` from `nx.json`)
-and push the result back to `main` — then publishes the newly versioned
-projects to the public npm registry. A project with no releasable commits since
-its last tag is left untouched.
+each one's bump from conventional commits and create a release tag (the
+`release.releaseTag.pattern` from `nx.json`) — then publishes the newly
+versioned projects to the public npm registry. A project with no releasable
+commits since its last tag is left untouched.
+
+The version bump is **never committed** — only the tag is pushed back to
+`main`. GitHub repos commonly protect the release branch against direct
+pushes, which rejects the atomic commit+tag push `nx release` would
+otherwise attempt; skipping the commit (`--no-git-commit`) means nothing is
+pushed to the branch itself, so a protected `main` never rejects the
+release. Future runs still resolve versions correctly since `nx release`
+reads the version straight from the tag name, not from a committed
+`package.json`.
 
 This needs write access back to the repository:
 

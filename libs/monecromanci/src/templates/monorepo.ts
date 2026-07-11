@@ -119,10 +119,11 @@ function nxJson (vars: MonorepoVars): string {
       ],
     },
     targetDefaults: {
-      build: { dependsOn: ['^build'], inputs: ['production', '^production'], cache: true },
-      lint:  { inputs: ['default', '^production'], cache: true },
-      test:  { dependsOn: ['build'], inputs: ['default', '^production'], cache: true },
-      doc:   { inputs: ['production', '^production'], cache: true },
+      build:                { dependsOn: ['^build'], inputs: ['production', '^production'], cache: true },
+      lint:                 { inputs: ['default', '^production'], cache: true },
+      test:                 { dependsOn: ['build'], inputs: ['default', '^production'], cache: true },
+      doc:                  { inputs: ['production', '^production'], cache: true },
+      'nx-release-publish': { dependsOn: ['build'], options: { packageRoot: 'dist/{projectRoot}' } },
     },
     release: {
       projectsRelationship: 'independent',
@@ -349,6 +350,7 @@ function registryLabelFor (registry: RegistryConfig): string {
 /** Builds the nx-release how-to document for the configured registry. */
 function nxReleaseDocument (vars: MonorepoVars): string {
   const registryLabel = registryLabelFor(vars.registry)
+  const distPackageRootToken = '{projectRoot}'
 
   return `# Releasing publishable libraries & CLI tools
 
@@ -386,7 +388,15 @@ npx nx release --dry-run   # preview everything, change nothing
 correct \`dist/package.json\`: it resolves real dependency versions from the **root**
 package.json (all deps live there) and from internal workspace packages. This is
 why published packages declare their dependencies even though project
-\`package.json\` files keep \`dependencies: {}\`. Publishing runs \`npm publish ./dist\`.
+\`package.json\` files keep \`dependencies: {}\`.
+
+Publishing itself is delegated to \`nx release publish\`, which builds each
+project first (the \`nx-release-publish\` target's \`dependsOn: ['build']\` in
+\`nx.json\`), resolves what to publish from that target's \`packageRoot\` option
+(\`dist/${distPackageRootToken}\` by default), and natively skips anything already on the
+registry. A project that packages itself from its root instead (e.g. a bundled
+CLI with a \`files\` allow-list) overrides \`packageRoot\` to \`.\` in its own
+\`project.json\`.
 
 ## First release
 

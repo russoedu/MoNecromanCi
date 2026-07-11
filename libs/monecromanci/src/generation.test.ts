@@ -85,6 +85,15 @@ describe('monorepo scaffolding', () => {
     expect(nxConfig.release.version.fallbackCurrentVersionResolver).toBe('disk')
   })
 
+  it('builds each project before nx release publish and resolves the dist manifest as its package root', () => {
+    const nxConfig = readJson<{ targetDefaults: {
+      'nx-release-publish'?: { dependsOn?: string[], options?: { packageRoot?: string } }
+    } }>('nx.json')
+
+    expect(nxConfig.targetDefaults['nx-release-publish']?.dependsOn).toEqual(['build'])
+    expect(nxConfig.targetDefaults['nx-release-publish']?.options?.packageRoot).toBe('dist/{projectRoot}')
+  })
+
   it('pins @nx/js so nx release can version JS/TS projects', () => {
     const package_ = readJson<{ devDependencies: Record<string, string> }>('package.json')
     expect(package_.devDependencies['@nx/js']).toBeDefined()
@@ -213,16 +222,16 @@ describe('registry', () => {
 })
 
 describe('publish pipeline', () => {
-  it('publishes the built dist/ folder, not the source project root', () => {
+  it('delegates publishing to nx release publish instead of hand-rolling npm publish', () => {
     const pipeline = read('.build-templates/04-publish-libs.mjs')
 
-    // Publishes dist/ when the build emitted a dist/package.json, else the root…
-    expect(pipeline).toMatch(/const distDir = path\.join\(projectRoot, 'dist'\)/)
-    expect(pipeline).toMatch(/hasDistManifest \? distDir : projectRoot/)
-    expect(pipeline).toMatch(/publish \$\{shellEscape\(publishTarget\)\}/)
-    // …and refuses a bare project root with no `files` allow-list (raw sources).
-    expect(pipeline).toMatch(/Array\.isArray\(packageJson\.files\)/)
+    // Nx's own nx-release-publish executor already resolves the dist-vs-root
+    // manifest (via the target's packageRoot option in nx.json), builds first
+    // (dependsOn: ['build']), and skips anything already on the registry — no
+    // need to hand-roll any of that here.
+    expect(pipeline).toMatch(/nx release publish --projects=.* --verbose/)
     expect(pipeline).not.toMatch(/\bpublish --userconfig/)
+    expect(pipeline).not.toMatch(/isVersionPublished/)
   })
 
   it('refuses to publish a manifest with a publish-lifecycle-hook script', () => {
@@ -230,12 +239,13 @@ describe('publish pipeline', () => {
 
     // npm auto-runs "publish"/"postpublish"/"prepublish" as lifecycle hooks right
     // after the upload; a mismatched one fails the command post-hoc. Must be
-    // caught up front, before the registry is ever touched.
+    // caught up front, before the registry is ever touched — Nx's own publish
+    // executor doesn't guard against this, so it's still worth doing by hand.
     expect(pipeline).toMatch(/lifecycleHookNames = \['prepublish', 'publish', 'postpublish'\]/)
     expect(pipeline).toMatch(/collidingHook/)
   })
 
-  it('bumps, tags and pushes (never commits) affected publishable projects via nx release before publishing', () => {
+  it('bumps and tags (never commits) affected publishable projects via nx release before publishing', () => {
     const pipeline = read('.build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
@@ -245,8 +255,8 @@ describe('publish pipeline', () => {
     // commit+tag push nx would otherwise attempt.
     expect(pipeline).toMatch(/nx release version --projects=.* --no-git-commit --git-tag --git-push\b/)
     expect(pipeline).not.toMatch(/--git-commit\b/)
-    // Versioning must run before the publish loop, not after.
-    expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('const results = { published: [], skipped: [] }'))
+    // Versioning must run before the publish call, not after.
+    expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('publishLibraries(publishableLibraries)'))
   })
 
   it('re-attaches Azure\'s detached HEAD before the release step runs, in a single self-contained pipeline file', () => {
