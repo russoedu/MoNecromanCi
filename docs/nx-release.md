@@ -42,7 +42,7 @@ project first (the `nx-release-publish` target's `dependsOn: ['build']` in
 (`dist/{projectRoot}` by default), and natively skips anything already on the
 registry. `monecromanci` itself publishes from the project root instead (it
 predates the template's `tsup` + `files` allow-list build), so its own
-`project.json` overrides `packageRoot` to `.`.
+`project.json` overrides `packageRoot` to `{projectRoot}`.
 
 ## First release
 

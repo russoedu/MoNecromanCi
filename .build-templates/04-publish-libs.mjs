@@ -22,7 +22,7 @@
  * `nx.json`), resolves what to publish from its `packageRoot` option
  * (`dist/{projectRoot}` by default — the publishable-lib convention, via
  * `tools/generate-dist-package.mjs`; a root-published project, e.g. a bundled
- * CLI with a `files` allow-list, overrides `packageRoot` to `.` in its own
+ * CLI with a `files` allow-list, overrides `packageRoot` to `{projectRoot}` in its own
  * `project.json`), and skips anything already on the registry.
  *
  * Before that, every candidate's manifest is checked for a `publish`/

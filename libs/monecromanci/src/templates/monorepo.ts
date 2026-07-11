@@ -395,7 +395,7 @@ project first (the \`nx-release-publish\` target's \`dependsOn: ['build']\` in
 \`nx.json\`), resolves what to publish from that target's \`packageRoot\` option
 (\`dist/${distPackageRootToken}\` by default), and natively skips anything already on the
 registry. A project that packages itself from its root instead (e.g. a bundled
-CLI with a \`files\` allow-list) overrides \`packageRoot\` to \`.\` in its own
+CLI with a \`files\` allow-list) overrides \`packageRoot\` to \`${distPackageRootToken}\` in its own
 \`project.json\`.
 
 ## First release
