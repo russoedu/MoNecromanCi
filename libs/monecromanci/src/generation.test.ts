@@ -235,18 +235,16 @@ describe('publish pipeline', () => {
     expect(pipeline).toMatch(/collidingHook/)
   })
 
-  it('bumps, tags and pushes affected publishable projects via nx release before publishing', () => {
+  it('bumps, tags and pushes (never commits) affected publishable projects via nx release before publishing', () => {
     const pipeline = read('.build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
-    // commits since each one's last release tag; tags + pushes the result on
-    // both providers. GitHub also commits the bump; Azure skips the commit
-    // (repos there commonly protect the release branch against direct
-    // pushes) and only pushes the tag.
-    expect(pipeline).toMatch(/nx release version --projects=/)
-    expect(pipeline).toMatch(/if \(isAzure\(\)\)/)
-    expect(pipeline).toMatch(/--no-git-commit --git-tag --git-push\b/)
-    expect(pipeline).toMatch(/--git-commit --git-commit-message .* --git-tag --git-push\b/)
+    // commits since each one's last release tag; tags + pushes the tag only,
+    // on both providers — both GitHub and Azure DevOps repos commonly protect
+    // the release branch against direct pushes, which rejects the atomic
+    // commit+tag push nx would otherwise attempt.
+    expect(pipeline).toMatch(/nx release version --projects=.* --no-git-commit --git-tag --git-push\b/)
+    expect(pipeline).not.toMatch(/--git-commit\b/)
     // Versioning must run before the publish loop, not after.
     expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('const results = { published: [], skipped: [] }'))
   })

@@ -407,17 +407,14 @@ compute each one's bump from conventional commits and create a release tag
 versioned projects to ${registryLabel}. A project with no releasable commits
 since its last tag is left untouched.
 
-What gets pushed back to \`${vars.defaultBase}\` differs by provider, since Azure
-DevOps repos commonly protect the release branch against direct pushes while
-still allowing new tags:
-
-- **GitHub Actions**: commits the version + changelog, tags, and pushes both
-  the commit and the tag back to \`${vars.defaultBase}\`.
-- **Azure DevOps**: skips the commit entirely (\`--no-git-commit\`) and only
-  tags and pushes the tag — nothing is pushed to the branch itself, so a
-  protected \`${vars.defaultBase}\` never rejects the release. Future runs still
-  resolve versions correctly since \`nx release\` reads the version straight
-  from the tag name, not from a committed \`package.json\`.
+The version bump is **never committed** — only the tag is pushed back to
+\`${vars.defaultBase}\`. Both GitHub and Azure DevOps repos commonly protect the
+release branch against direct pushes, which rejects the atomic commit+tag
+push \`nx release\` would otherwise attempt; skipping the commit (\`--no-git-commit\`)
+means nothing is pushed to the branch itself, so a protected \`${vars.defaultBase}\`
+never rejects the release. Future runs still resolve versions correctly since
+\`nx release\` reads the version straight from the tag name, not from a
+committed \`package.json\`.
 
 This needs write access back to the repository:
 

@@ -6,17 +6,16 @@
  * Versions are decided automatically: `nx release version` reads the
  * Conventional Commit messages since each affected publishable project's last
  * release tag, computes the bump (patch/minor/major), writes the new version
- * (and changelog) to disk, then tags (`{project}@{version}`) — before anything
- * is built or published. On GitHub Actions this also commits the bump and
- * pushes both the commit and the tag back to the release branch; on Azure
- * DevOps the commit is skipped entirely (`--no-git-commit`) and only the tag
- * is pushed, since Azure repos commonly protect the release branch against
- * direct pushes while still allowing new tags — `nx release` resolves
- * versions from the tag name either way, so nothing is lost by not
- * committing. A project with no releasable commits since its last tag is left
- * untouched. A project with no matching tag yet (never released) falls back to
- * whatever version is on disk (see `release.version.fallbackCurrentVersionResolver`
- * in `nx.json`), so a brand-new project needs no manual bootstrapping.
+ * (and changelog) to disk, then tags (`{project}@{version}`) and pushes only
+ * the tag — never a commit — before anything is built or published. Both
+ * GitHub and Azure DevOps repos commonly protect the release branch against
+ * direct pushes, which rejects the atomic commit+tag push nx would otherwise
+ * attempt; `nx release` resolves each project's version from the tag name
+ * regardless, so nothing is lost by never committing the bump. A project with
+ * no releasable commits since its last tag is left untouched. A project with
+ * no matching tag yet (never released) falls back to whatever version is on
+ * disk (see `release.version.fallbackCurrentVersionResolver` in `nx.json`),
+ * so a brand-new project needs no manual bootstrapping.
  *
  * What ships is the built `dist/` folder (transpiled `*.js` + `*.d.ts` + source
  * maps and the generated `dist/package.json`) whenever the build emits that
@@ -41,7 +40,6 @@ import path from 'node:path'
 import process from 'node:process'
 import {
   banner,
-  isAzure,
   isWindows,
   log,
   readJsonSafe,
@@ -109,11 +107,11 @@ function bumpVersions (publishableLibraries) {
 
   const projects = publishableLibraries.map(project => project.name).join(',')
   section('Version (nx release)')
-  if (isAzure()) {
-    runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --git-push --verbose`)
-  } else {
-    runInherit(`npx nx release version --projects=${shellEscape(projects)} --git-commit --git-commit-message ${shellEscape('chore(release): publish')} --git-tag --git-push --verbose`)
-  }
+  // No commit: both GitHub and Azure DevOps repos commonly protect the release
+  // branch against direct pushes, which rejects the atomic commit+tag push
+  // (confirmed on both providers). Only the tag is pushed; nx resolves each
+  // project's version from the tag name, so nothing is lost by not committing.
+  runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --git-push --verbose`)
 }
 
 /**
