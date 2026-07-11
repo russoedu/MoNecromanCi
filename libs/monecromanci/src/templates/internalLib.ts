@@ -48,7 +48,7 @@ function libProjectJson (vars: ProjectVars): string {
 /** Builds the project tsconfig extending the shared base. */
 function libTsconfig (): string {
   return toJson({
-    extends:         '../../tsconfig.base.json',
+    extends:         'monecromanci/tsconfig.base.json',
     compilerOptions: {
       baseUrl:                      '.',
       rootDir:                      '.',
@@ -91,7 +91,7 @@ function libTsconfigLib (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function libTypedoc (): string {
   return toJson({
-    extends:     ['../../typedoc.json'],
+    extends:     ['monecromanci/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -147,7 +147,7 @@ export function internalLibFiles (vars: ProjectVars): FileSpec[] {
     toolOwned('project.json', libProjectJson(vars)),
     toolOwned('tsconfig.json', libTsconfig()),
     toolOwned('tsconfig.lib.json', libTsconfigLib()),
-    scaffold('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`),
+    scaffold('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`),
     toolOwned('typedoc.json', libTypedoc()),
     scaffold('src/index.ts', indexTs),
     scaffold('src/greeter.ts', greeterTs),

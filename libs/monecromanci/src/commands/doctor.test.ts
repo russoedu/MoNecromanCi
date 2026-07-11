@@ -144,6 +144,29 @@ describe('runDoctor', () => {
     expect(readFileSync(join(repoRoot, '.npmrc'), 'utf8')).toContain('legacy-peer-deps=true')
   })
 
+  it('flags an obsolete vendored file (from a prior template version) as an issue without deleting it', async () => {
+    saveConfig(repoRoot, config)
+    writeFileSync(join(repoRoot, 'tsconfig.base.json'), '{}')
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: false })
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('obsolete: tsconfig.base.json'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+    expect(existsSync(join(repoRoot, 'tsconfig.base.json'))).toBe(true)
+  })
+
+  it('deletes an obsolete vendored file with --fix', async () => {
+    saveConfig(repoRoot, config)
+    writeFileSync(join(repoRoot, 'jest.preset.mjs'), 'export function createConfig () {}')
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: true })
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed: jest.preset.mjs'))
+    expect(existsSync(join(repoRoot, 'jest.preset.mjs'))).toBe(false)
+  })
+
   it('includes discovered projects specs alongside the monorepo specs', async () => {
     saveConfig(repoRoot, config)
     const libDirectory = join(repoRoot, 'libs', 'helpers')

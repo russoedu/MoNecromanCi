@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
-import { DEFAULT_TRIGGER_BRANCHES, TEMPLATE_VERSION } from '../engine/constants'
+import { DEFAULT_TRIGGER_BRANCHES, OBSOLETE_TOOL_OWNED_PATHS, TEMPLATE_VERSION } from '../engine/constants'
 import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
-import { readTextSafe, writeFileEnsured } from '../engine/fsx'
+import { fileExists, readTextSafe, removeFileIfExists, writeFileEnsured } from '../engine/fsx'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
 import { syncToolOwned } from '../engine/sync'
@@ -121,8 +121,9 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   const dependencyIssues = checkDependencyHealth(repoRoot, options.apply)
+  const obsoleteIssues = checkObsoletePaths(repoRoot, options.apply)
   const configIssues = wasMissing ? 1 : 0
-  const issues = report.missing.length + stillDrift.length + dependencyIssues + configIssues
+  const issues = report.missing.length + stillDrift.length + dependencyIssues + obsoleteIssues + configIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -135,7 +136,7 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   saveConfig(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
-  const repaired = report.missing.length + applied.length + dependencyIssues + configIssues
+  const repaired = report.missing.length + applied.length + dependencyIssues + obsoleteIssues + configIssues
   const leftoverNote = stillDrift.length > 0 ? ` (${stillDrift.length} left as drift — re-run --fix to decide again)` : ''
   logger.success(`Repaired ${repaired} issue(s); stamped template version ${TEMPLATE_VERSION}.${leftoverNote}`)
 }
@@ -319,6 +320,42 @@ function checkDependencyHealth (repoRoot: string, shouldApply: boolean): number 
       logger.success('added legacy-peer-deps=true to .npmrc (ESLint 10 is ahead of some plugins\' peer ranges)')
     } else {
       logger.warn('.npmrc is missing legacy-peer-deps=true — `npm install` may fail on ESLint peer ranges')
+    }
+  }
+
+  return issues
+}
+
+/**
+ * Reports (and with `shouldApply`, removes) root files a prior template
+ * version generated but the current one no longer produces.
+ *
+ * @remarks
+ * See {@link OBSOLETE_TOOL_OWNED_PATHS} — a hardcoded, append-only list, not a
+ * generic diff-driven prune, so doctor can never delete a path it didn't
+ * itself create in some prior template version.
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param shouldApply - Whether to delete the files or only report them.
+ * @returns The number of obsolete paths found.
+ * @throws Propagates any Node.js `fs` error raised while deleting.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkObsoletePaths (repoRoot: string, shouldApply: boolean): number {
+  let issues = 0
+
+  for (const path of OBSOLETE_TOOL_OWNED_PATHS) {
+    const absolute = join(repoRoot, path)
+    if (!fileExists(absolute)) {
+      continue
+    }
+
+    issues += 1
+    if (shouldApply) {
+      removeFileIfExists(absolute)
+      logger.success(`removed: ${path} (now referenced from the monecromanci package instead)`)
+    } else {
+      logger.warn(`obsolete: ${path} (no longer generated — re-run with --fix to remove)`)
     }
   }
 

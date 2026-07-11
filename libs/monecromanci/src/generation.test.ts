@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyFiles } from './engine/apply'
+import { readAsset } from './engine/assets'
 import { configFromVars, saveConfig } from './engine/config'
 import { discoverProjects } from './engine/projects'
 import { syncToolOwned } from './engine/sync'
@@ -55,15 +56,25 @@ describe('monorepo scaffolding', () => {
   it('writes the central configs and vendored pipeline', () => {
     expect(hasPath('nx.json')).toBe(true)
     expect(hasPath('eslint.config.mjs')).toBe(true)
-    expect(hasPath('jest.preset.mjs')).toBe(true)
     expect(hasPath('Demo.code-workspace')).toBe(true)
     expect(hasPath('azure-pipelines.yml')).toBe(true)
     expect(hasPath('.build-templates/03-package-apps.mjs')).toBe(true)
     expect(hasPath('docs/nx-release.md')).toBe(true)
   })
 
-  it('enables source maps in the jest tsconfig (debug requirement)', () => {
-    const tsconfig = readJson<{ compilerOptions: { sourceMap: boolean } }>('tsconfig.jest.json')
+  it('no longer vendors configs now referenced from the monecromanci package', () => {
+    for (const path of ['tsconfig.base.json', 'tsconfig.jest.json', 'jest.preset.mjs', 'jest.setup.mjs', 'jest.clear.mjs', 'typedoc.json']) {
+      expect(hasPath(path)).toBe(false)
+    }
+  })
+
+  it('re-exports the canonical ESLint config from the monecromanci package', () => {
+    const eslintConfig = read('eslint.config.mjs')
+    expect(eslintConfig).toMatch(/export \{ default \} from 'monecromanci\/eslint\.config\.mjs'/)
+  })
+
+  it('enables source maps in the package\'s own jest tsconfig (debug requirement)', () => {
+    const tsconfig = JSON.parse(readAsset('tsconfig.jest.json')) as { compilerOptions: { sourceMap: boolean } }
     expect(tsconfig.compilerOptions.sourceMap).toBe(true)
   })
 
@@ -99,6 +110,15 @@ describe('monorepo scaffolding', () => {
     expect(package_.devDependencies['@nx/js']).toBeDefined()
   })
 
+  it('adds monecromanci itself as a devDependency, and eslint (the binary) without its plugin packages', () => {
+    const package_ = readJson<{ devDependencies: Record<string, string> }>('package.json')
+    expect(package_.devDependencies.monecromanci).toBeDefined()
+    expect(package_.devDependencies.eslint).toBeDefined()
+    for (const name of ['eslint-plugin-jest', 'eslint-plugin-unicorn', '@stylistic/eslint-plugin', '@eslint/markdown', 'globals', 'typescript-eslint']) {
+      expect(package_.devDependencies[name]).toBeUndefined()
+    }
+  })
+
   it('places launch at the workspace top level with a breakpoint-capable jest config', () => {
     const workspace = readJson<{
       launch?:  { configurations: Array<Record<string, unknown>> }
@@ -121,6 +141,17 @@ describe('project generation', () => {
     expect(package_.main).toBe('./src/index.ts')
     const project = readJson<{ tags: string[] }>('libs/helpers/project.json')
     expect(project.tags).toContain('type:internal-lib')
+  })
+
+  it('extends every project\'s tsconfig/jest/typedoc from the monecromanci package, not a local file', () => {
+    const tsconfig = readJson<{ extends: string }>('libs/helpers/tsconfig.json')
+    expect(tsconfig.extends).toBe('monecromanci/tsconfig.base.json')
+
+    const jestConfig = read('libs/helpers/jest.config.mjs')
+    expect(jestConfig).toContain('from \'monecromanci/jest.preset.mjs\'')
+
+    const typedoc = readJson<{ extends: string[] }>('libs/helpers/typedoc.json')
+    expect(typedoc.extends).toEqual(['monecromanci/typedoc.json'])
   })
 
   it('ships function-app configurations, clean:config and a root @azure/functions dep', () => {
