@@ -13,7 +13,7 @@ function publishConfig (vars: ProjectVars): Record<string, string> | undefined {
 /** Builds the project tsconfig extending the shared base. */
 function tsconfig (): string {
   return toJson({
-    extends:         '../../tsconfig.base.json',
+    extends:         'monecromanci/tsconfig.base.json',
     compilerOptions: {
       baseUrl:                      '.',
       rootDir:                      '.',
@@ -56,7 +56,7 @@ function tsconfigLib (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function typedoc (): string {
   return toJson({
-    extends:     ['../../typedoc.json'],
+    extends:     ['monecromanci/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -157,7 +157,7 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', projectJson(vars, buildCommand), 'tool-owned'),
     file('tsconfig.json', tsconfig(), 'tool-owned'),
     file('tsconfig.lib.json', tsconfigLib(), 'tool-owned'),
-    file('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', typedoc(), 'tool-owned'),
     file('src/index.ts', 'export * from \'./greeter\'\n', 'scaffold'),
     file('src/greeter.ts', greeterTs, 'scaffold'),
@@ -237,7 +237,7 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', projectJson(vars, buildCommand), 'tool-owned'),
     file('tsconfig.json', tsconfig(), 'tool-owned'),
     file('tsconfig.lib.json', tsconfigLib(), 'tool-owned'),
-    file('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', typedoc(), 'tool-owned'),
     file('src/cli.ts', cliMainTs, 'scaffold'),
     file('src/greeter.ts', cliGreeterTs, 'scaffold'),

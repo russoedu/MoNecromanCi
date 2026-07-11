@@ -5,7 +5,7 @@
  * `doctor`/`update` compare this against the stamp on disk to know whether a
  * repo's tool-owned files need re-syncing.
  */
-export const TEMPLATE_VERSION = '0.2.0'
+export const TEMPLATE_VERSION = '0.3.0'
 
 /**
  * Name of the per-repo manifest that records how a repo was generated.
@@ -40,6 +40,27 @@ export const DEFAULT_BASE = 'main'
  * so accepting the default causes zero drift for anyone upgrading.
  */
 export const DEFAULT_TRIGGER_BRANCHES = ['dev', 'development', 'uat', 'master', 'main']
+
+/**
+ * Repo-root paths a prior template version generated but the current one no
+ * longer does, now that MoNecromanCI is a devDependency and this content is
+ * referenced from `node_modules/monecromanci` instead of vendored.
+ *
+ * @remarks
+ * `doctor` uses this to clean up already-generated repos. Deliberately a
+ * hardcoded, append-only list rather than a generic diff-driven prune —
+ * doctor should never delete a path it didn't itself create in some prior
+ * template version. Never remove an entry once a released version has
+ * shipped it; only ever append.
+ */
+export const OBSOLETE_TOOL_OWNED_PATHS = [
+  'tsconfig.base.json',
+  'tsconfig.jest.json',
+  'jest.preset.mjs',
+  'jest.setup.mjs',
+  'jest.clear.mjs',
+  'typedoc.json',
+]
 
 /**
  * Canonical NX project tags used to classify projects in CI.

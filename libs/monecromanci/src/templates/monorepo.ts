@@ -12,39 +12,35 @@ const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): s
  * Pinned toolchain for generated monorepos (mirrors the proven JATO set).
  *
  * @remarks
- * Shared entries (ESLint/TS/Jest toolchain) reuse the exact versions MoNecromanCI
+ * Shared entries (TS/Jest toolchain) reuse the exact versions MoNecromanCI
  * itself depends on, sourced from this package's own `devDependencies`, so the
  * two never drift apart. Generated-repo-only packages (nx, esbuild, husky, the
  * commitlint/typedoc tooling) are pinned here directly since MoNecromanCI has no
  * use for them itself. Exported so `resurrect` can force-pin these versions in
  * an adopted repo.
+ *
+ * The ESLint *plugin* packages (`eslint-plugin-*`, `@stylistic/eslint-plugin`,
+ * `@eslint/markdown`, `globals`, `typescript-eslint`) are deliberately **not**
+ * listed here: `eslint.config.mjs` is now a thin re-export of
+ * `monecromanci/eslint.config.mjs`, and Node resolves that file's own `import`
+ * statements from *inside* `node_modules/monecromanci`'s own dependency tree
+ * regardless of what the consuming repo declares — so those plugins never
+ * need to be the consumer's own devDependencies. `eslint` itself stays listed
+ * because it's invoked as a **binary** (`eslint . -c ...`), which needs
+ * `node_modules/.bin/eslint` to exist at the consumer's own top level.
  */
 export const DEV_DEPENDENCIES: Record<string, string> = {
   '@commitlint/cli':                 '^21.1.0',
   '@commitlint/config-conventional': '^21.1.0',
-  '@eslint/markdown':                sharedDependency('@eslint/markdown'),
   '@nx/js':                          '^23.0.1',
-  '@stylistic/eslint-plugin':        sharedDependency('@stylistic/eslint-plugin'),
   '@types/jest':                     sharedDependency('@types/jest'),
   '@types/node':                     sharedDependency('@types/node'),
   esbuild:                           '^0.28.1',
   eslint:                            sharedDependency('eslint'),
-  'eslint-plugin-jest':              sharedDependency('eslint-plugin-jest'),
-  'eslint-plugin-jsonc':             sharedDependency('eslint-plugin-jsonc'),
-  'eslint-plugin-n':                 sharedDependency('eslint-plugin-n'),
-  'eslint-plugin-promise':           sharedDependency('eslint-plugin-promise'),
-  'eslint-plugin-react':             sharedDependency('eslint-plugin-react'),
-  'eslint-plugin-react-hooks':       sharedDependency('eslint-plugin-react-hooks'),
-  'eslint-plugin-react-refresh':     sharedDependency('eslint-plugin-react-refresh'),
-  'eslint-plugin-tsdoc':             sharedDependency('eslint-plugin-tsdoc'),
-  'eslint-plugin-tsdoc-require-2':   sharedDependency('eslint-plugin-tsdoc-require-2'),
-  'eslint-plugin-unicorn':           sharedDependency('eslint-plugin-unicorn'),
-  'eslint-plugin-unused-imports':    sharedDependency('eslint-plugin-unused-imports'),
-  'eslint-plugin-yml':               sharedDependency('eslint-plugin-yml'),
-  globals:                           sharedDependency('globals'),
   husky:                             '^9.1.7',
   jest:                              sharedDependency('jest'),
   'jest-junit':                      '^17.0.0',
+  monecromanci:                      `^${rootPackageJson.version}`,
   nx:                                '^23.0.1',
   'ts-jest':                         sharedDependency('ts-jest'),
   'tsc-alias':                       '^1.8.17',
@@ -52,7 +48,6 @@ export const DEV_DEPENDENCIES: Record<string, string> = {
   typedoc:                           '^0.28.19',
   'typedoc-plugin-missing-exports':  '^4.1.3',
   typescript:                        sharedDependency('typescript'),
-  'typescript-eslint':               sharedDependency('typescript-eslint'),
 }
 
 /** Builds the root package.json: workspaces, shared scripts and pinned toolchain. */
@@ -104,8 +99,6 @@ function nxJson (vars: MonorepoVars): string {
         '{workspaceRoot}/package.json',
         '{workspaceRoot}/package-lock.json',
         '{workspaceRoot}/nx.json',
-        '{workspaceRoot}/tsconfig.base.json',
-        '{workspaceRoot}/jest.preset.mjs',
         '{workspaceRoot}/eslint.config.mjs',
       ],
       default:    ['{projectRoot}/**/*', 'sharedGlobals'],
@@ -136,63 +129,6 @@ function nxJson (vars: MonorepoVars): string {
   })
 }
 
-/** Builds the strict shared tsconfig.base.json. */
-function tsconfigBase (): string {
-  return toJson({
-    $schema:         'https://json.schemastore.org/tsconfig',
-    compilerOptions: {
-      ignoreDeprecations:               '6.0',
-      target:                           'es2024',
-      types:                            ['jest', 'node'],
-      sourceMap:                        true,
-      declaration:                      true,
-      declarationMap:                   true,
-      removeComments:                   false,
-      forceConsistentCasingInFileNames: true,
-      isolatedModules:                  true,
-      noFallthroughCasesInSwitch:       true,
-      noUnusedLocals:                   true,
-      noUnusedParameters:               true,
-      resolveJsonModule:                true,
-      skipLibCheck:                     true,
-      strict:                           true,
-      strictNullChecks:                 true,
-      strictPropertyInitialization:     false,
-    },
-  })
-}
-
-/** Builds tsconfig.jest.json (CommonJS + source maps so ts-jest debugging works). */
-function tsconfigJest (): string {
-  // sourceMap MUST be true so ts-jest emits maps and VSCode binds breakpoints.
-  return toJson({
-    extends:         './tsconfig.base.json',
-    compilerOptions: {
-      target:              'es2022',
-      module:              'commonjs',
-      moduleResolution:    'node',
-      noEmit:              false,
-      emitDeclarationOnly: false,
-      declaration:         false,
-      declarationMap:      false,
-      sourceMap:           true,
-      esModuleInterop:     true,
-    },
-  })
-}
-
-/** Builds the repo-level typedoc.json. */
-function typedocJson (): string {
-  return toJson({
-    $schema:            'https://typedoc.org/schema.json',
-    entryPointStrategy: 'expand',
-    plugin:             ['typedoc-plugin-missing-exports'],
-    excludePrivate:     false,
-    categorizeByGroup:  true,
-    cleanOutputDir:     true,
-  })
-}
-
 // Root Jest config: discover every project that ships a jest config, normalising
 // Windows backslashes so the paths are valid for Jest's `projects` option.
 const jestConfigMjs = String.raw`import { globSync } from 'node:fs'
@@ -205,55 +141,12 @@ export default {
 }
 `
 
-// Shared Jest preset factory. Per-project config is one line: createConfig('name').
-const jestPresetMjs = String.raw`/** Shared Jest preset — generated by MoNecromanCI. Re-sync with 'monecromanci doctor'. */
-export function createConfig (projectName) {
-  return {
-    displayName:        projectName,
-    testEnvironment:    'node',
-    rootDir:            '.',
-    roots:              ['<rootDir>/src'],
-    setupFilesAfterEnv: [
-      '<rootDir>/../../jest.setup.mjs',
-      '<rootDir>/../../jest.clear.mjs',
-    ],
-    transform: {
-      '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/../../tsconfig.jest.json' }],
-    },
-    moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json'],
-    collectCoverageFrom:  [
-      '<rootDir>/src/**/*.ts',
-      '!<rootDir>/src/**/*.d.ts',
-      '!<rootDir>/src/index.ts',
-    ],
-    coverageProvider:  'v8',
-    coverageDirectory: './coverage',
-    coverageReporters: ['text', 'cobertura', 'html', 'lcov'],
-    reporters:         [
-      'default',
-      ['jest-junit', { outputDirectory: './coverage', outputName: 'test-results.xml' }],
-    ],
-  }
-}
-`
-
-const jestSetupMjs = `process.env.TZ = 'UTC'
-
-beforeAll(() => {
-  jest.useFakeTimers()
-  jest.setSystemTime(new Date('2000-01-01T00:00:00.000Z'))
-})
-
-afterAll(() => {
-  jest.useRealTimers()
-})
-`
-
-const jestClearMjs = `afterEach(() => {
-  jest.restoreAllMocks()
-  jest.clearAllMocks()
-  jest.resetModules()
-})
+// Thin wrapper re-exporting the canonical config from the monecromanci package
+// itself (tsconfig.base.json, tsconfig.jest.json, jest.preset.mjs and
+// typedoc.json are no longer vendored locally either — see 'monecromanci/...'
+// references throughout the per-project templates).
+const eslintConfigWrapper = `// ESLint flat config — generated by MoNecromanCI. Re-sync with 'monecromanci doctor'.
+export { default } from 'monecromanci/eslint.config.mjs'
 `
 
 /** Builds the root .npmrc for the configured publish registry. */
@@ -818,14 +711,8 @@ export function monorepoFiles (vars: MonorepoVars): FileSpec[] {
   return [
     scaffold('package.json', packageJson(vars)),
     toolOwned('nx.json', nxJson(vars)),
-    toolOwned('tsconfig.base.json', tsconfigBase()),
-    toolOwned('tsconfig.jest.json', tsconfigJest()),
     toolOwned('jest.config.mjs', jestConfigMjs),
-    toolOwned('jest.preset.mjs', jestPresetMjs),
-    toolOwned('jest.setup.mjs', jestSetupMjs),
-    toolOwned('jest.clear.mjs', jestClearMjs),
-    toolOwned('eslint.config.mjs', readAsset('eslint.config.mjs')),
-    toolOwned('typedoc.json', typedocJson()),
+    toolOwned('eslint.config.mjs', eslintConfigWrapper),
     scaffold('.npmrc', npmrc(vars)),
     toolOwned('.editorconfig', editorconfig),
     scaffold('.gitignore', gitignore),

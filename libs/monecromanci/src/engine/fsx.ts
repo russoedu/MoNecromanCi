@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 /**
@@ -35,6 +35,25 @@ export function ensureDirectory (directory: string): void {
 export function writeFileEnsured (filePath: string, content: string): void {
   ensureDirectory(dirname(filePath))
   writeFileSync(filePath, content, 'utf8')
+}
+
+/**
+ * Deletes a file if it exists; a no-op otherwise.
+ *
+ * @remarks
+ * Used by `doctor` to clean up root files a prior template version generated
+ * but the current one no longer produces.
+ *
+ * @param filePath - Absolute path of the file to remove.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
+ * by the underlying `rmSync` call.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeFileIfExists (filePath: string): void {
+  if (existsSync(filePath)) {
+    rmSync(filePath)
+  }
 }
 
 /**

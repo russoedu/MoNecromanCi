@@ -69,7 +69,7 @@ function appProjectJson (vars: ProjectVars, framework: FrontendFramework): strin
 /** Builds the project tsconfig extending the shared base. */
 function appTsconfig (): string {
   return toJson({
-    extends:         '../../tsconfig.base.json',
+    extends:         'monecromanci/tsconfig.base.json',
     compilerOptions: {
       target:                       'es2022',
       lib:                          ['es2022', 'DOM', 'DOM.Iterable'],
@@ -88,7 +88,7 @@ function appTsconfig (): string {
 /** Builds the typedoc.json extending the repo-level config. */
 function appTypedoc (): string {
   return toJson({
-    extends:     ['../../typedoc.json'],
+    extends:     ['monecromanci/typedoc.json'],
     entryPoints: ['./src'],
     out:         'doc',
     exclude:     ['./node_modules/**', './src/**/*.test.ts'],
@@ -226,7 +226,7 @@ function frontendAppFiles (vars: ProjectVars, framework: FrontendFramework): Fil
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('vite.config.ts', viteConfig(framework), 'scaffold'),
     file('index.html', indexHtml(vars, framework), 'scaffold'),
-    file('jest.config.mjs', `import { createConfig } from '../../jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('.env.dev', envFile('dev'), 'scaffold'),
     file('.env.uat', envFile('uat'), 'scaffold'),
