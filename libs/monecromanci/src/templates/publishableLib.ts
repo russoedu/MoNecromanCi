@@ -143,11 +143,10 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     monecromanci:  { dist: { main: './index.js', types: './index.d.ts' } },
     dependencies:  {},
     scripts:       {
-      build:   'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
-      test:    'jest --collectCoverage',
-      lint:    'eslint . -c ../../eslint.config.mjs',
-      doc:     'typedoc --tsconfig tsconfig.lib.json',
-      publish: 'npm publish ./dist',
+      build: 'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
+      test:  'jest --collectCoverage',
+      lint:  'eslint . -c ../../eslint.config.mjs',
+      doc:   'typedoc --tsconfig tsconfig.lib.json',
     },
   })
 
@@ -224,11 +223,10 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     monecromanci:  { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
     dependencies:  {},
     scripts:       {
-      build:   `${esbuild} && node ../../tools/generate-dist-package.mjs`,
-      test:    'jest --collectCoverage',
-      lint:    'eslint . -c ../../eslint.config.mjs',
-      doc:     'typedoc --tsconfig tsconfig.lib.json',
-      publish: 'npm publish ./dist',
+      build: `${esbuild} && node ../../tools/generate-dist-package.mjs`,
+      test:  'jest --collectCoverage',
+      lint:  'eslint . -c ../../eslint.config.mjs',
+      doc:   'typedoc --tsconfig tsconfig.lib.json',
     },
   })
 

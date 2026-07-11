@@ -33,6 +33,11 @@
       "options": {
         "command": "npm run doc -w monecromanci"
       }
+    },
+    "nx-release-publish": {
+      "options": {
+        "packageRoot": "."
+      }
     }
   }
 }
