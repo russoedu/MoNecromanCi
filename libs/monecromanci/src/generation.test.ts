@@ -53,17 +53,16 @@ function readJson<T> (path: string): T {
 }
 
 describe('monorepo scaffolding', () => {
-  it('writes the central configs and vendored pipeline', () => {
+  it('writes the central configs', () => {
     expect(hasPath('nx.json')).toBe(true)
     expect(hasPath('eslint.config.mjs')).toBe(true)
     expect(hasPath('Demo.code-workspace')).toBe(true)
     expect(hasPath('azure-pipelines.yml')).toBe(true)
-    expect(hasPath('.build-templates/03-package-apps.mjs')).toBe(true)
     expect(hasPath('docs/nx-release.md')).toBe(true)
   })
 
-  it('no longer vendors configs now referenced from the monecromanci package', () => {
-    for (const path of ['tsconfig.base.json', 'tsconfig.jest.json', 'jest.preset.mjs', 'jest.setup.mjs', 'jest.clear.mjs', 'typedoc.json']) {
+  it('no longer vendors configs/scripts now referenced from the monecromanci package', () => {
+    for (const path of ['tsconfig.base.json', 'tsconfig.jest.json', 'jest.preset.mjs', 'jest.setup.mjs', 'jest.clear.mjs', 'typedoc.json', '.build-templates', 'tools/generate-dist-package.mjs']) {
       expect(hasPath(path)).toBe(false)
     }
   })
@@ -172,10 +171,10 @@ describe('project generation', () => {
     expect(root.devDependencies.vite).toBeDefined()
   })
 
-  it('marks a cli tool with a bin and the resolved-deps script', () => {
-    const package_ = readJson<{ bin: Record<string, string> }>('libs/mytool/package.json')
+  it('marks a cli tool with a bin and a build script that resolves the deps script from node_modules', () => {
+    const package_ = readJson<{ bin: Record<string, string>, scripts: Record<string, string> }>('libs/mytool/package.json')
     expect(package_.bin.mytool).toBe('./dist/cli.js')
-    expect(hasPath('tools/generate-dist-package.mjs')).toBe(true)
+    expect(package_.scripts.build).toContain('node ../../node_modules/monecromanci/dist/assets/scripts/generate-dist-package.mjs')
   })
 
   it('scaffolds a generic node app tagged type:node-app with a tsx dev dependency', () => {
@@ -219,11 +218,23 @@ describe('CI providers', () => {
     expect(paths.has('azure-pipelines.yml')).toBe(false)
   })
 
-  it('emits both workflows for ci=both and always vendors the shared engine', () => {
+  it('emits both workflows for ci=both, neither vendoring the shared engine', () => {
     const paths = pathsFor('both')
     expect(paths.has('azure-pipelines.yml')).toBe(true)
     expect(paths.has('.github/workflows/ci.yml')).toBe(true)
-    expect(paths.has('.build-templates/03-package-apps.mjs')).toBe(true)
+    expect(paths.has('.build-templates/03-package-apps.mjs')).toBe(false)
+  })
+
+  it('calls the shared engine straight out of node_modules/monecromanci in both pipeline files', () => {
+    const files = monorepoFiles({ ...vars, ci: 'both' })
+    const azurePipelines = files.find((file) => file.path === 'azure-pipelines.yml')?.content ?? ''
+    const githubWorkflow = files.find((file) => file.path === '.github/workflows/ci.yml')?.content ?? ''
+
+    for (const step of ['01-preparation', '02-quality-control', '03-package-apps', '04-publish-libs', '05-publish-documentation', '06-summary']) {
+      const scriptPath = `node_modules/monecromanci/dist/assets/build-templates/${step}.mjs`
+      expect(azurePipelines).toContain(scriptPath)
+      expect(githubWorkflow).toContain(scriptPath)
+    }
   })
 
   it('renders the configured trigger branches into both pipeline files', () => {
@@ -254,7 +265,7 @@ describe('registry', () => {
 
 describe('publish pipeline', () => {
   it('delegates publishing to nx release publish instead of hand-rolling npm publish', () => {
-    const pipeline = read('.build-templates/04-publish-libs.mjs')
+    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
 
     // Nx's own nx-release-publish executor already resolves the dist-vs-root
     // manifest (via the target's packageRoot option in nx.json), builds first
@@ -266,7 +277,7 @@ describe('publish pipeline', () => {
   })
 
   it('refuses to publish a manifest with a publish-lifecycle-hook script', () => {
-    const pipeline = read('.build-templates/04-publish-libs.mjs')
+    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
 
     // npm auto-runs "publish"/"postpublish"/"prepublish" as lifecycle hooks right
     // after the upload; a mismatched one fails the command post-hoc. Must be
@@ -277,7 +288,7 @@ describe('publish pipeline', () => {
   })
 
   it('bumps and tags (never commits) affected publishable projects via nx release before publishing', () => {
-    const pipeline = read('.build-templates/04-publish-libs.mjs')
+    const pipeline = readAsset('build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
     // commits since each one's last release tag; tags + pushes the tag only,

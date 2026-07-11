@@ -38,21 +38,21 @@ export function writeFileEnsured (filePath: string, content: string): void {
 }
 
 /**
- * Deletes a file if it exists; a no-op otherwise.
+ * Deletes a file or directory if it exists; a no-op otherwise.
  *
  * @remarks
- * Used by `doctor` to clean up root files a prior template version generated
+ * Used by `doctor` to clean up root paths a prior template version generated
  * but the current one no longer produces.
  *
- * @param filePath - Absolute path of the file to remove.
+ * @param path - Absolute path of the file or directory to remove.
  * @returns Nothing.
  * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
  * by the underlying `rmSync` call.
  * @typeParam None - this function has no generic type parameters.
  */
-export function removeFileIfExists (filePath: string): void {
-  if (existsSync(filePath)) {
-    rmSync(filePath)
+export function removeFileIfExists (path: string): void {
+  if (existsSync(path)) {
+    rmSync(path, { recursive: true, force: true })
   }
 }
 

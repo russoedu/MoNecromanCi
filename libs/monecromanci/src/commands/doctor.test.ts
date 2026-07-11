@@ -167,6 +167,19 @@ describe('runDoctor', () => {
     expect(existsSync(join(repoRoot, 'jest.preset.mjs'))).toBe(false)
   })
 
+  it('deletes the whole obsolete .build-templates directory tree with --fix', async () => {
+    saveConfig(repoRoot, config)
+    mkdirSync(join(repoRoot, '.build-templates', 'lib'), { recursive: true })
+    writeFileSync(join(repoRoot, '.build-templates', '01-preparation.mjs'), '// old')
+    writeFileSync(join(repoRoot, '.build-templates', 'lib', '_h.mjs'), '// old')
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: true })
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed: .build-templates'))
+    expect(existsSync(join(repoRoot, '.build-templates'))).toBe(false)
+  })
+
   it('includes discovered projects specs alongside the monorepo specs', async () => {
     saveConfig(repoRoot, config)
     const libDirectory = join(repoRoot, 'libs', 'helpers')
