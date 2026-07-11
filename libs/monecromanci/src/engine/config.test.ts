@@ -6,13 +6,14 @@ import { TEMPLATE_VERSION } from './constants'
 import type { MonorepoVars } from './types'
 
 const vars: MonorepoVars = {
-  workspaceName: 'demo',
-  displayName:   'Demo',
-  scope:         '@demo',
-  defaultBase:   'main',
-  nodeVersion:   '24',
-  ci:            'azure',
-  registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  workspaceName:   'demo',
+  displayName:     'Demo',
+  scope:           '@demo',
+  defaultBase:     'main',
+  nodeVersion:     '24',
+  ci:              'azure',
+  registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+  triggerBranches: ['dev', 'main'],
 }
 
 let repoRoot: string
@@ -103,6 +104,7 @@ describe('configFromVars', () => {
       nodeVersion:     '24',
       ci:              'azure',
       registry:        { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      triggerBranches: ['dev', 'main'],
     })
   })
 })

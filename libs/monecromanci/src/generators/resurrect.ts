@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { applyFiles, reportApply } from '../engine/apply'
 import { configFromVars, isManagedRepo, loadConfig, saveConfig } from '../engine/config'
-import { DEFAULT_BASE, DEFAULT_NODE_VERSION } from '../engine/constants'
+import { DEFAULT_BASE, DEFAULT_NODE_VERSION, DEFAULT_TRIGGER_BRANCHES } from '../engine/constants'
 import { ensureLegacyPeerDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { detectRepoDefaults, findCandidates } from '../engine/detect'
 import type { CandidateProject } from '../engine/detect'
@@ -11,7 +11,7 @@ import type { ManifestTemplate } from '../engine/rootPackage'
 import type { CiProvider, MonecromanciConfig, MonorepoVars, ProjectKind, ProjectVars, RegistryConfig } from '../engine/types'
 import { DEV_DEPENDENCIES, monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
-import { checkbox, confirm, promptText, select } from '../util/prompts'
+import { checkbox, confirm, promptBranchList, promptText, select } from '../util/prompts'
 import { toSlug } from '../util/strings'
 import { applyRootDependencies, projectFiles } from './scaffold'
 
@@ -122,6 +122,7 @@ async function promptRepoVars (repoRoot: string, candidates: CandidateProject[])
   const scopeInput = await promptText('npm scope', defaultScope)
   const scope = scopeInput.startsWith('@') ? scopeInput : `@${scopeInput}`
   const defaultBase = await promptText('Default git branch', defaults.defaultBase ?? DEFAULT_BASE)
+  const triggerBranches = await promptBranchList('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES)
 
   return {
     workspaceName: toSlug(displayName),
@@ -131,6 +132,7 @@ async function promptRepoVars (repoRoot: string, candidates: CandidateProject[])
     nodeVersion:   defaults.nodeVersion ?? DEFAULT_NODE_VERSION,
     ci,
     registry,
+    triggerBranches,
   }
 }
 
@@ -254,13 +256,16 @@ export async function runResurrect (): Promise<void> {
   const existingConfig = loadConfig(repoRoot)
   const vars: MonorepoVars = existingConfig
     ? {
-        workspaceName: existingConfig.workspaceName,
-        displayName:   existingConfig.displayName,
-        scope:         existingConfig.scope,
-        defaultBase:   existingConfig.defaultBase,
-        nodeVersion:   existingConfig.nodeVersion,
-        ci:            existingConfig.ci,
-        registry:      existingConfig.registry,
+        workspaceName:   existingConfig.workspaceName,
+        displayName:     existingConfig.displayName,
+        scope:           existingConfig.scope,
+        defaultBase:     existingConfig.defaultBase,
+        nodeVersion:     existingConfig.nodeVersion,
+        ci:              existingConfig.ci,
+        registry:        existingConfig.registry,
+        triggerBranches: existingConfig.triggerBranches?.length
+          ? existingConfig.triggerBranches
+          : await promptBranchList('Branches that should trigger CI', DEFAULT_TRIGGER_BRANCHES),
       }
     : await promptRepoVars(repoRoot, scan.candidates)
 

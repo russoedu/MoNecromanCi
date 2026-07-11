@@ -8,5 +8,6 @@
   "ci": "github",
   "registry": {
     "kind": "npm"
-  }
+  },
+  "triggerBranches": ["dev", "development", "uat", "master", "main"]
 }

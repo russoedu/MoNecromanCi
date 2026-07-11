@@ -103,5 +103,6 @@ export function configFromVars (vars: MonorepoVars): MonecromanciConfig {
     nodeVersion:     vars.nodeVersion,
     ci:              vars.ci,
     registry:        vars.registry,
+    triggerBranches: vars.triggerBranches,
   }
 }

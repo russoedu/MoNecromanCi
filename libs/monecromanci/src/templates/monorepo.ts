@@ -531,6 +531,24 @@ function codeWorkspace (vars: MonorepoVars): string {
   })
 }
 
+/** The literal branch list baked into the vendored CI assets, replaced with the configured one. */
+const DEFAULT_TRIGGER_BRANCHES_LITERAL = '[dev, development, uat, master, main]'
+
+/** Formats a branch list as a YAML flow sequence, e.g. `[main, dev]`. */
+function branchList (branches: string[]): string {
+  return `[${branches.join(', ')}]`
+}
+
+/** Builds `azure-pipelines.yml`, substituting the configured CI trigger branches. */
+function azurePipelinesYaml (vars: MonorepoVars): string {
+  return readAsset('azure-pipelines.yml').replaceAll(DEFAULT_TRIGGER_BRANCHES_LITERAL, () => branchList(vars.triggerBranches))
+}
+
+/** Builds `.github/workflows/ci.yml`, substituting the configured CI trigger branches. */
+function githubCiYaml (vars: MonorepoVars): string {
+  return readAsset('github/workflows/ci.yml').replaceAll(DEFAULT_TRIGGER_BRANCHES_LITERAL, () => branchList(vars.triggerBranches))
+}
+
 /**
  * Vendored CI: the shared `.build-templates` engine (always) plus the workflow
  * wrapper(s) for the selected provider(s) — Azure Pipelines and/or GitHub Actions.
@@ -543,11 +561,11 @@ function pipelineFiles (vars: MonorepoVars): FileSpec[] {
   }))
 
   if (vars.ci === 'azure' || vars.ci === 'both') {
-    files.push({ path: 'azure-pipelines.yml', content: readAsset('azure-pipelines.yml'), ownership: 'tool-owned' })
+    files.push({ path: 'azure-pipelines.yml', content: azurePipelinesYaml(vars), ownership: 'tool-owned' })
   }
 
   if (vars.ci === 'github' || vars.ci === 'both') {
-    files.push({ path: '.github/workflows/ci.yml', content: readAsset('github/workflows/ci.yml'), ownership: 'tool-owned' })
+    files.push({ path: '.github/workflows/ci.yml', content: githubCiYaml(vars), ownership: 'tool-owned' })
   }
 
   return files
