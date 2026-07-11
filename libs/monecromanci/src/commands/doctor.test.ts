@@ -5,12 +5,16 @@ import { DEFAULT_TRIGGER_BRANCHES, TAGS, TEMPLATE_VERSION } from '../engine/cons
 import type { MonecromanciConfig } from '../engine/types'
 
 jest.mock('../engine/sync', () => ({ syncToolOwned: jest.fn() }))
-jest.mock('../util/prompts', () => ({ promptBranchList: jest.fn() }))
+jest.mock('../util/prompts', () => ({
+  promptBranchList:  jest.fn(),
+  promptDriftChoice: jest.fn(),
+  renderDiff:        jest.fn().mockReturnValue('- old\n+ new'),
+}))
 
 import * as configModule from '../engine/config'
 import { loadConfig, saveConfig } from '../engine/config'
 import { syncToolOwned } from '../engine/sync'
-import { promptBranchList } from '../util/prompts'
+import { promptBranchList, promptDriftChoice } from '../util/prompts'
 import { runDoctor } from './doctor'
 
 const config: MonecromanciConfig = {
@@ -27,6 +31,7 @@ const config: MonecromanciConfig = {
 
 const mockSyncToolOwned = jest.mocked(syncToolOwned)
 const mockPromptBranchList = jest.mocked(promptBranchList)
+const mockPromptDriftChoice = jest.mocked(promptDriftChoice)
 
 let repoRoot: string
 let logSpy: jest.SpyInstance
@@ -84,13 +89,22 @@ describe('runDoctor', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Re-run with --fix'))
   })
 
-  it('repairs drift and re-stamps the template version when apply is true', async () => {
+  it('skips writing a reported-missing path that has no matching spec', async () => {
     saveConfig(repoRoot, config)
-    mockSyncToolOwned.mockReturnValue({ ok: [], missing: ['m.json'], drift: [], fixed: ['m.json'] })
+    mockSyncToolOwned.mockReturnValue({ ok: [], missing: ['no-such-spec.json'], drift: [], fixed: [] })
     await runDoctor({ apply: true })
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fixed:   m.json'))
+    expect(warnSpy).toHaveBeenCalledWith('! missing: no-such-spec.json')
+    expect(existsSync(join(repoRoot, 'no-such-spec.json'))).toBe(false)
+  })
+
+  it('repairs a missing file and re-stamps the template version when apply is true', async () => {
+    saveConfig(repoRoot, config)
+    mockSyncToolOwned.mockReturnValue({ ok: [], missing: ['nx.json'], drift: [], fixed: [] })
+    await runDoctor({ apply: true })
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fixed:   nx.json'))
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`Repaired 1 issue(s); stamped template version ${TEMPLATE_VERSION}`))
     expect(loadConfig(repoRoot)?.templateVersion).toBe(TEMPLATE_VERSION)
+    expect(existsSync(join(repoRoot, 'nx.json'))).toBe(true)
   })
 
   it('calls saveConfig with the spread config and the current template version', async () => {
@@ -175,5 +189,115 @@ describe('runDoctor', () => {
     await runDoctor({ apply: true })
 
     expect(mockPromptBranchList).not.toHaveBeenCalled()
+  })
+
+  describe('drift resolution', () => {
+    // Real drift against a genuine tool-owned file (nx.json), so writes/reads go
+    // through the actual on-disk content, not an arbitrary mocked path.
+    function writeDriftedNxJson (): void {
+      writeFileSync(join(repoRoot, 'nx.json'), '{"stale": true}')
+    }
+
+    it('reports drift without prompting when apply is false', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+
+      await runDoctor({ apply: false })
+
+      expect(mockPromptDriftChoice).not.toHaveBeenCalled()
+      expect(warnSpy).toHaveBeenCalledWith('! drift:   nx.json')
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
+    })
+
+    it('writes the file once and does not persist a preference for "update"', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+      mockPromptDriftChoice.mockResolvedValue('update')
+
+      await runDoctor({ apply: true })
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fixed:   nx.json'))
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).not.toBe('{"stale": true}')
+      expect(loadConfig(repoRoot)?.fileSyncPreferences).toBeUndefined()
+    })
+
+    it('leaves the file untouched and reports it as still drifted for "skip"', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+      mockPromptDriftChoice.mockResolvedValue('skip')
+
+      await runDoctor({ apply: true })
+
+      expect(warnSpy).toHaveBeenCalledWith('! drift:   nx.json')
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('left as drift'))
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
+      expect(loadConfig(repoRoot)?.fileSyncPreferences).toBeUndefined()
+    })
+
+    it('writes the file and persists an "always" preference', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+      mockPromptDriftChoice.mockResolvedValue('always')
+
+      await runDoctor({ apply: true })
+
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).not.toBe('{"stale": true}')
+      expect(loadConfig(repoRoot)?.fileSyncPreferences).toEqual({ 'nx.json': 'always' })
+    })
+
+    it('leaves the file untouched and persists a "never" preference, not counted as an issue', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+      mockPromptDriftChoice.mockResolvedValue('never')
+
+      await runDoctor({ apply: true })
+
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
+      expect(loadConfig(repoRoot)?.fileSyncPreferences).toEqual({ 'nx.json': 'never' })
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Everything is in sync'))
+    })
+
+    it('honours an existing "always" preference without prompting when applying', async () => {
+      saveConfig(repoRoot, { ...config, fileSyncPreferences: { 'nx.json': 'always' } })
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+
+      await runDoctor({ apply: true })
+
+      expect(mockPromptDriftChoice).not.toHaveBeenCalled()
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('fixed:   nx.json'))
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).not.toBe('{"stale": true}')
+    })
+
+    it('never writes for an existing "always" preference during a report-only run', async () => {
+      saveConfig(repoRoot, { ...config, fileSyncPreferences: { 'nx.json': 'always' } })
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+
+      await runDoctor({ apply: false })
+
+      expect(mockPromptDriftChoice).not.toHaveBeenCalled()
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('re-run with --fix to apply'))
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Everything is in sync'))
+    })
+
+    it('honours an existing "never" preference without prompting, in either mode', async () => {
+      saveConfig(repoRoot, { ...config, fileSyncPreferences: { 'nx.json': 'never' } })
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+
+      await runDoctor({ apply: true })
+
+      expect(mockPromptDriftChoice).not.toHaveBeenCalled()
+      expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Everything is in sync'))
+    })
   })
 })

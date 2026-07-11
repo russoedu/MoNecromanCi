@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { fileExists, readTextSafe, writeFileEnsured } from './fsx'
+import { fileExists, normalizeEol, readTextSafe, writeFileEnsured } from './fsx'
 import type { FileSpec } from './types'
 
 /**
@@ -17,6 +17,9 @@ export type FileStatus = 'ok' | 'missing' | 'drift'
  *
  * @remarks
  * Returns `'missing'` rather than `'drift'` when the file does not exist.
+ * Line endings are normalised before comparing, so a file that differs from
+ * the canonical content only by CRLF vs LF (e.g. edited on Windows) reports
+ * `'ok'` rather than `'drift'`.
  *
  * @param repoRoot - Absolute path to the repo root.
  * @param spec - The file spec to compare against disk.
@@ -30,7 +33,7 @@ export function checkFile (repoRoot: string, spec: FileSpec): FileStatus {
     return 'missing'
   }
 
-  return readTextSafe(absolute) === spec.content ? 'ok' : 'drift'
+  return normalizeEol(readTextSafe(absolute)) === normalizeEol(spec.content) ? 'ok' : 'drift'
 }
 
 /**

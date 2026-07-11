@@ -27,14 +27,18 @@ alias table in [`lib/context.mjs`](lib/context.mjs).
 
 ## Pipeline steps
 
+Each step's logic lives in its `NN-*.mjs` script here; the Azure/GitHub steps
+that invoke them live in the single `azure-pipelines.yml` / `ci.yml` entry
+file instead of per-stage YAML wrappers.
+
 | Step | File | Responsibility |
 |---|---|---|
-| 01 | `01-preparation.{yml,mjs}` | `npm ci` (first), resolve git range + affected set, classify, write `01-preparation.context.json`, print the **execution plan**, emit gating variables |
-| 02 | `02-quality-control.yml` | `nx affected -t lint,test,build`; publish test + coverage |
-| 03 | `03-package-apps.{yml,mjs}` | build/zip/drop affected function apps and React apps |
-| 04 | `04-publish-libs.{yml,mjs}` | publish affected publishable libs at their `package.json` version (master/main, non-PR) |
-| 05 | `05-publish-documentation.{yml,mjs}` | build + upload TypeDoc for affected libs |
-| 06 | `06-summary.{yml,mjs}` | render the markdown build summary (always runs) |
+| 01 | `01-preparation.mjs` | `npm ci` (first), resolve git range + affected set, classify, write `01-preparation.context.json`, print the **execution plan**, emit gating variables |
+| 02 | `02-quality-control.mjs` | `nx affected -t lint,test,build`; publish test + coverage |
+| 03 | `03-package-apps.mjs` | build/zip/drop affected function apps and React apps |
+| 04 | `04-publish-libs.mjs` | publish affected publishable libs at their `package.json` version (master/main, non-PR) |
+| 05 | `05-publish-documentation.mjs` | build + upload TypeDoc for affected libs |
+| 06 | `06-summary.mjs` | render the markdown build summary (always runs) |
 
 `lib/` holds the shared modules: `_h.mjs` (logging, shelling out, Azure variables,
 JSON), `nx.mjs` (local-binary NX wrapper + git base/head), `context.mjs`

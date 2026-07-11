@@ -6,9 +6,14 @@
  * Versions are decided automatically: `nx release version` reads the
  * Conventional Commit messages since each affected publishable project's last
  * release tag, computes the bump (patch/minor/major), writes the new version
- * (and changelog) to disk, then commits, tags (`{project}@{version}`) and
- * pushes the result back to the release branch — before anything is built or
- * published. A project with no releasable commits since its last tag is left
+ * (and changelog) to disk, then tags (`{project}@{version}`) — before anything
+ * is built or published. On GitHub Actions this also commits the bump and
+ * pushes both the commit and the tag back to the release branch; on Azure
+ * DevOps the commit is skipped entirely (`--no-git-commit`) and only the tag
+ * is pushed, since Azure repos commonly protect the release branch against
+ * direct pushes while still allowing new tags — `nx release` resolves
+ * versions from the tag name either way, so nothing is lost by not
+ * committing. A project with no releasable commits since its last tag is left
  * untouched. A project with no matching tag yet (never released) falls back to
  * whatever version is on disk (see `release.version.fallbackCurrentVersionResolver`
  * in `nx.json`), so a brand-new project needs no manual bootstrapping.

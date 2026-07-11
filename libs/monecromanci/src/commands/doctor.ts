@@ -1,6 +1,8 @@
+import { join } from 'node:path'
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { DEFAULT_TRIGGER_BRANCHES, TEMPLATE_VERSION } from '../engine/constants'
 import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
+import { readTextSafe, writeFileEnsured } from '../engine/fsx'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
 import { syncToolOwned } from '../engine/sync'
@@ -8,7 +10,7 @@ import type { FileSpec, MonecromanciConfig, MonorepoVars } from '../engine/types
 import { projectFiles } from '../generators/scaffold'
 import { monorepoFiles } from '../templates/monorepo'
 import { logger } from '../util/logger'
-import { promptBranchList } from '../util/prompts'
+import { promptBranchList, promptDriftChoice, renderDiff } from '../util/prompts'
 
 /**
  * Options accepted by {@link runDoctor}.
@@ -75,21 +77,52 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
     specs.push(...projectFiles(project.kind, project))
   }
 
-  const report = syncToolOwned(repoRoot, specs, options.apply)
+  // Report-only here even when applying: missing files are always recreated
+  // below, but drifted files need per-file resolution first (a remembered
+  // preference, or an interactive prompt) before anything gets overwritten.
+  const report = syncToolOwned(repoRoot, specs, false)
 
   for (const path of report.missing) {
     logger.warn(`missing: ${path}`)
+    if (options.apply) {
+      const spec = specs.find((candidate) => candidate.path === path)
+      if (spec) {
+        writeFileEnsured(join(repoRoot, path), spec.content)
+        logger.success(`fixed:   ${path}`)
+      }
+    }
   }
-  for (const path of report.drift) {
+
+  const drift = await resolveDrift(repoRoot, config, specs, report.drift, options.apply)
+  if (drift.preferences) {
+    // Persist immediately: a freshly-chosen "always"/"never" preference must
+    // survive even if this run turns out to have no other outstanding issues
+    // (which returns early, below, before the end-of-run saveConfig).
+    config = { ...config, fileSyncPreferences: drift.preferences }
+    saveConfig(repoRoot, config)
+  }
+
+  const applied = drift.entries.filter((entry) => entry.outcome === 'applied').map((entry) => entry.path)
+  const stillDrift = drift.entries.filter((entry) => entry.outcome === 'drift').map((entry) => entry.path)
+  const never = drift.entries.filter((entry) => entry.outcome === 'never').map((entry) => entry.path)
+  const alwaysPending = drift.entries.filter((entry) => entry.outcome === 'always-pending').map((entry) => entry.path)
+
+  for (const path of stillDrift) {
     logger.warn(`drift:   ${path}`)
   }
-  for (const path of report.fixed) {
+  for (const path of applied) {
     logger.success(`fixed:   ${path}`)
+  }
+  for (const path of never) {
+    logger.info(`skip:    ${path} (remembered preference — never update)`)
+  }
+  for (const path of alwaysPending) {
+    logger.info(`skip:    ${path} (remembered preference — always update; re-run with --fix to apply)`)
   }
 
   const dependencyIssues = checkDependencyHealth(repoRoot, options.apply)
   const configIssues = wasMissing ? 1 : 0
-  const issues = report.missing.length + report.drift.length + dependencyIssues + configIssues
+  const issues = report.missing.length + stillDrift.length + dependencyIssues + configIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -102,7 +135,118 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   saveConfig(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
-  logger.success(`Repaired ${issues} issue(s); stamped template version ${TEMPLATE_VERSION}.`)
+  const repaired = report.missing.length + applied.length + dependencyIssues + configIssues
+  const leftoverNote = stillDrift.length > 0 ? ` (${stillDrift.length} left as drift — re-run --fix to decide again)` : ''
+  logger.success(`Repaired ${repaired} issue(s); stamped template version ${TEMPLATE_VERSION}.${leftoverNote}`)
+}
+
+/** How a single drifted file was resolved by {@link resolveDrift}. */
+type DriftOutcome
+  = | 'applied'
+    | 'never'
+    | 'always-pending'
+    | 'drift'
+
+/**
+ * Outcome of {@link resolveDrift}.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+interface DriftResolution {
+  /**
+   * Every drifted path with its resolved outcome: `'applied'` (written this
+   * run), `'never'` (a remembered or freshly-chosen "never update"
+   * preference — never written), `'always-pending'` (a remembered "always
+   * update" preference seen during a report-only run — not written this run,
+   * but will be on the next `--fix`), or `'drift'` (still needs a decision —
+   * report-only with no preference, or an interactive "skip this once").
+   */
+  entries:      { path: string, outcome: DriftOutcome }[]
+  /** The updated preference map, if any interactive "always"/"never" choice changed it; otherwise `undefined`. */
+  preferences?: Record<string, 'always' | 'never'>
+}
+
+/**
+ * Resolves each drifted tool-owned file, consulting (and updating) the
+ * repo's remembered per-file preferences.
+ *
+ * @remarks
+ * A remembered `'never'` preference is always honored silently, in both
+ * report-only and apply runs. A remembered `'always'` preference is only
+ * ever *applied* (written to disk) when `apply` is set — a report-only
+ * `doctor` never writes anything, so it's reported as `'always-pending'`
+ * instead. An undecided file is only ever prompted for when `apply` is set;
+ * report-only leaves it as ordinary `'drift'`. Choosing `'always'`/`'never'`
+ * interactively persists the choice into the returned preference map
+ * immediately.
+ *
+ * @param repoRoot - Absolute path to the repo root.
+ * @param config - The loaded stamp (read for `fileSyncPreferences`).
+ * @param specs - Every tool-owned/scaffold file spec for this repo.
+ * @param driftPaths - The drifted paths reported by {@link syncToolOwned}.
+ * @param apply - Whether this run applies fixes (`--fix`, or `update`/`ascend`).
+ * @returns Every drifted path's outcome, plus the updated preference map when
+ * it changed.
+ * @throws Propagates any error `promptDriftChoice` raises (e.g. when stdin is
+ * not a TTY) or any Node.js `fs` error raised while writing a file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+async function resolveDrift (repoRoot: string, config: MonecromanciConfig, specs: FileSpec[], driftPaths: string[], apply: boolean): Promise<DriftResolution> {
+  const specByPath = new Map(specs.map((spec) => [spec.path, spec]))
+  const preferences = { ...config.fileSyncPreferences }
+  const entries: DriftResolution['entries'] = []
+  let preferencesChanged = false
+
+  for (const path of driftPaths) {
+    const spec = specByPath.get(path)
+    if (!spec) {
+      entries.push({ path, outcome: 'drift' })
+      continue
+    }
+
+    const preference = preferences[path]
+    if (preference === 'never') {
+      entries.push({ path, outcome: 'never' })
+      continue
+    }
+    if (preference === 'always') {
+      if (apply) {
+        writeFileEnsured(join(repoRoot, path), spec.content)
+        entries.push({ path, outcome: 'applied' })
+      } else {
+        entries.push({ path, outcome: 'always-pending' })
+      }
+      continue
+    }
+
+    if (!apply) {
+      entries.push({ path, outcome: 'drift' })
+      continue
+    }
+
+    const onDisk = readTextSafe(join(repoRoot, path))
+    logger.info(`\n${path}\n${renderDiff(onDisk, spec.content)}`)
+    const choice = await promptDriftChoice(path)
+
+    if (choice === 'skip') {
+      entries.push({ path, outcome: 'drift' })
+      continue
+    }
+    if (choice === 'never') {
+      preferences[path] = 'never'
+      preferencesChanged = true
+      entries.push({ path, outcome: 'never' })
+      continue
+    }
+    if (choice === 'always') {
+      preferences[path] = 'always'
+      preferencesChanged = true
+    }
+    writeFileEnsured(join(repoRoot, path), spec.content)
+    entries.push({ path, outcome: 'applied' })
+  }
+
+  return { entries, preferences: preferencesChanged ? preferences : undefined }
 }
 
 /**
