@@ -10,7 +10,8 @@
  */
 
 import { execSync } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import process from 'node:process'
 
 /**
@@ -211,10 +212,19 @@ export function readJsonSafe (filePath, fallback = {}) {
 /**
  * Writes JSON content with stable two-space formatting and a trailing newline.
  *
+ * @remarks
+ * Creates the destination's parent directory if needed — `.build-templates/`
+ * (the context file's usual home) is no longer vendored into the repo, so it
+ * won't already exist as a real scratch directory.
+ *
  * @param {string} filePath The destination file path.
  * @param {unknown} content The serialisable content.
  */
 export function writeJson (filePath, content) {
+  const directory = dirname(filePath)
+  if (!existsSync(directory)) {
+    mkdirSync(directory, { recursive: true })
+  }
   writeFileSync(filePath, `${JSON.stringify(content, null, 2)}\n`, 'utf8')
 }
 

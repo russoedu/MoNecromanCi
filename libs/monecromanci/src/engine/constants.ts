@@ -60,6 +60,10 @@ export const OBSOLETE_TOOL_OWNED_PATHS = [
   'jest.setup.mjs',
   'jest.clear.mjs',
   'typedoc.json',
+  // The shared CI engine and the resolved-deps script: both now called
+  // straight out of node_modules/monecromanci instead of being vendored.
+  '.build-templates',
+  'tools/generate-dist-package.mjs',
 ]
 
 /**

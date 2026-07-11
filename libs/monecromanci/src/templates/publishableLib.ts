@@ -1,4 +1,3 @@
-import { readAsset } from '../engine/assets'
 import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import { registryUrl } from '../engine/registry'
@@ -110,15 +109,6 @@ describe('greet', () => {
 })
 `
 
-/** The vendored resolved-deps script, written once at the repo root tools/ dir. */
-function distPackageScript (): FileSpec {
-  return {
-    path:      'tools/generate-dist-package.mjs',
-    content:   readAsset('scripts/generate-dist-package.mjs'),
-    ownership: 'tool-owned',
-  }
-}
-
 /**
  * Files for a publishable library at `libs/<name>` (published to Azure Artifacts).
  *
@@ -143,7 +133,7 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     monecromanci:  { dist: { main: './index.js', types: './index.d.ts' } },
     dependencies:  {},
     scripts:       {
-      build: 'tsc -p ./tsconfig.lib.json && node ../../tools/generate-dist-package.mjs',
+      build: 'tsc -p ./tsconfig.lib.json && node ../../node_modules/monecromanci/dist/assets/scripts/generate-dist-package.mjs',
       test:  'jest --collectCoverage',
       lint:  'eslint . -c ../../eslint.config.mjs',
       doc:   'typedoc --tsconfig tsconfig.lib.json',
@@ -162,7 +152,6 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     file('src/index.ts', 'export * from \'./greeter\'\n', 'scaffold'),
     file('src/greeter.ts', greeterTs, 'scaffold'),
     file('src/greeter.test.ts', greeterTestTs, 'scaffold'),
-    distPackageScript(),
   ]
 }
 
@@ -223,7 +212,7 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     monecromanci:  { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
     dependencies:  {},
     scripts:       {
-      build: `${esbuild} && node ../../tools/generate-dist-package.mjs`,
+      build: `${esbuild} && node ../../node_modules/monecromanci/dist/assets/scripts/generate-dist-package.mjs`,
       test:  'jest --collectCoverage',
       lint:  'eslint . -c ../../eslint.config.mjs',
       doc:   'typedoc --tsconfig tsconfig.lib.json',
@@ -242,6 +231,5 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     file('src/cli.ts', cliMainTs, 'scaffold'),
     file('src/greeter.ts', cliGreeterTs, 'scaffold'),
     file('src/greeter.test.ts', cliMainTestTs, 'scaffold'),
-    distPackageScript(),
   ]
 }
