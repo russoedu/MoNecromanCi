@@ -36,6 +36,7 @@ import path from 'node:path'
 import process from 'node:process'
 import {
   banner,
+  isAzure,
   isWindows,
   log,
   readJsonSafe,
@@ -103,7 +104,11 @@ function bumpVersions (publishableLibraries) {
 
   const projects = publishableLibraries.map(project => project.name).join(',')
   section('Version (nx release)')
-  runInherit(`npx nx release version --projects=${shellEscape(projects)} --git-commit --git-commit-message ${shellEscape('chore(release): publish')} --git-tag --git-push --verbose`)
+  if (isAzure()) {
+    runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --git-push --verbose`)
+  } else {
+    runInherit(`npx nx release version --projects=${shellEscape(projects)} --git-commit --git-commit-message ${shellEscape('chore(release): publish')} --git-tag --git-push --verbose`)
+  }
 }
 
 /**
