@@ -306,31 +306,56 @@ describe('publish pipeline', () => {
     const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // Scoped to the affected publishable projects, computed from conventional
-    // commits since each one's last release tag; tags + pushes the tag only,
-    // on both providers — both GitHub and Azure DevOps repos commonly protect
-    // the release branch against direct pushes, which rejects the atomic
-    // commit+tag push nx would otherwise attempt.
-    expect(pipeline).toMatch(/nx release version --projects=.* --no-git-commit --git-tag --git-push\b/)
+    // commits since each one's last release tag; tags only, never commits —
+    // both GitHub and Azure DevOps repos commonly protect the release branch
+    // against direct pushes, which rejects the atomic commit+tag push nx
+    // would otherwise attempt.
+    expect(pipeline).toMatch(/nx release version --projects=.* --no-git-commit --git-tag --verbose/)
     expect(pipeline).not.toMatch(/--git-commit\b/)
-    // Versioning must run before the publish call, not after.
-    const bumpIndex = pipeline.indexOf('bumpVersions(publishableLibraries, currentBranch())')
-    expect(bumpIndex).toBeGreaterThan(-1)
-    expect(bumpIndex).toBeLessThan(pipeline.indexOf('publishLibraries(publishableLibraries)'))
+    // nx's own --git-push is deliberately never passed to the command itself
+    // (see the atomic-push test below); the tags are pushed manually instead.
+    expect(pipeline).not.toMatch(/--git-tag --git-push\b/)
+    // In main(): versioning must run before publishing.
+    const bumpCallIndex = pipeline.indexOf('bumpVersions(publishableLibraries, currentBranch())')
+    expect(bumpCallIndex).toBeGreaterThan(-1)
+    expect(bumpCallIndex).toBeLessThan(pipeline.indexOf('publishLibraries(publishableLibraries)'))
+    // Inside bumpVersions() itself: the tags must exist before they're pushed.
+    const versionIndex = pipeline.indexOf('npx nx release version --projects=')
+    const pushCallIndex = pipeline.indexOf('pushReleaseTags()')
+    expect(versionIndex).toBeGreaterThan(-1)
+    expect(versionIndex).toBeLessThan(pushCallIndex)
   })
 
-  it('sets up upstream tracking before nx release\'s tag-only push, without failing the build if it can\'t', () => {
+  it('sets up upstream tracking before the tag push, without failing the build if it can\'t', () => {
     const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // Azure Pipelines reattaches its detached-HEAD checkout with a bare
     // `git checkout -B` (see azure-pipelines.yml), which never configures an
-    // upstream — `nx release version --git-push` then fails outright with
-    // "has no upstream branch" even though only a tag is pushed. runSafe
-    // never throws, so a branch with no matching origin ref (e.g. unpushed)
+    // upstream — a bare `git push origin` then fails outright with "has no
+    // upstream branch" even though only a tag is pushed. runSafe never
+    // throws, so a branch with no matching origin ref (e.g. unpushed)
     // doesn't fail this step; the tag push further down fails there instead,
-    // with a clearer error from nx itself.
+    // with a clearer error.
     expect(pipeline).toMatch(/function ensureUpstreamTracking/)
     expect(pipeline).toMatch(/git branch --set-upstream-to=origin\/\$\{branch\} \$\{branch\}/)
     expect(pipeline.indexOf('ensureUpstreamTracking(branch)')).toBeLessThan(pipeline.indexOf('npx nx release version --projects='))
+  })
+
+  it('pushes release tags itself, without --atomic, instead of using nx\'s own --git-push', () => {
+    const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
+
+    // nx hardcodes --atomic in its own git push implementation with no way to
+    // disable it, and Azure Repos' git server has never supported atomic
+    // pushes (confirmed with Microsoft — no advertised capability, no
+    // server-side setting) — so nx's --git-push fails outright on every
+    // Azure DevOps release with "the receiving end does not support --atomic
+    // push". --follow-tags (not --tags) mirrors nx's own reasoning: push only
+    // the annotated tags reachable from what's being pushed, not every tag.
+    expect(pipeline).toMatch(/function pushReleaseTags/)
+    // Pins down the exact command line pushReleaseTags runs — proof enough
+    // it doesn't carry --atomic, without a bare /--atomic/ check that would
+    // also (falsely) match this file's own explanatory comments about it.
+    expect(pipeline).toMatch(/runInherit\('git push --follow-tags --no-verify origin'\)/)
   })
 
   it('re-attaches Azure\'s detached HEAD before the release step runs, in a single self-contained pipeline file', () => {
