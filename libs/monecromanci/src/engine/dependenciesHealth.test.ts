@@ -1,7 +1,14 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from './dependenciesHealth'
+import {
+  ensureCoreDependencies,
+  ensureLegacyPeerDependencies,
+  findMissingCoreDependencies,
+  findSupersededDependencies,
+  isLegacyPeerDependenciesMissing,
+  removeSupersededDependencies,
+} from './dependenciesHealth'
 import { readJsonSafe } from './fsx'
 
 let repoRoot: string
@@ -52,6 +59,45 @@ describe('removeSupersededDependencies', () => {
     const before = readFileSync(join(repoRoot, 'package.json'), 'utf8')
 
     expect(removeSupersededDependencies(repoRoot)).toEqual([])
+    expect(readFileSync(join(repoRoot, 'package.json'), 'utf8')).toBe(before)
+  })
+})
+
+describe('findMissingCoreDependencies', () => {
+  it('lists both core packages when devDependencies is absent entirely', () => {
+    writeManifest({})
+    expect(findMissingCoreDependencies(repoRoot)).toEqual(['monecromanci', 'monecromanci-toolchain'])
+  })
+
+  it('lists only whichever core package is missing', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.8.0' } })
+    expect(findMissingCoreDependencies(repoRoot)).toEqual(['monecromanci-toolchain'])
+  })
+
+  it('returns nothing when both are already pinned', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' } })
+    expect(findMissingCoreDependencies(repoRoot)).toEqual([])
+  })
+})
+
+describe('ensureCoreDependencies', () => {
+  it('adds only the missing core packages and keeps everything else', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.8.0', eslint: '^10.6.0' } })
+
+    const added = ensureCoreDependencies(repoRoot)
+
+    expect(added).toEqual(['monecromanci-toolchain'])
+    const devDependencies = readJsonSafe<{ devDependencies: Record<string, string> }>(join(repoRoot, 'package.json'), { devDependencies: {} }).devDependencies
+    expect(devDependencies.monecromanci).toBe('^0.8.0')
+    expect(devDependencies.eslint).toBe('^10.6.0')
+    expect(devDependencies['monecromanci-toolchain']).toBeDefined()
+  })
+
+  it('does not rewrite the manifest when both core packages are already present', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' } })
+    const before = readFileSync(join(repoRoot, 'package.json'), 'utf8')
+
+    expect(ensureCoreDependencies(repoRoot)).toEqual([])
     expect(readFileSync(join(repoRoot, 'package.json'), 'utf8')).toBe(before)
   })
 })

@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { DEFAULT_TRIGGER_BRANCHES, OBSOLETE_TOOL_OWNED_PATHS, TEMPLATE_VERSION } from '../engine/constants'
-import { ensureLegacyPeerDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
+import { ensureCoreDependencies, ensureLegacyPeerDependencies, findMissingCoreDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { fileExists, readTextSafe, removeFileIfExists, writeFileEnsured } from '../engine/fsx'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
@@ -320,6 +320,16 @@ function checkDependencyHealth (repoRoot: string, shouldApply: boolean): number 
       logger.success('added legacy-peer-deps=true to .npmrc (ESLint 10 is ahead of some plugins\' peer ranges)')
     } else {
       logger.warn('.npmrc is missing legacy-peer-deps=true — `npm install` may fail on ESLint peer ranges')
+    }
+  }
+
+  const missingCore = shouldApply ? ensureCoreDependencies(repoRoot) : findMissingCoreDependencies(repoRoot)
+  for (const name of missingCore) {
+    issues += 1
+    if (shouldApply) {
+      logger.success(`added missing devDependency '${name}' (the shared configs and CI scripts resolve from it)`)
+    } else {
+      logger.warn(`devDependency '${name}' is missing — the shared eslint/tsconfig/jest configs and CI scripts resolve from it`)
     }
   }
 

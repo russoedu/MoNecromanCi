@@ -1,4 +1,4 @@
-import { expand, input } from '@inquirer/prompts'
+import { input, select } from '@inquirer/prompts'
 import { diffLines } from 'diff'
 
 /**
@@ -107,27 +107,29 @@ export type DriftChoice = 'update' | 'skip' | 'always' | 'never'
  * Prompts for how to resolve a single tool-owned file's drift.
  *
  * @remarks
- * Uses `@inquirer/prompts`'s `expand` prompt — a single keypress per choice.
- * `always`/`never` are meant to be persisted by the caller so the file is
- * never asked about again.
+ * Uses `@inquirer/prompts`'s `select` prompt so all four choices and their
+ * full descriptions are visible up front (arrow keys + Enter), rather than
+ * `expand`'s collapsed single-keypress hint that hides the option text
+ * until the user knows to press "h". `always`/`never` are meant to be
+ * persisted by the caller so the file is never asked about again.
  *
  * @param path - The drifted file's repo-relative path, shown in the message.
  * @returns The user's choice.
- * @throws Propagates any error `@inquirer/prompts`'s `expand` raises (e.g.
+ * @throws Propagates any error `@inquirer/prompts`'s `select` raises (e.g.
  * when stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
 export async function promptDriftChoice (path: string): Promise<DriftChoice> {
-  return await expand({
+  return await select<DriftChoice>({
     message: `${path} differs from the canonical template — what do you want to do?`,
-    default: 'u',
+    default: 'update',
     choices: [
-      { key: 'u', name: 'Update the file (just this once)', value: 'update' },
-      { key: 's', name: 'Skip the file (just this once)', value: 'skip' },
-      { key: 'a', name: 'Always update this file from now on', value: 'always' },
-      { key: 'n', name: 'Never update this file from now on', value: 'never' },
+      { name: 'Update the file (just this once)', value: 'update' },
+      { name: 'Skip the file (just this once)', value: 'skip' },
+      { name: 'Always update this file from now on', value: 'always' },
+      { name: 'Never update this file from now on', value: 'never' },
     ],
   })
 }
 
-export { checkbox, select, confirm, input } from '@inquirer/prompts'
+export { checkbox, confirm, input, select } from '@inquirer/prompts'
