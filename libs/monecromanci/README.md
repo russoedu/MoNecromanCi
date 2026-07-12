@@ -32,8 +32,10 @@ It generates nine project kinds and keeps every repo's tool-owned config in sync
 | `svelte-app`      | `type:svelte-app`      | Svelte 5 + Vite, same multi-env builds.                                 |
 | `nextjs-app`      | `type:nextjs-app`      | Full-stack Next.js (App Router). Per-env builds assemble `dist-<env>` in **server** (standalone) or **static-export** mode (`NEXT_OUTPUT`). |
 
-A project tagged `ci:ignore` is excluded from the pipeline entirely (never
-built, packaged, versioned or published).
+Add `ci:ignore` alongside a project's `type:*` tag to exclude it from the CI
+pipeline (never built, packaged, versioned or published) without excluding it
+from `doctor`/`update` — its tool-owned files stay in sync like any other
+project.
 
 ## Commands
 

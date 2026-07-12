@@ -35,7 +35,7 @@ function libProjectJson (vars: ProjectVars): string {
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
     sourceRoot:  `libs/${vars.name}/src`,
     projectType: 'library',
-    tags:        [TAGS.internalLib],
+    tags:        [TAGS.internalLib, ...(vars.extraTags ?? [])],
     targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
       test:  run('test'),

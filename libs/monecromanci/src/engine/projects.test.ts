@@ -53,9 +53,28 @@ describe('discoverProjects', () => {
     expect(discoverProjects(repoRoot, config)).toEqual([])
   })
 
-  it('skips a project directory with no recognisable tags', () => {
+  it('warns when a project is tagged ci:ignore with no type:* tag (ci:ignore is CI-only, not a doctor opt-out)', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
     writeProject('apps', 'untagged', { tags: ['ci:ignore'] }, {})
     expect(discoverProjects(repoRoot, config)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unrecognized project: apps/untagged'))
+    warn.mockRestore()
+  })
+
+  it('warns when a real project has no recognisable type:* tag', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    writeProject('libs', 'mystery', { tags: [] }, { name: '@demo/mystery' })
+    expect(discoverProjects(repoRoot, config)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unrecognized project: libs/mystery'))
+    warn.mockRestore()
+  })
+
+  it('still classifies a project tagged with both a type:* tag and ci:ignore, preserving ci:ignore as an extra tag', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    writeProject('libs', 'wip', { tags: [TAGS.internalLib, 'ci:ignore'] }, { name: '@demo/wip' })
+    expect(discoverProjects(repoRoot, config)[0]).toMatchObject({ kind: 'internal-lib', extraTags: ['ci:ignore'] })
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('skips a project directory missing both project.json and package.json', () => {
@@ -66,7 +85,7 @@ describe('discoverProjects', () => {
   it('identifies a function-app', () => {
     writeProject('apps', 'api', { tags: [TAGS.functionApp] }, { name: '@demo/api' })
     expect(discoverProjects(repoRoot, config)).toEqual([
-      { kind: 'function-app', name: 'api', packageName: '@demo/api', scope: '@demo', registry: config.registry },
+      { kind: 'function-app', name: 'api', packageName: '@demo/api', scope: '@demo', registry: config.registry, extraTags: [] },
     ])
   })
 

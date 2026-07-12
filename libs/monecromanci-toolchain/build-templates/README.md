@@ -9,8 +9,8 @@ per-project input is a tag.
 ## How a project is classified
 
 Classification is driven entirely by NX tags (set in each `project.json`). Use one
-canonical tag per project; legacy descriptive tags are still recognised through the
-alias table in [`lib/context.mjs`](lib/context.mjs).
+canonical `type:*` tag per project; legacy descriptive tags are still recognised
+through the alias table in [`lib/context.mjs`](lib/context.mjs).
 
 | Canonical tag | Category | What the pipeline does when affected |
 |---|---|---|
@@ -18,7 +18,7 @@ alias table in [`lib/context.mjs`](lib/context.mjs).
 | `type:react-app` | Frontend app | branch-aware build → zip each produced output dir → drop |
 | `type:publishable-lib` | npm package | publish at the `package.json` version (skip if already published) → docs |
 | `type:internal-lib` | Internal/vendored lib | docs only; vendored into apps that import it |
-| `ci:ignore` | Excluded | skipped everywhere (wins over any other tag) |
+| `ci:ignore` | Excluded from CI | added *alongside* a `type:*` tag; wins over it for this pipeline (build/test/publish are skipped), but `monecromanci doctor` still classifies the project from its `type:*` tag and keeps its config in sync — `ci:ignore` only opts a project out of CI, never out of doctor |
 
 > Versioning is manual: set the `version` in each project's `package.json`. The
 > pipeline never bumps versions, tags, or commits — it just publishes whatever
@@ -68,6 +68,7 @@ JSON), `nx.mjs` (local-binary NX wrapper + git base/head), `context.mjs`
 See [`../APPLY.md`](../APPLY.md) for the full guide. In short:
 
 1. Copy `.build-templates/` and `azure-pipelines.yml`.
-2. Tag each `project.json` with one `type:*` (or `ci:ignore`) tag, and set a real
+2. Tag each `project.json` with a `type:*` tag (add `ci:ignore` alongside it to
+   keep a project out of CI without opting it out of doctor), and set a real
    `version` in every project's `package.json`.
 3. Add `.npmrc` and the pipeline secrets (`NODE_AUTH_TOKEN`, optional `saDevConnectionString`).

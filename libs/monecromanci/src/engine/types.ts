@@ -135,6 +135,13 @@ export interface ProjectVars {
   scope:       string
   /** Publish registry, threaded through for publishable kinds. */
   registry?:   RegistryConfig
+  /**
+   * Tags on the project's on-disk `project.json`, minus the canonical
+   * `type:*` tag that determined `kind` (e.g. `['ci:ignore']`). Preserved
+   * verbatim when regenerating `project.json` so doctor never silently
+   * drops a user-added tag it doesn't otherwise understand.
+   */
+  extraTags?:  string[]
 }
 
 /**
