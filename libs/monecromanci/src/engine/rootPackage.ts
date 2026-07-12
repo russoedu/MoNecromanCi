@@ -96,6 +96,21 @@ export interface ManifestTemplate {
 }
 
 /**
+ * The outcome of a {@link mergeManifest} call.
+ *
+ * @remarks
+ * Returned by {@link mergeManifest}, consumed by `resurrect` and `doctor`.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+export interface MergeManifestResult {
+  /** Dotted field names that were added (e.g. `scripts.lint`). */
+  added:   string[]
+  /** Dotted field names present but whose content differs from the template. */
+  drifted: string[]
+}
+
+/**
  * Merges canonical manifest fields into an existing package.json without
  * clobbering user content.
  *
@@ -103,19 +118,22 @@ export interface ManifestTemplate {
  * `scripts` keys are only added when missing (existing keys with different
  * content are logged as drift and left alone), `workspaces` entries are
  * unioned in, and `engines` keys are set only when absent. Used by `resurrect`
- * for both the root and the per-project manifests.
+ * for both the root and the per-project manifests, and by `doctor` to flag
+ * (never silently rewrite) scripts a template update has since changed.
  *
  * @param directory - Absolute path to the folder holding the package.json.
  * @param template - The canonical fields to merge in.
- * @returns The dotted field names that were added (e.g. `scripts.lint`).
+ * @param options - `dryRun` computes the result without writing the file.
+ * @returns The added and drifted dotted field names.
  * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
  * while writing `package.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function mergeManifest (directory: string, template: ManifestTemplate): string[] {
+export function mergeManifest (directory: string, template: ManifestTemplate, options: { dryRun?: boolean } = {}): MergeManifestResult {
   const manifestPath = join(directory, 'package.json')
   const manifest = readJsonSafe<Record<string, unknown>>(manifestPath, {})
   const added: string[] = []
+  const drifted: string[] = []
 
   if (template.scripts) {
     const scripts = (manifest.scripts as Record<string, string> | undefined) ?? {}
@@ -124,6 +142,7 @@ export function mergeManifest (directory: string, template: ManifestTemplate): s
         scripts[name] = command
         added.push(`scripts.${name}`)
       } else if (scripts[name] !== command) {
+        drifted.push(`scripts.${name}`)
         logger.warn(`script '${name}' differs from the canonical template in ${manifestPath} — left untouched`)
       }
     }
@@ -156,6 +175,9 @@ export function mergeManifest (directory: string, template: ManifestTemplate): s
     manifest.engines = engines
   }
 
-  writeFileEnsured(manifestPath, toJson(manifest))
-  return added
+  if (!options.dryRun) {
+    writeFileEnsured(manifestPath, toJson(manifest))
+  }
+
+  return { added, drifted }
 }

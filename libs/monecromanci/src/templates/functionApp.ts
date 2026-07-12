@@ -2,6 +2,11 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds an `nx:run-commands` target that runs `command` from the project's own directory. */
+function runInProject (command: string): { executor: string, options: { command: string, cwd: string } } {
+  return { executor: 'nx:run-commands', options: { command, cwd: '{projectRoot}' } }
+}
+
 /** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
@@ -11,25 +16,24 @@ function appPackageJson (vars: ProjectVars): string {
     type:         'commonjs',
     main:         'dist/index.js',
     dependencies: {},
+    // build/serve/test/lint/doc are stable delegators: the real commands live
+    // in project.json's targets (tool-owned, always kept in sync) rather than
+    // here (scaffold-owned, never revisited once created). watch/clean:config
+    // are local-only convenience scripts with no corresponding nx target.
     scripts:      {
-      build:          'tsc -p tsconfig.app.json',
+      build:          `nx run ${vars.name}:build`,
       watch:          'tsc -p tsconfig.app.json -w',
-      start:          'func start',
+      start:          `nx run ${vars.name}:serve`,
       'clean:config': 'node ../../node_modules/monecromanci-toolchain/scripts/clean-config.mjs',
-      lint:           'eslint . -c ../../eslint.config.mjs',
-      test:           'jest --collectCoverage',
-      doc:            'typedoc --tsconfig tsconfig.app.json',
+      lint:           `nx run ${vars.name}:lint`,
+      test:           `nx run ${vars.name}:test`,
+      doc:            `nx run ${vars.name}:doc`,
     },
   })
 }
 
 /** Builds the NX project.json with build/serve/test/lint/doc targets. */
 function appProjectJson (vars: ProjectVars): string {
-  const run = (target: string): { executor: string, options: { command: string } } => ({
-    executor: 'nx:run-commands',
-    options:  { command: `npm run ${target} -w ${vars.packageName}` },
-  })
-
   return toJson({
     name:        vars.name,
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
@@ -37,11 +41,11 @@ function appProjectJson (vars: ProjectVars): string {
     projectType: 'application',
     tags:        [TAGS.functionApp, ...(vars.extraTags ?? [])],
     targets:     {
-      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
-      serve: run('start'),
-      test:  run('test'),
-      lint:  run('lint'),
-      doc:   run('doc'),
+      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: 'tsc -p tsconfig.app.json', cwd: '{projectRoot}' } },
+      serve: runInProject('func start'),
+      test:  runInProject('jest --collectCoverage'),
+      lint:  runInProject('eslint . -c ../../eslint.config.mjs'),
+      doc:   runInProject('typedoc --tsconfig tsconfig.app.json'),
     },
   })
 }

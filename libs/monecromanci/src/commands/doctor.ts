@@ -5,6 +5,7 @@ import { ensureCoreDependencies, ensureLegacyPeerDependencies, findMissingCoreDe
 import { fileExists, readTextSafe, removeFileIfExists, writeFileEnsured } from '../engine/fsx'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
+import { mergeManifest } from '../engine/rootPackage'
 import { syncToolOwned } from '../engine/sync'
 import type { FileSpec, MonecromanciConfig, MonorepoVars } from '../engine/types'
 import { projectFiles } from '../generators/scaffold'
@@ -122,8 +123,9 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
 
   const dependencyIssues = checkDependencyHealth(repoRoot, options.apply)
   const obsoleteIssues = checkObsoletePaths(repoRoot, options.apply)
+  const scripts = checkProjectScripts(repoRoot, specs, options.apply)
   const configIssues = wasMissing ? 1 : 0
-  const issues = report.missing.length + stillDrift.length + dependencyIssues + obsoleteIssues + configIssues
+  const issues = report.missing.length + stillDrift.length + dependencyIssues + obsoleteIssues + scripts.issues + configIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -136,7 +138,7 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   }
 
   saveConfig(repoRoot, { ...config, templateVersion: TEMPLATE_VERSION })
-  const repaired = report.missing.length + applied.length + dependencyIssues + obsoleteIssues + configIssues
+  const repaired = report.missing.length + applied.length + dependencyIssues + obsoleteIssues + scripts.repaired + configIssues
   const leftoverNote = stillDrift.length > 0 ? ` (${stillDrift.length} left as drift — re-run --fix to decide again)` : ''
   logger.success(`Repaired ${repaired} issue(s); stamped template version ${TEMPLATE_VERSION}.${leftoverNote}`)
 }
@@ -370,4 +372,67 @@ function checkObsoletePaths (repoRoot: string, shouldApply: boolean): number {
   }
 
   return issues
+}
+
+/** {@link checkProjectScripts}'s combined issue and repair counts. */
+interface ScriptCheckResult {
+  issues:   number
+  repaired: number
+}
+
+/**
+ * Checks (and with `shouldApply`, repairs) every project's package.json
+ * `scripts` against its canonical template.
+ *
+ * @remarks
+ * A project's package.json is `scaffold`-owned (create-once) so nothing else
+ * in `doctor` ever revisits it — when a template's script command changes
+ * (e.g. adding a build step), an already-existing project silently keeps the
+ * stale one forever, with no warning until something downstream breaks.
+ * Scoped to project manifests only, not the monorepo root's: `resurrect`
+ * already merges the root's canonical scripts once at adoption time, and
+ * root-level script drift hasn't been observed as a real problem the way
+ * per-project build scripts have. Delegates to {@link mergeManifest}, whose
+ * semantics are already safe here: a genuinely missing script key is added;
+ * an existing key whose content differs is only flagged, never overwritten,
+ * since it may be a deliberate per-project override — that half is never
+ * "repaired" even with `--fix`.
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @param specs - The full expected file-spec list (monorepo + every project).
+ * @param shouldApply - Whether to add missing script keys, or only report.
+ * @returns The combined issue and repair counts.
+ * @throws Propagates any Node.js `fs` error raised while writing a
+ * package.json.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkProjectScripts (repoRoot: string, specs: FileSpec[], shouldApply: boolean): ScriptCheckResult {
+  let issues = 0
+  let repaired = 0
+
+  for (const spec of specs) {
+    if (!spec.path.endsWith('/package.json') || !fileExists(join(repoRoot, spec.path))) {
+      continue
+    }
+
+    const scripts = (JSON.parse(spec.content) as { scripts?: Record<string, string> }).scripts
+    if (!scripts) {
+      continue
+    }
+
+    const directory = join(repoRoot, spec.path.slice(0, -'/package.json'.length))
+    const { added, drifted } = mergeManifest(directory, { scripts }, { dryRun: !shouldApply })
+
+    issues += added.length + drifted.length
+    repaired += added.length
+    for (const key of added) {
+      if (shouldApply) {
+        logger.success(`fixed:   ${spec.path} (${key})`)
+      } else {
+        logger.warn(`missing: ${spec.path} (${key}) — the canonical template now includes it`)
+      }
+    }
+  }
+
+  return { issues, repaired }
 }

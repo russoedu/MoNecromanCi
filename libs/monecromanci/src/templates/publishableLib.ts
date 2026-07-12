@@ -3,6 +3,11 @@ import { toJson } from '../engine/fsx'
 import { registryUrl } from '../engine/registry'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds an `nx:run-commands` target that runs `command` from the project's own directory. */
+function runInProject (command: string): { executor: string, options: { command: string, cwd: string } } {
+  return { executor: 'nx:run-commands', options: { command, cwd: '{projectRoot}' } }
+}
+
 /** Builds the package.json publishConfig for the configured registry, if any. */
 function publishConfig (vars: ProjectVars): Record<string, string> | undefined {
   const url = vars.registry ? registryUrl(vars.registry) : undefined
@@ -64,11 +69,6 @@ function typedoc (): string {
 
 /** Builds the NX project.json with build/test/lint/doc targets. */
 function projectJson (vars: ProjectVars, buildCommand: string): string {
-  const run = (target: string): { executor: string, options: { command: string } } => ({
-    executor: 'nx:run-commands',
-    options:  { command: `npm run ${target} -w ${vars.packageName}` },
-  })
-
   return toJson({
     name:        vars.name,
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
@@ -76,12 +76,22 @@ function projectJson (vars: ProjectVars, buildCommand: string): string {
     projectType: vars.kind === 'cli-tool' ? 'application' : 'library',
     tags:        [TAGS.publishableLib, ...(vars.extraTags ?? [])],
     targets:     {
-      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: buildCommand } },
-      test:  run('test'),
-      lint:  run('lint'),
-      doc:   run('doc'),
+      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: buildCommand, cwd: '{projectRoot}' } },
+      test:  runInProject('jest --collectCoverage'),
+      lint:  runInProject('eslint . -c ../../eslint.config.mjs'),
+      doc:   runInProject('typedoc --tsconfig tsconfig.lib.json'),
     },
   })
+}
+
+/** Stable delegators: real commands live in project.json's targets (tool-owned, always kept in sync), never here (scaffold-owned, never revisited once created). */
+function delegatorScripts (vars: ProjectVars): Record<string, string> {
+  return {
+    build: `nx run ${vars.name}:build`,
+    test:  `nx run ${vars.name}:test`,
+    lint:  `nx run ${vars.name}:lint`,
+    doc:   `nx run ${vars.name}:doc`,
+  }
 }
 
 const greeterTs = `/**
@@ -122,7 +132,7 @@ describe('greet', () => {
  */
 export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
-  const buildCommand = `npm run build -w ${vars.packageName}`
+  const buildCommand = 'tsc -p ./tsconfig.lib.json && node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs'
   const packageJson = toJson({
     name:          vars.packageName,
     version:       '0.0.0',
@@ -132,12 +142,7 @@ export function publishableLibFiles (vars: ProjectVars): FileSpec[] {
     publishConfig: publishConfig(vars),
     monecromanci:  { dist: { main: './index.js', types: './index.d.ts' } },
     dependencies:  {},
-    scripts:       {
-      build: 'tsc -p ./tsconfig.lib.json && node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs',
-      test:  'jest --collectCoverage',
-      lint:  'eslint . -c ../../eslint.config.mjs',
-      doc:   'typedoc --tsconfig tsconfig.lib.json',
-    },
+    scripts:       delegatorScripts(vars),
   })
 
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })
@@ -200,8 +205,8 @@ export function greet (name: string): string {
  */
 export function cliToolFiles (vars: ProjectVars): FileSpec[] {
   const root = `libs/${vars.name}`
-  const buildCommand = `npm run build -w ${vars.packageName}`
   const esbuild = 'esbuild src/cli.ts --bundle --platform=node --target=node24 --outfile=dist/cli.js'
+  const buildCommand = `${esbuild} && node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs`
   const packageJson = toJson({
     name:          vars.packageName,
     version:       '0.0.0',
@@ -211,12 +216,7 @@ export function cliToolFiles (vars: ProjectVars): FileSpec[] {
     publishConfig: publishConfig(vars),
     monecromanci:  { dist: { main: './cli.js', bin: { [vars.name]: './cli.js' } } },
     dependencies:  {},
-    scripts:       {
-      build: `${esbuild} && node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs`,
-      test:  'jest --collectCoverage',
-      lint:  'eslint . -c ../../eslint.config.mjs',
-      doc:   'typedoc --tsconfig tsconfig.lib.json',
-    },
+    scripts:       delegatorScripts(vars),
   })
 
   const file = (path: string, content: string, ownership: FileSpec['ownership']): FileSpec => ({ path: `${root}/${path}`, content, ownership })

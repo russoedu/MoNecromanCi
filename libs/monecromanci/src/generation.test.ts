@@ -185,10 +185,15 @@ describe('project generation', () => {
     expect(root.devDependencies.vite).toBeDefined()
   })
 
-  it('marks a cli tool with a bin and a build script that resolves the deps script from node_modules', () => {
+  it('marks a cli tool with a bin, delegating its build to nx, whose target resolves the deps script from node_modules', () => {
     const package_ = readJson<{ bin: Record<string, string>, scripts: Record<string, string> }>('libs/mytool/package.json')
     expect(package_.bin.mytool).toBe('./dist/cli.js')
-    expect(package_.scripts.build).toContain('node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs')
+    // package.json's script is a stable delegator (never needs to change);
+    // the real command lives in project.json's tool-owned target instead.
+    expect(package_.scripts.build).toBe('nx run mytool:build')
+    const project = readJson<{ targets: { build: { options: { command: string, cwd: string } } } }>('libs/mytool/project.json')
+    expect(project.targets.build.options.command).toContain('node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs')
+    expect(project.targets.build.options.cwd).toBe('{projectRoot}')
   })
 
   it('scaffolds a generic node app tagged type:node-app with a tsx dev dependency', () => {

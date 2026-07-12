@@ -150,7 +150,7 @@ function resurrectRoot (repoRoot: string, vars: MonorepoVars): void {
 
   const packageSpec = specs.find((spec) => spec.path === 'package.json')
   if (packageSpec) {
-    const added = mergeManifest(repoRoot, manifestTemplateFrom(packageSpec.content))
+    const { added } = mergeManifest(repoRoot, manifestTemplateFrom(packageSpec.content))
     if (added.length > 0) {
       logger.step(`added to package.json: ${added.join(', ')}`)
     }
@@ -200,7 +200,7 @@ function resurrectProject (repoRoot: string, candidate: CandidateProject, kind: 
 
   const packageSpec = specs.find((spec) => spec.path === `${candidate.path}/package.json`)
   if (packageSpec) {
-    const added = mergeManifest(join(repoRoot, candidate.path), { scripts: manifestTemplateFrom(packageSpec.content).scripts })
+    const { added } = mergeManifest(join(repoRoot, candidate.path), { scripts: manifestTemplateFrom(packageSpec.content).scripts })
     if (added.length > 0) {
       logger.step(`added to ${candidate.path}/package.json: ${added.join(', ')}`)
     }

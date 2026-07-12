@@ -2,6 +2,11 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds an `nx:run-commands` target that runs `command` from the project's own directory. */
+function runInProject (command: string): { executor: string, options: { command: string, cwd: string } } {
+  return { executor: 'nx:run-commands', options: { command, cwd: '{projectRoot}' } }
+}
+
 /** Builds the app's package.json (scripts run the shared root toolchain). */
 function appPackageJson (vars: ProjectVars): string {
   return toJson({
@@ -9,6 +14,13 @@ function appPackageJson (vars: ProjectVars): string {
     version: '0.0.0',
     private: true,
     type:    'module',
+    // build/build:dev/build:uat/build:prod/build:all/dev are real commands,
+    // NOT delegators: the toolchain's context.mjs resolveReactBuildPlan reads
+    // these exact script names straight from package.json (via
+    // resolveProjectScripts) to pick the right per-branch build — turning
+    // them into `nx run` delegators would remove the names it looks for and
+    // break branch-aware CI builds. Only test/lint (which nothing else
+    // introspects) delegate to project.json's tool-owned targets.
     scripts: {
       dev:          'vite',
       'build:dev':  'vite build --mode dev --outDir dist-dev',
@@ -17,8 +29,8 @@ function appPackageJson (vars: ProjectVars): string {
       'build:all':  'npm run build:dev && npm run build:uat && npm run build:prod',
       build:        'npm run build:dev',
       preview:      'vite preview',
-      lint:         'eslint . -c ../../eslint.config.mjs',
-      test:         'jest --collectCoverage',
+      lint:         `nx run ${vars.name}:lint`,
+      test:         `nx run ${vars.name}:test`,
     },
   })
 }
@@ -37,14 +49,17 @@ function appProjectJson (vars: ProjectVars): string {
     projectType: 'application',
     tags:        [TAGS.reactApp, ...(vars.extraTags ?? [])],
     targets:     {
+      // Still delegates to package.json (not inlined): the branch-aware
+      // build variant it runs (build/build:dev/build:uat/...) is decided by
+      // context.mjs's resolveReactBuildPlan, not by this target.
       build: {
         executor: 'nx:run-commands',
         outputs:  ['{projectRoot}/dist-dev', '{projectRoot}/dist-uat', '{projectRoot}/dist-prod'],
         options:  { command: `npm run build -w ${vars.packageName}` },
       },
       serve: run('dev'),
-      test:  run('test'),
-      lint:  run('lint'),
+      test:  runInProject('jest --collectCoverage'),
+      lint:  runInProject('eslint . -c ../../eslint.config.mjs'),
     },
   })
 }

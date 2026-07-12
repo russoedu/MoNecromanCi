@@ -67,13 +67,16 @@ describe('mergeManifest', () => {
       workspaces: ['packages/*'],
     }))
 
-    const added = mergeManifest(repoRoot, {
+    const result = mergeManifest(repoRoot, {
       scripts:    { test: 'nx run-many -t test --all', lint: 'nx run-many -t lint --all' },
       workspaces: ['apps/*', 'libs/*'],
       engines:    { node: '>=24' },
     })
 
-    expect(added).toEqual(['scripts.lint', 'workspaces.apps/*', 'workspaces.libs/*', 'engines.node'])
+    expect(result.added).toEqual(['scripts.lint', 'workspaces.apps/*', 'workspaces.libs/*', 'engines.node'])
+    // The fixture's `test` script ('vitest') legitimately differs from the
+    // template's ('nx run-many -t test --all') — flagged as drift, not added.
+    expect(result.drifted).toEqual(['scripts.test'])
     const manifest = readManifest()
     expect(manifest.scripts).toEqual({ test: 'vitest', lint: 'nx run-many -t lint --all' })
     expect(manifest.workspaces).toEqual(['packages/*', 'apps/*', 'libs/*'])
@@ -87,9 +90,10 @@ describe('mergeManifest', () => {
       engines: { node: '>=18' },
     }))
 
-    const added = mergeManifest(repoRoot, { scripts: { lint: 'nx run-many -t lint --all' }, engines: { node: '>=24' } })
+    const result = mergeManifest(repoRoot, { scripts: { lint: 'nx run-many -t lint --all' }, engines: { node: '>=24' } })
 
-    expect(added).toEqual([])
+    expect(result.added).toEqual([])
+    expect(result.drifted).toEqual(['scripts.lint'])
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('script \'lint\' differs'))
     const manifest = readManifest()
     expect(manifest.scripts).toEqual({ lint: 'eslint src' })
@@ -98,9 +102,22 @@ describe('mergeManifest', () => {
 
   it('creates sections from scratch on an empty manifest', () => {
     writeFileSync(join(repoRoot, 'package.json'), '{}')
-    const added = mergeManifest(repoRoot, { scripts: { build: 'tsc' }, workspaces: ['apps/*'] })
-    expect(added).toEqual(['scripts.build', 'workspaces.apps/*'])
+    const result = mergeManifest(repoRoot, { scripts: { build: 'tsc' }, workspaces: ['apps/*'] })
+    expect(result.added).toEqual(['scripts.build', 'workspaces.apps/*'])
     expect(readManifest().scripts).toEqual({ build: 'tsc' })
     expect(readManifest().workspaces).toEqual(['apps/*'])
+  })
+
+  it('does not write the file in dryRun mode, but still reports what would change', () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation()
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ scripts: { lint: 'eslint src' } }))
+
+    const result = mergeManifest(repoRoot, { scripts: { lint: 'nx run-many -t lint --all', build: 'tsc' } }, { dryRun: true })
+
+    expect(result.added).toEqual(['scripts.build'])
+    expect(result.drifted).toEqual(['scripts.lint'])
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('script \'lint\' differs'))
+    // Unwritten: the file on disk still has only the original script.
+    expect(readManifest().scripts).toEqual({ lint: 'eslint src' })
   })
 })
