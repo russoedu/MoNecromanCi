@@ -164,7 +164,7 @@ export function nodeAppFiles (vars: ProjectVars): FileSpec[] {
     file('project.json', appProjectJson(vars), 'tool-owned'),
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('tsconfig.app.json', appTsconfigApp(), 'tool-owned'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'tool-owned'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('src/index.ts', indexTs, 'scaffold'),
     file('src/server.ts', serverTs, 'scaffold'),

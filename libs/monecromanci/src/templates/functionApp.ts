@@ -201,7 +201,7 @@ export function functionAppFiles (vars: ProjectVars): FileSpec[] {
     file('tsconfig.app.json', appTsconfigApp(), 'tool-owned'),
     file('host.json', hostJson(), 'scaffold'),
     file('local.settings.json', localSettingsJson(), 'scaffold'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'tool-owned'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('.configurations/dev.json', configurationFile('dev'), 'scaffold'),
     file('.configurations/uat.json', configurationFile('uat'), 'scaffold'),

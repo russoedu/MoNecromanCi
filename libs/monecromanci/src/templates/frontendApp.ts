@@ -226,7 +226,7 @@ function frontendAppFiles (vars: ProjectVars, framework: FrontendFramework): Fil
     file('tsconfig.json', appTsconfig(), 'tool-owned'),
     file('vite.config.ts', viteConfig(framework), 'scaffold'),
     file('index.html', indexHtml(vars, framework), 'scaffold'),
-    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'scaffold'),
+    file('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`, 'tool-owned'),
     file('typedoc.json', appTypedoc(), 'tool-owned'),
     file('.env.dev', envFile('dev'), 'scaffold'),
     file('.env.uat', envFile('uat'), 'scaffold'),
