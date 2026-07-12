@@ -2,6 +2,11 @@ import { TAGS } from '../engine/constants'
 import { toJson } from '../engine/fsx'
 import type { FileSpec, ProjectVars } from '../engine/types'
 
+/** Builds an `nx:run-commands` target that runs `command` from the project's own directory. */
+function runInProject (command: string): { executor: string, options: { command: string, cwd: string } } {
+  return { executor: 'nx:run-commands', options: { command, cwd: '{projectRoot}' } }
+}
+
 /** Builds the library's package.json pointing consumers at the TS source. */
 function libPackageJson (vars: ProjectVars): string {
   return toJson({
@@ -14,22 +19,21 @@ function libPackageJson (vars: ProjectVars): string {
     main:         './src/index.ts',
     types:        './src/index.ts',
     dependencies: {},
+    // Stable delegators: the real commands live in project.json's targets
+    // (tool-owned, always kept in sync) rather than here (scaffold-owned,
+    // never revisited once created) — `nx run <name>:<target>` never needs
+    // to change, so this file can never drift from what doctor expects.
     scripts:      {
-      build: 'tsc -p ./tsconfig.lib.json',
-      test:  'jest --collectCoverage',
-      lint:  'eslint . -c ../../eslint.config.mjs',
-      doc:   'typedoc --tsconfig tsconfig.lib.json',
+      build: `nx run ${vars.name}:build`,
+      test:  `nx run ${vars.name}:test`,
+      lint:  `nx run ${vars.name}:lint`,
+      doc:   `nx run ${vars.name}:doc`,
     },
   })
 }
 
 /** Builds the NX project.json with build/test/lint/doc targets. */
 function libProjectJson (vars: ProjectVars): string {
-  const run = (target: string): { executor: string, options: { command: string } } => ({
-    executor: 'nx:run-commands',
-    options:  { command: `npm run ${target} -w ${vars.packageName}` },
-  })
-
   return toJson({
     name:        vars.name,
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
@@ -37,10 +41,10 @@ function libProjectJson (vars: ProjectVars): string {
     projectType: 'library',
     tags:        [TAGS.internalLib, ...(vars.extraTags ?? [])],
     targets:     {
-      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
-      test:  run('test'),
-      lint:  run('lint'),
-      doc:   run('doc'),
+      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: 'tsc -p ./tsconfig.lib.json', cwd: '{projectRoot}' } },
+      test:  runInProject('jest --collectCoverage'),
+      lint:  runInProject('eslint . -c ../../eslint.config.mjs'),
+      doc:   runInProject('typedoc --tsconfig tsconfig.lib.json'),
     },
   })
 }
