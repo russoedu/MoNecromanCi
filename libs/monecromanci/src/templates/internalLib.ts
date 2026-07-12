@@ -147,7 +147,7 @@ export function internalLibFiles (vars: ProjectVars): FileSpec[] {
     toolOwned('project.json', libProjectJson(vars)),
     toolOwned('tsconfig.json', libTsconfig()),
     toolOwned('tsconfig.lib.json', libTsconfigLib()),
-    scaffold('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`),
+    toolOwned('jest.config.mjs', `import { createConfig } from 'monecromanci-toolchain/jest.preset.mjs'\n\nexport default createConfig('${vars.name}')\n`),
     toolOwned('typedoc.json', libTypedoc()),
     scaffold('src/index.ts', indexTs),
     scaffold('src/greeter.ts', greeterTs),

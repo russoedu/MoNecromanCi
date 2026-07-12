@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isManagedRepo, loadConfig } from '../engine/config'
@@ -95,6 +95,13 @@ describe('runResurrect', () => {
     expect(existsSync(join(repoRoot, 'libs/helpers/src/greeter.ts'))).toBe(false)
     expect(existsSync(join(repoRoot, 'apps/func/src/greeting.ts'))).toBe(false)
     expect(readJsonSafe(join(repoRoot, 'libs/helpers/jest.config.mjs'))).toBeUndefined() // still the non-JSON user file
+    // jest.config.mjs is tool-owned (doctor drift-checks it going forward), but this
+    // one-shot adoption step has no diff/preview, so it must not silently overwrite an
+    // adopted repo's existing (possibly hand-customised) jest config.
+    expect(readFileSync(join(repoRoot, 'libs/helpers/jest.config.mjs'), 'utf8')).toBe('export default {}\n')
+    // func had no pre-existing jest.config.mjs: still created, since only
+    // already-existing files are protected from the tool-owned template.
+    expect(readFileSync(join(repoRoot, 'apps/func/jest.config.mjs'), 'utf8')).toContain('monecromanci-toolchain/jest.preset.mjs')
 
     // Toolchain pinned, user scripts kept, canonical scripts merged in.
     const manifest = readJson('package.json')

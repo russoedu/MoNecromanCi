@@ -154,6 +154,17 @@ describe('project generation', () => {
     expect(typedoc.extends).toEqual(['monecromanci-toolchain/typedoc.json'])
   })
 
+  it('marks every project kind\'s jest.config.mjs as tool-owned, so doctor drift-checks it like tsconfig/typedoc', () => {
+    const config = configFromVars(vars)
+    const projects = discoverProjects(repo, config)
+    expect(projects.length).toBeGreaterThan(0)
+
+    for (const project of projects) {
+      const spec = projectFiles(project.kind, project).find((entry) => entry.path.endsWith('/jest.config.mjs'))
+      expect(spec?.ownership).toBe('tool-owned')
+    }
+  })
+
   it('ships function-app configurations, a clean:config script resolved from node_modules, and a root @azure/functions dep', () => {
     expect(hasPath('apps/api/.configurations/dev.json')).toBe(true)
     expect(hasPath('apps/api/.configurations/uat.json')).toBe(true)

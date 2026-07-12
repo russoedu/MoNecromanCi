@@ -188,7 +188,7 @@ export function reactAppFiles (vars: ProjectVars): FileSpec[] {
     file('tsconfig.spec.json', appTsconfigSpec(), 'tool-owned'),
     file('vite.config.ts', viteConfigTs, 'scaffold'),
     file('index.html', indexHtml(vars), 'scaffold'),
-    file('jest.config.mjs', jestConfigMjs(vars.name), 'scaffold'),
+    file('jest.config.mjs', jestConfigMjs(vars.name), 'tool-owned'),
     file('.env.dev', envFile('dev'), 'scaffold'),
     file('.env.uat', envFile('uat'), 'scaffold'),
     file('.env.prod', envFile('prod'), 'scaffold'),

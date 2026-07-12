@@ -186,10 +186,15 @@ function resurrectProject (repoRoot: string, candidate: CandidateProject, kind: 
   logger.step(`Resurrecting ${kind} '${candidate.path}' (${vars.packageName})`)
 
   // Never plant sample sources (greeter/App/...) inside a real project; the
-  // config-ish scaffold files (jest.config.mjs, .env.*, index.html) are still
-  // created when missing, and applyFiles keeps any that already exist.
+  // config-ish scaffold files (.env.*, index.html) are still created when
+  // missing, and applyFiles keeps any that already exist. jest.config.mjs is
+  // tool-owned (doctor drift-checks it going forward) but, like the scaffold
+  // files, must never be silently clobbered by this one-shot adoption step —
+  // an adopted repo's existing jest config may be hand-customised, and this
+  // path (unlike doctor's) has no diff/preview before writing.
   const specs = projectFiles(kind, vars)
     .filter((spec) => !(spec.ownership === 'scaffold' && spec.path.startsWith(`${candidate.path}/src/`)))
+    .filter((spec) => !(spec.path === `${candidate.path}/jest.config.mjs` && fileExists(join(repoRoot, spec.path))))
   reportApply(applyFiles(repoRoot, specs))
   applyRootDependencies(repoRoot, kind)
 
