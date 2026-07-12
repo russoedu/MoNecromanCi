@@ -104,15 +104,15 @@ function ensureGitIdentity () {
  * counterpart, only if it isn't tracking one already.
  *
  * @remarks
- * `nx release version --git-push` shells out to a bare `git push origin`
- * (no explicit refspec), which fails outright with "has no upstream branch"
- * without this — even though only a tag is actually pushed. Azure Pipelines
- * checks out in detached HEAD and reattaches with a bare `git checkout -B`
- * (see azure-pipelines.yml), which never sets tracking; GitHub Actions'
- * checkout already sets it, so this is a harmless no-op there. Uses
- * `runSafe` (never throws) because this step also runs on branches with no
- * matching origin ref (e.g. a fresh/unpushed branch) — in that case the tag
- * push further down will fail anyway, with a clearer error from nx itself.
+ * The manual `git push` below (and nx's own internal one, were `--git-push`
+ * ever re-enabled) shells out to a bare `git push origin` (no explicit
+ * refspec), which fails outright with "has no upstream branch" without this.
+ * Azure Pipelines checks out in detached HEAD and reattaches with a bare
+ * `git checkout -B` (see azure-pipelines.yml), which never sets tracking;
+ * GitHub Actions' checkout already sets it, so this is a harmless no-op
+ * there. Uses `runSafe` (never throws) because this step also runs on
+ * branches with no matching origin ref (e.g. a fresh/unpushed branch) — in
+ * that case the tag push further down fails anyway, with a clearer error.
  *
  * @param {string} branch The current branch name.
  */
@@ -123,8 +123,29 @@ function ensureUpstreamTracking (branch) {
 }
 
 /**
- * Bumps, tags and pushes the affected publishable projects from their
- * Conventional Commit history since each one's last release tag.
+ * Pushes the annotated release tags (and, incidentally, the current branch,
+ * which has nothing new to push since versioning never commits) created by
+ * `nx release version --git-tag`.
+ *
+ * @remarks
+ * Deliberately NOT delegated to `nx release version --git-push`: nx
+ * hardcodes `--atomic` in its own git push implementation, with no flag to
+ * disable it — and Azure Repos' git server has never supported atomic pushes
+ * (confirmed with Microsoft: it doesn't advertise the capability, and there
+ * is no server-side setting to change this), so that push fails outright
+ * with "the receiving end does not support --atomic push" on every Azure
+ * DevOps release. `--follow-tags` (not `--tags`) mirrors nx's own reasoning
+ * for precision: it only pushes annotated tags reachable from what's being
+ * pushed, not every tag in the repo.
+ */
+function pushReleaseTags () {
+  section('Push (git)')
+  runInherit('git push --follow-tags --no-verify origin')
+}
+
+/**
+ * Bumps and tags the affected publishable projects from their Conventional
+ * Commit history since each one's last release tag, then pushes the tags.
  *
  * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
  * @param {string} branch The current (release) branch name.
@@ -139,7 +160,8 @@ function bumpVersions (publishableLibraries, branch) {
   // branch against direct pushes, which rejects the atomic commit+tag push
   // (confirmed on both providers). Only the tag is pushed; nx resolves each
   // project's version from the tag name, so nothing is lost by not committing.
-  runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --git-push --verbose`)
+  runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --verbose`)
+  pushReleaseTags()
 }
 
 /**
