@@ -1,4 +1,4 @@
-import { expand, input } from '@inquirer/prompts'
+import { input, select } from '@inquirer/prompts'
 import {
   checkbox,
   confirm,
@@ -7,7 +7,7 @@ import {
   promptDriftChoice,
   promptText,
   renderDiff,
-  select,
+  select as reExportedSelect,
   splitBranchList,
 } from './prompts'
 
@@ -16,17 +16,16 @@ jest.mock('@inquirer/prompts', () => ({
   select:   jest.fn(),
   confirm:  jest.fn(),
   input:    jest.fn(),
-  expand:   jest.fn(),
 }))
 
 const mockInput = jest.mocked(input)
-const mockExpand = jest.mocked(expand)
+const mockSelect = jest.mocked(select)
 
 describe('re-exports', () => {
   it('forwards checkbox, select, confirm and input from @inquirer/prompts', () => {
     const mocked = jest.requireMock<Record<string, unknown>>('@inquirer/prompts')
     expect(checkbox).toBe(mocked.checkbox)
-    expect(select).toBe(mocked.select)
+    expect(reExportedSelect).toBe(mocked.select)
     expect(confirm).toBe(mocked.confirm)
     expect(reExportedInput).toBe(mocked.input)
   })
@@ -98,18 +97,19 @@ describe('renderDiff', () => {
 
 describe('promptDriftChoice', () => {
   it('offers update/skip/always/never and returns the chosen value', async () => {
-    mockExpand.mockResolvedValue('always')
+    mockSelect.mockResolvedValue('always')
     const choice = await promptDriftChoice('eslint.config.mjs')
     expect(choice).toBe('always')
 
-    const call = mockExpand.mock.calls[0][0] as { message: string, default: string, choices: Array<{ key: string, value: string }> }
+    const call = mockSelect.mock.calls[0][0] as { message: string, default: string, choices: Array<{ name: string, value: string }> }
     expect(call.message).toContain('eslint.config.mjs')
-    expect(call.default).toBe('u')
-    expect(call.choices.map((option) => [option.key, option.value])).toEqual([
-      ['u', 'update'],
-      ['s', 'skip'],
-      ['a', 'always'],
-      ['n', 'never'],
+    expect(call.default).toBe('update')
+    expect(call.choices.map((option) => option.value)).toEqual(['update', 'skip', 'always', 'never'])
+    expect(call.choices.map((option) => option.name)).toEqual([
+      'Update the file (just this once)',
+      'Skip the file (just this once)',
+      'Always update this file from now on',
+      'Never update this file from now on',
     ])
   })
 })
