@@ -313,7 +313,24 @@ describe('publish pipeline', () => {
     expect(pipeline).toMatch(/nx release version --projects=.* --no-git-commit --git-tag --git-push\b/)
     expect(pipeline).not.toMatch(/--git-commit\b/)
     // Versioning must run before the publish call, not after.
-    expect(pipeline.indexOf('bumpVersions(publishableLibraries)')).toBeLessThan(pipeline.indexOf('publishLibraries(publishableLibraries)'))
+    const bumpIndex = pipeline.indexOf('bumpVersions(publishableLibraries, currentBranch())')
+    expect(bumpIndex).toBeGreaterThan(-1)
+    expect(bumpIndex).toBeLessThan(pipeline.indexOf('publishLibraries(publishableLibraries)'))
+  })
+
+  it('sets up upstream tracking before nx release\'s tag-only push, without failing the build if it can\'t', () => {
+    const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
+
+    // Azure Pipelines reattaches its detached-HEAD checkout with a bare
+    // `git checkout -B` (see azure-pipelines.yml), which never configures an
+    // upstream — `nx release version --git-push` then fails outright with
+    // "has no upstream branch" even though only a tag is pushed. runSafe
+    // never throws, so a branch with no matching origin ref (e.g. unpushed)
+    // doesn't fail this step; the tag push further down fails there instead,
+    // with a clearer error from nx itself.
+    expect(pipeline).toMatch(/function ensureUpstreamTracking/)
+    expect(pipeline).toMatch(/git branch --set-upstream-to=origin\/\$\{branch\} \$\{branch\}/)
+    expect(pipeline.indexOf('ensureUpstreamTracking(branch)')).toBeLessThan(pipeline.indexOf('npx nx release version --projects='))
   })
 
   it('re-attaches Azure\'s detached HEAD before the release step runs, in a single self-contained pipeline file', () => {
