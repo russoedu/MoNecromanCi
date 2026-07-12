@@ -506,8 +506,10 @@ steps:
 
   # Azure Pipelines checks out the build SHA in detached HEAD state by default
   # (unlike GitHub Actions) — attach it to a real branch for general hygiene
-  # and debuggability. (04-publish-libs's tag-only push on Azure no longer
-  # strictly needs this, but it's harmless to keep.)
+  # and debuggability. Kept as a bare -B (not tracking origin/$(Build.SourceBranchName)):
+  # this step also runs for PR validation builds, where Build.SourceBranchName
+  # is "merge" and no such origin ref exists. 04-publish-libs sets up upstream
+  # tracking itself, only on the release-branch path that actually needs it.
   - script: git checkout -B $(Build.SourceBranchName)
     displayName: "[01] Attach HEAD to the source branch (Azure checkout detaches by default)"
 

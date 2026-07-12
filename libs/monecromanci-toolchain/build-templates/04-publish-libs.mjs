@@ -63,6 +63,15 @@ function isPullRequest () {
 }
 
 /**
+ * Returns the current branch name, from the CI-provided variable if set.
+ *
+ * @returns {string} Returns the current branch name.
+ */
+function currentBranch () {
+  return String(process.env.BUILD_SOURCEBRANCHNAME || runSafe('git rev-parse --abbrev-ref HEAD')).trim()
+}
+
+/**
  * Returns whether the current branch is allowed to publish.
  *
  * The allowed branches default to `master` and `main` and can be overridden with
@@ -75,9 +84,8 @@ function isReleaseBranch () {
     .split(',')
     .map(branch => branch.trim().toLowerCase())
     .filter(Boolean)
-  const current = String(process.env.BUILD_SOURCEBRANCHNAME || runSafe('git rev-parse --abbrev-ref HEAD')).trim().toLowerCase()
 
-  return allowed.includes(current)
+  return allowed.includes(currentBranch().toLowerCase())
 }
 
 /**
@@ -92,13 +100,38 @@ function ensureGitIdentity () {
 }
 
 /**
+ * Best-effort: configures the current branch's upstream to its origin
+ * counterpart, only if it isn't tracking one already.
+ *
+ * @remarks
+ * `nx release version --git-push` shells out to a bare `git push origin`
+ * (no explicit refspec), which fails outright with "has no upstream branch"
+ * without this — even though only a tag is actually pushed. Azure Pipelines
+ * checks out in detached HEAD and reattaches with a bare `git checkout -B`
+ * (see azure-pipelines.yml), which never sets tracking; GitHub Actions'
+ * checkout already sets it, so this is a harmless no-op there. Uses
+ * `runSafe` (never throws) because this step also runs on branches with no
+ * matching origin ref (e.g. a fresh/unpushed branch) — in that case the tag
+ * push further down will fail anyway, with a clearer error from nx itself.
+ *
+ * @param {string} branch The current branch name.
+ */
+function ensureUpstreamTracking (branch) {
+  if (!runSafe('git rev-parse --abbrev-ref --symbolic-full-name @{u}')) {
+    runSafe(`git branch --set-upstream-to=origin/${branch} ${branch}`)
+  }
+}
+
+/**
  * Bumps, tags and pushes the affected publishable projects from their
  * Conventional Commit history since each one's last release tag.
  *
  * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
+ * @param {string} branch The current (release) branch name.
  */
-function bumpVersions (publishableLibraries) {
+function bumpVersions (publishableLibraries, branch) {
   ensureGitIdentity()
+  ensureUpstreamTracking(branch)
 
   const projects = publishableLibraries.map(project => project.name).join(',')
   section('Version (nx release)')
@@ -173,7 +206,7 @@ function main () {
   log(`Candidates (${publishableLibraries.length}): ${publishableLibraries.map(project => project.name).join(', ')}`)
 
   guardAgainstPublishLifecycleHooks(publishableLibraries)
-  bumpVersions(publishableLibraries)
+  bumpVersions(publishableLibraries, currentBranch())
   publishLibraries(publishableLibraries)
 
   banner('[04] Publish complete')
