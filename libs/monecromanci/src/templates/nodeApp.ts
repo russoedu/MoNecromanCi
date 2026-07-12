@@ -35,7 +35,7 @@ function appProjectJson (vars: ProjectVars): string {
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
     sourceRoot:  `apps/${vars.name}/src`,
     projectType: 'application',
-    tags:        [TAGS.nodeApp],
+    tags:        [TAGS.nodeApp, ...(vars.extraTags ?? [])],
     targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: `npm run build -w ${vars.packageName}` } },
       serve: run('start'),

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { logger } from '../util/logger'
 import { TAGS } from './constants'
 import { readJsonSafe } from './fsx'
 import type { MonecromanciConfig, ProjectKind, ProjectVars } from './types'
@@ -19,40 +20,39 @@ function hasBin (packageJson: Record<string, unknown>): boolean {
   return Boolean(marker?.dist?.bin)
 }
 
-/** Infers a project's MoNecromanCI kind from its tags (and bin for CLI vs lib). */
-function kindFromProject (projectJson: Record<string, unknown>, packageJson: Record<string, unknown>): ProjectKind | undefined {
-  const tags = readTags(projectJson)
+/** A project's inferred kind, plus the exact tag string that determined it. */
+interface ProjectClassification {
+  kind:         ProjectKind
+  canonicalTag: string
+}
 
-  if (tags.includes(TAGS.functionApp)) {
-    return 'function-app'
-  }
-  if (tags.includes(TAGS.nodeApp)) {
-    return 'node-app'
-  }
-  if (tags.includes(TAGS.reactApp)) {
-    return 'react-app'
-  }
-  if (tags.includes(TAGS.vueApp)) {
-    return 'vue-app'
-  }
-  if (tags.includes(TAGS.svelteApp)) {
-    return 'svelte-app'
-  }
-  if (tags.includes(TAGS.nextjsApp)) {
-    return 'nextjs-app'
-  }
-  if (tags.includes(TAGS.internalLib)) {
-    return 'internal-lib'
+/** Infers a project's MoNecromanCI kind from its tags (and bin for CLI vs lib). */
+function kindFromProject (projectJson: Record<string, unknown>, packageJson: Record<string, unknown>): ProjectClassification | undefined {
+  const tags = readTags(projectJson)
+  const byTag: Array<[string, ProjectKind]> = [
+    [TAGS.functionApp, 'function-app'],
+    [TAGS.nodeApp, 'node-app'],
+    [TAGS.reactApp, 'react-app'],
+    [TAGS.vueApp, 'vue-app'],
+    [TAGS.svelteApp, 'svelte-app'],
+    [TAGS.nextjsApp, 'nextjs-app'],
+    [TAGS.internalLib, 'internal-lib'],
+  ]
+
+  for (const [canonicalTag, kind] of byTag) {
+    if (tags.includes(canonicalTag)) {
+      return { kind, canonicalTag }
+    }
   }
   if (tags.includes(TAGS.publishableLib)) {
-    return hasBin(packageJson) ? 'cli-tool' : 'publishable-lib'
+    return { kind: hasBin(packageJson) ? 'cli-tool' : 'publishable-lib', canonicalTag: TAGS.publishableLib }
   }
 
   return undefined
 }
 
 /** Collects the managed project descriptors found in one area folder. */
-function scanArea (areaDirectory: string, config: MonecromanciConfig): ProjectVars[] {
+function scanArea (area: string, areaDirectory: string, config: MonecromanciConfig): ProjectVars[] {
   const projects: ProjectVars[] = []
   const entries = readdirSync(areaDirectory, { withFileTypes: true })
 
@@ -62,15 +62,27 @@ function scanArea (areaDirectory: string, config: MonecromanciConfig): ProjectVa
     }
 
     const projectDirectory = join(areaDirectory, entry.name)
-    const projectJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'project.json'), {})
+    const projectJsonPath = join(projectDirectory, 'project.json')
+    const projectJson = readJsonSafe<Record<string, unknown>>(projectJsonPath, {})
     const packageJson = readJsonSafe<Record<string, unknown>>(join(projectDirectory, 'package.json'), {})
-    const kind = kindFromProject(projectJson, packageJson)
-    if (!kind) {
+    const classification = kindFromProject(projectJson, packageJson)
+    if (!classification) {
+      // `ci:ignore` only opts a project out of the CI pipeline (see
+      // classifyProject in the toolchain's context.mjs) — it is never a
+      // substitute for a type:* tag here. Without a type:* tag doctor has no
+      // template to generate, so a real NX project missing one is genuinely
+      // unmanaged: warn instead of silently hiding it (and its tool-owned
+      // files, like tsconfig.json) from every future doctor run.
+      if (existsSync(projectJsonPath)) {
+        logger.warn(`unrecognized project: ${area}/${entry.name} — no recognisable type:* tag in project.json, skipped by doctor (its config files will not be checked or synced). Add a type:* tag (ci:ignore may stay alongside it to keep the project out of CI).`)
+      }
       continue
     }
 
+    const { kind, canonicalTag } = classification
+    const extraTags = readTags(projectJson).filter((tag) => tag !== canonicalTag)
     const packageName = typeof packageJson.name === 'string' ? packageJson.name : `${config.scope}/${entry.name}`
-    projects.push({ kind, name: entry.name, packageName, scope: config.scope, registry: config.registry })
+    projects.push({ kind, name: entry.name, packageName, scope: config.scope, registry: config.registry, extraTags })
   }
 
   return projects
@@ -96,7 +108,7 @@ export function discoverProjects (repoRoot: string, config: MonecromanciConfig):
   for (const area of ['apps', 'libs']) {
     const areaDirectory = join(repoRoot, area)
     if (existsSync(areaDirectory)) {
-      projects.push(...scanArea(areaDirectory, config))
+      projects.push(...scanArea(area, areaDirectory, config))
     }
   }
 

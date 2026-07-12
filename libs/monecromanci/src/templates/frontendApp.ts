@@ -52,7 +52,7 @@ function appProjectJson (vars: ProjectVars, framework: FrontendFramework): strin
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
     sourceRoot:  `apps/${vars.name}/src`,
     projectType: 'application',
-    tags:        [framework.tag],
+    tags:        [framework.tag, ...(vars.extraTags ?? [])],
     targets:     {
       build: {
         executor: 'nx:run-commands',

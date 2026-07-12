@@ -173,9 +173,12 @@ npm run pipeline:plan                # dry-run what CI would do
 
 Every project answers the same four targets — `build`, `test`, `lint` and, for
 backend/lib kinds, `doc` (typedoc) — so `nx affected` composes them uniformly.
-A project tagged `ci:ignore` instead is excluded from the pipeline entirely
-(never built, packaged, versioned or published) — useful for a project that
-lives in the workspace but isn't ready to be managed yet.
+Add `ci:ignore` alongside a project's `type:*` tag to exclude it from the CI
+pipeline (never built, packaged, versioned or published by `nx affected`) —
+useful for a project that lives in the workspace but isn't ready to ship yet.
+`ci:ignore` only affects CI: `doctor`/`update` still classify the project from
+its `type:*` tag and keep its tool-owned files (tsconfig, typedoc, …) in sync
+like any other project.
 
 ## CI & registry
 

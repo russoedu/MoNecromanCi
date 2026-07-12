@@ -74,7 +74,7 @@ function projectJson (vars: ProjectVars, buildCommand: string): string {
     $schema:     '../../node_modules/nx/schemas/project-schema.json',
     sourceRoot:  `libs/${vars.name}/src`,
     projectType: vars.kind === 'cli-tool' ? 'application' : 'library',
-    tags:        [TAGS.publishableLib],
+    tags:        [TAGS.publishableLib, ...(vars.extraTags ?? [])],
     targets:     {
       build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: buildCommand } },
       test:  run('test'),
