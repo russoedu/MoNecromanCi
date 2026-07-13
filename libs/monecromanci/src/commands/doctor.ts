@@ -125,7 +125,12 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
   const obsoleteIssues = checkObsoletePaths(repoRoot, options.apply)
   const scripts = checkProjectScripts(repoRoot, specs, options.apply)
   const configIssues = wasMissing ? 1 : 0
-  const issues = report.missing.length + stillDrift.length + dependencyIssues + obsoleteIssues + scripts.issues + configIssues
+  // always-pending entries ARE drift — the resolution is just pre-authorized.
+  // In report mode they must count as issues (and fail the exit code below):
+  // a repo whose tool-owned files don't match the templates is not in sync,
+  // no matter how it would be resolved. Not counted when applying, since
+  // apply mode already rewrote them (they land in `applied` instead).
+  const issues = report.missing.length + stillDrift.length + alwaysPending.length + dependencyIssues + obsoleteIssues + scripts.issues + configIssues
 
   if (issues === 0) {
     logger.success(`Everything is in sync (${report.ok.length} tool-owned files checked).`)
@@ -134,6 +139,9 @@ export async function runDoctor (options: DoctorOptions): Promise<void> {
 
   if (!options.apply) {
     logger.info(`${issues} issue(s) found. Re-run with --fix to repair (scaffold files are left untouched).`)
+    // Non-zero so CI (or any script) can gate on drift: a half-committed or
+    // stale tree fails here, in seconds, instead of exploding downstream.
+    process.exitCode = 1
     return
   }
 

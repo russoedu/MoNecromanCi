@@ -384,6 +384,24 @@ describe('publish pipeline', () => {
     expect(hasPath('.build-templates/01-preparation.yml')).toBe(false)
     expect(hasPath('.build-templates/04-publish-libs.yml')).toBe(false)
   })
+
+  it('gates both CI pipelines on tool-owned drift (report-only doctor) before any build work', () => {
+    // A half-committed tree (e.g. package.json delegators committed without
+    // their matching project.json targets) must fail in seconds with the
+    // drifted file names — not minutes later inside lint/test/build with an
+    // unrelated-looking error (as happened with nx's recursive-invocation
+    // failure). Report-only doctor exits non-zero on any drift, so it works
+    // as that gate on both providers.
+    const azure = read('azure-pipelines.yml')
+    expect(azure).toContain('npx monecromanci doctor')
+    expect(azure.indexOf('npx monecromanci doctor')).toBeLessThan(azure.indexOf('01-preparation.mjs'))
+
+    // The fixture repo is ci: 'azure', so read the GitHub workflow straight
+    // from the packaged asset (githubCiYaml only substitutes trigger branches).
+    const github = readFileSync(join(__dirname, '../assets/github/workflows/ci.yml'), 'utf8')
+    expect(github).toContain('npx monecromanci doctor')
+    expect(github.indexOf('npx monecromanci doctor')).toBeLessThan(github.indexOf('01-preparation.mjs'))
+  })
 })
 
 describe('doctor', () => {

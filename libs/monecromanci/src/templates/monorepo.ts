@@ -557,6 +557,13 @@ steps:
     env:
       HUSKY: 0
 
+  # Drift gate: report-only doctor exits non-zero when any tool-owned file
+  # differs from the templates (a half-committed or stale tree), failing here
+  # in seconds with the exact file names instead of exploding downstream in
+  # lint/test/build with an unrelated-looking error.
+  - script: npx monecromanci doctor
+    displayName: "[01] Verify tool-owned config is in sync (monecromanci doctor)"
+
   - script: node node_modules/monecromanci-toolchain/build-templates/01-preparation.mjs
     displayName: "[01] Resolve context, affected projects and execution plan"
 

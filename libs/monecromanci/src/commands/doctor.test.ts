@@ -53,6 +53,9 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(repoRoot, { recursive: true, force: true })
   jest.restoreAllMocks()
+  // Report-mode doctor sets a non-zero exit code on drift (the CI gate);
+  // reset it so an intentionally-drifted test doesn't fail the jest process.
+  process.exitCode = 0
 })
 
 describe('runDoctor', () => {
@@ -342,7 +345,7 @@ describe('runDoctor', () => {
       expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).not.toBe('{"stale": true}')
     })
 
-    it('never writes for an existing "always" preference during a report-only run', async () => {
+    it('never writes for an existing "always" preference during a report-only run, but still counts it as drift', async () => {
       saveConfig(repoRoot, { ...config, fileSyncPreferences: { 'nx.json': 'always' } })
       writeDriftedNxJson()
       mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
@@ -352,7 +355,32 @@ describe('runDoctor', () => {
       expect(mockPromptDriftChoice).not.toHaveBeenCalled()
       expect(readFileSync(join(repoRoot, 'nx.json'), 'utf8')).toBe('{"stale": true}')
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('re-run with --fix to apply'))
+      // Pre-authorized drift is still drift: the tree does not match the
+      // templates, so a report-only run must flag it (and fail the exit code,
+      // for the CI gate) rather than declare the repo in sync.
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+      expect(process.exitCode).toBe(1)
+    })
+
+    it('exits non-zero on a report-only run with unresolved drift (the CI gate)', async () => {
+      saveConfig(repoRoot, config)
+      writeDriftedNxJson()
+      mockSyncToolOwned.mockReturnValue({ ok: [], missing: [], drift: ['nx.json'], fixed: [] })
+
+      await runDoctor({ apply: false })
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+      expect(process.exitCode).toBe(1)
+    })
+
+    it('exits zero on a clean report-only run', async () => {
+      saveConfig(repoRoot, config)
+      mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+      await runDoctor({ apply: false })
+
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Everything is in sync'))
+      expect(process.exitCode ?? 0).toBe(0)
     })
 
     it('honours an existing "never" preference without prompting, in either mode', async () => {
