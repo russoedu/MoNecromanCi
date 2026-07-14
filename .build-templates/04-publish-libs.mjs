@@ -17,13 +17,22 @@
  * disk (see `release.version.fallbackCurrentVersionResolver` in `nx.json`),
  * so a brand-new project needs no manual bootstrapping.
  *
- * Publishing itself is delegated to `nx release publish`, which builds each
- * project first (the `nx-release-publish` target's `dependsOn: ['build']` in
- * `nx.json`), resolves what to publish from its `packageRoot` option
- * (`dist/{projectRoot}` by default — the publishable-lib convention, via
- * `tools/generate-dist-package.mjs`; a root-published project, e.g. a bundled
- * CLI with a `files` allow-list, overrides `packageRoot` to `{projectRoot}` in its own
- * `project.json`), and skips anything already on the registry.
+ * The bumped projects are then rebuilt explicitly, for two reasons that stack:
+ * `nx release publish --projects=…` deliberately drops task dependencies
+ * whenever a project filter is given (so the `nx-release-publish` target's
+ * `dependsOn: ['build']` in `nx.json` never fires here), and any build from an
+ * earlier pipeline step ran BEFORE `nx release version` bumped the manifests,
+ * so its dist `package.json` still carries the old version. The bump touches
+ * each project's `package.json` (a build input), so nx's cache re-runs these
+ * builds for real.
+ *
+ * Publishing itself is delegated to `nx release publish`, which resolves what
+ * to publish from the `nx-release-publish` target's `packageRoot` option
+ * (`{projectRoot}/dist` by default — where the publishable-lib build emits and
+ * `generate-dist-package.mjs` writes the manifest; a root-published project,
+ * e.g. a bundled CLI with a `files` allow-list, overrides `packageRoot` to
+ * `{projectRoot}` in its own `project.json`), and skips anything already on
+ * the registry.
  *
  * Before that, every candidate's manifest is checked for a `publish`/
  * `postpublish`/`prepublish` script — npm runs these as lifecycle hooks right
@@ -63,6 +72,15 @@ function isPullRequest () {
 }
 
 /**
+ * Returns the current branch name, from the CI-provided variable if set.
+ *
+ * @returns {string} Returns the current branch name.
+ */
+function currentBranch () {
+  return String(process.env.BUILD_SOURCEBRANCHNAME || runSafe('git rev-parse --abbrev-ref HEAD')).trim()
+}
+
+/**
  * Returns whether the current branch is allowed to publish.
  *
  * The allowed branches default to `master` and `main` and can be overridden with
@@ -75,9 +93,8 @@ function isReleaseBranch () {
     .split(',')
     .map(branch => branch.trim().toLowerCase())
     .filter(Boolean)
-  const current = String(process.env.BUILD_SOURCEBRANCHNAME || runSafe('git rev-parse --abbrev-ref HEAD')).trim().toLowerCase()
 
-  return allowed.includes(current)
+  return allowed.includes(currentBranch().toLowerCase())
 }
 
 /**
@@ -92,13 +109,59 @@ function ensureGitIdentity () {
 }
 
 /**
- * Bumps, tags and pushes the affected publishable projects from their
- * Conventional Commit history since each one's last release tag.
+ * Best-effort: configures the current branch's upstream to its origin
+ * counterpart, only if it isn't tracking one already.
+ *
+ * @remarks
+ * The manual `git push` below (and nx's own internal one, were `--git-push`
+ * ever re-enabled) shells out to a bare `git push origin` (no explicit
+ * refspec), which fails outright with "has no upstream branch" without this.
+ * Azure Pipelines checks out in detached HEAD and reattaches with a bare
+ * `git checkout -B` (see azure-pipelines.yml), which never sets tracking;
+ * GitHub Actions' checkout already sets it, so this is a harmless no-op
+ * there. Uses `runSafe` (never throws) because this step also runs on
+ * branches with no matching origin ref (e.g. a fresh/unpushed branch) — in
+ * that case the tag push further down fails anyway, with a clearer error.
+ *
+ * @param {string} branch The current branch name.
+ */
+function ensureUpstreamTracking (branch) {
+  if (!runSafe('git rev-parse --abbrev-ref --symbolic-full-name @{u}')) {
+    runSafe(`git branch --set-upstream-to=origin/${branch} ${branch}`)
+  }
+}
+
+/**
+ * Pushes the annotated release tags (and, incidentally, the current branch,
+ * which has nothing new to push since versioning never commits) created by
+ * `nx release version --git-tag`.
+ *
+ * @remarks
+ * Deliberately NOT delegated to `nx release version --git-push`: nx
+ * hardcodes `--atomic` in its own git push implementation, with no flag to
+ * disable it — and Azure Repos' git server has never supported atomic pushes
+ * (confirmed with Microsoft: it doesn't advertise the capability, and there
+ * is no server-side setting to change this), so that push fails outright
+ * with "the receiving end does not support --atomic push" on every Azure
+ * DevOps release. `--follow-tags` (not `--tags`) mirrors nx's own reasoning
+ * for precision: it only pushes annotated tags reachable from what's being
+ * pushed, not every tag in the repo.
+ */
+function pushReleaseTags () {
+  section('Push (git)')
+  runInherit('git push --follow-tags --no-verify origin')
+}
+
+/**
+ * Bumps and tags the affected publishable projects from their Conventional
+ * Commit history since each one's last release tag, then pushes the tags.
  *
  * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
+ * @param {string} branch The current (release) branch name.
  */
-function bumpVersions (publishableLibraries) {
+function bumpVersions (publishableLibraries, branch) {
   ensureGitIdentity()
+  ensureUpstreamTracking(branch)
 
   const projects = publishableLibraries.map(project => project.name).join(',')
   section('Version (nx release)')
@@ -106,7 +169,8 @@ function bumpVersions (publishableLibraries) {
   // branch against direct pushes, which rejects the atomic commit+tag push
   // (confirmed on both providers). Only the tag is pushed; nx resolves each
   // project's version from the tag name, so nothing is lost by not committing.
-  runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --git-push --verbose`)
+  runInherit(`npx nx release version --projects=${shellEscape(projects)} --no-git-commit --git-tag --verbose`)
+  pushReleaseTags()
 }
 
 /**
@@ -133,10 +197,30 @@ function guardAgainstPublishLifecycleHooks (publishableLibraries) {
 }
 
 /**
+ * Rebuilds the affected publishable projects so each one's dist manifest
+ * carries the freshly bumped version.
+ *
+ * @remarks
+ * Cannot be left to the `nx-release-publish` target's `dependsOn: ['build']`:
+ * `nx release publish` excludes task dependencies whenever a `--projects`
+ * filter is given (to avoid publishing projects outside the filter), so with
+ * the filter this script always passes, the builds would silently never run.
+ * The quality-control step's builds don't cover this either — they ran before
+ * `nx release version` bumped the manifests, so their dist `package.json`
+ * still carries the old version.
+ *
+ * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
+ */
+function buildLibraries (publishableLibraries) {
+  const projects = publishableLibraries.map(project => project.name).join(',')
+  section('Build (nx run-many)')
+  runInherit(`npx nx run-many -t build --projects=${shellEscape(projects)} --outputStyle=static`)
+}
+
+/**
  * Publishes the affected publishable projects via `nx release publish`,
- * which builds each one first, resolves the manifest to publish from its
- * `nx-release-publish` target's `packageRoot`, and skips anything already on
- * the registry.
+ * which resolves the manifest to publish from its `nx-release-publish`
+ * target's `packageRoot` and skips anything already on the registry.
  *
  * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
  */
@@ -173,7 +257,8 @@ function main () {
   log(`Candidates (${publishableLibraries.length}): ${publishableLibraries.map(project => project.name).join(', ')}`)
 
   guardAgainstPublishLifecycleHooks(publishableLibraries)
-  bumpVersions(publishableLibraries)
+  bumpVersions(publishableLibraries, currentBranch())
+  buildLibraries(publishableLibraries)
   publishLibraries(publishableLibraries)
 
   banner('[04] Publish complete')
