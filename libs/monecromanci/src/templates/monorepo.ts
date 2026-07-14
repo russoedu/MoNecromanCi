@@ -127,7 +127,7 @@ function nxJson (vars: MonorepoVars): string {
       lint:                 { inputs: ['default', '^production'], cache: true },
       test:                 { dependsOn: ['build'], inputs: ['default', '^production'], cache: true },
       doc:                  { inputs: ['production', '^production'], cache: true },
-      'nx-release-publish': { dependsOn: ['build'], options: { packageRoot: 'dist/{projectRoot}' } },
+      'nx-release-publish': { dependsOn: ['build'], options: { packageRoot: '{projectRoot}/dist' } },
     },
     release: {
       projectsRelationship: 'independent',
@@ -296,13 +296,16 @@ package.json (all deps live there) and from internal workspace packages. This is
 why published packages declare their dependencies even though project
 \`package.json\` files keep \`dependencies: {}\`.
 
-Publishing itself is delegated to \`nx release publish\`, which builds each
-project first (the \`nx-release-publish\` target's \`dependsOn: ['build']\` in
-\`nx.json\`), resolves what to publish from that target's \`packageRoot\` option
-(\`dist/${distPackageRootToken}\` by default), and natively skips anything already on the
-registry. A project that packages itself from its root instead (e.g. a bundled
-CLI with a \`files\` allow-list) overrides \`packageRoot\` to \`${distPackageRootToken}\` in its own
-\`project.json\`.
+Publishing itself is delegated to \`nx release publish\`, which resolves what
+to publish from the \`nx-release-publish\` target's \`packageRoot\` option
+(\`${distPackageRootToken}/dist\` by default — where \`build\` emits), and natively skips
+anything already on the registry. A project that packages itself from its root
+instead (e.g. a bundled CLI with a \`files\` allow-list) overrides
+\`packageRoot\` to \`${distPackageRootToken}\` in its own \`project.json\`. An unfiltered local
+\`nx release publish\` builds first via the target's \`dependsOn: ['build']\`;
+the CI publish step instead rebuilds the bumped projects explicitly, because
+\`nx release publish --projects=…\` drops task dependencies and the build must
+run after versioning anyway so the new version lands in each dist manifest.
 
 ## First release
 
