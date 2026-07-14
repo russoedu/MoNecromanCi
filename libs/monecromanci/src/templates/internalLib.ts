@@ -41,7 +41,7 @@ function libProjectJson (vars: ProjectVars): string {
     projectType: 'library',
     tags:        [TAGS.internalLib, ...(vars.extraTags ?? [])],
     targets:     {
-      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: 'tsc -p ./tsconfig.lib.json', cwd: '{projectRoot}' } },
+      build: { executor: 'nx:run-commands', outputs: ['{projectRoot}/dist'], options: { command: 'tsc -p ./tsconfig.lib.json && node ../../node_modules/monecromanci-toolchain/scripts/generate-dist-package.mjs', cwd: '{projectRoot}' } },
       test:  runInProject('jest --collectCoverage'),
       lint:  runInProject('eslint . -c ../../eslint.config.mjs'),
       doc:   runInProject('typedoc --tsconfig tsconfig.lib.json'),
