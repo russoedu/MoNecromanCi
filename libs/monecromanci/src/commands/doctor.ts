@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { isManagedRepo, loadConfig, saveConfig } from '../engine/config'
 import { DEFAULT_TRIGGER_BRANCHES, OBSOLETE_TOOL_OWNED_PATHS, TEMPLATE_VERSION } from '../engine/constants'
-import { ensureCoreDependencies, ensureLegacyPeerDependencies, findMissingCoreDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
+import { ensureCoreDependencies, ensureCoreDependencyVersions, ensureLegacyPeerDependencies, findMissingCoreDependencies, findOutdatedCoreDependencies, findSupersededDependencies, isLegacyPeerDependenciesMissing, removeSupersededDependencies } from '../engine/dependenciesHealth'
 import { fileExists, readTextSafe, removeFileIfExists, writeFileEnsured } from '../engine/fsx'
 import { syncGuide } from '../engine/guide'
 import { discoverProjects } from '../engine/projects'
@@ -298,11 +298,15 @@ async function resolveTriggerBranches (repoRoot: string, config: MonecromanciCon
  * `npm install` even when every tool-owned file is in sync.
  *
  * @remarks
- * Two checks: superseded lint packages left over from before adoption (they
+ * Four checks: superseded lint packages left over from before adoption (they
  * peer-conflict with the pinned toolchain — e.g. `eslint-config-standard`
- * requires `eslint-plugin-n@^15||^16` while the toolchain pins `^18`), and a
+ * requires `eslint-plugin-n@^15||^16` while the toolchain pins `^18`), a
  * `.npmrc` missing `legacy-peer-deps=true` (ESLint 10 is ahead of some
- * plugins' declared peer ranges).
+ * plugins' declared peer ranges), a missing core tool devDependency
+ * (`monecromanci`/`monecromanci-toolchain`), and a core tool devDependency
+ * pinned below the version this CLI build ships with — a consumer's
+ * package-lock keeps satisfying a loose `^` range with whatever was current
+ * at install time, so new toolchain releases never land without the bump.
  *
  * @param repoRoot - Absolute path to the monorepo root.
  * @param shouldApply - Whether to repair the problems or only report them.
@@ -340,6 +344,16 @@ function checkDependencyHealth (repoRoot: string, shouldApply: boolean): number 
       logger.success(`added missing devDependency '${name}' (the shared configs and CI scripts resolve from it)`)
     } else {
       logger.warn(`devDependency '${name}' is missing — the shared eslint/tsconfig/jest configs and CI scripts resolve from it`)
+    }
+  }
+
+  const outdatedCore = shouldApply ? ensureCoreDependencyVersions(repoRoot) : findOutdatedCoreDependencies(repoRoot)
+  for (const entry of outdatedCore) {
+    issues += 1
+    if (shouldApply) {
+      logger.success(`bumped devDependency '${entry.name}' ${entry.from} -> ${entry.to} (run npm install to pick it up)`)
+    } else {
+      logger.warn(`devDependency '${entry.name}' is pinned at ${entry.from} but this CLI ships with ${entry.to} — re-run with --fix to bump it`)
     }
   }
 

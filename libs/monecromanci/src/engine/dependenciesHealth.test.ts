@@ -2,9 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  CORE_TOOL_DEPENDENCIES,
   ensureCoreDependencies,
+  ensureCoreDependencyVersions,
   ensureLegacyPeerDependencies,
   findMissingCoreDependencies,
+  findOutdatedCoreDependencies,
   findSupersededDependencies,
   isLegacyPeerDependenciesMissing,
   removeSupersededDependencies,
@@ -98,6 +101,54 @@ describe('ensureCoreDependencies', () => {
     const before = readFileSync(join(repoRoot, 'package.json'), 'utf8')
 
     expect(ensureCoreDependencies(repoRoot)).toEqual([])
+    expect(readFileSync(join(repoRoot, 'package.json'), 'utf8')).toBe(before)
+  })
+})
+
+describe('findOutdatedCoreDependencies', () => {
+  it('flags core pins whose floor is below what this CLI build ships with', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.0.1', 'monecromanci-toolchain': '^0.0.1' } })
+
+    expect(findOutdatedCoreDependencies(repoRoot)).toEqual([
+      { name: 'monecromanci', from: '^0.0.1', to: CORE_TOOL_DEPENDENCIES.monecromanci },
+      { name: 'monecromanci-toolchain', from: '^0.0.1', to: CORE_TOOL_DEPENDENCIES['monecromanci-toolchain'] },
+    ])
+  })
+
+  it('leaves pins at or above the expected floor alone', () => {
+    writeManifest({ devDependencies: { ...CORE_TOOL_DEPENDENCIES } })
+    expect(findOutdatedCoreDependencies(repoRoot)).toEqual([])
+
+    writeManifest({ devDependencies: { monecromanci: '^999.0.0', 'monecromanci-toolchain': '^999.0.0' } })
+    expect(findOutdatedCoreDependencies(repoRoot)).toEqual([])
+  })
+
+  it('skips missing entries and ranges without a parseable floor', () => {
+    // A missing pin is findMissingCoreDependencies's job; '*' is a deliberate
+    // hand-edit doctor must never fight.
+    writeManifest({ devDependencies: { 'monecromanci-toolchain': '*' } })
+    expect(findOutdatedCoreDependencies(repoRoot)).toEqual([])
+  })
+})
+
+describe('ensureCoreDependencyVersions', () => {
+  it('bumps only the outdated core pins and keeps everything else', () => {
+    writeManifest({ devDependencies: { monecromanci: '^0.0.1', 'monecromanci-toolchain': '^999.0.0', eslint: '^10.6.0' } })
+
+    const bumped = ensureCoreDependencyVersions(repoRoot)
+
+    expect(bumped).toEqual([{ name: 'monecromanci', from: '^0.0.1', to: CORE_TOOL_DEPENDENCIES.monecromanci }])
+    const devDependencies = readJsonSafe<{ devDependencies: Record<string, string> }>(join(repoRoot, 'package.json'), { devDependencies: {} }).devDependencies
+    expect(devDependencies.monecromanci).toBe(CORE_TOOL_DEPENDENCIES.monecromanci)
+    expect(devDependencies['monecromanci-toolchain']).toBe('^999.0.0')
+    expect(devDependencies.eslint).toBe('^10.6.0')
+  })
+
+  it('does not rewrite the manifest when nothing is outdated', () => {
+    writeManifest({ devDependencies: { ...CORE_TOOL_DEPENDENCIES } })
+    const before = readFileSync(join(repoRoot, 'package.json'), 'utf8')
+
+    expect(ensureCoreDependencyVersions(repoRoot)).toEqual([])
     expect(readFileSync(join(repoRoot, 'package.json'), 'utf8')).toBe(before)
   })
 })

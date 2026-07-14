@@ -1,5 +1,6 @@
 /* eslint-disable no-template-curly-in-string -- this file builds file templates that legitimately embed ${...} placeholders (VSCode variables, auth tokens). */
 import { readAsset } from '../engine/assets'
+import { CORE_TOOL_DEPENDENCIES } from '../engine/dependenciesHealth'
 import { toJson } from '../engine/fsx'
 import { npmrcContent } from '../engine/registry'
 import type { FileSpec, MonorepoVars, RegistryConfig } from '../engine/types'
@@ -7,9 +8,6 @@ import rootPackageJson from '../../package.json'
 
 /** Looks up a toolchain version from this package's own devDependencies. */
 const sharedDependency = (name: keyof typeof rootPackageJson.devDependencies): string => rootPackageJson.devDependencies[name]
-
-/** Looks up a toolchain version from this package's own dependencies. */
-const sharedPeerPackage = (name: keyof typeof rootPackageJson.dependencies): string => rootPackageJson.dependencies[name]
 
 /**
  * Pinned toolchain for generated monorepos (mirrors the proven JATO set).
@@ -23,11 +21,13 @@ const sharedPeerPackage = (name: keyof typeof rootPackageJson.dependencies): str
  * an adopted repo.
  *
  * Both `monecromanci` (the CLI) and `monecromanci-toolchain` (the shared
- * configs/CI engine it generates references to) are pinned here — `doctor`'s
- * reproducibility model depends on `npx monecromanci doctor`, run from inside
- * a generated repo, resolving the *exact* CLI version that repo was last
- * stamped with (via npm's local-bin preference), not whatever is latest at
- * invocation time.
+ * configs/CI engine it generates references to) are pinned from
+ * `CORE_TOOL_DEPENDENCIES` in `engine/dependenciesHealth.ts` — the same map
+ * `doctor` bumps outdated pins against, so a freshly scaffolded repo is never
+ * immediately flagged as outdated. `doctor`'s reproducibility model depends
+ * on `npx monecromanci doctor`, run from inside a generated repo, resolving
+ * the *exact* CLI version that repo was last stamped with (via npm's
+ * local-bin preference), not whatever is latest at invocation time.
  *
  * The ESLint *plugin* packages (`eslint-plugin-*`, `@stylistic/eslint-plugin`,
  * `@eslint/markdown`, `globals`, `typescript-eslint`) are deliberately **not**
@@ -50,8 +50,8 @@ export const DEV_DEPENDENCIES: Record<string, string> = {
   husky:                             '^9.1.7',
   jest:                              sharedDependency('jest'),
   'jest-junit':                      '^17.0.0',
-  monecromanci:                      `^${rootPackageJson.version}`,
-  'monecromanci-toolchain':          sharedPeerPackage('monecromanci-toolchain'),
+  monecromanci:                      CORE_TOOL_DEPENDENCIES.monecromanci,
+  'monecromanci-toolchain':          CORE_TOOL_DEPENDENCIES['monecromanci-toolchain'],
   nx:                                '^23.0.1',
   'ts-jest':                         sharedDependency('ts-jest'),
   'tsc-alias':                       '^1.8.17',

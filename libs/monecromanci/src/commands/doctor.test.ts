@@ -13,6 +13,7 @@ jest.mock('../util/prompts', () => ({
 
 import * as configModule from '../engine/config'
 import { loadConfig, saveConfig } from '../engine/config'
+import { CORE_TOOL_DEPENDENCIES } from '../engine/dependenciesHealth'
 import { syncToolOwned } from '../engine/sync'
 import { promptBranchList, promptDriftChoice } from '../util/prompts'
 import { runDoctor } from './doctor'
@@ -46,8 +47,9 @@ beforeEach(() => {
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
   // Generated repos always carry this in their scaffold .npmrc.
   writeFileSync(join(repoRoot, '.npmrc'), 'legacy-peer-deps=true\n')
-  // Generated repos always pin both core tool packages as devDependencies.
-  writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' } }))
+  // Generated repos always pin both core tool packages as devDependencies,
+  // at the exact ranges this CLI build expects (so nothing reads as outdated).
+  writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { ...CORE_TOOL_DEPENDENCIES } }))
 })
 
 afterEach(() => {
@@ -124,7 +126,7 @@ describe('runDoctor', () => {
     saveConfig(repoRoot, config)
     rmSync(join(repoRoot, '.npmrc'))
     writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({
-      devDependencies: { 'eslint-config-standard': '^17.1.0', monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' },
+      devDependencies: { 'eslint-config-standard': '^17.1.0', ...CORE_TOOL_DEPENDENCIES },
     }))
     mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
 
@@ -141,7 +143,7 @@ describe('runDoctor', () => {
     saveConfig(repoRoot, config)
     rmSync(join(repoRoot, '.npmrc'))
     writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({
-      devDependencies: { 'eslint-config-standard': '^17.1.0', eslint: '^10.6.0', monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' },
+      devDependencies: { 'eslint-config-standard': '^17.1.0', eslint: '^10.6.0', ...CORE_TOOL_DEPENDENCIES },
     }))
     mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
 
@@ -149,13 +151,13 @@ describe('runDoctor', () => {
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('removed superseded lint package \'eslint-config-standard\''))
     const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
-    expect(manifest.devDependencies).toEqual({ eslint: '^10.6.0', monecromanci: '^0.8.0', 'monecromanci-toolchain': '^0.1.0' })
+    expect(manifest.devDependencies).toEqual({ eslint: '^10.6.0', ...CORE_TOOL_DEPENDENCIES })
     expect(readFileSync(join(repoRoot, '.npmrc'), 'utf8')).toContain('legacy-peer-deps=true')
   })
 
   it('flags a missing core tool devDependency as an issue', async () => {
     saveConfig(repoRoot, config)
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { monecromanci: '^0.8.0' } }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { monecromanci: CORE_TOOL_DEPENDENCIES.monecromanci } }))
     mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
 
     await runDoctor({ apply: false })
@@ -166,16 +168,47 @@ describe('runDoctor', () => {
 
   it('adds a missing core tool devDependency with --fix, keeping existing deps intact', async () => {
     saveConfig(repoRoot, config)
-    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { monecromanci: '^0.8.0', eslint: '^10.6.0' } }))
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ devDependencies: { monecromanci: CORE_TOOL_DEPENDENCIES.monecromanci, eslint: '^10.6.0' } }))
     mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
 
     await runDoctor({ apply: true })
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('added missing devDependency \'monecromanci-toolchain\''))
     const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
-    expect(manifest.devDependencies.monecromanci).toBe('^0.8.0')
+    expect(manifest.devDependencies.monecromanci).toBe(CORE_TOOL_DEPENDENCIES.monecromanci)
     expect(manifest.devDependencies.eslint).toBe('^10.6.0')
     expect(manifest.devDependencies['monecromanci-toolchain']).toBeDefined()
+  })
+
+  it('flags a core tool devDependency pinned below this CLI build as an issue', async () => {
+    saveConfig(repoRoot, config)
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({
+      devDependencies: { monecromanci: CORE_TOOL_DEPENDENCIES.monecromanci, 'monecromanci-toolchain': '^0.0.1' },
+    }))
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: false })
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('devDependency \'monecromanci-toolchain\' is pinned at ^0.0.1'))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('1 issue(s) found'))
+    // Report-only: the pin was not touched.
+    const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
+    expect(manifest.devDependencies['monecromanci-toolchain']).toBe('^0.0.1')
+  })
+
+  it('bumps an outdated core tool devDependency with --fix, keeping existing deps intact', async () => {
+    saveConfig(repoRoot, config)
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({
+      devDependencies: { monecromanci: CORE_TOOL_DEPENDENCIES.monecromanci, 'monecromanci-toolchain': '^0.0.1', eslint: '^10.6.0' },
+    }))
+    mockSyncToolOwned.mockReturnValue({ ok: ['a.json'], missing: [], drift: [], fixed: [] })
+
+    await runDoctor({ apply: true })
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('bumped devDependency \'monecromanci-toolchain\''))
+    const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }
+    expect(manifest.devDependencies['monecromanci-toolchain']).toBe(CORE_TOOL_DEPENDENCIES['monecromanci-toolchain'])
+    expect(manifest.devDependencies.eslint).toBe('^10.6.0')
   })
 
   it('flags an obsolete vendored file (from a prior template version) as an issue without deleting it', async () => {

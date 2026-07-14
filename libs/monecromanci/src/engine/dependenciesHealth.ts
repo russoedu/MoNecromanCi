@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import rootPackageJson from '../../package.json'
+import toolchainPackageJson from '../../../monecromanci-toolchain/package.json'
 import { fileExists, readJsonSafe, readTextSafe, toJson, writeFileEnsured } from './fsx'
 
 /**
@@ -85,14 +86,23 @@ export function removeSupersededDependencies (repoRoot: string): string[] {
  * `monecromanci` pins to this CLI's own version — `doctor`/`update`'s
  * reproducibility guarantee depends on `npx monecromanci doctor` resolving
  * the exact version a repo was last stamped with, not whatever's latest.
- * `monecromanci-toolchain` pins to the version this CLI itself declares as a
- * dependency, matching `sharedPeerPackage` in `templates/monorepo.ts` (kept
- * as a local, one-line duplicate here rather than importing from
- * `templates/` — `engine/` never depends on `templates/`, only the reverse).
+ * `monecromanci-toolchain` pins to the workspace toolchain's own manifest
+ * version, baked into the bundle at build time via the **relative** import
+ * above (a bare `monecromanci-toolchain/package.json` specifier would stay
+ * external and resolve the *consumer's* — possibly stale — copy at runtime).
+ * The CLI's own loose `^` range can't serve here: a consumer's package-lock
+ * satisfies it with whatever was current at install time and then never
+ * moves, so doctor needs the concrete version this build shipped with to
+ * bump against. During a release, `nx release version` writes the real
+ * version to the toolchain manifest before the publish build runs, and any
+ * toolchain bump also dependency-bumps (and rebuilds) this CLI — so the
+ * published bundle always carries the toolchain version it was released
+ * with. `templates/monorepo.ts` reuses this map for its scaffold pins, so a
+ * freshly generated repo is never immediately flagged as outdated.
  */
-const CORE_TOOL_DEPENDENCIES: Record<string, string> = {
+export const CORE_TOOL_DEPENDENCIES: Record<string, string> = {
   monecromanci:             `^${rootPackageJson.version}`,
-  'monecromanci-toolchain': rootPackageJson.dependencies['monecromanci-toolchain'],
+  'monecromanci-toolchain': `^${toolchainPackageJson.version}`,
 }
 
 /**
@@ -150,6 +160,150 @@ export function ensureCoreDependencies (repoRoot: string): string[] {
   writeFileEnsured(manifestPath, toJson(manifest))
 
   return missing
+}
+
+/**
+ * A core tool devDependency pinned below the version this CLI build expects.
+ *
+ * @remarks
+ * Produced by {@link findOutdatedCoreDependencies} and echoed back by
+ * {@link ensureCoreDependencyVersions}; `doctor` renders `from`/`to` in its
+ * report and fix messages.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+export interface OutdatedCoreDependency {
+  /** The package name (`monecromanci` or `monecromanci-toolchain`). */
+  name: string
+  /** The version range currently declared in the repo's package.json. */
+  from: string
+  /** The range this CLI build expects (per {@link CORE_TOOL_DEPENDENCIES}). */
+  to:   string
+}
+
+/**
+ * Extracts the minimum `major.minor.patch` a version range starts from.
+ *
+ * @remarks
+ * Deliberately minimal (no full semver-range algebra): the ranges doctor
+ * writes are always `^x.y.z`, so the first dotted triple *is* the floor.
+ * Anything without one (`*`, `latest`, a git URL, a workspace protocol) is a
+ * deliberate hand-edit doctor must never fight — the caller skips those.
+ *
+ * @param range - The declared version range.
+ * @returns The `[major, minor, patch]` floor, or `undefined` when the range
+ * carries no dotted version triple.
+ * @throws Never - a non-matching range returns `undefined`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function versionFloorOf (range: string): [number, number, number] | undefined {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(range)
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
+}
+
+/**
+ * Whether one version floor is strictly lower than another.
+ *
+ * @remarks
+ * Plain component-wise comparison of the `[major, minor, patch]` triples
+ * {@link versionFloorOf} produces.
+ *
+ * @param declared - The floor of the range declared in the repo.
+ * @param expected - The floor of the range this CLI build expects.
+ * @returns `true` when `declared` sorts strictly before `expected`.
+ * @throws Never - performs no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function isFloorLower (declared: [number, number, number], expected: [number, number, number]): boolean {
+  for (const index of [0, 1, 2] as const) {
+    if (declared[index] < expected[index]) {
+      return true
+    }
+    if (declared[index] > expected[index]) {
+      return false
+    }
+  }
+
+  return false
+}
+
+/**
+ * Lists core tool devDependencies pinned below what this CLI build expects.
+ *
+ * @remarks
+ * Read-only companion to {@link ensureCoreDependencyVersions}; `doctor` uses
+ * it to report without modifying anything. Only ever flags a pin whose floor
+ * is strictly *lower* than the expected one — a repo deliberately running a
+ * newer pin (or this CLI being the older party) is left alone, and a pin
+ * without a parseable floor (`*`, a git URL, …) is treated as a deliberate
+ * hand-edit and skipped. A *missing* entry is
+ * {@link findMissingCoreDependencies}'s job, not this one's.
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @returns Each outdated pin with its declared and expected ranges.
+ * @throws Never - delegates to {@link readJsonSafe}, which swallows read/parse
+ * errors.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function findOutdatedCoreDependencies (repoRoot: string): OutdatedCoreDependency[] {
+  const manifest = readJsonSafe<Record<string, unknown>>(join(repoRoot, 'package.json'), {})
+  const devDependencies = manifest.devDependencies as Record<string, string> | undefined
+  if (!devDependencies) {
+    return []
+  }
+
+  const outdated: OutdatedCoreDependency[] = []
+  for (const [name, expected] of Object.entries(CORE_TOOL_DEPENDENCIES)) {
+    const declared = devDependencies[name]
+    if (typeof declared !== 'string') {
+      continue
+    }
+
+    const declaredFloor = versionFloorOf(declared)
+    const expectedFloor = versionFloorOf(expected)
+    if (!declaredFloor || !expectedFloor) {
+      continue
+    }
+
+    if (isFloorLower(declaredFloor, expectedFloor)) {
+      outdated.push({ name, from: declared, to: expected })
+    }
+  }
+
+  return outdated
+}
+
+/**
+ * Bumps outdated core tool devDependency pins to what this CLI build expects.
+ *
+ * @remarks
+ * Only the pins {@link findOutdatedCoreDependencies} flags are rewritten;
+ * every other dependency is left exactly as it was. No-op (and no write)
+ * when nothing is outdated. The caller still needs an `npm install` for the
+ * bump to reach `package-lock.json` and `node_modules`.
+ *
+ * @param repoRoot - Absolute path to the monorepo root.
+ * @returns The pins that were bumped.
+ * @throws Propagates any Node.js `fs` error (e.g. permission denied) raised
+ * while writing `package.json`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function ensureCoreDependencyVersions (repoRoot: string): OutdatedCoreDependency[] {
+  const outdated = findOutdatedCoreDependencies(repoRoot)
+  if (outdated.length === 0) {
+    return outdated
+  }
+
+  const manifestPath = join(repoRoot, 'package.json')
+  const manifest = readJsonSafe<Record<string, unknown>>(manifestPath, {})
+  const devDependencies = { ...(manifest.devDependencies as Record<string, string> | undefined) }
+  for (const entry of outdated) {
+    devDependencies[entry.name] = entry.to
+  }
+  manifest.devDependencies = devDependencies
+  writeFileEnsured(manifestPath, toJson(manifest))
+
+  return outdated
 }
 
 const LEGACY_PEER_DEPS_LINES = [
