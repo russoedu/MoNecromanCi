@@ -1,6 +1,6 @@
 {
   "name": "monecromanci-toolchain",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Shared ESLint/TypeScript/Jest/TypeDoc configs and CI engine scripts for MoNecromanCI-managed monorepos.",
   "exports": {
     ".": "./package.json",
