@@ -101,7 +101,11 @@ describe('monorepo scaffolding', () => {
     } }>('nx.json')
 
     expect(nxConfig.targetDefaults['nx-release-publish']?.dependsOn).toEqual(['build'])
-    expect(nxConfig.targetDefaults['nx-release-publish']?.options?.packageRoot).toBe('dist/{projectRoot}')
+    // Must match where the build targets actually emit ({projectRoot}/dist —
+    // tsconfig outDir './dist' with cwd {projectRoot}, and where
+    // generate-dist-package.mjs writes the publishable manifest), NOT the
+    // @nx/js workspace-root 'dist/{projectRoot}' convention.
+    expect(nxConfig.targetDefaults['nx-release-publish']?.options?.packageRoot).toBe('{projectRoot}/dist')
   })
 
   it('pins @nx/js so nx release can version JS/TS projects', () => {
@@ -288,9 +292,14 @@ describe('publish pipeline', () => {
     const pipeline = readToolchainAsset('build-templates/04-publish-libs.mjs')
 
     // Nx's own nx-release-publish executor already resolves the dist-vs-root
-    // manifest (via the target's packageRoot option in nx.json), builds first
-    // (dependsOn: ['build']), and skips anything already on the registry — no
-    // need to hand-roll any of that here.
+    // manifest (via the target's packageRoot option in nx.json) and skips
+    // anything already on the registry — no need to hand-roll any of that
+    // here. The build, however, MUST be run explicitly: `nx release publish`
+    // drops task dependencies whenever a --projects filter is given, so the
+    // target's dependsOn: ['build'] never fires in this pipeline, and the
+    // build has to happen after `nx release version` anyway so the bumped
+    // version lands in each dist manifest.
+    expect(pipeline).toMatch(/nx run-many -t build --projects=/)
     expect(pipeline).toMatch(/nx release publish --projects=.* --verbose/)
     expect(pipeline).not.toMatch(/\bpublish --userconfig/)
     expect(pipeline).not.toMatch(/isVersionPublished/)

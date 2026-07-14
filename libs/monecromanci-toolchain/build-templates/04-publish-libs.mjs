@@ -17,13 +17,22 @@
  * disk (see `release.version.fallbackCurrentVersionResolver` in `nx.json`),
  * so a brand-new project needs no manual bootstrapping.
  *
- * Publishing itself is delegated to `nx release publish`, which builds each
- * project first (the `nx-release-publish` target's `dependsOn: ['build']` in
- * `nx.json`), resolves what to publish from its `packageRoot` option
- * (`dist/{projectRoot}` by default — the publishable-lib convention, via
- * `tools/generate-dist-package.mjs`; a root-published project, e.g. a bundled
- * CLI with a `files` allow-list, overrides `packageRoot` to `{projectRoot}` in its own
- * `project.json`), and skips anything already on the registry.
+ * The bumped projects are then rebuilt explicitly, for two reasons that stack:
+ * `nx release publish --projects=…` deliberately drops task dependencies
+ * whenever a project filter is given (so the `nx-release-publish` target's
+ * `dependsOn: ['build']` in `nx.json` never fires here), and any build from an
+ * earlier pipeline step ran BEFORE `nx release version` bumped the manifests,
+ * so its dist `package.json` still carries the old version. The bump touches
+ * each project's `package.json` (a build input), so nx's cache re-runs these
+ * builds for real.
+ *
+ * Publishing itself is delegated to `nx release publish`, which resolves what
+ * to publish from the `nx-release-publish` target's `packageRoot` option
+ * (`{projectRoot}/dist` by default — where the publishable-lib build emits and
+ * `generate-dist-package.mjs` writes the manifest; a root-published project,
+ * e.g. a bundled CLI with a `files` allow-list, overrides `packageRoot` to
+ * `{projectRoot}` in its own `project.json`), and skips anything already on
+ * the registry.
  *
  * Before that, every candidate's manifest is checked for a `publish`/
  * `postpublish`/`prepublish` script — npm runs these as lifecycle hooks right
@@ -188,10 +197,30 @@ function guardAgainstPublishLifecycleHooks (publishableLibraries) {
 }
 
 /**
+ * Rebuilds the affected publishable projects so each one's dist manifest
+ * carries the freshly bumped version.
+ *
+ * @remarks
+ * Cannot be left to the `nx-release-publish` target's `dependsOn: ['build']`:
+ * `nx release publish` excludes task dependencies whenever a `--projects`
+ * filter is given (to avoid publishing projects outside the filter), so with
+ * the filter this script always passes, the builds would silently never run.
+ * The quality-control step's builds don't cover this either — they ran before
+ * `nx release version` bumped the manifests, so their dist `package.json`
+ * still carries the old version.
+ *
+ * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
+ */
+function buildLibraries (publishableLibraries) {
+  const projects = publishableLibraries.map(project => project.name).join(',')
+  section('Build (nx run-many)')
+  runInherit(`npx nx run-many -t build --projects=${shellEscape(projects)} --outputStyle=static`)
+}
+
+/**
  * Publishes the affected publishable projects via `nx release publish`,
- * which builds each one first, resolves the manifest to publish from its
- * `nx-release-publish` target's `packageRoot`, and skips anything already on
- * the registry.
+ * which resolves the manifest to publish from its `nx-release-publish`
+ * target's `packageRoot` and skips anything already on the registry.
  *
  * @param {Record<string, any>[]} publishableLibraries The affected publishable projects.
  */
@@ -229,6 +258,7 @@ function main () {
 
   guardAgainstPublishLifecycleHooks(publishableLibraries)
   bumpVersions(publishableLibraries, currentBranch())
+  buildLibraries(publishableLibraries)
   publishLibraries(publishableLibraries)
 
   banner('[04] Publish complete')
