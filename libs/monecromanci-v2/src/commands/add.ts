@@ -177,21 +177,31 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     }
     case 'npm-lib': {
       const scope = options.scope ?? defaultScope(workspaceRoot)
+      // rollup (not tsc): a bundler is what lets a published package depend on
+      // private internal libs. @nx/rollup's withNx externalizes exactly the
+      // manifest's dependencies/peerDependencies — so imported internal libs
+      // (never declared in the manifest, npm workspaces links them regardless)
+      // are compiled INTO the bundle from source, and the private name never
+      // reaches the published package.json.
       runNx([
         'g', '@nx/js:lib', `packages/${resolvedName}`,
         '--publishable',
         `--importPath=${scope}/${resolvedName}`,
-        '--bundler=tsc',
+        '--bundler=rollup',
         '--unitTestRunner=jest',
         '--linter=eslint',
         '--no-interactive',
       ], workspaceRoot)
+      writeFileEnsured(join(workspaceRoot, 'packages', resolvedName, 'eslint.config.mjs'), NPM_LIB_ESLINT_CONFIG)
       break
     }
     case 'internal-lib': {
+      // tsc (not none): the default @nx/enforce-module-boundaries rule forbids
+      // buildable libraries (every npm-lib) from importing non-buildable ones,
+      // so internal libs must be buildable — just never published (private).
       runNx([
         'g', '@nx/js:lib', `libs/${resolvedName}`,
-        '--bundler=none',
+        '--bundler=tsc',
         '--unitTestRunner=jest',
         '--linter=eslint',
         '--no-interactive',
@@ -223,8 +233,8 @@ function defaultScope (workspaceRoot: string): string {
  * Sets `"private": true` in a package manifest.
  *
  * @remarks
- * The one deliberate post-generation touch: it makes internal libraries
- * structurally unpublishable, no matter what future config drifts.
+ * One of the two deliberate post-generation touches: it makes internal
+ * libraries structurally unpublishable, no matter what future config drifts.
  *
  * @param manifestPath - Absolute path to the lib's `package.json`.
  * @returns Nothing.
@@ -235,3 +245,56 @@ function markPrivate (manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
 }
+
+/**
+ * The per-npm-lib ESLint config written over the generator's default.
+ *
+ * @remarks
+ * Identical to what `@nx/js:lib --bundler=rollup` generates, plus ONE
+ * addition: `@nx/dependency-checks` gets an `ignoredDependencies` list of
+ * every `private: true` workspace package, computed at lint time. Private
+ * libs are compiled INTO the rollup bundle and never declared in the
+ * manifest (a consumer could not install them) — without this, the rule
+ * flags every internal-lib import as a missing dependency. Because the list
+ * is computed, adding a new internal lib never requires touching this file.
+ */
+export const NPM_LIB_ESLINT_CONFIG = `import { globSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import baseConfig from '../../eslint.config.mjs';
+
+// Private workspace libs are compiled INTO this package's rollup bundle and
+// never declared in the manifest (a consumer could not install them), so the
+// dependency check must ignore them. Computed at lint time: adding a new
+// internal lib never requires touching this file.
+const workspaceRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const privateWorkspacePackages = globSync(['libs/*/package.json', 'packages/*/package.json'], { cwd: workspaceRoot })
+  .map((manifestPath) => JSON.parse(readFileSync(join(workspaceRoot, manifestPath), 'utf8')))
+  .filter((manifest) => manifest.private === true)
+  .map((manifest) => manifest.name);
+
+export default [
+  ...baseConfig,
+  {
+    files: ['**/*.json'],
+    rules: {
+      '@nx/dependency-checks': [
+        'error',
+        {
+          ignoredDependencies: privateWorkspacePackages,
+          ignoredFiles: [
+            '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
+            '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
+          ],
+        },
+      ],
+    },
+    languageOptions: {
+      parser: await import('jsonc-eslint-parser'),
+    },
+  },
+  {
+    ignores: ['**/out-tsc'],
+  },
+];
+`

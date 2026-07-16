@@ -89,18 +89,27 @@ describe('runAdd', () => {
     await expect(runAdd('function-app', 'api', {})).rejects.toThrow('npm install of @nxazure/func failed with exit code 1')
   })
 
-  it('generates a publishable lib under packages/ with the scope from the root manifest', async () => {
+  it('generates a publishable lib under packages/ as a rollup bundle (inlines internal libs)', async () => {
     await runAdd('npm-lib', 'sdk', {})
 
     expect(mockRunNx).toHaveBeenCalledWith([
       'g', '@nx/js:lib', 'packages/sdk',
       '--publishable',
       '--importPath=@demo/sdk',
-      '--bundler=tsc',
+      '--bundler=rollup',
       '--unitTestRunner=jest',
       '--linter=eslint',
       '--no-interactive',
     ], workspaceRoot)
+  })
+
+  it('teaches the npm-lib dependency check to ignore private workspace packages', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
+    expect(eslintConfig).toContain('ignoredDependencies: privateWorkspacePackages')
+    expect(eslintConfig).toContain('manifest.private === true')
+    expect(eslintConfig).toContain('@nx/dependency-checks')
   })
 
   it('prefers an explicit --scope for a publishable lib', async () => {
@@ -109,7 +118,7 @@ describe('runAdd', () => {
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@acme/sdk')
   })
 
-  it('generates an internal lib under libs/ and marks it private', async () => {
+  it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {
     // The generator is mocked, so pre-create the manifest it would have written.
     mkdirSync(join(workspaceRoot, 'libs/utils'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'libs/utils/package.json'), JSON.stringify({ name: '@demo/utils' }))
@@ -118,7 +127,7 @@ describe('runAdd', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith([
       'g', '@nx/js:lib', 'libs/utils',
-      '--bundler=none',
+      '--bundler=tsc',
       '--unitTestRunner=jest',
       '--linter=eslint',
       '--no-interactive',

@@ -59,14 +59,32 @@ Everything else is plain Nx: `nx serve web`, `nx run-many -t lint,test,build`,
 
 ## Layout convention = release scoping
 
-| Directory    | Contents                        | Released?                    |
-| ------------ | ------------------------------- | ---------------------------- |
-| `apps/`      | React apps, Azure Function apps | Never                        |
-| `packages/`  | Publishable npm libraries       | Yes — `nx release`, per-package tags |
-| `libs/`      | Internal libraries (`private`)  | Never                        |
+| Directory    | Contents                                    | Released?                    |
+| ------------ | ------------------------------------------- | ---------------------------- |
+| `apps/`      | React apps, Azure Function apps             | Never                        |
+| `packages/`  | Publishable npm libraries (rollup-bundled)  | Yes — `nx release`, per-package tags |
+| `libs/`      | Internal libraries (buildable, `private`)   | Never                        |
 
 No custom tags, no stamp file — the directory and the npm `private` flag are
 the whole model.
+
+## Published packages CAN depend on internal libraries
+
+Import an internal lib from an npm-lib directly — and do **not** add it to the
+npm-lib's `dependencies` (npm workspaces links every workspace member into the
+root `node_modules` regardless):
+
+```ts
+// packages/sdk/src/lib/sdk.ts
+import { utils } from '@demo/utils' // libs/utils — private, never published
+```
+
+It works because npm-libs are **rollup** bundles: `@nx/rollup`'s `withNx`
+externalizes exactly what the manifest declares (`dependencies` +
+`peerDependencies`), so real npm deps stay external and declared, while the
+undeclared internal lib is compiled from source INTO the bundle — the private
+name never reaches the published `package.json`. Trade-off: the published
+output is a single bundle (no per-file deep imports).
 
 ## CI (Azure DevOps only, ~60 lines)
 
@@ -78,9 +96,6 @@ for the *Project Collection Build Service* account (tag push), and the
 
 ## Known gaps (accepted for the experiment)
 
-- A *publishable* lib importing a *private internal* lib cannot be published
-  as-is (same gap as v1). Internal libs are for apps and other internal libs;
-  revisit with rollup bundling if needed.
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
 - `add function-app` requires **Azure Functions Core Tools ≥4** on the PATH
   (`npm i -g azure-functions-core-tools@4`) — `@nxazure/func`'s generators

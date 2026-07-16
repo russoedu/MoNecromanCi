@@ -14,7 +14,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -93,6 +93,19 @@ run(`node ${CLI} add npm-lib sdk`, workspace)
 console.log('\n▸ mnci2 add internal-lib utils')
 run(`node ${CLI} add internal-lib utils`, workspace)
 
+/* ---------------------------------------------------------------------------
+ * The dependency chain: a PUBLISHED package using a PRIVATE internal lib.
+ * The internal lib is imported directly and NEVER declared in the consumer's
+ * dependencies — npm workspaces links every member into root node_modules,
+ * and rollup (which externalizes only manifest deps) inlines it from source.
+ * ------------------------------------------------------------------------- */
+
+console.log('\n▸ wiring sdk (published) -> utils (private internal)')
+writeFileSync(path.join(workspace, 'libs/utils/src/lib/utils.ts'), 'export function utils(): string {\n  return \'utils\';\n}\n')
+writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.ts'), 'import { utils } from \'@demo/utils\';\n\nexport function sdk(): string {\n  return \'sdk uses \' + utils();\n}\n')
+writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'), 'import { sdk } from \'./sdk.js\';\n\ndescribe(\'sdk\', () => {\n  it(\'uses the internal lib\', () => {\n    expect(sdk()).toEqual(\'sdk uses utils\');\n  });\n});\n')
+run('npx nx sync', workspace)
+
 console.log('\n▸ mnci2 add react-app web')
 run(`node ${CLI} add react-app web`, workspace)
 
@@ -117,6 +130,7 @@ enforce('publishable lib named under the scope', sdkManifest.name === '@demo/sdk
 
 const internalLibraryManifest = JSON.parse(readFileSync(path.join(workspace, 'libs/utils/package.json'), 'utf8'))
 enforce('internal lib is private', internalLibraryManifest.private === true)
+enforce('internal lib named under the scope (the sdk import path)', internalLibraryManifest.name === '@demo/utils')
 
 enforce('no per-project eslint config beyond the root one', !existsSync(path.join(workspace, 'packages/sdk/eslint.config.mjs')) || existsSync(path.join(workspace, 'eslint.config.mjs')))
 
@@ -138,6 +152,20 @@ if (functionAppGenerated) {
   // enforce when the plugin catches up.
   pending('function app builds (@nxazure/func executor vs Nx 23 gap)', tryRun('npx nx build api', workspace), 'see log above')
 }
+
+/* ---------------------------------------------------------------------------
+ * The published-package-uses-private-lib promise, verified on the real output
+ * ------------------------------------------------------------------------- */
+
+const sdkBundle = readFileSync(path.join(workspace, 'packages/sdk/dist/index.esm.js'), 'utf8')
+enforce('sdk bundle inlines the private lib (no import of it remains)', !sdkBundle.includes('@demo/utils'))
+enforce(
+  'sdk bundle runs standalone under node',
+  tryRun(`node --input-type=module -e "import { sdk } from './packages/sdk/dist/index.esm.js'; if (sdk() !== 'sdk uses utils') { throw new Error('wrong output: ' + sdk()) }"`, workspace),
+  'see log above',
+)
+const publishedDependencies = JSON.parse(readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8')).dependencies ?? {}
+enforce('sdk publishable manifest never mentions the private lib', !Object.hasOwn(publishedDependencies, '@demo/utils'))
 
 /* ---------------------------------------------------------------------------
  * Release config resolves for real
