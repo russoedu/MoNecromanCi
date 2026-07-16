@@ -1,0 +1,56 @@
+{
+  "name": "monecromanci-v2",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "description": "MoNecromanCI v2 (box-out experiment) — a thin CLI over official Nx plugins: create an opinionated NX monorepo and add React apps, Azure Function apps, npm libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main).",
+  "bin": {
+    "mnci2": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "test:e2e": "node e2e/boxout.e2e.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "nx",
+    "monorepo",
+    "azure-devops",
+    "azure-functions",
+    "react",
+    "cli",
+    "scaffold",
+    "typescript"
+  ],
+  "author": "Eduardo Russo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/russoedu/MoNecromanCi.git",
+    "directory": "libs/monecromanci-v2"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  }
+}
