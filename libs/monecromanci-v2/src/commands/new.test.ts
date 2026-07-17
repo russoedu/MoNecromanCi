@@ -48,7 +48,8 @@ describe('runNew', () => {
 
     const workspaceRoot = join('/somewhere', 'demo')
     expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
-    expect(mockRunShell).toHaveBeenCalledWith('npm', ['pkg', 'set', 'scripts.prepare=husky'], workspaceRoot)
+    // No `npm pkg set` — the overlay stamps `prepare: husky` into the scripts.
+    expect(mockRunShell).not.toHaveBeenCalledWith('npm', expect.arrayContaining(['pkg']), workspaceRoot)
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['husky'], workspaceRoot)
   })
 

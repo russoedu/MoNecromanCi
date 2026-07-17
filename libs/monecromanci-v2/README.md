@@ -39,8 +39,18 @@ mnci2 add npm-lib sdk        # @nx/js publishable lib -> packages/
 mnci2 add internal-lib utils # @nx/js private lib -> libs/
 ```
 
-Everything else is plain Nx: `nx serve web`, `nx run-many -t lint,test,build`,
-`nx release --dry-run`, `nx graph`.
+Everything else is plain Nx, surfaced as a small curated set of root scripts —
+each a single cross-platform command:
+
+| Script                | Runs                            |
+| --------------------- | ------------------------------- |
+| `npm run build`       | `nx run-many -t build`          |
+| `npm run lint`        | `nx run-many -t lint`           |
+| `npm run test`        | `nx run-many -t test`           |
+| `npm run affected`    | `nx affected -t lint,test,build` (vs `main`) |
+| `npm run graph`       | `nx graph`                      |
+| `npm run release:preview` | `nx release --dry-run`      |
+| `prepare`             | `husky` (commit-msg lint hook)  |
 
 ## What `new` actually does
 
@@ -53,7 +63,7 @@ Everything else is plain Nx: `nx serve web`, `nx run-many -t lint,test,build`,
    is ever pushed to `main`; future runs resolve versions from tag names.
 3. Writes `.npmrc` (Azure Artifacts feed or public npm — scope routing makes
    accidental public publishes impossible), `commitlint.config.mjs`, a husky
-   `commit-msg` hook, and `azure-pipelines.yml`.
+   `commit-msg` hook, `azure-pipelines.yml`, and the curated root scripts.
 4. Installs `husky` + `@commitlint/*` for real, so versions resolve at
    generation time.
 
@@ -86,13 +96,24 @@ undeclared internal lib is compiled from source INTO the bundle — the private
 name never reaches the published `package.json`. Trade-off: the published
 output is a single bundle (no per-file deep imports).
 
-## CI (Azure DevOps only, ~60 lines)
+## CI (Azure DevOps only, ~100 lines, any agent OS)
 
-PRs run `nx affected -t lint,test,build`. Pushes to `main` additionally run
-`nx release --yes`: version bump from commit messages → tag pushed → publish.
-Two one-time grants are required (project admin): **Contribute** on the repo
-for the *Project Collection Build Service* account (tag push), and the
-**Contributor** role on the Artifacts feed (publish).
+The pipeline contains **no bash and no PowerShell**: every step is a built-in
+Azure task or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
+and `sh` execute identically, so it runs unchanged on Linux, macOS and
+Windows agents. The two places that would normally need shell logic are
+portable instead: a `node -e` one-liner guards the release while `packages/*`
+is still empty, and function-app packaging is a plain artifact publish of
+`dist/function-apps/` (the esbuild build already emits self-contained
+deployable folders).
+
+PRs run `nx affected -t lint,test,build` against the target branch. Pushes to
+`main` additionally build all deployables, publish `dist/function-apps/` as
+the `function-apps` artifact, and run `nx release --yes`: version bump from
+commit messages → tag pushed → publish. Two one-time grants are required
+(project admin): **Contribute** on the repo for the *Project Collection Build
+Service* account (tag push), and the **Contributor** role on the Artifacts
+feed (publish).
 
 ## Known gaps (accepted for the experiment)
 
@@ -106,22 +127,27 @@ for the *Project Collection Build Service* account (tag push), and the
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
 
-## How function apps work (plugin generators + standard Node toolchain)
+## How function apps work (plugin generators + esbuild single-file bundle)
 
 A function app is just a Node.js app packed with `package.json` + `host.json`.
 `@nxazure/func`'s **generators** work on Nx 23 and are what `add function-app`
 uses; its **executors** (`build`/`start`/`publish`) all share a broken code
 path on Nx 23 workspaces (their `prepare-build.js` mixes a relative
 `rootDir: '.'` into absolute-resolved compiler options — "Paths must either
-both be absolute or both be relative"), so v2 repairs the generated app to use
-the standard toolchain instead:
+both be absolute or both be relative"), so v2 rewires the generated app to
+the official `@nx/esbuild` executor instead:
 
-- `build` = plain `tsc` (the plugin's own scaffolded npm script), emitting
-  real ESM to `dist/src/functions/*.js` — the manifest's `main` glob.
-- `start` = `func start` (after build) for local development.
+- `build` = `@nx/esbuild:esbuild` emitting ONE self-contained CJS bundle to
+  `dist/function-apps/<name>/main.cjs` — every dependency, `@azure/functions`
+  and private internal libs included, is compiled in. The only external is
+  `@azure/functions-core`, a virtual module the Functions host injects at run
+  time. `host.json` + `package.json` (`main: "main.cjs"`) are copied in as
+  assets, so the output folder IS the deployable — no `npm install`, ever.
+- `start` = `func start` run inside `dist/function-apps/<name>` (after build)
+  for local development.
 - The manifest gets a real name (the generator leaves it empty, corrupting
   npm workspaces), `private: true`, and `@azure/functions` as a dependency.
-- CI's **Package function apps** step stages `dist` + `host.json` +
-  `package.json`, runs `npm install --omit=dev` inside the staging folder,
-  and publishes the result as the `function-apps` build artifact — a
-  self-contained deployable for any zip/folder deploy task.
+- **Convention**: `src/main.ts` is the bundle entry — add one import per
+  function file you create under `src/functions/`, or it won't be bundled.
+- CI publishes `dist/function-apps/` as the `function-apps` build artifact —
+  each subfolder is ready for `AzureFunctionApp@2` or any zip/folder deploy.

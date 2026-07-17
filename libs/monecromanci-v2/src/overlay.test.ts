@@ -95,19 +95,51 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('.mjs')
   })
 
-  it('packages function apps (dist + host.json + manifest + prod deps) on main, before release', () => {
+  it('is cross-platform: no multi-line shell blocks, no bash-isms, no PowerShell', () => {
     const pipeline = azurePipelinesYaml()
 
-    const affectedIndex = pipeline.indexOf('nx affected -t lint,test,build')
-    const packageIndex = pipeline.indexOf('for host in apps/*/host.json')
+    // Every script step must be a single-line command (cmd.exe and sh both
+    // run it); a block scalar would mean OS-specific shell scripting.
+    expect(pipeline).not.toContain('script: |')
+    expect(pipeline).not.toContain('shopt')
+    expect(pipeline).not.toContain('for host in')
+    expect(pipeline).not.toContain('if [')
+    expect(pipeline).not.toContain('powershell')
+    expect(pipeline).not.toContain('pwsh')
+  })
+
+  it('runs affected for PRs against the target branch, and for main pushes against HEAD~1', () => {
+    const pipeline = azurePipelinesYaml()
+
+    expect(pipeline).toContain('npx nx affected -t lint,test,build --base=origin/$(System.PullRequest.TargetBranchName) --head=HEAD')
+    expect(pipeline).toContain('npx nx affected -t lint,test,build --base=HEAD~1 --head=HEAD')
+    expect(pipeline).toContain('eq(variables[\'Build.Reason\'], \'PullRequest\')')
+  })
+
+  it('publishes the self-contained dist/function-apps folders on main, before release', () => {
+    const pipeline = azurePipelinesYaml()
+
+    const buildAllIndex = pipeline.indexOf('npx nx run-many -t build')
+    const ensureFolderIndex = pipeline.indexOf(`mkdirSync('dist/function-apps'`)
     const publishArtifactIndex = pipeline.indexOf('ArtifactName: function-apps')
     const releaseIndex = pipeline.indexOf('nx release --yes')
 
-    expect(packageIndex).toBeGreaterThan(affectedIndex)
-    expect(publishArtifactIndex).toBeGreaterThan(packageIndex)
+    expect(buildAllIndex).toBeGreaterThan(-1)
+    expect(ensureFolderIndex).toBeGreaterThan(buildAllIndex)
+    expect(publishArtifactIndex).toBeGreaterThan(ensureFolderIndex)
     expect(releaseIndex).toBeGreaterThan(publishArtifactIndex)
-    expect(pipeline).toContain('npm install --omit=dev')
-    expect(pipeline).toContain('cp -r "$app_dir/dist" "$app_dir/host.json" "$app_dir/package.json"')
+    expect(pipeline).toContain('PathtoPublish: $(Build.SourcesDirectory)/dist/function-apps')
+    // No shell packaging loop and no staged install — the build output IS the
+    // deployable.
+    expect(pipeline).not.toContain('npm install --omit=dev')
+  })
+
+  it('guards the release with a portable node one-liner while packages/* is empty', () => {
+    const pipeline = azurePipelinesYaml()
+
+    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    expect(pipeline).toContain('nx release --yes')
+    expect(pipeline).toContain('NODE_AUTH_TOKEN: $(NODE_AUTH_TOKEN)')
   })
 })
 
@@ -151,5 +183,30 @@ describe('applyOverlay', () => {
     expect(manifest.name).toBe('@demo/source')
     expect(manifest.private).toBe(true)
     expect(manifest.devDependencies).toEqual({ nx: '23.0.0' })
+  })
+
+  it('stamps the curated root scripts — single cross-platform commands only', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' } })
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    expect(manifest.scripts).toEqual({
+      build:             'nx run-many -t build',
+      lint:              'nx run-many -t lint',
+      test:              'nx run-many -t test',
+      affected:          'nx affected -t lint,test,build',
+      graph:             'nx graph',
+      'release:preview': 'nx release --dry-run',
+      prepare:           'husky',
+    })
+  })
+
+  it('keeps any scripts the preset generated that the curated set does not own', () => {
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', scripts: { postinstall: 'echo hi' } }))
+
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' } })
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    expect(manifest.scripts.postinstall).toBe('echo hi')
+    expect(manifest.scripts.build).toBe('nx run-many -t build')
   })
 })

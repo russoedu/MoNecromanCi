@@ -93,7 +93,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   if (installStatus !== 0) {
     throw new Error(`npm install of the commit toolchain failed with exit code ${installStatus}`)
   }
-  runShell('npm', ['pkg', 'set', 'scripts.prepare=husky'], workspaceRoot)
+  // The overlay already stamped `prepare: husky` into the root scripts.
   runShell('npx', ['husky'], workspaceRoot)
 
   logger.success('Done. Next steps:')

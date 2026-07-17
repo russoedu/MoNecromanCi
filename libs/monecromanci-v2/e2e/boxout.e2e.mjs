@@ -82,6 +82,13 @@ enforce('azure-pipelines.yml written', existsSync(path.join(workspace, 'azure-pi
 const rootManifest = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
 const rootDevelopmentDependencies = rootManifest.devDependencies ?? {}
 enforce('husky + commitlint installed as devDependencies', Boolean(rootDevelopmentDependencies.husky && rootDevelopmentDependencies['@commitlint/cli']))
+enforce('curated root scripts stamped (build/affected/prepare)',
+  rootManifest.scripts?.build === 'nx run-many -t build'
+  && rootManifest.scripts?.affected === 'nx affected -t lint,test,build'
+  && rootManifest.scripts?.prepare === 'husky')
+
+const pipelineYaml = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
+enforce('pipeline is cross-platform: no multi-line shell blocks, no bash-isms', !pipelineYaml.includes('script: |') && !pipelineYaml.includes('shopt'))
 
 /* ---------------------------------------------------------------------------
  * add — one of each kind
@@ -145,13 +152,20 @@ enforce(
 )
 
 if (functionAppGenerated) {
-  // The repaired function app builds with plain tsc (the plugin's executors
-  // are bypassed — their shared prepare-build breaks on Nx 23 workspaces).
-  enforce('function app emits real JS where the manifest main glob points', existsSync(path.join(workspace, 'apps/api/dist/src/functions/hello.js')))
+  // The rewired function app bundles to ONE self-contained deployable folder
+  // (the plugin's executors are bypassed — their shared prepare-build breaks
+  // on Nx 23 workspaces).
+  const bundleDirectory = path.join(workspace, 'dist/function-apps/api')
+  enforce('function app bundles to a single main.cjs', existsSync(path.join(bundleDirectory, 'main.cjs')))
+  enforce('bundle folder is a complete deployable (host.json + package.json)',
+    existsSync(path.join(bundleDirectory, 'host.json')) && existsSync(path.join(bundleDirectory, 'package.json')))
+  const bundle = readFileSync(path.join(bundleDirectory, 'main.cjs'), 'utf8')
+  enforce('bundle inlines @azure/functions; only the host-injected functions-core stays external',
+    bundle.includes('@azure/functions-core') && !/require\("@azure\/functions"\)/.test(bundle))
   const functionAppManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'))
-  enforce('function app manifest repaired (name, main, runtime SDK dependency)',
+  enforce('function app manifest repaired (name, bundled main, runtime SDK dependency)',
     functionAppManifest.name === '@demo/api'
-    && functionAppManifest.main === 'dist/src/functions/*.js'
+    && functionAppManifest.main === 'main.cjs'
     && Boolean(functionAppManifest.dependencies?.['@azure/functions']))
 }
 

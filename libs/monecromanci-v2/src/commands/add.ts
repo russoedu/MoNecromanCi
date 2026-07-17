@@ -174,10 +174,10 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       runNx(['g', '@nxazure/func:init', resolvedName, `--directory=apps/${resolvedName}`, '--no-interactive'], workspaceRoot)
       runNx(['g', '@nxazure/func:new', 'hello', `--project=${resolvedName}`, `--template=${quote('HTTP trigger')}`], workspaceRoot)
       repairFunctionApp(workspaceRoot, resolvedName, options.scope ?? defaultScope(workspaceRoot))
-      // The repair declares @azure/functions in the app's manifest; a real
-      // install materialises it (nothing else in the flow installs it).
-      logger.step('Installing workspace dependencies (@azure/functions)')
-      if (runShell('npm', ['install', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
+      // One install materialises everything the repair introduced: the app's
+      // @azure/functions dependency plus the esbuild toolchain that bundles it.
+      logger.step('Installing the bundler toolchain (@nx/esbuild) and workspace dependencies')
+      if (runShell('npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
         throw new Error('npm install after the function-app repair failed')
       }
       break
@@ -254,8 +254,21 @@ function markPrivate (manifestPath: string): void {
 }
 
 /**
- * Replaces the plugin-generated build/run plumbing of a function app with the
- * standard Node toolchain.
+ * The bundle entry point written into every generated function app.
+ *
+ * @remarks
+ * esbuild bundles from a single entry, so each function file must be imported
+ * here — the one convention a function app carries: add an import per
+ * function you create.
+ */
+export const FUNCTION_APP_MAIN = `// The bundle entry point: esbuild only includes what is reachable from here,
+// so add one import per function file you create under src/functions/.
+import './functions/hello.js'
+`
+
+/**
+ * Replaces the plugin-generated build/run plumbing of a function app with an
+ * esbuild single-file bundle.
  *
  * @remarks
  * `@nxazure/func`'s *generators* work on Nx 23, but all three of its
@@ -265,20 +278,28 @@ function markPrivate (manifestPath: string): void {
  * shipped with Nx 23 rejects ("Paths must either both be absolute or both be
  * relative"). An Azure Function app is just a Node.js app packed with
  * `package.json` + `host.json`, so v2 keeps the plugin for generation and
- * repairs three files it emitted:
+ * rewires the build to the official `@nx/esbuild` executor, which emits a
+ * fully self-contained deployable folder at `dist/function-apps/<name>`:
+ * one `main.cjs` with every dependency (including private internal libs)
+ * compiled in, plus `host.json` and `package.json` copied as assets. CI then
+ * packages function apps with a plain artifact-publish step — no shell
+ * scripting, no staged `npm install`.
  *
+ * The bundle is CommonJS with `@azure/functions-core` left external: that
+ * module is virtual — injected by the Functions host worker at run time — and
+ * a leftover `require` of it only resolves in a CJS bundle.
+ *
+ * Repaired files:
  * - `package.json`: real name (the generator leaves it empty, which corrupts
- *   npm workspaces), `private: true`, `main` pointing where plain `tsc`
- *   actually emits (`dist/src/functions/*.js` — the generator's glob assumes
- *   its own executor's workspace-relative rootDir), and `@azure/functions`
- *   as a real dependency so CI's staged `npm install --omit=dev` vendors the
- *   runtime SDK into the deployable.
- * - `project.json`: `build` = plain `tsc`, `start` = `func start` (after
- *   build); the plugin's broken `publish` target is dropped — the CI artifact
- *   (dist + host.json + package.json + production node_modules) is the
- *   deployable.
+ *   npm workspaces), `private: true`, `main: 'main.cjs'` — the manifest is
+ *   copied into the bundle folder, where the Functions host reads it.
+ * - `project.json`: `build` = `@nx/esbuild:esbuild`, `start` = `func start`
+ *   run inside the bundle folder; the plugin's broken `publish` target is
+ *   dropped — the CI artifact is the deployable.
+ * - `src/main.ts`: the bundle entry ({@link FUNCTION_APP_MAIN}).
  * - `tsconfig.json`: the TS-solution base is declaration-only
- *   (`emitDeclarationOnly`/`composite`); the app must emit real JS.
+ *   (`emitDeclarationOnly`/`composite`); the app must type-check as a plain
+ *   emitting project (esbuild reads this tsconfig too).
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The function app's project name.
@@ -291,21 +312,19 @@ function repairFunctionApp (workspaceRoot: string, name: string, scope: string):
   const appRoot = join(workspaceRoot, 'apps', name)
   const rootManifest = readJson<{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
   const azureFunctionsVersion = rootManifest.dependencies?.['@azure/functions'] ?? rootManifest.devDependencies?.['@azure/functions'] ?? '^4.0.0'
+  const outputPath = `dist/function-apps/${name}`
 
   writeFileEnsured(join(appRoot, 'package.json'), toJson({
-    name:    `${scope}/${name}`,
-    version: '0.0.1',
-    private: true,
-    type:    'module',
-    main:    'dist/src/functions/*.js',
-    scripts: {
-      build: 'tsc',
-      start: 'func start',
-    },
+    name:         `${scope}/${name}`,
+    version:      '0.0.1',
+    private:      true,
+    main:         'main.cjs',
     dependencies: {
       '@azure/functions': azureFunctionsVersion,
     },
   }))
+
+  writeFileEnsured(join(appRoot, 'src/main.ts'), FUNCTION_APP_MAIN)
 
   writeFileEnsured(join(appRoot, 'project.json'), toJson({
     name,
@@ -314,14 +333,36 @@ function repairFunctionApp (workspaceRoot: string, name: string, scope: string):
     tags:        [],
     targets:     {
       build: {
-        executor: 'nx:run-commands',
-        outputs:  ['{projectRoot}/dist'],
-        options:  { command: 'tsc', cwd: '{projectRoot}' },
+        executor: '@nx/esbuild:esbuild',
+        outputs:  ['{options.outputPath}'],
+        options:  {
+          main:                `apps/${name}/src/main.ts`,
+          outputPath,
+          outputFileName:      'main.js',
+          tsConfig:            `apps/${name}/tsconfig.json`,
+          bundle:              true,
+          // Everything is compiled into the bundle except the virtual module
+          // the Functions host injects at run time.
+          thirdParty:          true,
+          external:            ['@azure/functions-core'],
+          platform:            'node',
+          format:              ['cjs'],
+          minify:              false,
+          // Unsupported in TS-solution workspaces; the app's own manifest is
+          // copied as an asset instead.
+          generatePackageJson: false,
+          assets:              [
+            { glob: 'host.json', input: `apps/${name}`, output: '.' },
+            { glob: 'package.json', input: `apps/${name}`, output: '.' },
+            // Local dev only — gitignored, so it never reaches CI artifacts.
+            { glob: 'local.settings.json', input: `apps/${name}`, output: '.' },
+          ],
+        },
       },
       start: {
         executor:  'nx:run-commands',
         dependsOn: ['build'],
-        options:   { command: 'func start', cwd: '{projectRoot}' },
+        options:   { command: 'func start', cwd: outputPath },
       },
     },
   }))

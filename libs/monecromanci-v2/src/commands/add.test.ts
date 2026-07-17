@@ -74,11 +74,12 @@ describe('runAdd', () => {
     expect(mockRunShell).toHaveBeenNthCalledWith(2, 'npm', ['install', '--save-dev', '@nxazure/func'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['g', '@nxazure/func:init', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template="HTTP trigger"'], workspaceRoot)
-    // The repair declares @azure/functions; the follow-up install materialises it.
-    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--no-audit', '--no-fund'], workspaceRoot)
+    // One install materialises the repaired app's @azure/functions dependency
+    // AND the esbuild toolchain its build target needs.
+    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', '--no-audit', '--no-fund'], workspaceRoot)
   })
 
-  it('repairs the function app for plain tsc: manifest, targets and tsconfig', async () => {
+  it('repairs the function app into an esbuild single-file bundle: manifest, targets, entry, tsconfig', async () => {
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({
       name:            '@demo/source',
       devDependencies: { '@nxazure/func': '^2.1.0', '@azure/functions': '^4.0.0' },
@@ -87,24 +88,34 @@ describe('runAdd', () => {
     await runAdd('function-app', 'api', {})
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/package.json'), 'utf8')) as Record<string, unknown>
-    // The generator leaves name empty (corrupts npm workspaces) and points
-    // main where its own broken executor would emit; both must be repaired.
+    // The generator leaves name empty (corrupts npm workspaces); main points at
+    // the bundled file, read by the Functions host inside the output folder.
     expect(manifest.name).toBe('@demo/api')
     expect(manifest.private).toBe(true)
-    expect(manifest.main).toBe('dist/src/functions/*.js')
+    expect(manifest.main).toBe('main.cjs')
     expect((manifest.dependencies as Record<string, string>)['@azure/functions']).toBe('^4.0.0')
-    expect((manifest.scripts as Record<string, string>).build).toBe('tsc')
-    expect((manifest.scripts as Record<string, string>).start).toBe('func start')
 
-    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: { command: string } }> }
-    expect(project.targets.build.executor).toBe('nx:run-commands')
-    expect(project.targets.build.options.command).toBe('tsc')
-    expect(project.targets.start.options.command).toBe('func start')
+    // The bundle entry: functions register by being imported from here.
+    expect(readFileSync(join(workspaceRoot, 'apps/api/src/main.ts'), 'utf8')).toContain(`import './functions/hello.js'`)
+
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: Record<string, unknown> }> }
+    expect(project.targets.build.executor).toBe('@nx/esbuild:esbuild')
+    expect(project.targets.build.options).toMatchObject({
+      outputPath: 'dist/function-apps/api',
+      bundle:     true,
+      thirdParty: true,
+      // Virtual module the Functions host injects at run time; a CJS bundle
+      // is what lets its leftover require resolve there.
+      external:   ['@azure/functions-core'],
+      format:     ['cjs'],
+      assets:     expect.arrayContaining([expect.objectContaining({ glob: 'host.json' }), expect.objectContaining({ glob: 'package.json' })]),
+    })
+    expect(project.targets.start.options).toMatchObject({ command: 'func start', cwd: 'dist/function-apps/api' })
     // The plugin's publish executor shares the same broken build path.
     expect(project.targets).not.toHaveProperty('publish')
 
     const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown> }
-    // The TS-solution base is declaration-only; the app must emit real JS.
+    // The TS-solution base is declaration-only; esbuild reads this tsconfig.
     expect(tsconfig.compilerOptions.emitDeclarationOnly).toBe(false)
     expect(tsconfig.compilerOptions.composite).toBe(false)
     expect(tsconfig.compilerOptions.outDir).toBe('dist')
