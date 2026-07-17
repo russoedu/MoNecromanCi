@@ -173,6 +173,13 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       ensurePackageInstalled(workspaceRoot, '@nxazure/func')
       runNx(['g', '@nxazure/func:init', resolvedName, `--directory=apps/${resolvedName}`, '--no-interactive'], workspaceRoot)
       runNx(['g', '@nxazure/func:new', 'hello', `--project=${resolvedName}`, `--template=${quote('HTTP trigger')}`], workspaceRoot)
+      repairFunctionApp(workspaceRoot, resolvedName, options.scope ?? defaultScope(workspaceRoot))
+      // The repair declares @azure/functions in the app's manifest; a real
+      // install materialises it (nothing else in the flow installs it).
+      logger.step('Installing workspace dependencies (@azure/functions)')
+      if (runShell('npm', ['install', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
+        throw new Error('npm install after the function-app repair failed')
+      }
       break
     }
     case 'npm-lib': {
@@ -233,7 +240,7 @@ function defaultScope (workspaceRoot: string): string {
  * Sets `"private": true` in a package manifest.
  *
  * @remarks
- * One of the two deliberate post-generation touches: it makes internal
+ * One of the deliberate post-generation touches: it makes internal
  * libraries structurally unpublishable, no matter what future config drifts.
  *
  * @param manifestPath - Absolute path to the lib's `package.json`.
@@ -244,6 +251,96 @@ function defaultScope (workspaceRoot: string): string {
 function markPrivate (manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
+}
+
+/**
+ * Replaces the plugin-generated build/run plumbing of a function app with the
+ * standard Node toolchain.
+ *
+ * @remarks
+ * `@nxazure/func`'s *generators* work on Nx 23, but all three of its
+ * *executors* (`build`/`start`/`publish`) share a broken code path: their
+ * `prepare-build.js` force-sets a relative `rootDir: '.'` into compiler
+ * options that TypeScript already resolved to absolute paths, which the TS
+ * shipped with Nx 23 rejects ("Paths must either both be absolute or both be
+ * relative"). An Azure Function app is just a Node.js app packed with
+ * `package.json` + `host.json`, so v2 keeps the plugin for generation and
+ * repairs three files it emitted:
+ *
+ * - `package.json`: real name (the generator leaves it empty, which corrupts
+ *   npm workspaces), `private: true`, `main` pointing where plain `tsc`
+ *   actually emits (`dist/src/functions/*.js` — the generator's glob assumes
+ *   its own executor's workspace-relative rootDir), and `@azure/functions`
+ *   as a real dependency so CI's staged `npm install --omit=dev` vendors the
+ *   runtime SDK into the deployable.
+ * - `project.json`: `build` = plain `tsc`, `start` = `func start` (after
+ *   build); the plugin's broken `publish` target is dropped — the CI artifact
+ *   (dist + host.json + package.json + production node_modules) is the
+ *   deployable.
+ * - `tsconfig.json`: the TS-solution base is declaration-only
+ *   (`emitDeclarationOnly`/`composite`); the app must emit real JS.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The function app's project name.
+ * @param scope - The npm scope used for the app's package name.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the app's files.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function repairFunctionApp (workspaceRoot: string, name: string, scope: string): void {
+  const appRoot = join(workspaceRoot, 'apps', name)
+  const rootManifest = readJson<{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
+  const azureFunctionsVersion = rootManifest.dependencies?.['@azure/functions'] ?? rootManifest.devDependencies?.['@azure/functions'] ?? '^4.0.0'
+
+  writeFileEnsured(join(appRoot, 'package.json'), toJson({
+    name:    `${scope}/${name}`,
+    version: '0.0.1',
+    private: true,
+    type:    'module',
+    main:    'dist/src/functions/*.js',
+    scripts: {
+      build: 'tsc',
+      start: 'func start',
+    },
+    dependencies: {
+      '@azure/functions': azureFunctionsVersion,
+    },
+  }))
+
+  writeFileEnsured(join(appRoot, 'project.json'), toJson({
+    name,
+    $schema:     '../../node_modules/nx/schemas/project-schema.json',
+    projectType: 'application',
+    tags:        [],
+    targets:     {
+      build: {
+        executor: 'nx:run-commands',
+        outputs:  ['{projectRoot}/dist'],
+        options:  { command: 'tsc', cwd: '{projectRoot}' },
+      },
+      start: {
+        executor:  'nx:run-commands',
+        dependsOn: ['build'],
+        options:   { command: 'func start', cwd: '{projectRoot}' },
+      },
+    },
+  }))
+
+  writeFileEnsured(join(appRoot, 'tsconfig.json'), toJson({
+    extends:         '../../tsconfig.base.json',
+    compilerOptions: {
+      outDir:              'dist',
+      rootDir:             '.',
+      strict:              true,
+      composite:           false,
+      declaration:         false,
+      declarationMap:      false,
+      emitDeclarationOnly: false,
+      sourceMap:           true,
+      types:               ['node'],
+    },
+    include: ['src/**/*.ts'],
+  }))
 }
 
 /**

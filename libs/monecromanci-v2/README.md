@@ -101,13 +101,27 @@ for the *Project Collection Build Service* account (tag push), and the
   (`npm i -g azure-functions-core-tools@4`) — `@nxazure/func`'s generators
   shell out to the `func` CLI even at generation time. The CLI preflights
   this and tells you what to install.
-- `@nxazure/func@2.1.0` peers on `@nx/js@^22` while fresh workspaces get
-  Nx 23: installation works (the generated `.npmrc` carries
-  `legacy-peer-deps=true`) and **generation works**, but its `build` executor
-  currently fails against Nx 23 TS-solution workspaces ("Paths must either
-  both be absolute or both be relative"). Tracked as a PENDING e2e check —
-  promote to enforced when the plugin catches up with Nx 23.
-- Function-app *deployment* is not in the pipeline; `nx run <app>:publish`
-  (via `@nxazure/func`) is the manual follow-up.
+- Function-app *deployment* (e.g. `AzureFunctionApp@2`) is not wired into the
+  pipeline; the published `function-apps` build artifact is the deploy input.
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
+
+## How function apps work (plugin generators + standard Node toolchain)
+
+A function app is just a Node.js app packed with `package.json` + `host.json`.
+`@nxazure/func`'s **generators** work on Nx 23 and are what `add function-app`
+uses; its **executors** (`build`/`start`/`publish`) all share a broken code
+path on Nx 23 workspaces (their `prepare-build.js` mixes a relative
+`rootDir: '.'` into absolute-resolved compiler options — "Paths must either
+both be absolute or both be relative"), so v2 repairs the generated app to use
+the standard toolchain instead:
+
+- `build` = plain `tsc` (the plugin's own scaffolded npm script), emitting
+  real ESM to `dist/src/functions/*.js` — the manifest's `main` glob.
+- `start` = `func start` (after build) for local development.
+- The manifest gets a real name (the generator leaves it empty, corrupting
+  npm workspaces), `private: true`, and `@azure/functions` as a dependency.
+- CI's **Package function apps** step stages `dist` + `host.json` +
+  `package.json`, runs `npm install --omit=dev` inside the staging folder,
+  and publishes the result as the `function-apps` build artifact — a
+  self-contained deployable for any zip/folder deploy task.

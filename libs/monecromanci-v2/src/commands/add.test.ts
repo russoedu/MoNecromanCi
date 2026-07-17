@@ -74,6 +74,40 @@ describe('runAdd', () => {
     expect(mockRunShell).toHaveBeenNthCalledWith(2, 'npm', ['install', '--save-dev', '@nxazure/func'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['g', '@nxazure/func:init', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template="HTTP trigger"'], workspaceRoot)
+    // The repair declares @azure/functions; the follow-up install materialises it.
+    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--no-audit', '--no-fund'], workspaceRoot)
+  })
+
+  it('repairs the function app for plain tsc: manifest, targets and tsconfig', async () => {
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({
+      name:            '@demo/source',
+      devDependencies: { '@nxazure/func': '^2.1.0', '@azure/functions': '^4.0.0' },
+    }))
+
+    await runAdd('function-app', 'api', {})
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/package.json'), 'utf8')) as Record<string, unknown>
+    // The generator leaves name empty (corrupts npm workspaces) and points
+    // main where its own broken executor would emit; both must be repaired.
+    expect(manifest.name).toBe('@demo/api')
+    expect(manifest.private).toBe(true)
+    expect(manifest.main).toBe('dist/src/functions/*.js')
+    expect((manifest.dependencies as Record<string, string>)['@azure/functions']).toBe('^4.0.0')
+    expect((manifest.scripts as Record<string, string>).build).toBe('tsc')
+    expect((manifest.scripts as Record<string, string>).start).toBe('func start')
+
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: { command: string } }> }
+    expect(project.targets.build.executor).toBe('nx:run-commands')
+    expect(project.targets.build.options.command).toBe('tsc')
+    expect(project.targets.start.options.command).toBe('func start')
+    // The plugin's publish executor shares the same broken build path.
+    expect(project.targets).not.toHaveProperty('publish')
+
+    const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown> }
+    // The TS-solution base is declaration-only; the app must emit real JS.
+    expect(tsconfig.compilerOptions.emitDeclarationOnly).toBe(false)
+    expect(tsconfig.compilerOptions.composite).toBe(false)
+    expect(tsconfig.compilerOptions.outDir).toBe('dist')
   })
 
   it('fails fast with install instructions when Azure Functions Core Tools is missing', async () => {

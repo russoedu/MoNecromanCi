@@ -138,19 +138,21 @@ enforce('no per-project eslint config beyond the root one', !existsSync(path.joi
  * Real toolchain runs inside the generated repo
  * ------------------------------------------------------------------------- */
 
-const excludeFunctionApp = functionAppGenerated ? '--exclude=api' : ''
 enforce(
-  'nx run-many -t lint,test,build succeeds (function app excluded — see pending)',
-  tryRun(`npx nx run-many -t lint,test,build ${excludeFunctionApp}`.trim(), workspace),
+  'nx run-many -t lint,test,build succeeds (function app included)',
+  tryRun('npx nx run-many -t lint,test,build', workspace),
   'see log above',
 )
 
 if (functionAppGenerated) {
-  // Known gap: @nxazure/func's build executor currently fails against Nx 23
-  // TS-solution workspaces ("Paths must either both be absolute or both be
-  // relative") — it peers on @nx/js ^22. Tracked in the README; promote to
-  // enforce when the plugin catches up.
-  pending('function app builds (@nxazure/func executor vs Nx 23 gap)', tryRun('npx nx build api', workspace), 'see log above')
+  // The repaired function app builds with plain tsc (the plugin's executors
+  // are bypassed — their shared prepare-build breaks on Nx 23 workspaces).
+  enforce('function app emits real JS where the manifest main glob points', existsSync(path.join(workspace, 'apps/api/dist/src/functions/hello.js')))
+  const functionAppManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'))
+  enforce('function app manifest repaired (name, main, runtime SDK dependency)',
+    functionAppManifest.name === '@demo/api'
+    && functionAppManifest.main === 'dist/src/functions/*.js'
+    && Boolean(functionAppManifest.dependencies?.['@azure/functions']))
 }
 
 /* ---------------------------------------------------------------------------

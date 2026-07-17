@@ -94,6 +94,21 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('monecromanci-toolchain')
     expect(pipeline).not.toContain('.mjs')
   })
+
+  it('packages function apps (dist + host.json + manifest + prod deps) on main, before release', () => {
+    const pipeline = azurePipelinesYaml()
+
+    const affectedIndex = pipeline.indexOf('nx affected -t lint,test,build')
+    const packageIndex = pipeline.indexOf('for host in apps/*/host.json')
+    const publishArtifactIndex = pipeline.indexOf('ArtifactName: function-apps')
+    const releaseIndex = pipeline.indexOf('nx release --yes')
+
+    expect(packageIndex).toBeGreaterThan(affectedIndex)
+    expect(publishArtifactIndex).toBeGreaterThan(packageIndex)
+    expect(releaseIndex).toBeGreaterThan(publishArtifactIndex)
+    expect(pipeline).toContain('npm install --omit=dev')
+    expect(pipeline).toContain('cp -r "$app_dir/dist" "$app_dir/host.json" "$app_dir/package.json"')
+  })
 })
 
 describe('applyOverlay', () => {

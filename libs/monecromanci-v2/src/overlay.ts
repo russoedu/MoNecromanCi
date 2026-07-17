@@ -228,6 +228,30 @@ steps:
       npx nx affected -t lint,test,build --base="$BASE" --head=HEAD
     displayName: Lint, test and build affected projects
 
+  - script: |
+      # A deployable function app is dist + host.json + package.json with its
+      # production node_modules vendored in — ready for AzureFunctionApp@2 (or
+      # any zip deploy). Skipped cleanly when no function app exists.
+      shopt -s nullglob
+      mkdir -p "$(Build.ArtifactStagingDirectory)/function-apps"
+      for host in apps/*/host.json; do
+        app_dir=$(dirname "$host"); app=$(basename "$app_dir")
+        staging="$(Build.ArtifactStagingDirectory)/function-apps/$app"
+        mkdir -p "$staging"
+        npx nx build "$app"
+        cp -r "$app_dir/dist" "$app_dir/host.json" "$app_dir/package.json" "$staging/"
+        (cd "$staging" && npm install --omit=dev --no-audit --no-fund)
+      done
+    displayName: Package function apps
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))
+
+  - task: PublishBuildArtifacts@1
+    displayName: Publish function app packages
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)/function-apps
+      ArtifactName: function-apps
+
   - task: npmAuthenticate@0
     displayName: Authenticate npm registry
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))
