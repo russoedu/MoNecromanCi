@@ -148,6 +148,10 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     throw new Error('No nx.json found here. Run `add` from the workspace root.')
   }
 
+  // When the kind was not passed, the user is on the bare/interactive path, so
+  // fill in every configuration — including the npm-lib scope (below) that the
+  // flag path defaults silently.
+  const kindProvided = kind !== undefined
   const resolvedKind = kind ?? await select<ProjectKind>({
     message: 'What kind of project?',
     choices: PROJECT_KINDS.map((value) => ({ name: value, value })),
@@ -192,7 +196,9 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       break
     }
     case 'npm-lib': {
-      const scope = options.scope ?? defaultScope(workspaceRoot)
+      const scope = options.scope ?? (kindProvided
+        ? defaultScope(workspaceRoot)
+        : await promptText('npm scope for the published package', defaultScope(workspaceRoot)))
       // rollup (not tsc): a bundler is what lets a published package depend on
       // private internal libs. @nx/rollup's withNx externalizes exactly the
       // manifest's dependencies/peerDependencies — so imported internal libs

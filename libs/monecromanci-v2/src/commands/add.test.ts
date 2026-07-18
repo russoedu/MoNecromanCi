@@ -230,6 +230,25 @@ describe('runAdd', () => {
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@acme/sdk')
   })
 
+  it('prompts for the npm-lib scope on the interactive path (kind not passed)', async () => {
+    mockSelect.mockResolvedValue('npm-lib')
+    mockPromptText.mockResolvedValueOnce('sdk').mockResolvedValueOnce('@acme') // name, then scope
+
+    await runAdd(undefined, undefined, {})
+
+    // Scope is prompted with the workspace's own scope (from @demo/source) as default.
+    expect(mockPromptText).toHaveBeenCalledWith('npm scope for the published package', '@demo')
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][0] === 'g')
+    expect(generatorCall?.[0]).toContain('--importPath=@acme/sdk')
+  })
+
+  it('does not prompt for scope on the flag path (kind passed) — defaults it silently', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    expect(mockPromptText).not.toHaveBeenCalledWith('npm scope for the published package', expect.anything())
+    expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
+  })
+
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {
     // The generator is mocked, so pre-create the manifest it would have written.
     mkdirSync(join(workspaceRoot, 'libs/utils'), { recursive: true })

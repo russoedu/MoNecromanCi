@@ -45,6 +45,12 @@ jest.mock('commander', () => {
 
     async parseAsync (argv: string[]): Promise<this> {
       const [commandToken, ...rest] = argv.slice(2)
+      // Bare invocation (no subcommand token) runs the program's default action,
+      // mirroring commander's own behaviour.
+      if (commandToken === undefined) {
+        await this.actionHandler?.()
+        return this
+      }
       const subcommand = this.subcommands.find((entry) => entry.commandName === commandToken)
       if (!subcommand) return this
 
@@ -73,13 +79,16 @@ jest.mock('commander', () => {
 
 jest.mock('./commands/add', () => ({ runAdd: jest.fn(), PROJECT_KINDS: [] }))
 jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
+jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
 
 import { buildProgram, main } from './cli'
 import { runAdd } from './commands/add'
+import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
 
 const mockRunAdd = jest.mocked(runAdd)
 const mockRunNew = jest.mocked(runNew)
+const mockRunInteractive = jest.mocked(runInteractive)
 
 let errorSpy: jest.SpyInstance
 
@@ -101,6 +110,13 @@ describe('buildProgram', () => {
   it('routes `add` with kind, name and scope to runAdd', async () => {
     await buildProgram().parseAsync(['node', 'mnci2', 'add', 'npm-lib', 'sdk', '--scope', '@acme'])
     expect(mockRunAdd).toHaveBeenCalledWith('npm-lib', 'sdk', expect.objectContaining({ scope: '@acme' }))
+  })
+
+  it('runs the interactive wizard when invoked with no subcommand', async () => {
+    await buildProgram().parseAsync(['node', 'mnci2'])
+    expect(mockRunInteractive).toHaveBeenCalled()
+    expect(mockRunNew).not.toHaveBeenCalled()
+    expect(mockRunAdd).not.toHaveBeenCalled()
   })
 })
 

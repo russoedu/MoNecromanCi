@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { runAdd, type AddOptions, type ProjectKind } from './commands/add'
+import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
 import { logger } from './util/logger'
 
@@ -61,6 +62,12 @@ export function buildProgram (): Command {
     .action(async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
       await runAdd(kind, name, options)
     })
+
+  // Bare `mnci2` (no subcommand) launches the guided wizard; commander runs
+  // this default action only when no subcommand is given (-v/--help still win).
+  program.action(async () => {
+    await runInteractive()
+  })
 
   return program
 }
