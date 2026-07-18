@@ -96,6 +96,14 @@ undeclared internal lib is compiled from source INTO the bundle — the private
 name never reaches the published `package.json`. Trade-off: the published
 output is a single bundle (no per-file deep imports).
 
+Cross-project imports (`@scope/lib`) resolve through **TypeScript project
+references** under `--preset=ts`, and those references are maintained by
+`nx sync`, not by the generators. So `mnci2 add` runs `nx sync` for you after
+each project — without it the references are stale and your editor cannot
+autocomplete a lib you just added (you would have to run `npx nx sync` by
+hand). A brand-new package may still need one VSCode window reload to be
+picked up by the TypeScript server.
+
 ## CI (Azure DevOps only, ~100 lines, any agent OS)
 
 The pipeline contains **no bash and no PowerShell**: every step is a built-in
@@ -145,6 +153,11 @@ the official `@nx/esbuild` executor instead:
   assets, so the output folder IS the deployable — no `npm install`, ever.
 - `start` = `func start` run inside `dist/function-apps/<name>` (after build)
   for local development.
+- `test` = a self-contained `jest` run (the app's own `jest.config.mjs` +
+  `tsconfig.spec.json`, ts-jest transform). The plugin-generated kinds get
+  jest from their `--unitTestRunner=jest` generator; a hand-rewired function
+  app has none, so v2 wires it — plus a dependency-free sample spec so
+  `nx test <name>` passes out of the box.
 - The manifest gets a real name (the generator leaves it empty, corrupting
   npm workspaces), `private: true`, and `@azure/functions` as a dependency.
 - **Convention**: `src/main.ts` is the bundle entry — add one import per

@@ -167,6 +167,15 @@ if (functionAppGenerated) {
     functionAppManifest.name === '@demo/api'
     && functionAppManifest.main === 'main.cjs'
     && Boolean(functionAppManifest.dependencies?.['@azure/functions']))
+
+  // A hand-rewired function app gets no plugin jest setup; v2 wires its own so
+  // `nx test <fn-app>` works like every other kind.
+  enforce('function app has a jest config + spec tsconfig',
+    existsSync(path.join(workspace, 'apps/api/jest.config.mjs'))
+    && existsSync(path.join(workspace, 'apps/api/tsconfig.spec.json')))
+  const functionAppProject = JSON.parse(readFileSync(path.join(workspace, 'apps/api/project.json'), 'utf8'))
+  enforce('function app has a test target', Boolean(functionAppProject.targets?.test))
+  enforce('function app test target runs green (sample spec passes)', tryRun('npx nx test api', workspace), 'see log above')
 }
 
 /* ---------------------------------------------------------------------------

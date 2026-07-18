@@ -74,9 +74,10 @@ describe('runAdd', () => {
     expect(mockRunShell).toHaveBeenNthCalledWith(2, 'npm', ['install', '--save-dev', '@nxazure/func'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['g', '@nxazure/func:init', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template="HTTP trigger"'], workspaceRoot)
-    // One install materialises the repaired app's @azure/functions dependency
-    // AND the esbuild toolchain its build target needs.
-    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', '--no-audit', '--no-fund'], workspaceRoot)
+    // One install materialises the repaired app's @azure/functions dependency,
+    // the esbuild toolchain its build target needs, AND the jest toolchain its
+    // test target runs (a hand-rewired app carries no plugin jest setup).
+    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', 'jest', 'ts-jest', '@types/jest', '--no-audit', '--no-fund'], workspaceRoot)
   })
 
   it('repairs the function app into an esbuild single-file bundle: manifest, targets, entry, tsconfig', async () => {
@@ -113,12 +114,52 @@ describe('runAdd', () => {
     expect(project.targets.start.options).toMatchObject({ command: 'func start', cwd: 'dist/function-apps/api' })
     // The plugin's publish executor shares the same broken build path.
     expect(project.targets).not.toHaveProperty('publish')
+    // A hand-rewired app gets no jest from a plugin generator, so wire it here:
+    // a self-contained jest run reading the app's own config.
+    expect(project.targets.test).toMatchObject({ executor: 'nx:run-commands', options: { command: 'jest', cwd: 'apps/api' } })
 
-    const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown> }
+    const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown>, exclude: string[] }
     // The TS-solution base is declaration-only; esbuild reads this tsconfig.
     expect(tsconfig.compilerOptions.emitDeclarationOnly).toBe(false)
     expect(tsconfig.compilerOptions.composite).toBe(false)
     expect(tsconfig.compilerOptions.outDir).toBe('dist')
+    // Specs are owned by tsconfig.spec.json (which adds the jest globals).
+    expect(tsconfig.exclude).toEqual(expect.arrayContaining(['src/**/*.spec.ts']))
+  })
+
+  it('wires a self-contained jest setup into the function app (config, spec tsconfig, sample test)', async () => {
+    await runAdd('function-app', 'api', {})
+
+    const jestConfig = readFileSync(join(workspaceRoot, 'apps/api/jest.config.mjs'), 'utf8')
+    expect(jestConfig).toContain(`displayName: 'api'`)
+    expect(jestConfig).toContain('ts-jest')
+    // Stays green once the user deletes the sample spec.
+    expect(jestConfig).toContain('passWithNoTests: true')
+
+    const specTsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.spec.json'), 'utf8')) as { compilerOptions: Record<string, unknown>, include: string[] }
+    expect(specTsconfig.compilerOptions.types).toEqual(expect.arrayContaining(['jest']))
+    expect(specTsconfig.include).toEqual(expect.arrayContaining(['src/**/*.spec.ts']))
+
+    // A real, dependency-free passing test out of the box (the plugin's hello
+    // handler would need @azure/functions mocking).
+    expect(readFileSync(join(workspaceRoot, 'apps/api/src/greeting.ts'), 'utf8')).toContain('export function buildGreeting')
+    expect(readFileSync(join(workspaceRoot, 'apps/api/src/greeting.spec.ts'), 'utf8')).toContain(`from './greeting'`)
+  })
+
+  it('syncs TypeScript project references after adding a project so cross-project imports resolve', async () => {
+    await runAdd('react-app', 'web', {})
+
+    // The --preset=ts model resolves cross-project imports via TS references,
+    // which nx sync maintains — without this, an editor cannot autocomplete
+    // @scope/lib imports until the user runs it by hand.
+    expect(mockRunShell).toHaveBeenCalledWith('npx', ['nx', 'sync'], workspaceRoot)
+  })
+
+  it('keeps a successful add green even when nx sync fails (the project is already generated)', async () => {
+    // Last call in the flow is nx sync; make only it fail.
+    mockRunShell.mockImplementation((command: string, arguments_: string[]) => (command === 'npx' && arguments_[0] === 'nx' && arguments_[1] === 'sync' ? 1 : 0))
+
+    await expect(runAdd('react-app', 'web', {})).resolves.toBeUndefined()
   })
 
   it('fails fast with install instructions when Azure Functions Core Tools is missing', async () => {
