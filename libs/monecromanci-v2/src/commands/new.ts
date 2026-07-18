@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { runNpx, runShell } from '../nx'
-import { applyOverlay, type RegistryConfig } from '../overlay'
-import { promptRegistry, promptText } from '../prompts'
+import { applyOverlay, DEFAULT_STACK, type RegistryConfig, type StackConfig } from '../overlay'
+import { promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
 
 /**
@@ -30,6 +30,39 @@ export interface NewOptions {
   agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
+  /** Linter (`eslint` or `oxlint`). */
+  linter?:        StackConfig['linter']
+  /** Unit-test runner (`jest` or `vitest`). */
+  testRunner?:    StackConfig['testRunner']
+}
+
+/**
+ * Resolves the stack from flags, prompts, or `--yes` defaults.
+ *
+ * @remarks
+ * Any of the three knobs passed as a flag is taken as-is; if all three are
+ * passed (or `--yes` is set) nothing is prompted. Otherwise the interactive
+ * {@link promptStack} runs and its answers fill the gaps.
+ *
+ * @param options - The CLI flags.
+ * @returns The resolved stack configuration.
+ * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
+ * @typeParam None - this function has no generic type parameters.
+ */
+async function resolveStack (options: NewOptions): Promise<StackConfig> {
+  const fromFlags = { linter: options.linter, testRunner: options.testRunner }
+  const complete = Boolean(fromFlags.linter && fromFlags.testRunner)
+  if (complete || options.yes) {
+    return {
+      linter:     fromFlags.linter ?? DEFAULT_STACK.linter,
+      testRunner: fromFlags.testRunner ?? DEFAULT_STACK.testRunner,
+    }
+  }
+  const prompted = await promptStack()
+  return {
+    linter:     fromFlags.linter ?? prompted.linter,
+    testRunner: fromFlags.testRunner ?? prompted.testRunner,
+  }
 }
 
 /**
@@ -77,6 +110,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const registry = await resolveRegistry(options)
   const agent = options.agent ?? (options.yes ? 'ubuntu-latest' : await promptText('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest'))
   const variableGroup = options.variableGroup ?? (options.yes ? 'Build' : await promptText('Azure DevOps variable group holding the npm PAT', 'Build'))
+  const stack = await resolveStack(options)
 
   logger.step(`Creating Nx workspace '${workspaceName}' (preset: ts)`)
   runNpx([
@@ -91,13 +125,17 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
 
   const workspaceRoot = join(process.cwd(), workspaceName)
 
-  logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline)')
-  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup })
+  logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
+  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, stack })
 
-  logger.step('Installing conventional-commit toolchain (husky + commitlint)')
-  const installStatus = runShell('npm', ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
+  // Install the commit toolchain (and oxlint when it is the chosen linter —
+  // ESLint is set up by the Nx generators on first `add`). TypeScript stays the
+  // TS 6 the preset installed (Nx 23 does not support TS 7 yet). One install.
+  const stackDependencies = stack.linter === 'oxlint' ? ['oxlint'] : []
+  logger.step(`Installing the toolchain (${stack.linter}, commit toolchain)`)
+  const installStatus = runShell('npm', ['install', '--save-dev', ...stackDependencies, 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
   if (installStatus !== 0) {
-    throw new Error(`npm install of the commit toolchain failed with exit code ${installStatus}`)
+    throw new Error(`npm install of the toolchain failed with exit code ${installStatus}`)
   }
   // The overlay already stamped `prepare: husky` into the root scripts.
   runShell('npx', ['husky'], workspaceRoot)

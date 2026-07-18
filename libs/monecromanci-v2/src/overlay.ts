@@ -16,6 +16,37 @@ export type RegistryConfig
     | { kind: 'npm' }
 
 /**
+ * The stack chosen at `mnci2 new` — asked up front, honoured by every `add`.
+ *
+ * @remarks
+ * TypeScript stays the language *and* the version: `create-nx-workspace` pins
+ * TypeScript 6, and TS 7 (the native-compiler rewrite) is not compatible with
+ * Nx 23 yet — it removes the `ts.readConfigFile` API Nx's TS-solution plugin
+ * needs — so the two real knobs are the linter and the unit-test runner. Both
+ * are persisted as Nx **generator defaults** in `nx.json` (the oxlint case also
+ * writes a workspace `.oxlintrc.json` and points the root `lint` script at
+ * `oxlint`).
+ *
+ * @typeParam None - this type has no generic type parameters.
+ */
+export interface StackConfig {
+  /** Linter: Nx-native `eslint`, or workspace-wide `oxlint`. */
+  linter:     'eslint' | 'oxlint'
+  /** Unit-test runner (both Nx-native for the plugin kinds). */
+  testRunner: 'jest' | 'vitest'
+}
+
+/**
+ * The `--yes` / flagless defaults — the current opinionated stack.
+ *
+ * @remarks
+ * ESLint and Jest: the combination existing generated repos (and the box-out
+ * e2e) already assume, so defaulting to it keeps behaviour unchanged when the
+ * stack is not chosen explicitly.
+ */
+export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
+
+/**
  * Returns the npm registry URL for a registry config.
  *
  * @remarks
@@ -187,6 +218,57 @@ export const ROOT_SCRIPTS = {
 } as const
 
 /**
+ * The curated scripts with `lint` bound to the chosen linter.
+ *
+ * @remarks
+ * ESLint is a per-project Nx target (`nx run-many -t lint`); oxlint is a single
+ * workspace-wide binary, so its `lint` is just `oxlint`. Everything downstream
+ * (the CI pipeline) calls `npm run lint`, so it never needs to know which
+ * linter was chosen.
+ *
+ * @param stack - The chosen stack.
+ * @returns The root scripts object to stamp into the manifest.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function rootScripts (stack: StackConfig): Record<string, string> {
+  return { ...ROOT_SCRIPTS, lint: stack.linter === 'oxlint' ? 'oxlint' : ROOT_SCRIPTS.lint }
+}
+
+/**
+ * The Nx `generators` defaults patched into `nx.json` from the chosen stack.
+ *
+ * @remarks
+ * This is how the one-time `new` choice reaches every later `mnci2 add`: the
+ * `@nx/*` generators read `linter`/`unitTestRunner` from here, and `add`
+ * itself reads it back to wire the hand-built function app to the same runner.
+ * oxlint is not an Nx linter, so it maps to `linter: 'none'` — the workspace
+ * `.oxlintrc.json` + the `oxlint` root script cover linting instead.
+ *
+ * @param stack - The chosen stack.
+ * @returns The `generators` object for `nx.json`.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function generatorDefaults (stack: StackConfig): Record<string, unknown> {
+  const shared = { linter: stack.linter === 'oxlint' ? 'none' : 'eslint', unitTestRunner: stack.testRunner }
+  return {
+    '@nx/react:application': shared,
+    '@nx/react:library':     shared,
+    '@nx/js:library':        shared,
+  }
+}
+
+/**
+ * The minimal `.oxlintrc.json` written when oxlint is the chosen linter.
+ *
+ * @remarks
+ * oxlint runs with sensible defaults; this pins the `correctness` category to
+ * error (its default) so the file is an obvious, editable starting point.
+ */
+export const OXLINT_CONFIG = `${JSON.stringify({ categories: { correctness: 'error' } }, undefined, 2)}\n`
+
+/**
  * Renders the `pool:` block body for a chosen build agent.
  *
  * @remarks
@@ -295,10 +377,13 @@ steps:
     env:
       PAT: $(PAT)
 
-  # One verify for every run (PR and main). Nx cache makes unchanged projects
-  # instant, so a plain run-many stays simple and fast.
-  - script: npx nx run-many -t lint,test,build
-    displayName: Lint, test and build everything
+  # One verify for every run (PR and main). \`npm run lint\` abstracts the chosen
+  # linter (eslint via nx, or oxlint), so the pipeline needs no linter branch;
+  # Nx cache makes unchanged test/build projects instant.
+  - script: npm run lint
+    displayName: Lint
+  - script: npx nx run-many -t test,build
+    displayName: Test and build everything
 
   # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
   # target. Portable guard: skip cleanly when the workspace has no apps yet.
@@ -347,6 +432,8 @@ export interface OverlayOptions {
   agent:         string
   /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
   variableGroup: string
+  /** The stack (TS major, linter, test runner) chosen at `new`. */
+  stack:         StackConfig
 }
 
 /**
@@ -367,16 +454,20 @@ export interface OverlayOptions {
  * @typeParam None - this function has no generic type parameters.
  */
 export function applyOverlay (workspaceRoot: string, options: OverlayOptions): void {
+  // Patch nx.json with the release opinion AND the stack generator defaults, so
+  // both `nx release` and every later `nx g`/`mnci2 add` see the choices.
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
-  writeFileEnsured(nxJsonPath, toJson(withReleaseConfig(nxJson)))
+  const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
+  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,
-  // and the curated everyday scripts (each a single cross-platform command).
+  // and the curated everyday scripts (each a single cross-platform command,
+  // with `lint` bound to the chosen linter).
   const manifestPath = join(workspaceRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
-  const scripts = { ...(manifest.scripts as Record<string, string> | undefined), ...ROOT_SCRIPTS }
+  const scripts = { ...(manifest.scripts as Record<string, string> | undefined), ...rootScripts(options.stack) }
   writeFileEnsured(manifestPath, toJson({ ...manifest, name: `${options.scope}/source`, scripts }))
 
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
@@ -384,5 +475,9 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
+  // oxlint is workspace-wide: one config, no per-project Nx lint target.
+  if (options.stack.linter === 'oxlint') {
+    writeFileEnsured(join(workspaceRoot, '.oxlintrc.json'), OXLINT_CONFIG)
+  }
   writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml(options.agent, options.variableGroup))
 }

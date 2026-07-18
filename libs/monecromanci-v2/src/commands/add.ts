@@ -148,6 +148,10 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     throw new Error('No nx.json found here. Run `add` from the workspace root.')
   }
 
+  // The stack chosen at `mnci2 new` lives in nx.json; every generator (and the
+  // hand-built function app) is wired to match it.
+  const stack = readWorkspaceStack(workspaceRoot)
+
   // When the kind was not passed, the user is on the bare/interactive path, so
   // fill in every configuration — including the npm-lib scope (below) that the
   // flag path defaults silently.
@@ -164,8 +168,8 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       runNx([
         'g', '@nx/react:app', `apps/${resolvedName}`,
         '--bundler=vite',
-        '--unitTestRunner=jest',
-        '--linter=eslint',
+        `--unitTestRunner=${stack.testRunner}`,
+        `--linter=${stack.linter}`,
         '--style=css',
         '--e2eTestRunner=none',
         '--no-interactive',
@@ -182,15 +186,15 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       ensurePackageInstalled(workspaceRoot, '@nxazure/func')
       runNx(['g', '@nxazure/func:init', resolvedName, `--directory=apps/${resolvedName}`, '--no-interactive'], workspaceRoot)
       runNx(['g', '@nxazure/func:new', 'hello', `--project=${resolvedName}`, `--template=${quote('HTTP trigger')}`], workspaceRoot)
-      repairFunctionApp(workspaceRoot, resolvedName, options.scope ?? defaultScope(workspaceRoot))
+      repairFunctionApp(workspaceRoot, resolvedName, options.scope ?? defaultScope(workspaceRoot), stack.testRunner)
       // One install materialises everything the repair introduced: the app's
-      // @azure/functions dependency, the esbuild toolchain that bundles it, and
-      // the jest toolchain its `test` target runs (function apps are rewired by
-      // hand, so — unlike the plugin-generated kinds — they carry no jest setup
-      // of their own until we add one here).
-      // adm-zip is the packager the app's `package` target uses (see repairFunctionApp).
-      logger.step('Installing the bundler (@nx/esbuild), jest and packaging (adm-zip) toolchains and workspace dependencies')
-      if (runShell('npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', 'jest', 'ts-jest', '@types/jest', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
+      // @azure/functions dependency, the esbuild toolchain that bundles it, the
+      // chosen test runner (function apps are rewired by hand, so — unlike the
+      // plugin-generated kinds — they carry no test setup of their own until we
+      // add one here), and adm-zip for the `package` target.
+      const functionTestDependencies = stack.testRunner === 'vitest' ? ['vitest'] : ['jest', 'ts-jest', '@types/jest']
+      logger.step(`Installing the bundler (@nx/esbuild), ${stack.testRunner} and packaging (adm-zip) toolchains and workspace dependencies`)
+      if (runShell('npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', ...functionTestDependencies, 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
         throw new Error('npm install after the function-app repair failed')
       }
       break
@@ -210,11 +214,15 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
         '--publishable',
         `--importPath=${scope}/${resolvedName}`,
         '--bundler=rollup',
-        '--unitTestRunner=jest',
-        '--linter=eslint',
+        `--unitTestRunner=${stack.testRunner}`,
+        `--linter=${stack.linter}`,
         '--no-interactive',
       ], workspaceRoot)
-      writeFileEnsured(join(workspaceRoot, 'packages', resolvedName, 'eslint.config.mjs'), NPM_LIB_ESLINT_CONFIG)
+      // The dependency-check override is an ESLint config; oxlint has no such
+      // rule, so it only applies when ESLint is the chosen linter.
+      if (stack.linter === 'eslint') {
+        writeFileEnsured(join(workspaceRoot, 'packages', resolvedName, 'eslint.config.mjs'), NPM_LIB_ESLINT_CONFIG)
+      }
       break
     }
     case 'internal-lib': {
@@ -224,8 +232,8 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       runNx([
         'g', '@nx/js:lib', `libs/${resolvedName}`,
         '--bundler=tsc',
-        '--unitTestRunner=jest',
-        '--linter=eslint',
+        `--unitTestRunner=${stack.testRunner}`,
+        `--linter=${stack.linter}`,
         '--no-interactive',
       ], workspaceRoot)
       markPrivate(join(workspaceRoot, 'libs', resolvedName, 'package.json'))
@@ -345,6 +353,31 @@ function addNxPackageTarget (manifestPath: string, target: Record<string, unknow
 }
 
 /**
+ * The workspace stack, read back from the `nx.json` generator defaults `new` wrote.
+ *
+ * @remarks
+ * How a one-time `mnci2 new` choice reaches `add`: the `linter`/`unitTestRunner`
+ * defaults are the source of truth. `add` passes them back to the `@nx/*`
+ * generators explicitly (predictable regardless of Nx's default resolution) and
+ * uses the runner to wire the hand-built function app. `linter` is the
+ * generator value — `eslint`, or `none` when the workspace chose oxlint.
+ * Missing/blank defaults fall back to the box-out opinion (eslint + jest).
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The linter and test runner to apply.
+ * @throws Propagates any `fs`/JSON error reading `nx.json`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function readWorkspaceStack (workspaceRoot: string): { linter: 'eslint' | 'none', testRunner: 'jest' | 'vitest' } {
+  const nxJson = readJson<{ generators?: Record<string, { linter?: string, unitTestRunner?: string }> }>(join(workspaceRoot, 'nx.json'))
+  const defaults = nxJson.generators?.['@nx/js:library']
+  return {
+    linter:     defaults?.linter === 'none' ? 'none' : 'eslint',
+    testRunner: defaults?.unitTestRunner === 'vitest' ? 'vitest' : 'jest',
+  }
+}
+
+/**
  * Derives the default npm scope from the workspace's root package name.
  *
  * @param workspaceRoot - Absolute path to the workspace.
@@ -427,11 +460,12 @@ import './functions/hello.js'
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The function app's project name.
  * @param scope - The npm scope used for the app's package name.
+ * @param testRunner - The workspace's chosen unit-test runner (jest or vitest).
  * @returns Nothing.
  * @throws Propagates any `fs`/JSON error reading or writing the app's files.
  * @typeParam None - this function has no generic type parameters.
  */
-function repairFunctionApp (workspaceRoot: string, name: string, scope: string): void {
+function repairFunctionApp (workspaceRoot: string, name: string, scope: string, testRunner: 'jest' | 'vitest'): void {
   const appRoot = join(workspaceRoot, 'apps', name)
   const rootManifest = readJson<{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
   const azureFunctionsVersion = rootManifest.dependencies?.['@azure/functions'] ?? rootManifest.devDependencies?.['@azure/functions'] ?? '^4.0.0'
@@ -487,14 +521,13 @@ function repairFunctionApp (workspaceRoot: string, name: string, scope: string):
         dependsOn: ['build'],
         options:   { command: 'func start', cwd: outputPath },
       },
-      // The plugin-generated kinds get jest from their `--unitTestRunner=jest`
-      // generator; a hand-rewired function app has none, so wire an explicit
-      // jest run (self-contained: reads the app's own jest.config.mjs, no root
-      // preset required) rather than leaning on plugin inference that only
-      // exists once some other jest-using project has been added.
+      // The plugin-generated kinds get their runner from --unitTestRunner; a
+      // hand-rewired function app has none, so wire an explicit run of the
+      // workspace's chosen runner (self-contained: reads the app's own config,
+      // no root preset required).
       test: {
         executor: 'nx:run-commands',
-        options:  { command: 'jest', cwd: `apps/${name}` },
+        options:  { command: testRunner === 'vitest' ? 'vitest run --passWithNoTests' : 'jest', cwd: `apps/${name}` },
       },
       // Zip the self-contained bundle folder into the drop under the exact name
       // CI turns into a build tag (function-app-<name>). See appPackageTarget.
@@ -522,34 +555,65 @@ function repairFunctionApp (workspaceRoot: string, name: string, scope: string):
     exclude: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
   }))
 
-  writeFileEnsured(join(appRoot, 'tsconfig.spec.json'), toJson({
-    extends:         './tsconfig.json',
-    compilerOptions: {
-      // CommonJS keeps ts-jest's transform trivial (no ESM jest runner setup),
-      // independent of whatever module/resolution the TS-solution base uses.
-      // verbatimModuleSyntax + esModuleInterop are pinned so an ESM-strict base
-      // (the `--preset=ts` default sets verbatimModuleSyntax) can't reject the
-      // plain `import` syntax once module is overridden to commonjs here.
-      // ignoreDeprecations silences TS6+'s node10-resolution deprecation error
-      // (classic `node` resolution is what ts-jest wants for a commonjs run).
-      module:               'commonjs',
-      moduleResolution:     'node',
-      ignoreDeprecations:   '6.0',
-      verbatimModuleSyntax: false,
-      esModuleInterop:      true,
-      outDir:               './out-tsc/jest',
-      composite:            false,
-      declaration:          false,
-      emitDeclarationOnly:  false,
-      types:                ['jest', 'node'],
-    },
-    include: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'src/**/*.d.ts'],
-  }))
+  if (testRunner === 'vitest') {
+    // Vitest transforms with esbuild (no ts-jest, no module overrides needed);
+    // the spec tsconfig only supplies the global test API types to the editor.
+    writeFileEnsured(join(appRoot, 'tsconfig.spec.json'), toJson({
+      extends:         './tsconfig.json',
+      compilerOptions: { outDir: './out-tsc/vitest', composite: false, declaration: false, emitDeclarationOnly: false, types: ['vitest/globals', 'node'] },
+      include:         ['src/**/*.spec.ts', 'src/**/*.test.ts', 'src/**/*.d.ts'],
+    }))
+    writeFileEnsured(join(appRoot, 'vitest.config.ts'), FUNCTION_APP_VITEST_CONFIG)
+  } else {
+    writeFileEnsured(join(appRoot, 'tsconfig.spec.json'), toJson({
+      extends:         './tsconfig.json',
+      compilerOptions: {
+        // CommonJS keeps ts-jest's transform trivial (no ESM jest runner setup),
+        // independent of whatever module/resolution the TS-solution base uses.
+        // verbatimModuleSyntax + esModuleInterop are pinned so an ESM-strict base
+        // (the `--preset=ts` default sets verbatimModuleSyntax) can't reject the
+        // plain `import` syntax once module is overridden to commonjs here.
+        // ignoreDeprecations silences TS6+'s node10-resolution deprecation error
+        // (classic `node` resolution is what ts-jest wants for a commonjs run).
+        module:               'commonjs',
+        moduleResolution:     'node',
+        ignoreDeprecations:   '6.0',
+        verbatimModuleSyntax: false,
+        esModuleInterop:      true,
+        outDir:               './out-tsc/jest',
+        composite:            false,
+        declaration:          false,
+        emitDeclarationOnly:  false,
+        types:                ['jest', 'node'],
+      },
+      include: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'src/**/*.d.ts'],
+    }))
+    writeFileEnsured(join(appRoot, 'jest.config.mjs'), FUNCTION_APP_JEST_CONFIG(name))
+  }
 
-  writeFileEnsured(join(appRoot, 'jest.config.mjs'), FUNCTION_APP_JEST_CONFIG(name))
   writeFileEnsured(join(appRoot, 'src/greeting.ts'), FUNCTION_APP_GREETING)
   writeFileEnsured(join(appRoot, 'src/greeting.spec.ts'), FUNCTION_APP_GREETING_SPEC)
 }
+
+/**
+ * The self-contained vitest config written into a function app on the vitest stack.
+ *
+ * @remarks
+ * `globals: true` makes `describe`/`it`/`expect` ambient, so the same sample
+ * spec works under either runner; vitest transforms TS via esbuild, so no
+ * ts-jest and no tsconfig gymnastics are needed. `nx test` runs
+ * `vitest run --passWithNoTests`, staying green after the sample is deleted.
+ */
+export const FUNCTION_APP_VITEST_CONFIG = `import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
+  },
+})
+`
 
 /**
  * Builds the self-contained jest config written into a function app.

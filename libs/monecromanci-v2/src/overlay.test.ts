@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, npmrcContent, poolBlock, registryUrl, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, npmrcContent, poolBlock, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -103,7 +103,7 @@ describe('azurePipelinesYaml', () => {
     const checkoutIndex = pipeline.indexOf('checkout: self')
     const attachIndex = pipeline.indexOf('git checkout -B $(Build.SourceBranchName)')
     const fetchIndex = pipeline.indexOf('git fetch --all --prune --tags')
-    const verifyIndex = pipeline.indexOf('nx run-many -t lint,test,build')
+    const verifyIndex = pipeline.indexOf('npm run lint')
     const releaseIndex = pipeline.indexOf('nx release --yes')
 
     expect(checkoutIndex).toBeGreaterThan(-1)
@@ -146,11 +146,15 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('pwsh')
   })
 
-  it('verifies every run with a single run-many (no affected branching)', () => {
+  it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    expect(pipeline).toContain('npx nx run-many -t lint,test,build')
+    // `npm run lint` abstracts eslint-via-nx vs oxlint, so the pipeline never
+    // branches on the linter.
+    expect(pipeline).toContain('npm run lint')
+    expect(pipeline).toContain('npx nx run-many -t test,build')
     expect(pipeline).not.toContain('nx affected')
+    expect(pipeline).not.toContain('run-many -t lint,test,build')
   })
 
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
@@ -180,8 +184,31 @@ describe('azurePipelinesYaml', () => {
   })
 })
 
+describe('generatorDefaults', () => {
+  it('maps eslint straight through', () => {
+    const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<string, { linter: string, unitTestRunner: string }>
+    expect(defaults['@nx/js:library']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
+    expect(defaults['@nx/react:application']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
+  })
+
+  it('maps oxlint to linter:none (oxlint is not an Nx linter) and carries the runner', () => {
+    const defaults = generatorDefaults({ linter: 'oxlint', testRunner: 'vitest' }) as Record<string, { linter: string, unitTestRunner: string }>
+    expect(defaults['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
+  })
+})
+
+describe('rootScripts', () => {
+  it('keeps nx lint for eslint, swaps to oxlint for oxlint', () => {
+    expect(rootScripts({ linter: 'eslint', testRunner: 'jest' }).lint).toBe('nx run-many -t lint')
+    expect(rootScripts({ linter: 'oxlint', testRunner: 'jest' }).lint).toBe('oxlint')
+  })
+})
+
 describe('applyOverlay', () => {
   let workspaceRoot: string
+
+  const overlayWith = (stack: StackConfig): void =>
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack })
 
   beforeEach(() => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-overlay-'))
@@ -194,7 +221,7 @@ describe('applyOverlay', () => {
   })
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build' })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as Record<string, unknown>
     expect(nxJson.$schema).toBe('s')
@@ -208,15 +235,36 @@ describe('applyOverlay', () => {
     expect(pipeline).toContain('- group: Build')
   })
 
+  it('writes the stack as nx.json generator defaults (honoured by later `add`)', () => {
+    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { generators: Record<string, { linter: string, unitTestRunner: string }> }
+    expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
+  })
+
+  it('sets up oxlint (config + root script) only when oxlint is chosen', () => {
+    overlayWith({ linter: 'oxlint', testRunner: 'jest' })
+    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(true)
+    const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+    expect(scripts.lint).toBe('oxlint')
+  })
+
+  it('does not write an oxlint config when eslint is chosen', () => {
+    overlayWith(DEFAULT_STACK)
+    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
+    const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+    expect(scripts.lint).toBe('nx run-many -t lint')
+  })
+
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build' })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const mode = statSync(join(workspaceRoot, '.husky/commit-msg')).mode
     expect(mode & 0o111).not.toBe(0)
   })
 
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build' })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as Record<string, unknown>
     expect(manifest.name).toBe('@demo/source')
@@ -225,7 +273,7 @@ describe('applyOverlay', () => {
   })
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build' })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     expect(manifest.scripts).toEqual({
@@ -242,7 +290,7 @@ describe('applyOverlay', () => {
   it('keeps any scripts the preset generated that the curated set does not own', () => {
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', scripts: { postinstall: 'echo hi' } }))
 
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build' })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     expect(manifest.scripts.postinstall).toBe('echo hi')

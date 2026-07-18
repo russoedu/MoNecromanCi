@@ -1,5 +1,5 @@
 import { input, select } from '@inquirer/prompts'
-import type { RegistryConfig } from './overlay'
+import type { RegistryConfig, StackConfig } from './overlay'
 
 /**
  * Prompts for a non-empty trimmed string with an optional default.
@@ -56,4 +56,36 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
     project:       await promptText('Azure DevOps project'),
     artifactsFeed: await promptText('Artifacts feed name'),
   }
+}
+
+/**
+ * Prompts for the stack: linter and unit-test runner.
+ *
+ * @remarks
+ * The knobs asked up front at `mnci2 new`. TypeScript is fixed (the
+ * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), so only the
+ * linter and test runner are asked. Each is a binary choice — no "none" — with
+ * the current opinionated default listed first.
+ *
+ * @param None - this function takes no parameters.
+ * @returns The resolved stack configuration.
+ * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function promptStack (): Promise<StackConfig> {
+  const linter = await select<StackConfig['linter']>({
+    message: 'Linter',
+    choices: [
+      { name: 'ESLint', value: 'eslint' },
+      { name: 'Oxlint', value: 'oxlint' },
+    ],
+  })
+  const testRunner = await select<StackConfig['testRunner']>({
+    message: 'Unit-test runner',
+    choices: [
+      { name: 'Jest', value: 'jest' },
+      { name: 'Vitest', value: 'vitest' },
+    ],
+  })
+  return { linter, testRunner }
 }

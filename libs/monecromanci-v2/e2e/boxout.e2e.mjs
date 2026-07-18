@@ -232,6 +232,29 @@ enforce(
 )
 
 /* ---------------------------------------------------------------------------
+ * Alternate stack: TS6 + oxlint + vitest, exercised end-to-end so the non-default
+ * choices are proven on the real toolchain (not just in unit tests).
+ * ------------------------------------------------------------------------- */
+
+const altWorkspace = path.join(temporary, 'alt')
+console.log('\n▸ mnci2 new alt --linter oxlint --test-runner vitest')
+run(`node ${CLI} new alt --yes --registry npm --scope @alt --linter oxlint --test-runner vitest`, temporary)
+
+const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
+enforce('alt: stack persisted as nx.json generator defaults (linter:none + vitest)',
+  altNx.generators?.['@nx/js:library']?.linter === 'none' && altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest')
+const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+enforce('alt: oxlint set up (.oxlintrc.json + root lint = oxlint)',
+  existsSync(path.join(altWorkspace, '.oxlintrc.json')) && altManifest.scripts?.lint === 'oxlint')
+
+run(`node ${CLI} add npm-lib sdk`, altWorkspace)
+run(`node ${CLI} add react-app web`, altWorkspace)
+enforce('alt: npm-lib gets no per-lib eslint config under oxlint', !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs')))
+enforce('alt: npm run lint (oxlint) runs green', tryRun('npm run lint', altWorkspace), 'see log above')
+enforce('alt: test + build (vitest) runs green', tryRun('npx nx run-many -t test,build', altWorkspace), 'see log above')
+enforce('alt: apps still pack into the drop', tryRun('npx nx run-many -t package', altWorkspace) && existsSync(path.join(altWorkspace, 'dist/drop/react-app-web.zip')))
+
+/* ---------------------------------------------------------------------------
  * Report
  * ------------------------------------------------------------------------- */
 

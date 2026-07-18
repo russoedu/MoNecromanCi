@@ -112,6 +112,11 @@ describe('buildProgram', () => {
     expect(mockRunAdd).toHaveBeenCalledWith('npm-lib', 'sdk', expect.objectContaining({ scope: '@acme' }))
   })
 
+  it('routes `new` stack flags (linter/test-runner) to runNew', async () => {
+    await buildProgram().parseAsync(['node', 'mnci2', 'new', 'demo', '--yes', '--linter', 'oxlint', '--test-runner', 'vitest'])
+    expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' }))
+  })
+
   it('runs the interactive wizard when invoked with no subcommand', async () => {
     await buildProgram().parseAsync(['node', 'mnci2'])
     expect(mockRunInteractive).toHaveBeenCalled()

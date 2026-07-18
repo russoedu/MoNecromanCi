@@ -64,8 +64,32 @@ each a single cross-platform command:
 3. Writes `.npmrc` (Azure Artifacts feed or public npm — scope routing makes
    accidental public publishes impossible), `commitlint.config.mjs`, a husky
    `commit-msg` hook, `azure-pipelines.yml`, and the curated root scripts.
-4. Installs `husky` + `@commitlint/*` for real, so versions resolve at
-   generation time.
+4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
+   real, so versions resolve at generation time.
+
+## Stack: two choices asked up front
+
+`mnci2 new` (run bare, or with flags) asks two questions — the linter and the
+test runner. Each is stored where every later `mnci2 add` honours it, so the
+whole workspace stays one stack:
+
+| Question       | Options            | Default | Stored as / honoured via |
+| -------------- | ------------------ | ------- | ------------------------ |
+| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + `.oxlintrc.json` + the `oxlint` root script |
+| `--test-runner`| `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
+
+TypeScript is fixed at the **TS 6** `create-nx-workspace` pins: TS 7 (the
+native-compiler rewrite) is not compatible with Nx 23 yet — it removes the
+`ts.readConfigFile` API Nx's TS-solution plugin depends on, so `nx g` fails
+under it. The choice can return once Nx supports the new compiler.
+
+- **Linter**: ESLint is a per-project Nx target; oxlint is a single
+  workspace-wide binary. Either way `npm run lint` (and the CI) is
+  linter-agnostic, so nothing downstream branches. Under oxlint a publishable
+  package's private-lib import needs no dependency-check override (that rule is
+  ESLint-only), so none is written.
+- **Test runner**: passed straight to the `@nx/*` generators; the function app
+  gets a matching `jest.config.mjs` (+ ts-jest) or `vitest.config.ts`.
 
 ## Layout convention = release scoping
 

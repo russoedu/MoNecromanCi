@@ -6,7 +6,7 @@ jest.mock('../nx', () => ({
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
@@ -247,6 +247,41 @@ describe('runAdd', () => {
 
     expect(mockPromptText).not.toHaveBeenCalledWith('npm scope for the published package', expect.anything())
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
+  })
+
+  it('honors an oxlint workspace: --linter=none and no per-lib eslint config', async () => {
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'none', unitTestRunner: 'jest' } } }))
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][0] === 'g')
+    expect(generatorCall?.[0]).toContain('--linter=none')
+    // The dependency-check override is ESLint-specific, so oxlint writes none.
+    expect(existsSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'))).toBe(false)
+  })
+
+  it('passes the vitest runner from nx.json to the react generator', async () => {
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'eslint', unitTestRunner: 'vitest' } } }))
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web' }))
+
+    await runAdd('react-app', 'web', {})
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nx/react:app')
+    expect(generatorCall?.[0]).toContain('--unitTestRunner=vitest')
+  })
+
+  it('wires the function app to vitest when the workspace chose it', async () => {
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'eslint', unitTestRunner: 'vitest' } } }))
+
+    await runAdd('function-app', 'api', {})
+
+    // vitest (not jest/ts-jest) is installed, and the config + target follow.
+    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', 'vitest', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
+    expect(existsSync(join(workspaceRoot, 'apps/api/vitest.config.ts'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, 'apps/api/jest.config.mjs'))).toBe(false)
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { options: { command: string } }> }
+    expect(project.targets.test.options.command).toBe('vitest run --passWithNoTests')
   })
 
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {
