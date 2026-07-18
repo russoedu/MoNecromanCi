@@ -16,9 +16,13 @@
 import { execSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+
+// js-yaml is CommonJS; load it through require so native ESM interop can't trip.
+const yaml = createRequire(import.meta.url)('js-yaml')
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.resolve(SCRIPT_DIR, '..', 'dist', 'cli.js')
@@ -89,6 +93,19 @@ enforce('curated root scripts stamped (build/affected/prepare)',
 
 const pipelineYaml = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
 enforce('pipeline is cross-platform: no multi-line shell blocks, no bash-isms', !pipelineYaml.includes('script: |') && !pipelineYaml.includes('shopt'))
+enforce('pipeline stamps the CLI agent and variable group', pipelineYaml.includes('vmImage: ubuntu-latest') && pipelineYaml.includes('- group: Build'))
+enforce('pipeline packs apps to a drop and tags per app (type-name)',
+  pipelineYaml.includes('nx run-many -t package')
+  && pipelineYaml.includes('ArtifactName: drop')
+  && pipelineYaml.includes('##vso[build.addbuildtag]')
+  && pipelineYaml.includes(`path.basename(f,'.zip')`))
+enforce('pipeline authenticates npm via the PAT env, not npmAuthenticate', pipelineYaml.includes('PAT: $(PAT)') && !pipelineYaml.includes('npmAuthenticate'))
+let pipelineParsed = null
+try {
+  pipelineParsed = yaml.load(pipelineYaml)
+} catch { /* leaves pipelineParsed null → the check below fails with the parse error surfaced above */ }
+enforce('azure-pipelines.yml is valid YAML (steps + pool + variables)',
+  Boolean(pipelineParsed) && Array.isArray(pipelineParsed.steps) && Boolean(pipelineParsed.pool) && Array.isArray(pipelineParsed.variables))
 
 /* ---------------------------------------------------------------------------
  * add — one of each kind
@@ -151,6 +168,14 @@ enforce(
   'see log above',
 )
 
+/* ---------------------------------------------------------------------------
+ * Packing: each app zips into dist/drop/<type>-<name>.zip — the CI 'drop', and
+ * the exact string CI turns into the per-app build tag.
+ * ------------------------------------------------------------------------- */
+
+enforce('nx run-many -t package succeeds', tryRun('npx nx run-many -t package', workspace), 'see log above')
+enforce('react app packs into the drop (react-app-web.zip)', existsSync(path.join(workspace, 'dist/drop/react-app-web.zip')))
+
 if (functionAppGenerated) {
   // The rewired function app bundles to ONE self-contained deployable folder
   // (the plugin's executors are bypassed — their shared prepare-build breaks
@@ -176,6 +201,8 @@ if (functionAppGenerated) {
   const functionAppProject = JSON.parse(readFileSync(path.join(workspace, 'apps/api/project.json'), 'utf8'))
   enforce('function app has a test target', Boolean(functionAppProject.targets?.test))
   enforce('function app test target runs green (sample spec passes)', tryRun('npx nx test api', workspace), 'see log above')
+  enforce('function app has a package target', Boolean(functionAppProject.targets?.package))
+  enforce('function app packs into the drop (function-app-api.zip)', existsSync(path.join(workspace, 'dist/drop/function-app-api.zip')))
 }
 
 /* ---------------------------------------------------------------------------

@@ -65,6 +65,26 @@ describe('runAdd', () => {
     expect(mockRunNx.mock.calls[0][0][0]).toBe('g')
   })
 
+  it('gives a react app a package target zipping apps/<name>/dist into the drop', async () => {
+    // The generator is mocked, so pre-create the manifest it would have written.
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true }))
+
+    await runAdd('react-app', 'web', {})
+
+    // adm-zip is the packager the target runs.
+    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
+
+    // React apps are inference-only (no project.json): the target is attached
+    // through the manifest's `nx` field, and preserves the existing manifest.
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')) as { name: string, nx: { targets: Record<string, { executor: string, dependsOn: string[], outputs: string[], options: { command: string } }> } }
+    expect(manifest.name).toBe('@demo/web')
+    const package_ = manifest.nx.targets.package
+    expect(package_).toMatchObject({ executor: 'nx:run-commands', dependsOn: ['build'], outputs: ['{workspaceRoot}/dist/drop/react-app-web.zip'] })
+    expect(package_.options.command).toContain(`addLocalFolder('apps/web/dist')`)
+    expect(package_.options.command).toContain(`writeZip('dist/drop/react-app-web.zip')`)
+  })
+
   it('generates a function app: core-tools preflight, plain install, init with --directory, then new', async () => {
     await runAdd('function-app', 'api', {})
 
@@ -75,9 +95,10 @@ describe('runAdd', () => {
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['g', '@nxazure/func:init', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template="HTTP trigger"'], workspaceRoot)
     // One install materialises the repaired app's @azure/functions dependency,
-    // the esbuild toolchain its build target needs, AND the jest toolchain its
-    // test target runs (a hand-rewired app carries no plugin jest setup).
-    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', 'jest', 'ts-jest', '@types/jest', '--no-audit', '--no-fund'], workspaceRoot)
+    // the esbuild toolchain its build target needs, the jest toolchain its test
+    // target runs, AND adm-zip for its package target (a hand-rewired app
+    // carries none of this from a plugin generator).
+    expect(mockRunShell).toHaveBeenNthCalledWith(3, 'npm', ['install', '--save-dev', '@nx/esbuild', 'esbuild', 'jest', 'ts-jest', '@types/jest', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
   })
 
   it('repairs the function app into an esbuild single-file bundle: manifest, targets, entry, tsconfig', async () => {
@@ -117,6 +138,11 @@ describe('runAdd', () => {
     // A hand-rewired app gets no jest from a plugin generator, so wire it here:
     // a self-contained jest run reading the app's own config.
     expect(project.targets.test).toMatchObject({ executor: 'nx:run-commands', options: { command: 'jest', cwd: 'apps/api' } })
+    // The package target zips the bundle folder into the drop under the exact
+    // name CI turns into a build tag.
+    expect(project.targets.package).toMatchObject({ executor: 'nx:run-commands', dependsOn: ['build'], outputs: ['{workspaceRoot}/dist/drop/function-app-api.zip'] })
+    expect(project.targets.package.options.command).toContain(`addLocalFolder('dist/function-apps/api')`)
+    expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/function-app-api.zip')`)
 
     const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown>, exclude: string[] }
     // The TS-solution base is declaration-only; esbuild reads this tsconfig.

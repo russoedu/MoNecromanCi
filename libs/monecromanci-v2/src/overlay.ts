@@ -41,8 +41,16 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  * Scope-to-registry routing is what guarantees packages never land on the
  * public npm registry by accident: every publishable package is named under
  * `scope`, and the scoped registry line routes all of them to the configured
- * feed. The `${NODE_AUTH_TOKEN}` placeholder stays literal on disk — Azure's
- * `npmAuthenticate@0` task (or a local `NODE_AUTH_TOKEN` env var) fills it in.
+ * feed.
+ *
+ * Azure Artifacts is authenticated with the **base64-encoded PAT** the feed's
+ * "Connect to feed → npm" instructions produce — the classic `_password`
+ * block, one pair for the `/npm/registry/` path (install) and one for the feed
+ * root (publish). The PAT *value* never lands in the file: `${PAT}` stays
+ * literal on disk and is expanded at runtime — in CI from the `Build` variable
+ * group's `PAT`, locally from an exported `PAT=<base64 token>`. (No
+ * `npmAuthenticate@0` task: it would overwrite this hand-set password.) Public
+ * npm keeps the raw `_authToken` an automation token uses.
  *
  * @param registry - The monorepo's resolved registry configuration.
  * @param scope - The npm scope (e.g. `@demo`) the scoped registry applies to.
@@ -52,7 +60,6 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  */
 export function npmrcContent (registry: RegistryConfig, scope: string): string {
   const scopeName = scope.replace(/^@/, '')
-  const url = registryUrl(registry)
   const lines = [
     'registry=https://registry.npmjs.org/',
     '; Community Nx plugins (e.g. the Azure Functions one) peer on the previous',
@@ -60,9 +67,21 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
     'legacy-peer-deps=true',
   ]
 
-  if (url) {
-    const host = url.replace(/^https:\/\//, '')
-    lines.push(`@${scopeName}:registry=${url}`, `//${host}:_authToken=\${NODE_AUTH_TOKEN}`)
+  if (registry.kind === 'azure-artifacts') {
+    const base = `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}`
+    const registryHost = `${base}/npm/registry/`.replace(/^https:\/\//, '')
+    const feedHost = `${base}/`.replace(/^https:\/\//, '')
+    lines.push(
+      `@${scopeName}:registry=${base}/npm/registry/`,
+      '; Azure Artifacts auth — the base64 PAT is expanded at runtime from the',
+      '; PAT env var (CI: your PAT variable group; locally: export PAT=<base64 token>).',
+      `//${registryHost}:username=${registry.organization}`,
+      `//${registryHost}:_password=\${PAT}`,
+      `//${registryHost}:email=npm@example.com`,
+      `//${feedHost}:username=${registry.organization}`,
+      `//${feedHost}:_password=\${PAT}`,
+      `//${feedHost}:email=npm@example.com`,
+    )
   } else {
     lines.push(`//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}`)
   }
@@ -168,46 +187,65 @@ export const ROOT_SCRIPTS = {
 } as const
 
 /**
+ * Renders the `pool:` block body for a chosen build agent.
+ *
+ * @remarks
+ * One CLI value drives it: Microsoft-hosted images start `ubuntu-`/`windows-`/
+ * `macos-` (`ubuntu-latest`, `windows-2022`, `macos-13`, …) → `vmImage`;
+ * anything else is treated as a self-hosted pool name → `name`. Either way the
+ * pipeline's steps are OS-agnostic, so it runs unchanged on the chosen agent.
+ *
+ * @param agent - The vmImage or self-hosted pool name.
+ * @returns The two-space-indented `pool:` child line.
+ * @throws Never - pure string mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function poolBlock (agent: string): string {
+  return /^(ubuntu|windows|macos)-/i.test(agent) ? `  vmImage: ${agent}` : `  name: ${agent}`
+}
+
+/**
  * Builds the generated workspace's whole CI: one short Azure Pipelines file.
  *
  * @remarks
- * The pipeline must run unchanged on ANY agent OS (Linux, macOS, Windows), so
- * it contains no bash and no PowerShell: every step is either a built-in
- * Azure task or a single-line `git`/`npm`/`npx`/`node` command that both
- * `cmd.exe` and `sh` execute identically. The two places that used to need
- * shell logic are portable one-liners instead: `node -e` guards the release
- * when `packages/*` is still empty, and function-app packaging is a plain
- * artifact publish because the esbuild build already emits self-contained
- * deployable folders under `dist/function-apps/`.
+ * Runs unchanged on ANY agent OS (Linux, macOS, Windows): no bash, no
+ * PowerShell — every step is a built-in task or a single-line
+ * `git`/`npm`/`npx`/`node` command `cmd.exe` and `sh` execute identically.
  *
- * Carries over v1's hard-won Azure lessons:
- * - `checkout: self` leaves the agent on a detached HEAD; re-attach with
- *   `git checkout -B $(Build.SourceBranchName)` before anything else, or
+ * On `main` (non-PR) the pipeline: **packs every app** into `dist/drop/` as one
+ * zip per app named `<type>-<name>.zip` (each app owns an `nx` `package`
+ * target — {@link runAdd}), publishes `dist/drop` as the **`drop`** artifact,
+ * emits one **build tag per app** (`##vso[build.addbuildtag]<type>-<name>`,
+ * derived from the zip filenames so it is *exactly* the zip name — the classic
+ * release/CD pipeline keys off it), then `nx release`s: **publish packages +
+ * tag main** (versions from conventional commits, tag-only push).
+ *
+ * npm auth is the base64 PAT from the `variableGroup` (default `Build`): the
+ * group exposes `$(PAT)`, mapped as env on the npm steps and read by the root
+ * `.npmrc`'s `_password` block. No `npmAuthenticate@0` (it would overwrite
+ * that password).
+ *
+ * Hard-won Azure lessons carried over:
+ * - `checkout: self` detaches HEAD; re-attach with `git checkout -B` first or
  *   `nx release` cannot push tags.
- * - Fetch every ref and tag up front: affected detection needs the base
- *   branch, version resolution needs the release tags.
+ * - Fetch all refs + tags up front (version resolution needs the tags).
  * - A git identity is required to create annotated tags on CI.
- * - The release step needs two one-time grants only a project admin can make:
- *   the **Project Collection Build Service** account needs *Contribute* on
- *   the repository (tag push), and the *Contributor* role on the Artifacts
- *   feed (publish).
+ * - One-time grants (project admin): *Project Collection Build Service* needs
+ *   *Contribute* on the repo (tag push); the PAT's owner needs feed *publish*.
  *
- * Everything else — affected computation, versioning, tagging, publishing —
- * is Nx's own (`nx affected`, `nx release`), not a custom engine.
- *
- * @param None - this function takes no parameters.
+ * @param agent - The build agent (vmImage or self-hosted pool name).
+ * @param variableGroup - The Library variable group holding the base64 `PAT`.
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function azurePipelinesYaml (): string {
-  const onMainOnly = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
+export function azurePipelinesYaml (agent: string, variableGroup: string): string {
+  const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
-# Generated by MoNecromanCI v2. The pipeline is deliberately thin: Nx computes
-# what is affected, and 'nx release' versions from conventional commits,
-# pushes ONLY a tag to main (never a commit), and publishes to the registry
-# configured in .npmrc.
+# Generated by MoNecromanCI v2. Deliberately thin: Nx builds, 'nx release'
+# versions from conventional commits and pushes ONLY a tag to main, and each
+# app is packed into dist/drop/<type>-<name>.zip by its own 'package' target.
 #
 # Cross-platform by construction: no bash, no PowerShell. Every step is a
 # built-in task or a single-line git/npm/npx/node command, so the pipeline
@@ -222,7 +260,12 @@ pr:
     include: [main]
 
 pool:
-  vmImage: ubuntu-latest
+${poolBlock(agent)}
+
+variables:
+  # Holds the base64-encoded npm PAT as \`PAT\` (the root .npmrc reads it as
+  # \${PAT}). Mark PAT secret in Library. Add app build vars here too if needed.
+  - group: ${variableGroup}
 
 steps:
   - checkout: self
@@ -236,7 +279,7 @@ steps:
   - script: git checkout -B $(Build.SourceBranchName)
     displayName: Attach HEAD to the source branch
 
-  # Affected detection needs the base branch; version resolution needs tags.
+  # Version resolution needs the release tags.
   - script: git fetch --all --prune --tags
     displayName: Fetch branches and release tags
 
@@ -249,51 +292,41 @@ steps:
 
   - script: npm ci
     displayName: Install dependencies
+    env:
+      PAT: $(PAT)
 
-  # Affected detection: against the PR target branch, or the previous commit
-  # on a push to main. Two condition-gated steps instead of shell if/else.
-  - script: npx nx affected -t lint,test,build --base=origin/$(System.PullRequest.TargetBranchName) --head=HEAD
-    displayName: Lint, test and build affected projects (PR)
-    condition: and(succeeded(), eq(variables['Build.Reason'], 'PullRequest'))
+  # One verify for every run (PR and main). Nx cache makes unchanged projects
+  # instant, so a plain run-many stays simple and fast.
+  - script: npx nx run-many -t lint,test,build
+    displayName: Lint, test and build everything
 
-  - script: npx nx affected -t lint,test,build --base=HEAD~1 --head=HEAD
-    displayName: Lint, test and build affected projects
-    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
-
-  # Deployables must all exist for packaging, affected or not; unchanged
-  # projects are instant Nx cache hits.
-  - script: npx nx run-many -t build
-    displayName: Build all deployables
-    condition: ${onMainOnly}
-
-  # Each function app's build emits a self-contained folder (main.cjs +
-  # host.json + package.json) under dist/function-apps/ — packaging is a
-  # plain publish. The portable mkdir keeps the step green (empty artifact)
-  # while the workspace has no function apps yet.
-  - script: node -e "require('node:fs').mkdirSync('dist/function-apps', {recursive:true})"
-    displayName: Ensure the function-apps folder exists
-    condition: ${onMainOnly}
+  # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
+  # target. Portable guard: skip cleanly when the workspace has no apps yet.
+  - script: node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});if(fs.globSync('apps/*/project.json').length===0){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"
+    displayName: Pack all apps (one zip per app -> dist/drop)
+    condition: ${onMain}
 
   - task: PublishBuildArtifacts@1
-    displayName: Publish function app packages
-    condition: ${onMainOnly}
+    displayName: Publish the drop (one zip per app)
+    condition: ${onMain}
     inputs:
-      PathtoPublish: $(Build.SourcesDirectory)/dist/function-apps
-      ArtifactName: function-apps
+      PathtoPublish: $(Build.SourcesDirectory)/dist/drop
+      ArtifactName: drop
 
-  - task: npmAuthenticate@0
-    displayName: Authenticate npm registry
-    condition: ${onMainOnly}
-    inputs:
-      workingFile: .npmrc
+  # One build tag per packed app, EXACTLY the zip name (type-name), so the
+  # classic release pipeline knows which app to run for. Derived from the zip
+  # filenames so the tag can never drift from the artifact.
+  - script: node -e "const fs=require('node:fs');const path=require('node:path');for(const f of fs.globSync('dist/drop/*.zip')){console.log('##vso[build.addbuildtag]'+path.basename(f,'.zip'))}"
+    displayName: Tag the run per app (type-name)
+    condition: ${onMain}
 
-  # Portable guard: nx release errors when packages/* matches no projects, so
-  # skip cleanly while the workspace has no publishable packages yet.
+  # Publish packages + tag main. Portable guard: nx release errors when
+  # packages/* matches no projects, so skip cleanly while there are none.
   - script: node -e "if(require('node:fs').globSync('packages/*/package.json').length===0){console.log('No packages to release - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx release --yes',{stdio:'inherit',shell:true}).status ?? 1)"
-    displayName: Release (version from commits, tag-only, publish)
-    condition: ${onMainOnly}
+    displayName: Publish packages and tag main
+    condition: ${onMain}
     env:
-      NODE_AUTH_TOKEN: $(NODE_AUTH_TOKEN)
+      PAT: $(PAT)
 `
 }
 
@@ -307,9 +340,13 @@ steps:
  */
 export interface OverlayOptions {
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope:    string
+  scope:         string
   /** Where publishable packages are released to. */
-  registry: RegistryConfig
+  registry:      RegistryConfig
+  /** The CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
+  agent:         string
+  /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
+  variableGroup: string
 }
 
 /**
@@ -324,7 +361,7 @@ export interface OverlayOptions {
  * resolve at generation time instead of being pinned here.
  *
  * @param workspaceRoot - Absolute path to the generated workspace.
- * @param options - The scope and registry chosen for this workspace.
+ * @param options - The scope, registry, CI agent and variable group chosen.
  * @returns Nothing.
  * @throws Propagates any Node.js `fs` error raised while reading or writing.
  * @typeParam None - this function has no generic type parameters.
@@ -347,5 +384,5 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
-  writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml())
+  writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml(options.agent, options.variableGroup))
 }

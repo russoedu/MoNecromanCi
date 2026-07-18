@@ -26,6 +26,10 @@ export interface NewOptions {
   project?:       string
   /** Azure Artifacts feed name (azure-artifacts only). */
   artifactsFeed?: string
+  /** CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
+  agent?:         string
+  /** Library variable group holding the base64 npm `PAT`. */
+  variableGroup?: string
 }
 
 /**
@@ -71,6 +75,8 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const workspaceName = name ?? await promptText('Workspace name')
   const scope = options.scope ?? (options.yes ? `@${workspaceName}` : await promptText('npm scope for publishable packages', `@${workspaceName}`))
   const registry = await resolveRegistry(options)
+  const agent = options.agent ?? (options.yes ? 'ubuntu-latest' : await promptText('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest'))
+  const variableGroup = options.variableGroup ?? (options.yes ? 'Build' : await promptText('Azure DevOps variable group holding the npm PAT', 'Build'))
 
   logger.step(`Creating Nx workspace '${workspaceName}' (preset: ts)`)
   runNpx([
@@ -86,7 +92,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const workspaceRoot = join(process.cwd(), workspaceName)
 
   logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline)')
-  applyOverlay(workspaceRoot, { scope, registry })
+  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup })
 
   logger.step('Installing conventional-commit toolchain (husky + commitlint)')
   const installStatus = runShell('npm', ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)

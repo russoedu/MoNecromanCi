@@ -46,9 +46,11 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.0.1",
     "eslint": "^10.6.0",
     "jest": "^30.4.2",
+    "js-yaml": "^5.2.1",
     "ts-jest": "^29.4.11",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3"

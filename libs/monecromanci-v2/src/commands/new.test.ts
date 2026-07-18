@@ -38,9 +38,20 @@ describe('runNew', () => {
       '--no-interactive',
     ], '/somewhere')
     expect(mockApplyOverlay).toHaveBeenCalledWith(join('/somewhere', 'demo'), {
-      scope:    '@demo',
-      registry: { kind: 'npm' },
+      scope:         '@demo',
+      registry:      { kind: 'npm' },
+      agent:         'ubuntu-latest',
+      variableGroup: 'Build',
     })
+  })
+
+  it('passes an explicit agent and variable group through to the overlay', async () => {
+    await runNew('demo', { yes: true, agent: 'MyPool', variableGroup: 'CiSecrets' })
+
+    expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      agent:         'MyPool',
+      variableGroup: 'CiSecrets',
+    }))
   })
 
   it('installs husky and commitlint for real inside the new workspace', async () => {
@@ -57,20 +68,28 @@ describe('runNew', () => {
     await runNew('demo', { yes: true, scope: '@acme', organization: 'org', project: 'proj', artifactsFeed: 'feed' })
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), {
-      scope:    '@acme',
-      registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      scope:         '@acme',
+      registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      agent:         'ubuntu-latest',
+      variableGroup: 'Build',
     })
     expect(mockPromptRegistry).not.toHaveBeenCalled()
     expect(mockPromptText).not.toHaveBeenCalled()
   })
 
-  it('prompts for name, scope and registry when nothing is provided', async () => {
-    mockPromptText.mockResolvedValueOnce('shop').mockResolvedValueOnce('@shop')
+  it('prompts for name, scope, registry, agent and variable group when nothing is provided', async () => {
+    mockPromptText
+      .mockResolvedValueOnce('shop') // workspace name
+      .mockResolvedValueOnce('@shop') // scope
+      .mockResolvedValueOnce('ubuntu-latest') // agent
+      .mockResolvedValueOnce('Build') // variable group
     mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
 
     await runNew(undefined, {})
 
     expect(mockPromptText).toHaveBeenCalledWith('Workspace name')
+    expect(mockPromptText).toHaveBeenCalledWith('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest')
+    expect(mockPromptText).toHaveBeenCalledWith('Azure DevOps variable group holding the npm PAT', 'Build')
     expect(mockPromptRegistry).toHaveBeenCalled()
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })

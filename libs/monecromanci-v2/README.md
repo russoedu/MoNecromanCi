@@ -104,24 +104,36 @@ autocomplete a lib you just added (you would have to run `npx nx sync` by
 hand). A brand-new package may still need one VSCode window reload to be
 picked up by the TypeScript server.
 
-## CI (Azure DevOps only, ~100 lines, any agent OS)
+## CI (Azure DevOps only, any agent OS)
 
 The pipeline contains **no bash and no PowerShell**: every step is a built-in
 Azure task or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
-and `sh` execute identically, so it runs unchanged on Linux, macOS and
-Windows agents. The two places that would normally need shell logic are
-portable instead: a `node -e` one-liner guards the release while `packages/*`
-is still empty, and function-app packaging is a plain artifact publish of
-`dist/function-apps/` (the esbuild build already emits self-contained
-deployable folders).
+and `sh` execute identically, so it runs unchanged on Linux, macOS and Windows
+agents. The build agent is your choice at `mnci2 new` (`--agent`, default
+`ubuntu-latest`): a Microsoft-hosted image (`ubuntu-`/`windows-`/`macos-…`)
+becomes `pool.vmImage`, anything else a self-hosted `pool.name`.
 
-PRs run `nx affected -t lint,test,build` against the target branch. Pushes to
-`main` additionally build all deployables, publish `dist/function-apps/` as
-the `function-apps` artifact, and run `nx release --yes`: version bump from
-commit messages → tag pushed → publish. Two one-time grants are required
-(project admin): **Contribute** on the repo for the *Project Collection Build
-Service* account (tag push), and the **Contributor** role on the Artifacts
-feed (publish).
+Every run (PR and main) does one `nx run-many -t lint,test,build`. Pushes to
+`main` then:
+
+- **Pack all apps** — each app's `package` target zips its build output into
+  `dist/drop/<type>-<name>.zip` (e.g. `function-app-api.zip`,
+  `react-app-web.zip`); the whole `dist/drop` is published as the **`drop`**
+  artifact.
+- **Tag the run per app** — one build tag per zip, **exactly** `<type>-<name>`
+  (derived from the zip filenames, so the tag can never drift from the
+  artifact). A classic release/CD pipeline keys its trigger off these.
+- **Publish packages + tag main** — `npx nx release --yes`: version bump from
+  conventional commits → git tag pushed to `main` (tag-only, never a commit) →
+  publish to the feed.
+
+**npm auth** is the base64 PAT from a **variable group** (`--variable-group`,
+default `Build`): the group exposes `$(PAT)`, mapped as `env` on the npm steps
+and read by the root `.npmrc`'s `_password` block — the PAT value never lands
+in a file. Mark `PAT` secret in Library. No `npmAuthenticate@0` task (it would
+overwrite the hand-set password). Two one-time grants are required (project
+admin): **Contribute** on the repo for the *Project Collection Build Service*
+account (tag push), and **publish** rights on the feed for the PAT's owner.
 
 ## Known gaps (accepted for the experiment)
 
@@ -131,7 +143,8 @@ feed (publish).
   shell out to the `func` CLI even at generation time. The CLI preflights
   this and tells you what to install.
 - Function-app *deployment* (e.g. `AzureFunctionApp@2`) is not wired into the
-  pipeline; the published `function-apps` build artifact is the deploy input.
+  pipeline; the `function-app-<name>.zip` inside the published `drop` artifact
+  is the deploy input.
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
 
@@ -160,7 +173,8 @@ the official `@nx/esbuild` executor instead:
   `nx test <name>` passes out of the box.
 - The manifest gets a real name (the generator leaves it empty, corrupting
   npm workspaces), `private: true`, and `@azure/functions` as a dependency.
+- `package` = zip the bundle folder into `dist/drop/function-app-<name>.zip`
+  (adm-zip, cross-platform) — the CI `drop` artifact, ready for
+  `AzureFunctionApp@2` or any zip deploy.
 - **Convention**: `src/main.ts` is the bundle entry — add one import per
   function file you create under `src/functions/`, or it won't be bundled.
-- CI publishes `dist/function-apps/` as the `function-apps` build artifact —
-  each subfolder is ready for `AzureFunctionApp@2` or any zip/folder deploy.
