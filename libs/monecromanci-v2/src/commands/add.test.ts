@@ -65,7 +65,7 @@ describe('runAdd', () => {
     expect(mockRunNx.mock.calls[0][0][0]).toBe('g')
   })
 
-  it('gives a react app a package target zipping apps/<name>/dist into the drop', async () => {
+  it('builds a react app per environment (dev/uat/prod), each into its own drop zip', async () => {
     // The generator is mocked, so pre-create the manifest it would have written.
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true }))
@@ -75,14 +75,31 @@ describe('runAdd', () => {
     // adm-zip is the packager the target runs.
     expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
 
-    // React apps are inference-only (no project.json): the target is attached
-    // through the manifest's `nx` field, and preserves the existing manifest.
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')) as { name: string, nx: { targets: Record<string, { executor: string, dependsOn: string[], outputs: string[], options: { command: string } }> } }
+    // A .env.<env> is scaffolded per environment (public VITE_ config).
+    for (const environment of ['dev', 'uat', 'prod']) {
+      expect(readFileSync(join(workspaceRoot, `apps/web/.env.${environment}`), 'utf8')).toContain(`VITE_ENVIRONMENT=${environment}`)
+    }
+
+    // React apps are inference-only (no project.json): targets are attached via
+    // the manifest's `nx` field, preserving the existing manifest.
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')) as { name: string, nx: { targets: Record<string, { executor: string, dependsOn?: string[], outputs: string[], options: { command: string, cwd?: string } }> } }
     expect(manifest.name).toBe('@demo/web')
-    const package_ = manifest.nx.targets.package
-    expect(package_).toMatchObject({ executor: 'nx:run-commands', dependsOn: ['build'], outputs: ['{workspaceRoot}/dist/drop/react-app-web.zip'] })
-    expect(package_.options.command).toContain(`addLocalFolder('apps/web/dist')`)
-    expect(package_.options.command).toContain(`writeZip('dist/drop/react-app-web.zip')`)
+    const targets = manifest.nx.targets
+
+    // One build target per environment: vite build --mode <env> --outDir dist-<env>.
+    for (const environment of ['dev', 'uat', 'prod']) {
+      expect(targets[`build-${environment}`]).toMatchObject({ executor: 'nx:run-commands', options: { command: `vite build --mode ${environment} --outDir dist-${environment}`, cwd: 'apps/web' } })
+    }
+
+    // The package target depends on the three env builds and emits one zip per
+    // environment — the exact names CI turns into per-env build tags.
+    expect(targets.package.dependsOn).toEqual(['build-dev', 'build-uat', 'build-prod'])
+    expect(targets.package.outputs).toEqual([
+      '{workspaceRoot}/dist/drop/react-app-web-dev.zip',
+      '{workspaceRoot}/dist/drop/react-app-web-uat.zip',
+      '{workspaceRoot}/dist/drop/react-app-web-prod.zip',
+    ])
+    expect(targets.package.options.command).toContain(`writeZip('dist/drop/react-app-web-uat.zip')`)
   })
 
   it('generates a function app: core-tools preflight, plain install, init with --directory, then new', async () => {

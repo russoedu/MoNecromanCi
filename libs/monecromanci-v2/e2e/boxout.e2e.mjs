@@ -174,7 +174,10 @@ enforce(
  * ------------------------------------------------------------------------- */
 
 enforce('nx run-many -t package succeeds', tryRun('npx nx run-many -t package', workspace), 'see log above')
-enforce('react app packs into the drop (react-app-web.zip)', existsSync(path.join(workspace, 'dist/drop/react-app-web.zip')))
+enforce('react app builds per environment into the drop (dev/uat/prod zips)',
+  ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(workspace, `dist/drop/react-app-web-${environment}.zip`))))
+enforce('react app scaffolds a committed .env per environment',
+  ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(workspace, `apps/web/.env.${environment}`))))
 
 if (functionAppGenerated) {
   // The rewired function app bundles to ONE self-contained deployable folder
@@ -224,6 +227,9 @@ enforce('sdk publishable manifest never mentions the private lib', !Object.hasOw
  * ------------------------------------------------------------------------- */
 
 run('git init -q -b main && git add -A', workspace)
+// The committed .env files must survive `git add -A` (allowEnvFiles un-ignores
+// them even if the preset's .gitignore ignores .env*).
+enforce('react .env.dev is tracked (not gitignored)', tryRun('git ls-files --error-unmatch apps/web/.env.dev', workspace))
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial workspace"', workspace)
 enforce(
   'nx release version --dry-run computes versions from conventional commits',
@@ -252,7 +258,8 @@ run(`node ${CLI} add react-app web`, altWorkspace)
 enforce('alt: npm-lib gets no per-lib eslint config under oxlint', !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs')))
 enforce('alt: npm run lint (oxlint) runs green', tryRun('npm run lint', altWorkspace), 'see log above')
 enforce('alt: test + build (vitest) runs green', tryRun('npx nx run-many -t test,build', altWorkspace), 'see log above')
-enforce('alt: apps still pack into the drop', tryRun('npx nx run-many -t package', altWorkspace) && existsSync(path.join(altWorkspace, 'dist/drop/react-app-web.zip')))
+enforce('alt: apps still pack per environment into the drop', tryRun('npx nx run-many -t package', altWorkspace)
+&& ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`))))
 
 /* ---------------------------------------------------------------------------
  * Report

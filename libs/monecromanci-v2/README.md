@@ -202,3 +202,25 @@ the official `@nx/esbuild` executor instead:
   `AzureFunctionApp@2` or any zip deploy.
 - **Convention**: `src/main.ts` is the bundle entry — add one import per
   function file you create under `src/functions/`, or it won't be bundled.
+
+## How React apps work (one build per environment)
+
+A React SPA bakes its config in at **build time** (`import.meta.env.VITE_*`),
+so it needs a separate build per environment. `add react-app` wires that up
+with Vite's own **modes**:
+
+- Scaffolds `.env.dev`, `.env.uat`, `.env.prod` — put each environment's public
+  `VITE_*` config there (these values ship in the browser bundle, so they are
+  public by definition; real secrets never belong here). The files are
+  committed (an allow-rule keeps them out of `.gitignore`).
+- Adds `build-dev` / `build-uat` / `build-prod` targets, each
+  `vite build --mode <env> --outDir dist-<env>`, so every environment gets its
+  own compiled-in config. The default inferred `build` (single build) stays for
+  local dev and the CI verify step.
+- `package` builds all three and zips each into
+  `dist/drop/react-app-<name>-<env>.zip` — **one artifact per environment**.
+
+CI needs no change: the per-app tag step derives one build tag per zip, so you
+get `react-app-<name>-dev` / `-uat` / `-prod`, and the classic release pipeline
+deploys each environment from its own artifact + tag. Need different
+environments? Edit `REACT_ENVIRONMENTS` in the generator.
