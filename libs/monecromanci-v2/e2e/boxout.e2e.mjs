@@ -107,6 +107,18 @@ try {
 enforce('azure-pipelines.yml is valid YAML (steps + pool + variables)',
   Boolean(pipelineParsed) && Array.isArray(pipelineParsed.steps) && Boolean(pipelineParsed.pool) && Array.isArray(pipelineParsed.variables))
 
+// Dual TypeScript compiler: `tsc` runs TS7 (native), while the importable API
+// (node_modules/typescript) stays TS6 for Nx's graph/plugins, Vite and eslint.
+let tscVersion = ''
+try {
+  tscVersion = execSync('node_modules/.bin/tsc --version', { cwd: workspace, encoding: 'utf8' })
+} catch {
+  // Leaves tscVersion empty → the check below fails and surfaces the problem.
+}
+enforce('dual compiler: `tsc` runs TypeScript 7 (native)', tscVersion.includes('Version 7'))
+const tsApiManifest = JSON.parse(readFileSync(path.join(workspace, 'node_modules/typescript/package.json'), 'utf8'))
+enforce('dual compiler: the importable TypeScript API stays TS6 (Nx graph/Vite/eslint)', String(tsApiManifest.version).startsWith('6'))
+
 /* ---------------------------------------------------------------------------
  * add — one of each kind
  * ------------------------------------------------------------------------- */

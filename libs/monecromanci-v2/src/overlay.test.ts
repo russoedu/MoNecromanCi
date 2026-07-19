@@ -263,13 +263,28 @@ describe('applyOverlay', () => {
     expect(mode & 0o111).not.toBe(0)
   })
 
+  it('stamps the dual TypeScript compiler into devDependencies (TS6 API + TS7 tsc)', () => {
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', devDependencies: { typescript: '~6.0.3', nx: '23.0.0' } }))
+
+    overlayWith(DEFAULT_STACK)
+
+    const devDependencies = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }).devDependencies
+    // typescript is aliased to the TS6 package (API intact; its bin is tsc6, not tsc)…
+    expect(devDependencies.typescript).toBe('npm:@typescript/typescript6@^6.0.2')
+    // …and @typescript/native provides the TS7 `tsc`.
+    expect(devDependencies['@typescript/native']).toBe('npm:typescript@^7.0.2')
+    // Unrelated devDeps are preserved.
+    expect(devDependencies.nx).toBe('23.0.0')
+  })
+
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
     applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as Record<string, unknown>
     expect(manifest.name).toBe('@demo/source')
     expect(manifest.private).toBe(true)
-    expect(manifest.devDependencies).toEqual({ nx: '23.0.0' })
+    // Existing devDeps preserved (the dual TS compiler is added on top).
+    expect(manifest.devDependencies).toMatchObject({ nx: '23.0.0' })
   })
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {

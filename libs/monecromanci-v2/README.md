@@ -78,10 +78,15 @@ whole workspace stays one stack:
 | `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + `.oxlintrc.json` + the `oxlint` root script |
 | `--test-runner`| `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
-TypeScript is fixed at the **TS 6** `create-nx-workspace` pins: TS 7 (the
-native-compiler rewrite) is not compatible with Nx 23 yet — it removes the
-`ts.readConfigFile` API Nx's TS-solution plugin depends on, so `nx g` fails
-under it. The choice can return once Nx supports the new compiler.
+TypeScript is not a question — every workspace runs the **dual compiler** from
+[Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
+`typescript` resolves to a TS 6 package (keeping the programmatic API that Nx's
+graph/plugins, Vite, typescript-eslint and the editor need) while
+`@typescript/native` provides TS 7's native `tsc`. The inferred
+`typecheck`/`build` tasks then run on the **fast TS 7 compiler**, and Nx keeps
+analysing config through the TS 6 API — no target rewiring, frozen per repo by
+the lockfile. (A plain `typescript@7` install would break Nx, since TS 7 ships
+no programmatic API yet; the two aliases are what make it work.)
 
 - **Linter**: ESLint is a per-project Nx target; oxlint is a single
   workspace-wide binary. Either way `npm run lint` (and the CI) is

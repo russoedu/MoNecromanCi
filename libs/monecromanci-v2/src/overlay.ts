@@ -19,13 +19,13 @@ export type RegistryConfig
  * The stack chosen at `mnci2 new` — asked up front, honoured by every `add`.
  *
  * @remarks
- * TypeScript stays the language *and* the version: `create-nx-workspace` pins
- * TypeScript 6, and TS 7 (the native-compiler rewrite) is not compatible with
- * Nx 23 yet — it removes the `ts.readConfigFile` API Nx's TS-solution plugin
- * needs — so the two real knobs are the linter and the unit-test runner. Both
- * are persisted as Nx **generator defaults** in `nx.json` (the oxlint case also
- * writes a workspace `.oxlintrc.json` and points the root `lint` script at
- * `oxlint`).
+ * TypeScript is not a knob: every workspace runs the **dual compiler**
+ * ({@link TS_COMPILER_DEPENDENCIES}) — TypeScript 6 for the programmatic API
+ * (Nx's graph/plugins, Vite, typescript-eslint, the editor) and TypeScript 7's
+ * native `tsc` for the `typecheck`/`build` tasks. So the two real knobs are the
+ * linter and the unit-test runner, persisted as Nx **generator defaults** in
+ * `nx.json` (the oxlint case also writes a workspace `.oxlintrc.json` and
+ * points the root `lint` script at `oxlint`).
  *
  * @typeParam None - this type has no generic type parameters.
  */
@@ -45,6 +45,27 @@ export interface StackConfig {
  * stack is not chosen explicitly.
  */
 export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
+
+/**
+ * The dual TypeScript compiler stamped into every workspace's `devDependencies`.
+ *
+ * @remarks
+ * TypeScript 7 is the native (Go) compiler: much faster, but it ships no
+ * programmatic API yet, so tools that import `typescript` (Nx's
+ * `@nx/js/typescript` plugin and project graph, Vite, typescript-eslint, the
+ * editor language service) still need TypeScript 6. The
+ * [Nx TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7)
+ * solves this with two npm aliases: `typescript` resolves to a TS 6 package
+ * (API intact, and its binary is `tsc6`, not `tsc`), while `@typescript/native`
+ * provides the TS 7 `tsc`. The `@nx/js/typescript` plugin's inferred
+ * `typecheck`/`build` tasks then run `tsc` = TS 7, while Nx analyses config
+ * through the TS 6 API — automatically, with no target rewiring. Frozen per
+ * repo by the committed lockfile, so `npm ci` reproduces it.
+ */
+export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
+  '@typescript/native': 'npm:typescript@^7.0.2',
+  typescript:           'npm:@typescript/typescript6@^6.0.2',
+}
 
 /**
  * Returns the npm registry URL for a registry config.
@@ -463,12 +484,16 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,
-  // and the curated everyday scripts (each a single cross-platform command,
-  // with `lint` bound to the chosen linter).
+  // the curated everyday scripts (each a single cross-platform command, with
+  // `lint` bound to the chosen linter), and the dual TS compiler — the alias
+  // for `typescript` replaces the plain TS 6 the preset installed, and
+  // `@typescript/native` adds the TS 7 `tsc`. The caller's `npm install`
+  // materialises them.
   const manifestPath = join(workspaceRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = { ...(manifest.scripts as Record<string, string> | undefined), ...rootScripts(options.stack) }
-  writeFileEnsured(manifestPath, toJson({ ...manifest, name: `${options.scope}/source`, scripts }))
+  const devDependencies = { ...(manifest.devDependencies as Record<string, string> | undefined), ...TS_COMPILER_DEPENDENCIES }
+  writeFileEnsured(manifestPath, toJson({ ...manifest, name: `${options.scope}/source`, scripts, devDependencies }))
 
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
   writeFileEnsured(join(workspaceRoot, 'commitlint.config.mjs'), COMMITLINT_CONFIG)
