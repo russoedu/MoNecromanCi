@@ -291,6 +291,45 @@ enforce('alt: apps still pack per environment into the drop', tryRun('npx nx run
 && ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`))))
 
 /* ---------------------------------------------------------------------------
+ * Python (@nxlv/python — uv + Ruff + pytest), added to the alt workspace so the
+ * real toolchain (not just unit tests) proves the four Python kinds. uv, ruff
+ * and python3 are present in this environment, so these are all enforced.
+ * ------------------------------------------------------------------------- */
+
+console.log('\n▸ mnci2 add python-app / python-function-app / python-lib / python-internal-lib')
+run(`node ${CLI} add python-app pysvc`, altWorkspace)
+run(`node ${CLI} add python-function-app pyfunc`, altWorkspace)
+run(`node ${CLI} add python-lib pyshared`, altWorkspace)
+run(`node ${CLI} add python-internal-lib pycore`, altWorkspace)
+
+const altNxPython = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
+enforce('python: @nxlv/python plugin registered with the uv package manager',
+  (altNxPython.plugins ?? []).some((plugin) => typeof plugin === 'object' && plugin.plugin === '@nxlv/python' && plugin.options?.packageManager === 'uv'))
+const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
+const pysharedProject = existsSync(pysharedProjectPath) ? JSON.parse(readFileSync(pysharedProjectPath, 'utf8')) : {}
+enforce('python: publishable lib lives under python-packages/ with a decoupled publish target',
+  pysharedProject.targets?.publish?.executor === '@nxlv/python:publish')
+enforce('python: internal lib is a library under libs/ (never publishable)',
+  existsSync(path.join(altWorkspace, 'libs/pycore/project.json')))
+enforce('python: function app carries the Azure Functions v2 files',
+  ['function_app.py', 'host.json', 'requirements.txt'].every((file) => existsSync(path.join(altWorkspace, 'apps/pyfunc', file))))
+enforce('python: ruff lint runs green across the python projects',
+  tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
+enforce('python: pytest runs green across the python projects',
+  tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
+enforce('python: build produces a wheel for the publishable lib',
+  tryRun('npx nx build pyshared', altWorkspace)
+  && existsSync(path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')))
+enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
+  tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace)
+  && existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip'))
+  && existsSync(path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')))
+// The npm-registry pipeline must NOT carry the Python publish step (it is gated
+// to Azure Artifacts); the azure case is covered by the unit tests.
+enforce('python: npm-registry pipeline omits the Azure-only Python publish step',
+  !readFileSync(path.join(altWorkspace, 'azure-pipelines.yml'), 'utf8').includes('Publish Python packages'))
+
+/* ---------------------------------------------------------------------------
  * Report
  * ------------------------------------------------------------------------- */
 

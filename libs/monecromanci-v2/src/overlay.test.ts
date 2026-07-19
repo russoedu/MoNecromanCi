@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, npmrcContent, poolBlock, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -12,6 +12,17 @@ describe('registryUrl', () => {
 
   it('returns undefined for public npm', () => {
     expect(registryUrl({ kind: 'npm' })).toBeUndefined()
+  })
+})
+
+describe('pythonPublishUrl', () => {
+  it('derives the pypi upload URL from the same Azure Artifacts feed (multi-protocol)', () => {
+    expect(pythonPublishUrl({ kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }))
+      .toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/')
+  })
+
+  it('returns undefined for public npm (no PyPI publish wired in this cut)', () => {
+    expect(pythonPublishUrl({ kind: 'npm' })).toBeUndefined()
   })
 })
 
@@ -146,15 +157,32 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('pwsh')
   })
 
+  it('adds a guarded uv publish step (base64 PAT decoded) when a Python publish URL is given', () => {
+    const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', url)
+
+    expect(pipeline).toContain('Publish Python packages (uv)')
+    expect(pipeline).toContain('nx run-many -t publish --projects=python-packages/*')
+    expect(pipeline).toContain(`UV_PUBLISH_URL:'${url}'`)
+    // Reuses the base64 PAT from the group, decoded to the raw token uv needs.
+    expect(pipeline).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    // Guarded: skips cleanly when there are no Python packages.
+    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+  })
+
+  it('omits the Python publish step for the public-npm registry (no URL)', () => {
+    expect(azurePipelinesYaml('ubuntu-latest', 'Build')).not.toContain('Publish Python packages')
+  })
+
   it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     // `npm run lint` abstracts eslint-via-nx vs oxlint, so the pipeline never
-    // branches on the linter.
+    // branches on the linter. The run-many also carries `lint` so Nx-native
+    // lint targets `npm run lint` misses (Python's ruff) still run in CI.
     expect(pipeline).toContain('npm run lint')
-    expect(pipeline).toContain('npx nx run-many -t test,build')
+    expect(pipeline).toContain('npx nx run-many -t lint,test,build')
     expect(pipeline).not.toContain('nx affected')
-    expect(pipeline).not.toContain('run-many -t lint,test,build')
   })
 
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {

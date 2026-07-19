@@ -33,10 +33,16 @@ mnci2 new my-repo            # create a monorepo (prompts scope + registry)
 mnci2 new my-repo --yes --registry npm --scope @my
 
 cd my-repo
-mnci2 add react-app web      # @nx/react (Vite + Jest)
-mnci2 add function-app api   # @nxazure/func (TypeScript Azure Functions)
-mnci2 add npm-lib sdk        # @nx/js publishable lib -> packages/
-mnci2 add internal-lib utils # @nx/js private lib -> libs/
+mnci2 add react-app web         # @nx/react (Vite + Jest)
+mnci2 add function-app api      # @nxazure/func (TypeScript Azure Functions)
+mnci2 add npm-lib sdk           # @nx/js publishable lib -> packages/
+mnci2 add internal-lib utils    # @nx/js private lib -> libs/
+
+# Python (via @nxlv/python — uv + Ruff + pytest)
+mnci2 add python-app svc            # uv app -> apps/ (wheel, zipped into the drop)
+mnci2 add python-function-app fn    # Azure Functions (Python v2) -> apps/
+mnci2 add python-lib shared         # publishable -> python-packages/ (uv publish)
+mnci2 add python-internal-lib core  # private shared lib -> libs/
 ```
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
@@ -111,14 +117,17 @@ no programmatic API yet; the two aliases are what make it work.)
 
 ## Layout convention = release scoping
 
-| Directory    | Contents                                    | Released?                    |
-| ------------ | ------------------------------------------- | ---------------------------- |
-| `apps/`      | React apps, Azure Function apps             | Never                        |
-| `packages/`  | Publishable npm libraries (rollup-bundled)  | Yes — `nx release`, per-package tags |
-| `libs/`      | Internal libraries (buildable, `private`)   | Never                        |
+| Directory          | Contents                                          | Released?                    |
+| ------------------ | ------------------------------------------------- | ---------------------------- |
+| `apps/`            | React / Azure Function / Python apps              | Never (packed into the drop) |
+| `packages/`        | Publishable npm libraries (rollup-bundled)        | Yes — `nx release`, per-package tags |
+| `python-packages/` | Publishable Python packages (uv/hatch wheels)     | Yes — `uv publish` (Azure Artifacts) |
+| `libs/`            | Internal libraries (TS or Python), never published | Never                        |
 
-No custom tags, no stamp file — the directory and the npm `private` flag are
-the whole model.
+No custom tags, no stamp file — the directory (and, for npm, the `private` flag)
+are the whole model. Publishable Python packages get their own
+`python-packages/` dir so the npm `nx release` (`packages/*`) is never entangled
+with Python publishing.
 
 ## Published packages CAN depend on internal libraries
 
@@ -168,6 +177,10 @@ Every run (PR and main) does one `nx run-many -t lint,test,build`. Pushes to
 - **Publish packages + tag main** — `npx nx release --yes`: version bump from
   conventional commits → git tag pushed to `main` (tag-only, never a commit) →
   publish to the feed.
+- **Publish Python packages** (Azure Artifacts only) — a guarded
+  `nx run-many -t publish --projects=python-packages/*` (`uv publish`), skipped
+  when there are none. Reuses the base64 `PAT`, decoded to the raw token uv
+  needs.
 
 **npm auth** is the base64 PAT from a **variable group** (`--variable-group`,
 default `Build`): the group exposes `$(PAT)`, mapped as `env` on the npm steps
@@ -242,3 +255,36 @@ CI needs no change: the per-app tag step derives one build tag per zip, so you
 get `react-app-<name>-dev` / `-uat` / `-prod`, and the classic release pipeline
 deploys each environment from its own artifact + tag. Need different
 environments? Edit `REACT_ENVIRONMENTS` in the generator.
+
+## Python (uv + Ruff + pytest via `@nxlv/python`)
+
+Python is the first non-JS language, and follows the same philosophy: the
+**industry-standard toolchain**, no per-project boilerplate. On the first
+`add python-*` mnci2 installs [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
+and registers it in `nx.json` with **uv** as the package manager (the
+`--preset=ts` repo has no `uv.lock` to auto-detect, so it is set explicitly).
+There is **no stack question** — Ruff (lint + format) and pytest are the
+standard, so they are always used (`--linter=ruff --unitTestRunner=pytest`,
+`hatch` build backend → wheel).
+
+| Kind | Location | Build / deploy |
+| ---- | -------- | -------------- |
+| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel, zipped into `dist/drop/python-app-<name>.zip` |
+| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); the **source** is zipped into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
+| `python-lib` | `python-packages/<name>` | publishable wheel; a `publish` target (`uv publish`) |
+| `python-internal-lib` | `libs/<name>` | private shared code, bundled into consumers' wheels |
+
+- **Apps** get a `package` target that fits the existing CI unchanged — they
+  own a `project.json`, so the pipeline's `apps/*` pack step tags them
+  `python-app-<name>` / `python-function-app-<name>` just like the TS apps.
+- **Publishing** reuses the registry: an Azure Artifacts feed is
+  **multi-protocol**, so the same org/project/feed serves Python. A guarded,
+  main-only CI step runs `nx run-many -t publish --projects=python-packages/*`
+  with `UV_PUBLISH_URL` + credentials from env. Auth reuses the base64 `PAT`
+  variable, base64-decoded to the raw token uv/pypi need — no second secret.
+  (Public-npm workspaces don't wire Python publishing; that would be a PyPI
+  token. Conventional-commit auto-versioning of Python packages is a follow-up —
+  this cut publishes the `pyproject.toml` version.)
+- **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
+  target runs alongside the JS build even on the oxlint stack (whose
+  `npm run lint` only covers JS).

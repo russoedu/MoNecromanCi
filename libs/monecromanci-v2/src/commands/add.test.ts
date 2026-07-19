@@ -23,6 +23,9 @@ let workspaceRoot: string
 
 beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-add-'))
+  // clearMocks resets call history but not implementations, so restore the
+  // default (every shell command succeeds) in case a prior test overrode it.
+  mockRunShell.mockImplementation(() => 0)
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
@@ -328,5 +331,123 @@ describe('runAdd', () => {
     expect(mockSelect).toHaveBeenCalled()
     expect(mockPromptText).toHaveBeenCalledWith('Project name')
     expect(mockRunNx.mock.calls.at(-1)?.[0]).toContain('apps/shop')
+  })
+
+  it('adds a Python app: installs+registers @nxlv/python (uv), generates ruff+pytest, packages the wheel', async () => {
+    // The generator is mocked, so pre-create the project.json it would write.
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/svc/project.json'), JSON.stringify({ name: 'svc', sourceRoot: 'apps/svc/svc', targets: { build: {} } }))
+
+    await runAdd('python-app', 'svc', {})
+
+    // Plugin installed and registered in nx.json with the uv package manager.
+    expect(mockRunNx).toHaveBeenCalledWith(['add', '@nxlv/python'], workspaceRoot)
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { plugins: unknown[] }
+    expect(nxJson.plugins).toContainEqual({ plugin: '@nxlv/python', options: { packageManager: 'uv' } })
+
+    // Generated with the fixed Python toolchain (no stack knob).
+    expect(mockRunNx).toHaveBeenCalledWith([
+      'g', '@nxlv/python:uv-project', 'svc',
+      '--directory=apps/svc',
+      '--projectType=application',
+      '--linter=ruff',
+      '--unitTestRunner=pytest',
+      '--buildSystem=hatch',
+      '--no-interactive',
+    ], workspaceRoot)
+
+    // adm-zip + a package target zipping the built wheel into the drop under the
+    // exact name CI turns into a build tag.
+    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/svc/project.json'), 'utf8')) as { targets: Record<string, { dependsOn?: string[], outputs: string[], options: { command: string } }> }
+    expect(project.targets.package.dependsOn).toEqual(['build'])
+    expect(project.targets.package.outputs).toEqual(['{workspaceRoot}/dist/drop/python-app-svc.zip'])
+    expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
+    expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/python-app-svc.zip')`)
+  })
+
+  it('adds a Python Azure Function: writes the v2 files + a tested helper, packages the source zip', async () => {
+    mkdirSync(join(workspaceRoot, 'apps/api/api'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'apps/api/tests'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/api/project.json'), JSON.stringify({ name: 'api', sourceRoot: 'apps/api/api', targets: {} }))
+
+    await runAdd('python-function-app', 'api', {})
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nxlv/python:uv-project')
+    expect(generatorCall?.[0]).toContain('--directory=apps/api')
+    expect(generatorCall?.[0]).toContain('--projectType=application')
+
+    // Azure Functions v2 programming model, importing the tested module helper.
+    const functionApp = readFileSync(join(workspaceRoot, 'apps/api/function_app.py'), 'utf8')
+    expect(functionApp).toContain('func.FunctionApp(')
+    expect(functionApp).toContain('from api.greeting import build_greeting')
+    expect(readFileSync(join(workspaceRoot, 'apps/api/host.json'), 'utf8')).toContain('extensionBundle')
+    expect(readFileSync(join(workspaceRoot, 'apps/api/requirements.txt'), 'utf8')).toContain('azure-functions')
+    // A pure, dependency-free helper + test so pytest is green out of the box.
+    expect(readFileSync(join(workspaceRoot, 'apps/api/api/greeting.py'), 'utf8')).toContain('def build_greeting')
+    expect(readFileSync(join(workspaceRoot, 'apps/api/tests/test_greeting.py'), 'utf8')).toContain('from api.greeting import build_greeting')
+
+    // The deployable is source (not the wheel): package zips those files.
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { outputs: string[], options: { command: string } }> }
+    expect(project.targets.package.outputs).toEqual(['{workspaceRoot}/dist/drop/python-function-app-api.zip'])
+    expect(project.targets.package.options.command).toContain(`addLocalFile('apps/api/function_app.py')`)
+    expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/api/api','api')`)
+    expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/python-function-app-api.zip')`)
+  })
+
+  it('adds a publishable Python lib under python-packages/ with a decoupled publish target', async () => {
+    mkdirSync(join(workspaceRoot, 'python-packages/shared'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), JSON.stringify({ name: 'shared', sourceRoot: 'python-packages/shared/shared', targets: {} }))
+
+    await runAdd('python-lib', 'shared', {})
+
+    expect(mockRunNx).toHaveBeenCalledWith([
+      'g', '@nxlv/python:uv-project', 'shared',
+      '--directory=python-packages/shared',
+      '--projectType=library',
+      '--publishable',
+      '--linter=ruff',
+      '--unitTestRunner=pytest',
+      '--buildSystem=hatch',
+      '--no-interactive',
+    ], workspaceRoot)
+
+    // A dedicated publish target (uv publish), decoupled from the npm nx release.
+    const project = JSON.parse(readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: Record<string, unknown> }> }
+    expect(project.targets.publish).toMatchObject({ executor: '@nxlv/python:publish', options: { buildTarget: 'build' } })
+  })
+
+  it('adds a private Python lib under libs/ — a library, never publishable', async () => {
+    await runAdd('python-internal-lib', 'core', {})
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nxlv/python:uv-project')
+    expect(generatorCall?.[0]).toEqual([
+      'g', '@nxlv/python:uv-project', 'core',
+      '--directory=libs/core',
+      '--projectType=library',
+      '--linter=ruff',
+      '--unitTestRunner=pytest',
+      '--buildSystem=hatch',
+      '--no-interactive',
+    ])
+    expect(generatorCall?.[0]).not.toContain('--publishable')
+  })
+
+  it('fails fast when uv is not installed', async () => {
+    mockRunShell.mockImplementation((command: string) => (command === 'uv' ? 1 : 0))
+
+    await expect(runAdd('python-app', 'svc', {})).rejects.toThrow('uv not found')
+    expect(mockRunNx).not.toHaveBeenCalled()
+  })
+
+  it('does not reinstall or duplicate the @nxlv/python plugin when already set up', async () => {
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: { '@nxlv/python': '^22.0.0' } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ plugins: [{ plugin: '@nxlv/python', options: { packageManager: 'uv' } }] }))
+
+    await runAdd('python-internal-lib', 'core', {})
+
+    expect(mockRunNx).not.toHaveBeenCalledWith(['add', '@nxlv/python'], workspaceRoot)
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { plugins: unknown[] }
+    expect(nxJson.plugins).toHaveLength(1)
   })
 })
