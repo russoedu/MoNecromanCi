@@ -174,13 +174,13 @@ Every run (PR and main) does one `nx run-many -t lint,test,build`. Pushes to
 - **Tag the run per app** — one build tag per zip, **exactly** `<type>-<name>`
   (derived from the zip filenames, so the tag can never drift from the
   artifact). A classic release/CD pipeline keys its trigger off these.
-- **Publish packages + tag main** — `npx nx release --yes`: version bump from
-  conventional commits → git tag pushed to `main` (tag-only, never a commit) →
-  publish to the feed.
-- **Publish Python packages** (Azure Artifacts only) — a guarded
-  `nx run-many -t publish --projects=python-packages/*` (`uv publish`), skipped
-  when there are none. Reuses the base64 `PAT`, decoded to the raw token uv
-  needs.
+- **Release — version, tag and publish** — one `npx nx release --yes` for both
+  npm (`packages/*`) and Python (`python-packages/*`): version bump from
+  conventional commits → `{projectName}@{version}` git tag pushed to `main`
+  (tag-only, never a commit) → publish to the feed (npm via `.npmrc`, Python via
+  `uv` when an Azure feed is configured). Reuses the base64 `PAT`, decoded to the
+  raw token uv needs for the Python publish. Skipped cleanly when there is
+  nothing to release.
 
 **npm auth** is the base64 PAT from a **variable group** (`--variable-group`,
 default `Build`): the group exposes `$(PAT)`, mapped as `env` on the npm steps
@@ -277,14 +277,17 @@ standard, so they are always used (`--linter=ruff --unitTestRunner=pytest`,
 - **Apps** get a `package` target that fits the existing CI unchanged — they
   own a `project.json`, so the pipeline's `apps/*` pack step tags them
   `python-app-<name>` / `python-function-app-<name>` just like the TS apps.
-- **Publishing** reuses the registry: an Azure Artifacts feed is
-  **multi-protocol**, so the same org/project/feed serves Python. A guarded,
-  main-only CI step runs `nx run-many -t publish --projects=python-packages/*`
-  with `UV_PUBLISH_URL` + credentials from env. Auth reuses the base64 `PAT`
-  variable, base64-decoded to the raw token uv/pypi need — no second secret.
-  (Public-npm workspaces don't wire Python publishing; that would be a PyPI
-  token. Conventional-commit auto-versioning of Python packages is a follow-up —
-  this cut publishes the `pyproject.toml` version.)
+- **Release** is unified with npm: `nx release` scopes both `packages/*` and
+  `python-packages/*`, so a Python package is **versioned from conventional
+  commits and tagged** `{projectName}@{version}` exactly like an npm one — its
+  `pyproject.toml` version bumps, tag-only (never a commit). Each project's own
+  `versionActions` (the `@nxlv/python` one the plugin stamps) reads/writes the
+  right manifest. **Publishing** reuses the registry: an Azure Artifacts feed is
+  **multi-protocol**, so the same org/project/feed serves Python — the release
+  step exports `UV_PUBLISH_*` (URL + the base64 `PAT` decoded to the raw token
+  uv needs, no second secret) and `nx release` publishes the wheels with `uv`.
+  (On a public-npm workspace a Python package is still versioned + tagged, but
+  publishing it needs user-provided `UV_PUBLISH_*` — e.g. a PyPI token.)
 - **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
   target runs alongside the JS build even on the oxlint stack (whose
   `npm run lint` only covers JS).

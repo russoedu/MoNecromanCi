@@ -160,13 +160,17 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * which is exactly what users run for dry-runs. `push: true` pushes the tag
  * (and only the tag — there is no commit to push).
  *
- * Only `packages/*` is released: publishable npm libraries live there by
- * convention, while internal libraries live in `libs/` and apps in `apps/`,
- * so release scoping needs no custom tags at all.
+ * Two directories are released: `packages/*` (publishable **npm** libraries)
+ * and `python-packages/*` (publishable **Python** packages). Both get the same
+ * conventional-commit versioning and `{projectName}@{version}` tag; each
+ * project's own `versionActions` (npm's default, or the `@nxlv/python` one the
+ * plugin stamps into a Python `project.json`) reads/writes the right manifest
+ * (`package.json` vs `pyproject.toml`). Internal libraries live in `libs/` and
+ * apps in `apps/`, so release scoping still needs no custom tags.
  */
 export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
-  projects:             ['packages/*'],
+  projects:             ['packages/*', 'python-packages/*'],
   releaseTag:           { pattern: '{projectName}@{version}' },
   version:              {
     conventionalCommits:            true,
@@ -176,8 +180,9 @@ export const RELEASE_CONFIG = {
     // defaults the pre-version command to building EVERY project, so a broken
     // (or merely slow) app build would block releasing unrelated packages.
     // Set here at `new` time it wins: the generator only fills this in when
-    // absent (it spreads the existing release.version over its default).
-    preVersionCommand:              'npx nx run-many -t build --projects=packages/*',
+    // absent (it spreads the existing release.version over its default). Both
+    // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
+    preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
   },
   changelog: { workspaceChangelog: false },
 } as const
@@ -432,35 +437,29 @@ export function poolBlock (agent: string): string {
  * - One-time grants (project admin): *Project Collection Build Service* needs
  *   *Contribute* on the repo (tag push); the PAT's owner needs feed *publish*.
  *
- * When `pythonPublishUrl` is set (Azure Artifacts — {@link pythonPublishUrl}),
- * a final guarded step publishes any `python-packages/*` with `uv` via each
- * package's `publish` target. It reuses the same base64 `PAT`, base64-decoding
- * it to the raw token uv/pypi basic-auth needs (no second secret), and skips
- * cleanly when there are no Python packages. Left out for the public-npm
- * registry (no PyPI token wired in this cut).
+ * `nx release` versions BOTH `packages/*` (npm) and `python-packages/*`
+ * (Python) from conventional commits and tags each — one unified release. When
+ * `pythonPublishUrl` is set (Azure Artifacts — {@link pythonPublishUrl}), the
+ * release step also exports `UV_PUBLISH_*` so `nx release` publishes the Python
+ * packages with `uv`, reusing the base64 `PAT` decoded to the raw token
+ * uv/pypi basic-auth needs (no second secret; Azure accepts any username). For
+ * the public-npm registry that env is omitted, so a Python package there is
+ * still versioned + tagged but its publish needs user-provided `UV_PUBLISH_*`.
  *
  * @param agent - The build agent (vmImage or self-hosted pool name).
  * @param variableGroup - The Library variable group holding the base64 `PAT`.
  * @param pythonPublishUrl - The uv publish URL for Python packages, or
- * `undefined` to omit the Python-publish step (public npm).
+ * `undefined` to leave Python publishing unconfigured (public npm).
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
 export function azurePipelinesYaml (agent: string, variableGroup: string, pythonPublishUrl?: string): string {
   const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
-  const pythonPublishStep = pythonPublishUrl
-    ? `
-
-  # Publish Python packages (uv) via each package's 'publish' target. Portable
-  # guard: skip cleanly when python-packages/* is empty. Auth reuses the base64
-  # PAT from the variable group; uv/pypi need the RAW token, so it is decoded
-  # here — no second secret to manage. Azure Artifacts accepts any username.
-  - script: node -e "const fs=require('node:fs'),cp=require('node:child_process');if(fs.globSync('python-packages/*/pyproject.toml').length===0){console.log('No Python packages to publish - skipping.');process.exit(0)}const password=Buffer.from(process.env.PAT,'base64').toString();const env={...process.env,UV_PUBLISH_URL:'${pythonPublishUrl}',UV_PUBLISH_USERNAME:'AzureArtifacts',UV_PUBLISH_PASSWORD:password};process.exit(cp.spawnSync('npx nx run-many -t publish --projects=python-packages/*',{stdio:'inherit',shell:true,env}).status ?? 1)"
-    displayName: Publish Python packages (uv)
-    condition: ${onMain}
-    env:
-      PAT: $(PAT)`
+  // Injected into the release step's node -e: when there are Python packages and
+  // an Azure feed, export uv publish credentials (raw PAT decoded from base64).
+  const pythonPublishEnv = pythonPublishUrl
+    ? `if(hasPython){env.UV_PUBLISH_URL='${pythonPublishUrl}';env.UV_PUBLISH_USERNAME='AzureArtifacts';env.UV_PUBLISH_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
     : ''
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -547,13 +546,16 @@ steps:
     displayName: Tag the run per app (type-name)
     condition: ${onMain}
 
-  # Publish packages + tag main. Portable guard: nx release errors when
-  # packages/* matches no projects, so skip cleanly while there are none.
-  - script: node -e "if(require('node:fs').globSync('packages/*/package.json').length===0){console.log('No packages to release - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx release --yes',{stdio:'inherit',shell:true}).status ?? 1)"
-    displayName: Publish packages and tag main
+  # Version + tag + publish, in one release, for npm (packages/*) AND Python
+  # (python-packages/*) — conventional commits, tag-only push. Portable guard:
+  # nx release errors on an empty scope, so skip cleanly when there is nothing
+  # to release. When there are Python packages and an Azure feed, uv publish
+  # credentials are exported (raw PAT, decoded from the base64 variable).
+  - script: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
+    displayName: Release — version, tag and publish (npm + Python)
     condition: ${onMain}
     env:
-      PAT: $(PAT)${pythonPublishStep}
+      PAT: $(PAT)
 `
 }
 

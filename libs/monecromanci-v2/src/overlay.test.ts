@@ -61,7 +61,8 @@ describe('withReleaseConfig', () => {
     expect(patched.defaultBase).toBe('main')
     expect(patched.release).toMatchObject({
       projectsRelationship: 'independent',
-      projects:             ['packages/*'],
+      // Both publishable dirs: npm (packages/*) and Python (python-packages/*).
+      projects:             ['packages/*', 'python-packages/*'],
       releaseTag:           { pattern: '{projectName}@{version}' },
       version:              {
         conventionalCommits:            true,
@@ -70,8 +71,9 @@ describe('withReleaseConfig', () => {
         // Lives under version.git — Nx rejects a top-level release.git for the
         // `nx release version` subcommand (the dry-run every user runs).
         git:                            { commit: false, tag: true, push: true },
-        // Releasing packages must not require building apps.
-        preVersionCommand:              'npx nx run-many -t build --projects=packages/*',
+        // Releasing packages must not require building apps; both globs listed
+        // (nx run-many no-ops on an empty one).
+        preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
       },
       changelog: { workspaceChangelog: false },
     })
@@ -157,21 +159,28 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('pwsh')
   })
 
-  it('adds a guarded uv publish step (base64 PAT decoded) when a Python publish URL is given', () => {
+  it('folds uv publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', url)
 
-    expect(pipeline).toContain('Publish Python packages (uv)')
-    expect(pipeline).toContain('nx run-many -t publish --projects=python-packages/*')
-    expect(pipeline).toContain(`UV_PUBLISH_URL:'${url}'`)
+    // One unified release step (npm + Python), not a separate publish step.
+    expect(pipeline).toContain('Release — version, tag and publish (npm + Python)')
+    expect(pipeline).not.toContain('nx run-many -t publish')
+    // The release step exports uv publish creds when there are Python packages.
+    expect(pipeline).toContain(`UV_PUBLISH_URL='${url}'`)
     // Reuses the base64 PAT from the group, decoded to the raw token uv needs.
     expect(pipeline).toContain(`Buffer.from(process.env.PAT,'base64')`)
-    // Guarded: skips cleanly when there are no Python packages.
+    // Guarded on either publishable dir.
     expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
   })
 
-  it('omits the Python publish step for the public-npm registry (no URL)', () => {
-    expect(azurePipelinesYaml('ubuntu-latest', 'Build')).not.toContain('Publish Python packages')
+  it('still versions/tags Python on public npm, but exports no uv publish creds', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+    // Python packages are always in the release scope (versioning + tags)…
+    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    // …but without an Azure feed the release step sets no UV_PUBLISH_* env.
+    expect(pipeline).not.toContain('UV_PUBLISH_URL')
   })
 
   it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {

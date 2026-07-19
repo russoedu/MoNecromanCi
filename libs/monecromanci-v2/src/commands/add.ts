@@ -288,12 +288,12 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     }
     case 'python-lib': {
       preparePython(workspaceRoot)
-      // Publishable → python-packages/ (a dir the npm `nx release` never globs,
-      // so its proven flow is untouched). --publishable adds the plugin's
-      // release hook; we also add a plain `publish` target so CI can publish
-      // Python independently with `nx run-many -t publish` + uv env auth.
+      // Publishable → python-packages/. --publishable makes the plugin stamp the
+      // project's `nx-release-publish` hook (uv publish) AND its
+      // `release.version.versionActions` (conventional-commit versioning of
+      // pyproject.toml), so the shared `nx release` (which now scopes
+      // python-packages/*) versions, tags and publishes it — no extra target.
       runUvProject(workspaceRoot, { name: resolvedName, directory: `python-packages/${resolvedName}`, projectType: 'library', publishable: true })
-      addProjectJsonTargets(join(workspaceRoot, 'python-packages', resolvedName, 'project.json'), { publish: pythonPublishTarget() })
       break
     }
     case 'python-internal-lib': {
@@ -1103,25 +1103,6 @@ function pythonFunctionAppPackageTarget (name: string, moduleDirectory: string):
     outputs:  [`{workspaceRoot}/${zip}`],
     options:  { command },
   }
-}
-
-/**
- * The `publish` target added to a publishable Python package.
- *
- * @remarks
- * A thin `@nxlv/python:publish` (which runs `uv publish` after `build`), kept
- * separate from the plugin's `nx-release-publish` hook so CI can publish Python
- * with a plain `nx run-many -t publish` — decoupled from the npm `nx release`.
- * The upload URL and credentials come from `UV_PUBLISH_*` env in CI (the
- * executor's `repository` option does not set the uv publish URL), so no
- * registry coordinates are baked into the target.
- *
- * @returns The publish target object.
- * @throws Never - pure object construction.
- * @typeParam None - this function has no generic type parameters.
- */
-function pythonPublishTarget (): Record<string, unknown> {
-  return { executor: '@nxlv/python:publish', outputs: [], options: { buildTarget: 'build' } }
 }
 
 /**

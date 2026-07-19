@@ -43,6 +43,20 @@ function tryRun (command, cwd) {
   }
 }
 
+/** Runs a command capturing combined output; returns an ok/output record. */
+function tryRunCapture (command, cwd) {
+  console.log(`\n$ ${command}   (cwd: ${cwd})`)
+  try {
+    const output = execSync(command, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' } })
+    console.log(output)
+    return { ok: true, output }
+  } catch (error) {
+    const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
+    console.log(output)
+    return { ok: false, output }
+  }
+}
+
 const results = { enforced: [], pending: [] }
 
 /** Records an ENFORCED expectation, which fails the run when false. */
@@ -75,7 +89,7 @@ const nxJson = JSON.parse(readFileSync(path.join(workspace, 'nx.json'), 'utf8'))
 const release = nxJson.release ?? {}
 enforce('release: conventional commits + independent versioning', release.version?.conventionalCommits === true && release.projectsRelationship === 'independent')
 enforce('release: tag-only git (version.git commit: false, tag: true)', release.version?.git?.commit === false && release.version?.git?.tag === true)
-enforce('release scoped to packages/*', JSON.stringify(release.projects) === '["packages/*"]')
+enforce('release scoped to the publishable dirs (npm + python)', JSON.stringify(release.projects) === '["packages/*","python-packages/*"]')
 
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
 enforce('commitlint config written', existsSync(path.join(workspace, 'commitlint.config.mjs')))
@@ -307,8 +321,9 @@ enforce('python: @nxlv/python plugin registered with the uv package manager',
   (altNxPython.plugins ?? []).some((plugin) => typeof plugin === 'object' && plugin.plugin === '@nxlv/python' && plugin.options?.packageManager === 'uv'))
 const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
 const pysharedProject = existsSync(pysharedProjectPath) ? JSON.parse(readFileSync(pysharedProjectPath, 'utf8')) : {}
-enforce('python: publishable lib lives under python-packages/ with a decoupled publish target',
-  pysharedProject.targets?.publish?.executor === '@nxlv/python:publish')
+enforce('python: publishable lib lives under python-packages/ with the plugin release hooks',
+  pysharedProject.targets?.['nx-release-publish']?.executor === '@nxlv/python:publish'
+  && typeof pysharedProject.release?.version?.versionActions === 'string')
 enforce('python: internal lib is a library under libs/ (never publishable)',
   existsSync(path.join(altWorkspace, 'libs/pycore/project.json')))
 enforce('python: function app carries the Azure Functions v2 files',
@@ -324,10 +339,15 @@ enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing
   tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace)
   && existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip'))
   && existsSync(path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')))
-// The npm-registry pipeline must NOT carry the Python publish step (it is gated
-// to Azure Artifacts); the azure case is covered by the unit tests.
-enforce('python: npm-registry pipeline omits the Azure-only Python publish step',
-  !readFileSync(path.join(altWorkspace, 'azure-pipelines.yml'), 'utf8').includes('Publish Python packages'))
+// Conventional-commit versioning reaches Python: `nx release` scopes
+// python-packages/*, so a dry-run tags the publishable Python lib from git
+// history (same mechanism as the npm packages). Needs a committed git repo.
+run('git init -q -b main && git add -A', altWorkspace)
+run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"', altWorkspace)
+const altReleaseDryRun = tryRunCapture('npx nx release version --dry-run --verbose', altWorkspace)
+enforce('python: nx release versions the publishable python lib from conventional commits',
+  altReleaseDryRun.ok && /shared[^\n]*new version/i.test(altReleaseDryRun.output) && altReleaseDryRun.output.includes('pyproject.toml'),
+  altReleaseDryRun.output)
 
 /* ---------------------------------------------------------------------------
  * Report

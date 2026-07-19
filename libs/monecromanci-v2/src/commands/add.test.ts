@@ -395,12 +395,11 @@ describe('runAdd', () => {
     expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/python-function-app-api.zip')`)
   })
 
-  it('adds a publishable Python lib under python-packages/ with a decoupled publish target', async () => {
-    mkdirSync(join(workspaceRoot, 'python-packages/shared'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), JSON.stringify({ name: 'shared', sourceRoot: 'python-packages/shared/shared', targets: {} }))
-
+  it('adds a publishable Python lib under python-packages/ (release hook + versionActions come from the plugin)', async () => {
     await runAdd('python-lib', 'shared', {})
 
+    // --publishable makes the plugin stamp nx-release-publish + versionActions,
+    // so the shared `nx release` versions/tags/publishes it — no custom target.
     expect(mockRunNx).toHaveBeenCalledWith([
       'g', '@nxlv/python:uv-project', 'shared',
       '--directory=python-packages/shared',
@@ -411,10 +410,6 @@ describe('runAdd', () => {
       '--buildSystem=hatch',
       '--no-interactive',
     ], workspaceRoot)
-
-    // A dedicated publish target (uv publish), decoupled from the npm nx release.
-    const project = JSON.parse(readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: Record<string, unknown> }> }
-    expect(project.targets.publish).toMatchObject({ executor: '@nxlv/python:publish', options: { buildTarget: 'build' } })
   })
 
   it('adds a private Python lib under libs/ — a library, never publishable', async () => {
