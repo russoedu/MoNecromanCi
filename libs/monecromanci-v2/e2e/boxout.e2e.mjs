@@ -262,12 +262,18 @@ const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'
 enforce('alt: stack persisted as nx.json generator defaults (linter:none + vitest)',
   altNx.generators?.['@nx/js:library']?.linter === 'none' && altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest')
 const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
-enforce('alt: oxlint set up (.oxlintrc.json + root lint = oxlint)',
-  existsSync(path.join(altWorkspace, '.oxlintrc.json')) && altManifest.scripts?.lint === 'oxlint')
+enforce('alt: oxlint set up (oxlint.config.mts + root lint = oxlint)',
+  existsSync(path.join(altWorkspace, 'oxlint.config.mts')) && altManifest.scripts?.lint === 'oxlint')
 
 run(`node ${CLI} add npm-lib sdk`, altWorkspace)
 run(`node ${CLI} add react-app web`, altWorkspace)
 enforce('alt: npm-lib gets no per-lib eslint config under oxlint', !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs')))
+// This coding-agent sandbox injects .agents/.opencode/.github/skills into every
+// cwd; they are not part of a generated workspace, so drop them before the
+// whole-repo oxlint (a real user never has them).
+for (const injected of ['.agents', '.opencode', '.github/skills']) {
+  rmSync(path.join(altWorkspace, injected), { recursive: true, force: true })
+}
 enforce('alt: npm run lint (oxlint) runs green', tryRun('npm run lint', altWorkspace), 'see log above')
 enforce('alt: test + build (vitest) runs green', tryRun('npx nx run-many -t test,build', altWorkspace), 'see log above')
 enforce('alt: apps still pack per environment into the drop', tryRun('npx nx run-many -t package', altWorkspace)

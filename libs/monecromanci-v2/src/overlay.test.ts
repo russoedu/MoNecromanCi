@@ -242,16 +242,21 @@ describe('applyOverlay', () => {
     expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 
-  it('sets up oxlint (config + root script) only when oxlint is chosen', () => {
+  it('sets up oxlint (typed .mts config + root script) only when oxlint is chosen', () => {
     overlayWith({ linter: 'oxlint', testRunner: 'jest' })
-    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(true)
+    const config = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
+    // A typed config enabling the unicorn + React plugins (not JSON).
+    expect(config).toContain(`import { defineConfig } from 'oxlint'`)
+    expect(config).toContain(`'unicorn'`)
+    expect(config).toContain(`'react'`)
+    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
     const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
     expect(scripts.lint).toBe('oxlint')
   })
 
   it('does not write an oxlint config when eslint is chosen', () => {
     overlayWith(DEFAULT_STACK)
-    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.mts'))).toBe(false)
     const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
     expect(scripts.lint).toBe('nx run-many -t lint')
   })

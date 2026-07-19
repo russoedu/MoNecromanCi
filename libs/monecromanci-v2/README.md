@@ -75,7 +75,7 @@ whole workspace stays one stack:
 
 | Question       | Options            | Default | Stored as / honoured via |
 | -------------- | ------------------ | ------- | ------------------------ |
-| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + `.oxlintrc.json` + the `oxlint` root script |
+| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` (unicorn + React + TypeScript plugins) + the `oxlint` root script |
 | `--test-runner`| `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
