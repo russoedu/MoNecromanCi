@@ -75,7 +75,7 @@ whole workspace stays one stack:
 
 | Question       | Options            | Default | Stored as / honoured via |
 | -------------- | ------------------ | ------- | ------------------------ |
-| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` (unicorn + React + TypeScript plugins) + the `oxlint` root script |
+| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` + `oxfmt.config.mts` (both from the [oxc-standard](https://github.com/JohnDeved/ox-standard) preset) + the `oxlint` / `oxfmt` root scripts |
 | `--test-runner`| `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
@@ -93,6 +93,19 @@ no programmatic API yet; the two aliases are what make it work.)
   linter-agnostic, so nothing downstream branches. Under oxlint a publishable
   package's private-lib import needs no dependency-check override (that rule is
   ESLint-only), so none is written.
+  - The oxlint stack installs **[oxc-standard](https://github.com/JohnDeved/ox-standard)**
+    (which brings `oxlint` + `oxfmt`) and generates two `.mts` configs that use
+    its **JavaScript Standard Style** preset: `oxlint.config.mts` *extends*
+    `oxc-standard`'s rule set (unicorn + React + react-perf + TypeScript + oxc),
+    and `oxfmt.config.mts` mirrors its formatting (no semicolons, single quotes,
+    2-space, `es5` trailing commas, avoid arrow parens). That gives the full
+    Standard experience — **linting *and* formatting** — since oxlint (a linter)
+    does not enforce layout.
+  - Formatting is `npm run format` (write) and `npm run format:check` (CI-safe,
+    no writes). Nx generators emit semicolon/double-quote code, so run
+    `npm run format` once after scaffolding to normalise a new workspace to
+    Standard Style. (CI stays lint/test/build only — formatting is left as a
+    local/pre-commit step so the pipeline needs no linter-specific branch.)
 - **Test runner**: passed straight to the `@nx/*` generators; the function app
   gets a matching `jest.config.mjs` (+ ts-jest) or `vitest.config.ts`.
 

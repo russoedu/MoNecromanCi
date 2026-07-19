@@ -198,9 +198,18 @@ describe('generatorDefaults', () => {
 })
 
 describe('rootScripts', () => {
-  it('keeps nx lint for eslint, swaps to oxlint for oxlint', () => {
-    expect(rootScripts({ linter: 'eslint', testRunner: 'jest' }).lint).toBe('nx run-many -t lint')
-    expect(rootScripts({ linter: 'oxlint', testRunner: 'jest' }).lint).toBe('oxlint')
+  it('keeps nx lint (and no formatter) for eslint', () => {
+    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+    expect(scripts.lint).toBe('nx run-many -t lint')
+    expect(scripts.format).toBeUndefined()
+    expect(scripts['format:check']).toBeUndefined()
+  })
+
+  it('swaps to oxlint and adds the oxfmt format scripts for oxlint', () => {
+    const scripts = rootScripts({ linter: 'oxlint', testRunner: 'jest' })
+    expect(scripts.lint).toBe('oxlint')
+    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
+    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
   })
 })
 
@@ -242,23 +251,32 @@ describe('applyOverlay', () => {
     expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 
-  it('sets up oxlint (typed .mts config + root script) only when oxlint is chosen', () => {
+  it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {
     overlayWith({ linter: 'oxlint', testRunner: 'jest' })
-    const config = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
-    // A typed config enabling the unicorn + React plugins (not JSON).
-    expect(config).toContain(`import { defineConfig } from 'oxlint'`)
-    expect(config).toContain(`'unicorn'`)
-    expect(config).toContain(`'react'`)
+    const oxlintConfig = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
+    // A typed config extending the oxc-standard StandardJS preset (not JSON).
+    expect(oxlintConfig).toContain(`import { defineConfig } from 'oxlint'`)
+    expect(oxlintConfig).toContain(`import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }`)
+    expect(oxlintConfig).toContain('extends: [standard]')
     expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
+    // The formatter counterpart, mirroring oxc-standard's .oxfmtrc.json.
+    const oxfmtConfig = readFileSync(join(workspaceRoot, 'oxfmt.config.mts'), 'utf8')
+    expect(oxfmtConfig).toContain(`import { defineConfig } from 'oxfmt'`)
+    expect(oxfmtConfig).toContain('semi: false')
+    expect(oxfmtConfig).toContain('singleQuote: true')
     const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
     expect(scripts.lint).toBe('oxlint')
+    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
+    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
   })
 
-  it('does not write an oxlint config when eslint is chosen', () => {
+  it('does not write oxlint/oxfmt configs when eslint is chosen', () => {
     overlayWith(DEFAULT_STACK)
     expect(existsSync(join(workspaceRoot, 'oxlint.config.mts'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, 'oxfmt.config.mts'))).toBe(false)
     const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
     expect(scripts.lint).toBe('nx run-many -t lint')
+    expect(scripts.format).toBeUndefined()
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {

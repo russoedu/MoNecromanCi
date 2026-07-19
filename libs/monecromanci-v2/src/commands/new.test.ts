@@ -70,11 +70,11 @@ describe('runNew', () => {
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['husky'], workspaceRoot)
   })
 
-  it('installs oxlint alongside the commit toolchain when oxlint is chosen', async () => {
+  it('installs oxc-standard (oxlint + oxfmt preset) alongside the commit toolchain when oxlint is chosen', async () => {
     await runNew('demo', { yes: true, linter: 'oxlint', testRunner: 'vitest' })
 
     const workspaceRoot = join('/somewhere', 'demo')
-    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'oxlint', 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
+    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'oxc-standard', 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ stack: { linter: 'oxlint', testRunner: 'vitest' } }))
   })
 

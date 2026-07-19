@@ -128,11 +128,12 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
   applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, stack })
 
-  // Install the commit toolchain (and oxlint when it is the chosen linter —
-  // ESLint is set up by the Nx generators on first `add`). TypeScript stays the
-  // TS 6 the preset installed (Nx 23 does not support TS 7 yet). One install.
-  const stackDependencies = stack.linter === 'oxlint' ? ['oxlint'] : []
-  logger.step(`Installing the toolchain (${stack.linter}, commit toolchain)`)
+  // Install the commit toolchain (and, for the oxlint stack, oxc-standard —
+  // which brings oxlint + oxfmt and the JavaScript Standard Style preset the
+  // generated oxlint.config.mts / oxfmt.config.mts reference; ESLint is set up
+  // by the Nx generators on first `add`). One install.
+  const stackDependencies = stack.linter === 'oxlint' ? ['oxc-standard'] : []
+  logger.step(`Installing the toolchain (${stack.linter === 'oxlint' ? 'oxc-standard' : 'eslint'}, commit toolchain)`)
   const installStatus = runShell('npm', ['install', '--save-dev', ...stackDependencies, 'husky', '@commitlint/cli', '@commitlint/config-conventional'], workspaceRoot)
   if (installStatus !== 0) {
     throw new Error(`npm install of the toolchain failed with exit code ${installStatus}`)
