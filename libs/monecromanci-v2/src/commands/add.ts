@@ -5,7 +5,7 @@ import { promptText } from '../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
-import { addFunctionApp } from './add/functionApp'
+import { addNodeApp, addNodeFunctionApp } from './add/node'
 import { addNpmLib } from './add/npmLib'
 import { addPythonApp, addPythonFunctionApp, addPythonInternalLib, addPythonLib } from './add/python'
 import { addReactApp } from './add/reactApp'
@@ -14,7 +14,7 @@ import type { AddOptions, WorkspaceStack } from './add/shared'
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds v2 can add — deliberately just eight.
+ * The project kinds v2 can add — deliberately just nine.
  *
  * @remarks
  * Each maps to an official (or established community) Nx plugin generator;
@@ -23,17 +23,22 @@ export type { AddOptions } from './add/shared'
  * npm, released by `nx release`), `libs/` (internal, never released),
  * `python-packages/` (publishable Python, published by `uv`).
  *
- * The TS/JS kinds use the official `@nx/*` (and `@nxazure/func`) generators; the
- * Python kinds use the community-standard [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
- * with **uv + Ruff + pytest** — the industry-standard Python toolchain. Each
- * kind's generation logic lives in its own module under `add/` — see
- * `add/reactApp.ts`, `add/functionApp.ts`, `add/npmLib.ts` and
- * `add/python.ts` (internal-lib is small enough to stay inline below).
+ * The TS/JS kinds use the official `@nx/*` generators only — `node-app` and
+ * `node-function-app` are both the plain `@nx/node:application` (no
+ * third-party Azure Functions plugin; `node-function-app` is that generator
+ * plus a hand-written Azure Functions v4 file overlay). The Python kinds use
+ * the community-standard [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
+ * with **uv + Ruff + pytest** — the industry-standard Python toolchain, and
+ * follow the identical app/function-app split. Every kind builds to its own
+ * Nx-default output location — no post-generation build-output redirection.
+ * Each kind's generation logic lives in its own module under `add/` — see
+ * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
+ * (internal-lib is small enough to stay inline below).
  *
  * @typeParam None - this type has no generic type parameters.
  */
 export type ProjectKind
-  = | 'react-app' | 'function-app' | 'npm-lib' | 'internal-lib'
+  = | 'react-app' | 'node-app' | 'node-function-app' | 'npm-lib' | 'internal-lib'
     | 'python-app' | 'python-function-app' | 'python-lib' | 'python-internal-lib'
 
 /**
@@ -44,7 +49,7 @@ export type ProjectKind
  * kinds first, then the Python family.
  */
 export const PROJECT_KINDS: ProjectKind[] = [
-  'react-app', 'function-app', 'npm-lib', 'internal-lib',
+  'react-app', 'node-app', 'node-function-app', 'npm-lib', 'internal-lib',
   'python-app', 'python-function-app', 'python-lib', 'python-internal-lib',
 ]
 
@@ -97,8 +102,12 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       addReactApp(workspaceRoot, resolvedName, stack)
       break
     }
-    case 'function-app': {
-      addFunctionApp(workspaceRoot, resolvedName, options, stack.testRunner)
+    case 'node-app': {
+      addNodeApp(workspaceRoot, resolvedName, stack)
+      break
+    }
+    case 'node-function-app': {
+      addNodeFunctionApp(workspaceRoot, resolvedName, stack)
       break
     }
     case 'npm-lib': {

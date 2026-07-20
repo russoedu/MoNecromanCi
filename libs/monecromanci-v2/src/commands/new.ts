@@ -150,7 +150,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)
-  logger.info('  mnci2 add react-app web        # or: function-app, npm-lib, internal-lib,')
+  logger.info('  mnci2 add react-app web        # or: node-app, node-function-app, npm-lib, internal-lib,')
   logger.info('                                 #     python-app, python-function-app, python-lib, python-internal-lib')
   logger.info('  git add -A && git commit -m "feat: initial workspace"')
 }

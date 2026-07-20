@@ -23,7 +23,7 @@ established community) Nx equivalent:
 | `monecromanci-toolchain` shared configs          | The configs the Nx generators emit (one root ESLint/tsconfig) |
 | `.build-templates/` 6-step CI engine             | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline) |
 | `generate-dist-package.mjs` dependency injection | `nx release` updates dependent versions natively             |
-| Hand-written Azure Function templates            | `@nxazure/func` generators + executors                       |
+| Hand-written Azure Function templates            | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
 | doctor/drift sync of tool-owned files            | Nothing to drift: v2 owns 5 small files, Nx owns the rest    |
 
 ## Commands (deliberately just two)
@@ -34,7 +34,8 @@ mnci2 new my-repo --yes --registry npm --scope @my
 
 cd my-repo
 mnci2 add react-app web         # @nx/react (Vite + Jest)
-mnci2 add function-app api      # @nxazure/func (TypeScript Azure Functions)
+mnci2 add node-app svc          # @nx/node (plain Node app, esbuild)
+mnci2 add node-function-app api # @nx/node + an Azure Functions v4 overlay
 mnci2 add npm-lib sdk           # @nx/js publishable lib -> packages/
 mnci2 add internal-lib utils    # @nx/js private lib -> libs/
 
@@ -119,7 +120,7 @@ no programmatic API yet; the two aliases are what make it work.)
 
 | Directory          | Contents                                          | Released?                    |
 | ------------------ | ------------------------------------------------- | ---------------------------- |
-| `apps/`            | React / Azure Function / Python apps              | Never (packed into the drop) |
+| `apps/`            | React / Node / Python apps (plain or Azure Functions) | Never (packed into the drop) |
 | `packages/`        | Publishable npm libraries (rollup-bundled)        | Yes — `nx release`, per-package tags |
 | `python-packages/` | Publishable Python packages (uv/hatch wheels)     | Yes — `uv publish` (Azure Artifacts) |
 | `libs/`            | Internal libraries (TS or Python), never published | Never                        |
@@ -129,22 +130,10 @@ are the whole model. Publishable Python packages get their own
 `python-packages/` dir so the npm `nx release` (`packages/*`) is never entangled
 with Python publishing.
 
-### Build output: root `dist/`, with two hard exceptions
-
-Every kind builds to `dist/<projectRoot>` at the workspace root (mirroring
-Nx's own classic convention) — `dist/apps/web`, `dist/apps/api`,
-`dist/python-packages/pyshared`, and so on — **except `npm-lib` and
-`internal-lib`**, which build to their own `<projectRoot>/dist` as before.
-That's not an oversight: both are resolved as npm-workspace packages through
-`package.json`'s `exports` field, and Node hard-rejects any `exports` target
-that escapes the package's own directory
-(`ERR_INVALID_PACKAGE_TARGET` — verified empirically). `npm-lib` is doubly
-constrained: `npm pack`/`nx release publish` only ever includes files inside
-the package directory tree, so relocating its `dist` would silently publish
-an empty package. Every other kind (`react-app`, `function-app`, and all four
-Python kinds) has no such constraint — verified empirically that `uv build`
-stages from a temporary copy and the wheel's contents don't depend on where
-the output file lands — so all of them are standardized to root `dist/`.
+Every kind builds to its own Nx-default output location (`apps/<name>/dist`,
+`packages/<name>/dist`, ...) — v2 does no post-generation build-output
+rewiring for any kind. `mnci2 add` is pure delegation to the official
+generators; each one's own default is left exactly as-is.
 
 ## Published packages CAN depend on internal libraries
 
@@ -164,12 +153,21 @@ undeclared internal lib is compiled from source INTO the bundle — the private
 name never reaches the published `package.json`. Trade-off: the published
 output is a single bundle (no per-file deep imports).
 
-Function apps and React apps go the other way, and the e2e proves both
-directions for real: a `function-app`/`react-app` build has no install step at
-deploy/runtime, so it must inline **everything** — the private internal lib
-AND real npm dependencies alike — while a publishable `npm-lib`'s bundle must
-keep real npm dependencies external (declared, not bundled) for the published
-tarball to install correctly downstream.
+React apps go the other way (Vite bundles everything by default), and the e2e
+proves both directions for real: unlike the published `npm-lib`, which must
+keep real npm dependencies **external** (declared, not bundled) for the
+published tarball to install correctly downstream, a `react-app` build has no
+install step at deploy/runtime, so it inlines **everything** — the private
+internal lib AND real npm dependencies alike.
+
+Node apps (`node-app`/`node-function-app`) are a third case: `@nx/node:application`'s
+esbuild build is **non-bundled** — it transpiles each file individually and
+mirrors the workspace tree into `dist`, so nothing is ever textually inlined.
+A private internal lib is compiled by its own `tsc` build and copied into
+`dist` at its own path (resolved by a real `require` at run time, the same
+way npm workspaces resolve it during development); a real npm dependency
+stays a real `require` too, resolved from `node_modules` — present locally,
+or installed at deploy time (see "How Node apps work" below).
 
 Cross-project imports (`@scope/lib`) resolve through **TypeScript project
 references** under `--preset=ts`, and those references are maintained by
@@ -205,7 +203,7 @@ the workspace wasn't synced+committed locally — see above), then one
 `nx run-many -t lint,test,build`. Pushes to `main` then:
 
 - **Pack all apps** — each app's `package` target zips its build output into
-  `dist/drop/<type>-<name>.zip` (e.g. `function-app-api.zip`,
+  `dist/drop/<type>-<name>.zip` (e.g. `node-function-app-api.zip`,
   `react-app-web.zip`); the whole `dist/drop` is published as the **`drop`**
   artifact.
 - **Tag the run per app** — one build tag per zip, **exactly** `<type>-<name>`
@@ -244,17 +242,17 @@ assuming either convention.
 Being upfront about what mnci2 leans on, so it's a conscious trade-off rather
 than a surprise:
 
-- **Three unofficial, small-team Nx plugins carry real weight**:
-  [`@nxazure/func`](https://github.com/AlexPshul/nxazure) (all
-  Azure Function generation), [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
-  (every Python kind), and [`oxc-standard`](https://github.com/JohnDeved/ox-standard)
-  (the oxlint/oxfmt StandardJS preset) — none are `@nx`-scoped/officially
-  maintained. `@nxazure/func` already needs a hand-written workaround (see
-  below): its own `build`/`start`/`publish` executors are broken on Nx 23, so
-  `add function-app` keeps the plugin only for generation and rewires the
-  build to the official `@nx/esbuild` executor. If any of the three stalls or
-  breaks compatibility with a future Nx major, that surface needs a real
-  maintenance response, not just a version bump.
+- **Two unofficial, small-team Nx plugins carry real weight**:
+  [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
+  (every Python kind) and [`oxc-standard`](https://github.com/JohnDeved/ox-standard)
+  (the oxlint/oxfmt StandardJS preset) — neither is `@nx`-scoped/officially
+  maintained. Azure Function generation deliberately avoids a third: it uses
+  the **official** `@nx/node:application` plus a small hand-written Azure
+  Functions v4 file overlay (see "How Node apps work" below) instead of a
+  third-party Azure Functions plugin — one less unofficial dependency, and no
+  generator-level workaround needed. If either of the two remaining plugins
+  stalls or breaks compatibility with a future Nx major, that surface needs a
+  real maintenance response, not just a version bump.
 - **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
   TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
   `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
@@ -266,46 +264,58 @@ than a surprise:
 ## Known gaps (accepted for the experiment)
 
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
-- `add function-app` requires **Azure Functions Core Tools ≥4** on the PATH
-  (`npm i -g azure-functions-core-tools@4`) — `@nxazure/func`'s generators
-  shell out to the `func` CLI even at generation time. The CLI preflights
-  this and tells you what to install.
+- Azure Functions Core Tools is only needed for **local** `func start` — never
+  for `mnci2 add node-function-app`/`python-function-app` generation, since
+  neither shells out to the `func` CLI.
 - Function-app *deployment* (e.g. `AzureFunctionApp@2`) is not wired into the
-  pipeline; the `function-app-<name>.zip` inside the published `drop` artifact
-  is the deploy input.
+  pipeline; the `node-function-app-<name>.zip`/`python-function-app-<name>.zip`
+  inside the published `drop` artifact is the deploy input. Deploying it means
+  Azure's Oryx build installing real dependencies (`npm install`/`pip install`)
+  from the zipped manifest — no `node_modules`/venv is bundled.
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
 
-## How function apps work (plugin generators + esbuild single-file bundle)
+## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
-A function app is just a Node.js app packed with `package.json` + `host.json`.
-`@nxazure/func`'s **generators** work on Nx 23 and are what `add function-app`
-uses; its **executors** (`build`/`start`/`publish`) all share a broken code
-path on Nx 23 workspaces (their `prepare-build.js` mixes a relative
-`rootDir: '.'` into absolute-resolved compiler options — "Paths must either
-both be absolute or both be relative"), so v2 rewires the generated app to
-the official `@nx/esbuild` executor instead:
+`node-app` and `node-function-app` are both the **official**
+`@nx/node:application` generator (`--bundler=esbuild --framework=none`) — no
+third-party Azure Functions plugin, and no post-generation build-output
+rewiring. `node-function-app` is exactly that generator plus a hand-written
+Azure Functions v4 file overlay, the same split `python-app`/
+`python-function-app` already use:
 
-- `build` = `@nx/esbuild:esbuild` emitting ONE self-contained CJS bundle to
-  `dist/apps/<name>/main.cjs` — every dependency, `@azure/functions`
-  and private internal libs included, is compiled in. The only external is
-  `@azure/functions-core`, a virtual module the Functions host injects at run
-  time. `host.json` + `package.json` (`main: "main.cjs"`) are copied in as
-  assets, so the output folder IS the deployable — no `npm install`, ever.
-- `start` = `func start` run inside `dist/apps/<name>` (after build)
-  for local development.
-- `test` = a self-contained `jest` run (the app's own `jest.config.mjs` +
-  `tsconfig.spec.json`, ts-jest transform). The plugin-generated kinds get
-  jest from their `--unitTestRunner=jest` generator; a hand-rewired function
-  app has none, so v2 wires it — plus a dependency-free sample spec so
-  `nx test <name>` passes out of the box.
-- The manifest gets a real name (the generator leaves it empty, corrupting
-  npm workspaces), `private: true`, and `@azure/functions` as a dependency.
-- `package` = zip the bundle folder into `dist/drop/function-app-<name>.zip`
-  (adm-zip, cross-platform) — the CI `drop` artifact, ready for
-  `AzureFunctionApp@2` or any zip deploy.
-- **Convention**: `src/main.ts` is the bundle entry — add one import per
-  function file you create under `src/functions/`, or it won't be bundled.
+- `build` = the generator's own `@nx/esbuild:esbuild` target, **non-bundled**
+  (`bundle: false`): it transpiles each file individually and mirrors the
+  workspace tree into `apps/<name>/dist` (e.g.
+  `apps/<name>/dist/apps/<name>/src/main.js`), plus a `dist/main.js` shim that
+  `require`s the compiled entry — verified empirically, and the one thing that
+  makes `main.js` a stable, generator-provided deploy entry point regardless
+  of the nested path. A private internal lib is compiled by its own `tsc`
+  build and copied into `dist` at its own path; a real npm dependency stays a
+  real `require`, resolved from `node_modules`.
+- `test`/`lint` = the generator's own targets (`--unitTestRunner`/`--linter`
+  passed straight through, same as every other kind) — unlike the old
+  function app, nothing needs hand-wiring here.
+- `package` (added by `mnci2 add`, not the generator) zips `apps/<name>/dist`
+  into `dist/drop/node-app-<name>.zip` (`node-app`) — for `node-function-app`
+  it additionally zips in `host.json` and the repaired `package.json` into
+  `dist/drop/node-function-app-<name>.zip`. No `node_modules` is bundled
+  either way: for the function app, Azure's Oryx build installs real
+  dependencies from the zipped `package.json` at deploy time — the exact same
+  model `python-function-app` already relies on for `requirements.txt`
+  (verified empirically: a plain `npm install` in a simulated deploy folder,
+  with no bundled `node_modules`, resolves and runs correctly once the
+  dependency is declared).
+- **`node-function-app` overlay**: `@azure/functions` is installed for real
+  (a plain `@nx/node:application` app has no Azure dependency by default,
+  unlike a plugin-generated one), an HTTP-triggered `app.http(...)` sample
+  (v4 programming model) is written under `src/functions/`, `host.json` is
+  added, and the manifest is repaired — `main: 'main.js'` (the dist shim) and
+  `@azure/functions` added to `dependencies` for Azure's deploy-time install
+  to find.
+- **Convention** (both kinds): `src/main.ts` is the esbuild entry — add one
+  import per function file you create under `src/functions/`, or it won't be
+  reachable (and thus won't be transpiled into `dist`).
 
 ## How React apps work (one build per environment)
 
@@ -318,11 +328,9 @@ with Vite's own **modes**:
   public by definition; real secrets never belong here). The files are
   committed (an allow-rule keeps them out of `.gitignore`).
 - Adds `build-dev` / `build-uat` / `build-prod` targets, each
-  `vite build --mode <env> --outDir <root>/dist/apps/<name>-<env>`, so every
-  environment gets its own compiled-in config, built (like every other kind)
-  under the workspace-root `dist/`. The default inferred `build` (single
-  build, redirected to `dist/apps/<name>` via a post-generation edit of
-  `vite.config.mts`) stays for local dev and the CI verify step.
+  `vite build --mode <env> --outDir dist-<env>`, so every environment gets its
+  own compiled-in config. The default inferred `build` (single build) stays
+  for local dev and the CI verify step.
 - `package` builds all three and zips each into
   `dist/drop/react-app-<name>-<env>.zip` — **one artifact per environment**.
 
@@ -344,10 +352,10 @@ standard, so they are always used (`--linter=ruff --unitTestRunner=pytest`,
 
 | Kind | Location | Build / deploy |
 | ---- | -------- | -------------- |
-| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel to `dist/apps/<name>`, zipped into `dist/drop/python-app-<name>.zip` |
+| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel, zipped into `dist/drop/python-app-<name>.zip` |
 | `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); the **source** is zipped into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
-| `python-lib` | `python-packages/<name>` | publishable wheel to `dist/python-packages/<name>`; a `publish` target (`uv publish`) |
-| `python-internal-lib` | `libs/<name>` | private shared code, built to `dist/libs/<name>`, bundled into consumers' wheels |
+| `python-lib` | `python-packages/<name>` | publishable wheel; a `publish` target (`uv publish`) |
+| `python-internal-lib` | `libs/<name>` | private shared code, bundled into consumers' wheels |
 
 - **Apps** get a `package` target that fits the existing CI unchanged — they
   own a `project.json`, so the pipeline's `apps/*` pack step tags them

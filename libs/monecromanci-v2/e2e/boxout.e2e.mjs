@@ -5,12 +5,11 @@
  *
  * Runs the BUILT v2 CLI against the real network: `new` (which runs the
  * latest create-nx-workspace and real npm installs), then `add` for one of
- * each of the four kinds, then real `nx run-many -t lint,test,build` and a
- * real `nx release version --dry-run` inside the generated repo.
- *
- * ENFORCED failures exit non-zero. PENDING checks cover the function app's
- * build, which may require Azure Functions Core Tools not present locally —
- * reported but never failing (CI installs the tools; local runs may not).
+ * each kind, then real `nx run-many -t lint,test,build` and a real
+ * `nx release version --dry-run` inside the generated repo. Every ENFORCED
+ * failure exits non-zero — none of `add`'s generators shell out to an
+ * external CLI that might be missing locally, so there is nothing left to
+ * treat as merely PENDING.
  */
 
 import { execSync } from 'node:child_process'
@@ -57,18 +56,12 @@ function tryRunCapture (command, cwd) {
   }
 }
 
-const results = { enforced: [], pending: [] }
+const results = { enforced: [] }
 
 /** Records an ENFORCED expectation, which fails the run when false. */
 function enforce (label, ok, detail = '') {
   results.enforced.push({ label, ok, detail })
   console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  — ${detail}`}`)
-}
-
-/** Records a PENDING expectation, reported but never failing. */
-function pending (label, ok, detail = '') {
-  results.pending.push({ label, ok, detail })
-  console.log(`  ${ok ? '✓ (pending, passing)' : '• (pending)'} ${label}${ok ? '' : `  — ${detail}`}`)
 }
 
 const temporary = mkdtempSync(path.join(tmpdir(), 'mnci2-e2e-'))
@@ -205,23 +198,28 @@ writeFileSync(path.join(workspace, 'apps/web/src/main.tsx'), [
   '',
 ].join('\n'))
 
-console.log('\n▸ mnci2 add function-app api')
-const coreToolsAvailable = tryRun('func --version', workspace)
-const functionAppGenerated = coreToolsAvailable && tryRun(`node ${CLI} add function-app api`, workspace)
-if (coreToolsAvailable) {
-  enforce('function app generated (@nxazure/func)', functionAppGenerated, 'generator failed — see log above')
-} else {
-  pending('function app generated (@nxazure/func)', false, 'Azure Functions Core Tools not installed locally')
-}
-if (functionAppGenerated) {
-  // A function app's whole point is a self-contained deploy (no npm install at
-  // Azure deploy time), so — unlike the sdk's real external dependency — BOTH
-  // the private lib and ms must end up genuinely inlined, not just imported.
-  console.log('\n▸ wiring function app (api) -> utils (private internal) + ms (real external dependency)')
-  writeFileSync(path.join(workspace, 'apps/api/src/deps.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nexport function apiDeps(): string {\n  return \'api uses \' + utils() + \' and \' + ms(60000);\n}\n')
-  writeFileSync(path.join(workspace, 'apps/api/src/main.ts'), '// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport \'./functions/hello.js\';\nimport { apiDeps } from \'./deps.js\';\n\n// eslint-disable-next-line no-console -- proves apiDeps (and its private-lib +\n// external-dep imports) are reachable, so esbuild bundles them rather than\n// tree-shaking them away; never actually invoked (no Functions host here).\nconsole.log(apiDeps());\n')
-  run('npx nx sync', workspace)
-}
+console.log('\n▸ mnci2 add node-app svc')
+run(`node ${CLI} add node-app svc`, workspace)
+
+// @nx/node:application (--bundle=false) never inlines anything — every import
+// (workspace lib or npm package) stays a real `require`, resolved from
+// node_modules/the compiled dist tree at run time. So "correctness" here is
+// proven by running the real compiled output, not by grepping for inlined
+// source (that concept doesn't apply to a non-bundled build).
+console.log('\n▸ wiring node app (svc) -> utils (private internal) + ms (real external dependency)')
+writeFileSync(path.join(workspace, 'apps/svc/src/main.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nconsole.log(\'deps-check:\', utils(), ms(60000));\n')
+run('npx nx sync', workspace)
+
+console.log('\n▸ mnci2 add node-function-app api')
+run(`node ${CLI} add node-function-app api`, workspace)
+
+// The generator + overlay need no Azure Functions Core Tools at all (unlike
+// the removed @nxazure/func plugin, which shelled out to `func` even at
+// generation time) — this is now unconditionally enforced, not a pending gap.
+console.log('\n▸ wiring node function app (api) -> utils (private internal) + ms (real external dependency)')
+writeFileSync(path.join(workspace, 'apps/api/src/deps.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nexport function apiDeps(): string {\n  return \'api uses \' + utils() + \' and \' + ms(60000);\n}\n')
+writeFileSync(path.join(workspace, 'apps/api/src/main.ts'), '// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport \'./functions/hello\';\nimport { apiDeps } from \'./deps\';\n\nconsole.log(apiDeps());\n')
+run('npx nx sync', workspace)
 
 /* ---------------------------------------------------------------------------
  * The minimal-config promise
@@ -250,7 +248,7 @@ enforce('add: an unrecognized kind is rejected up front, not a silent false "suc
  * ------------------------------------------------------------------------- */
 
 enforce(
-  'nx run-many -t lint,test,build succeeds (function app included)',
+  'nx run-many -t lint,test,build succeeds (node app + node function app included)',
   tryRun('npx nx run-many -t lint,test,build', workspace),
   'see log above',
 )
@@ -273,7 +271,7 @@ enforce('react app scaffolds a committed .env per environment',
 // the three builds are genuinely separate compiles, not one bundle copied
 // three times).
 for (const environment of ['dev', 'uat', 'prod']) {
-  const assetsDirectory = path.join(workspace, `dist/apps/web-${environment}/assets`)
+  const assetsDirectory = path.join(workspace, `apps/web/dist-${environment}/assets`)
   const jsAsset = existsSync(assetsDirectory) ? readdirSync(assetsDirectory).find((file) => file.endsWith('.js')) : undefined
   const bundleText = jsAsset ? readFileSync(path.join(assetsDirectory, jsAsset), 'utf8') : ''
   enforce(`react app (${environment}) bundle inlines the private lib (utils) and the real external dependency (ms)`,
@@ -284,40 +282,43 @@ for (const environment of ['dev', 'uat', 'prod']) {
     bundleText.includes(ownUrl) && otherUrls.every((url) => !bundleText.includes(url)))
 }
 
-if (functionAppGenerated) {
-  // The rewired function app bundles to ONE self-contained deployable folder
-  // (the plugin's executors are bypassed — their shared prepare-build breaks
-  // on Nx 23 workspaces).
-  const bundleDirectory = path.join(workspace, 'dist/apps/api')
-  enforce('function app bundles to a single main.cjs', existsSync(path.join(bundleDirectory, 'main.cjs')))
-  enforce('bundle folder is a complete deployable (host.json + package.json)',
-    existsSync(path.join(bundleDirectory, 'host.json')) && existsSync(path.join(bundleDirectory, 'package.json')))
-  const bundle = readFileSync(path.join(bundleDirectory, 'main.cjs'), 'utf8')
-  enforce('bundle inlines @azure/functions; only the host-injected functions-core stays external',
-    bundle.includes('@azure/functions-core') && !/require\("@azure\/functions"\)/.test(bundle))
-  // A function app's whole point is a self-contained deploy: the private lib
-  // AND the real external dependency (ms) must both be genuinely inlined —
-  // there is no npm install step at Azure deploy time to resolve either one.
-  enforce('bundle inlines the private lib (@demo/utils) — no import of it remains', !bundle.includes('@demo/utils'))
-  enforce('bundle inlines the real external dependency (ms), not left as a require',
-    bundle.includes(MS_SOURCE_MARKER) && !/require\(["']ms["']\)/.test(bundle))
-  const functionAppManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'))
-  enforce('function app manifest repaired (name, bundled main, runtime SDK dependency)',
-    functionAppManifest.name === '@demo/api'
-    && functionAppManifest.main === 'main.cjs'
-    && Boolean(functionAppManifest.dependencies?.['@azure/functions']))
+/* ---------------------------------------------------------------------------
+ * Node apps: @nx/node:application (--bundle=false) never inlines anything —
+ * every import stays a real `require`, resolved from node_modules/the
+ * compiled dist tree at run time. So "correctness" is proven by RUNNING the
+ * real compiled output and checking its real result, not by grepping for
+ * inlined source (there is nothing to grep for in a non-bundled build).
+ * ------------------------------------------------------------------------- */
 
-  // A hand-rewired function app gets no plugin jest setup; v2 wires its own so
-  // `nx test <fn-app>` works like every other kind.
-  enforce('function app has a jest config + spec tsconfig',
-    existsSync(path.join(workspace, 'apps/api/jest.config.mjs'))
-    && existsSync(path.join(workspace, 'apps/api/tsconfig.spec.json')))
-  const functionAppProject = JSON.parse(readFileSync(path.join(workspace, 'apps/api/project.json'), 'utf8'))
-  enforce('function app has a test target', Boolean(functionAppProject.targets?.test))
-  enforce('function app test target runs green (sample spec passes)', tryRun('npx nx test api', workspace), 'see log above')
-  enforce('function app has a package target', Boolean(functionAppProject.targets?.package))
-  enforce('function app packs into the drop (function-app-api.zip)', existsSync(path.join(workspace, 'dist/drop/function-app-api.zip')))
-}
+enforce('node app bundles the compiled entry (esbuild non-bundled: mirrors the workspace tree into dist)',
+  existsSync(path.join(workspace, 'apps/svc/dist/main.js')))
+const nodeAppRun = tryRunCapture('node apps/svc/dist/main.js', workspace)
+enforce('node app runs standalone, resolving the inlined-by-tsc private lib and the real external dependency correctly',
+  nodeAppRun.ok && nodeAppRun.output.includes('utils') && nodeAppRun.output.includes('1m'),
+  nodeAppRun.output)
+enforce('node app packs into the drop (node-app-svc.zip)', existsSync(path.join(workspace, 'dist/drop/node-app-svc.zip')))
+
+enforce('node function app bundles the compiled entry the same way', existsSync(path.join(workspace, 'apps/api/dist/main.js')))
+const nodeFunctionAppRun = tryRunCapture('node apps/api/dist/main.js', workspace)
+enforce('node function app runs standalone, resolving the private lib and the real external dependency correctly',
+  nodeFunctionAppRun.ok && nodeFunctionAppRun.output.includes('api uses utils and 1m'),
+  nodeFunctionAppRun.output)
+const nodeFunctionAppManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'))
+enforce('node function app manifest repaired (main points at the esbuild dist shim, real Azure Functions dependency declared)',
+  nodeFunctionAppManifest.main === 'main.js' && Boolean(nodeFunctionAppManifest.dependencies?.['@azure/functions']))
+enforce('node function app has a package target', Boolean(nodeFunctionAppManifest.nx?.targets?.package))
+enforce('node function app test target runs green (sample spec passes)', tryRun('npx nx test api', workspace), 'see log above')
+
+const nodeFunctionAppZip = path.join(workspace, 'dist/drop/node-function-app-api.zip')
+enforce('node function app packs into the drop (node-function-app-api.zip)', existsSync(nodeFunctionAppZip))
+// No node_modules bundled by design — Azure's Oryx build installs real
+// dependencies from the zipped package.json at deploy time (same model
+// python-function-app already relies on for requirements.txt). Verify the
+// zip's actual entry list rather than assuming the package target's shape.
+const AdmZip = createRequire(path.join(workspace, 'package.json'))('adm-zip')
+const zipEntries = existsSync(nodeFunctionAppZip) ? new AdmZip(nodeFunctionAppZip).getEntries().map((entry) => entry.entryName) : []
+enforce('node function app zip contains the dist shim, host.json and the repaired manifest at its root',
+  zipEntries.includes('main.js') && zipEntries.includes('host.json') && zipEntries.includes('package.json'))
 
 /* ---------------------------------------------------------------------------
  * The published-package-uses-private-lib promise, verified on the real output
@@ -421,9 +422,9 @@ enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
 enforce('python: pytest runs green across the python projects',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: build produces a wheel for the publishable lib, standardized to root dist/',
+enforce('python: build produces a wheel for the publishable lib',
   tryRun('npx nx build pyshared', altWorkspace)
-  && existsSync(path.join(altWorkspace, 'dist/python-packages/pyshared/pyshared-1.0.0-py3-none-any.whl')))
+  && existsSync(path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')))
 enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
   tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace)
   && existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip'))
@@ -447,12 +448,9 @@ const failed = results.enforced.filter((result) => !result.ok)
 for (const result of results.enforced) {
   console.log(`  ${result.ok ? '✓' : '✗'} ENFORCED  ${result.label}`)
 }
-for (const result of results.pending) {
-  console.log(`  ${result.ok ? '✓' : '•'} PENDING   ${result.label}`)
-}
 
 if (failed.length > 0) {
   console.error(`\n✗ ${failed.length} ENFORCED expectation(s) failed.`)
   process.exit(1)
 }
-console.log(`\n✓ ${results.enforced.length} enforced checks passed; ${results.pending.filter((result) => !result.ok).length} pending gap(s).`)
+console.log(`\n✓ ${results.enforced.length} enforced checks passed.`)

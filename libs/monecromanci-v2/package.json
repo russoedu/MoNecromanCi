@@ -2,7 +2,7 @@
   "name": "monecromanci-v2",
   "version": "2.0.0-alpha.0",
   "private": true,
-  "description": "MoNecromanCI v2 (box-out experiment) — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Azure Function apps (TypeScript or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
+  "description": "MoNecromanCI v2 (box-out experiment) — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
   "bin": {
     "mnci2": "./dist/cli.js"
   },
