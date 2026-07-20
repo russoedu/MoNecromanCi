@@ -194,6 +194,17 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('nx affected')
   })
 
+  it('checks the workspace is synced early, before lint/test/build (fails fast on a stale TS reference)', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const installIndex = pipeline.indexOf('npm ci')
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+    const lintIndex = pipeline.indexOf('npm run lint')
+
+    expect(syncCheckIndex).toBeGreaterThan(installIndex)
+    expect(lintIndex).toBeGreaterThan(syncCheckIndex)
+  })
+
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -279,6 +290,13 @@ describe('applyOverlay', () => {
     const pipeline = readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')
     expect(pipeline).toContain('  vmImage: ubuntu-latest')
     expect(pipeline).toContain('- group: Build')
+  })
+
+  it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { sync?: { applyChanges?: boolean } }
+    expect(nxJson.sync?.applyChanges).toBe(true)
   })
 
   it('writes the stack as nx.json generator defaults (honoured by later `add`)', () => {

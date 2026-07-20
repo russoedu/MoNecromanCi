@@ -188,6 +188,28 @@ export const RELEASE_CONFIG = {
 } as const
 
 /**
+ * The `sync` block merged into a generated workspace's `nx.json`.
+ *
+ * @remarks
+ * `--preset=ts` already registers `@nx/js:typescript-sync` on the `build` and
+ * `typecheck` targets (via the `@nx/js/typescript` plugin), so Nx already
+ * detects a stale TypeScript project reference — e.g. after hand-editing a
+ * file to add a new cross-project import — on the next `build`/`typecheck`/
+ * `affected` run. Without this block that detection only **prompts**
+ * ("Would you like to sync the identified changes?"): easy to miss, and it
+ * blocks any non-interactive run. `applyChanges: true` makes Nx fix it
+ * silently instead, locally, every time — no more `nx sync` run by hand.
+ *
+ * This is deliberately safe in CI: per Nx's own docs, a non-interactive run
+ * (CI) always runs sync generators in dry-run mode and **fails** instead of
+ * applying, regardless of this setting — so a forgotten local sync still
+ * surfaces as a clear CI failure ({@link azurePipelinesYaml}'s explicit
+ * `nx sync:check` step gives that failure early and unambiguously) rather
+ * than silently patching an ephemeral CI checkout that never gets committed.
+ */
+export const SYNC_CONFIG = { applyChanges: true } as const
+
+/**
  * Returns a copy of an `nx.json` object with the v2 release block applied.
  *
  * @remarks
@@ -416,6 +438,12 @@ export function poolBlock (agent: string): string {
  * PowerShell — every step is a built-in task or a single-line
  * `git`/`npm`/`npx`/`node` command `cmd.exe` and `sh` execute identically.
  *
+ * Every run first checks `nx sync:check` — a fast, explicit failure when
+ * someone forgot to run `nx sync` (and commit the result) after adding a
+ * cross-project import. `sync.applyChanges` in `nx.json` ({@link SYNC_CONFIG})
+ * means that locally this almost never happens: Nx auto-applies the fix on the
+ * next build/typecheck instead of just prompting.
+ *
  * On `main` (non-PR) the pipeline: **packs every app** into `dist/drop/` as one
  * zip per app named `<type>-<name>.zip` (each app owns an `nx` `package`
  * target — {@link runAdd}), publishes `dist/drop` as the **`drop`** artifact,
@@ -515,6 +543,14 @@ steps:
     env:
       PAT: $(PAT)
 
+  # Fails fast, with an unambiguous message, when a stale TypeScript project
+  # reference (or another sync generator's drift) was never synced+committed
+  # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
+  # CI still needs its own explicit, early check rather than surfacing this as
+  # a confusing failure buried inside the build step below.
+  - script: npx nx sync:check
+    displayName: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
+
   # One verify for every run (PR and main). \`npm run lint\` abstracts the chosen
   # linter (eslint via nx, or oxlint), so the pipeline needs no linter branch;
   # Nx cache makes unchanged test/build projects instant.
@@ -598,12 +634,16 @@ export interface OverlayOptions {
  * @typeParam None - this function has no generic type parameters.
  */
 export function applyOverlay (workspaceRoot: string, options: OverlayOptions): void {
-  // Patch nx.json with the release opinion AND the stack generator defaults, so
-  // both `nx release` and every later `nx g`/`mnci2 add` see the choices.
+  // Patch nx.json with the release opinion, the stack generator defaults, and
+  // sync.applyChanges (so a stale TS project reference — e.g. from hand-adding
+  // a cross-project import — is fixed automatically on the next build/
+  // typecheck, not just flagged with a prompt). Both `nx release` and every
+  // later `nx g`/`mnci2 add` see the generator defaults.
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
-  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators }))
+  const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
+  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,

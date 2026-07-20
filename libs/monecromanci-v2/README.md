@@ -149,11 +149,23 @@ output is a single bundle (no per-file deep imports).
 
 Cross-project imports (`@scope/lib`) resolve through **TypeScript project
 references** under `--preset=ts`, and those references are maintained by
-`nx sync`, not by the generators. So `mnci2 add` runs `nx sync` for you after
-each project — without it the references are stale and your editor cannot
-autocomplete a lib you just added (you would have to run `npx nx sync` by
-hand). A brand-new package may still need one VSCode window reload to be
-picked up by the TypeScript server.
+`nx sync`, not by the generators. `mnci2 add` runs `nx sync` for you right
+after generation — but references also go stale **any time you hand-edit a
+file to add a new cross-project import** later (nothing about that is an
+`mnci2 add`, so that step can't catch it). For that case every generated
+workspace sets `sync.applyChanges: true` in `nx.json`: `--preset=ts` already
+registers the `@nx/js:typescript-sync` generator on the `build`/`typecheck`
+targets, so instead of just *prompting* ("Would you like to sync the
+identified changes?") on your next `nx build`/`typecheck`/`affected`, Nx fixes
+the references **automatically** — no prompt, no manual `npx nx sync`. A
+brand-new package may still need one VSCode window reload to be picked up by
+the TypeScript server.
+
+`applyChanges` only affects *interactive* runs, by design: CI always runs sync
+generators in dry-run mode and fails instead of silently patching an ephemeral
+checkout that never gets committed. That's what the pipeline's `nx sync:check`
+step (below) surfaces early — if it fails, run `npx nx sync` locally and
+commit the result.
 
 ## CI (Azure DevOps only, any agent OS)
 
@@ -164,8 +176,9 @@ agents. The build agent is your choice at `mnci2 new` (`--agent`, default
 `ubuntu-latest`): a Microsoft-hosted image (`ubuntu-`/`windows-`/`macos-…`)
 becomes `pool.vmImage`, anything else a self-hosted `pool.name`.
 
-Every run (PR and main) does one `nx run-many -t lint,test,build`. Pushes to
-`main` then:
+Every run (PR and main) first does `nx sync:check` (fails fast and clearly if
+the workspace wasn't synced+committed locally — see above), then one
+`nx run-many -t lint,test,build`. Pushes to `main` then:
 
 - **Pack all apps** — each app's `package` target zips its build output into
   `dist/drop/<type>-<name>.zip` (e.g. `function-app-api.zip`,
