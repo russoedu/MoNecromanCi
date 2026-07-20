@@ -161,12 +161,20 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * (and only the tag — there is no commit to push).
  *
  * Two directories are released: `packages/*` (publishable **npm** libraries)
- * and `python-packages/*` (publishable **Python** packages). Both get the same
- * conventional-commit versioning and `{projectName}@{version}` tag; each
- * project's own `versionActions` (npm's default, or the `@nxlv/python` one the
- * plugin stamps into a Python `project.json`) reads/writes the right manifest
- * (`package.json` vs `pyproject.toml`). Internal libraries live in `libs/` and
- * apps in `apps/`, so release scoping still needs no custom tags.
+ * and `python-packages/*` (publishable **Python** packages) — deliberately one
+ * flat project list, not two named `release.groups`: Nx hard-errors
+ * `nx release` entirely (every group, not just the empty one) when any
+ * explicit group matches zero projects — a real failure mode for a workspace
+ * that has added Python packages but no npm ones yet, or vice versa (verified
+ * empirically). A flat list has no such all-or-nothing requirement: it stays
+ * releasable as soon as *either* glob matches something. Each project's own
+ * `versionActions` (npm's default, or the hand-written `PythonVersionActions`
+ * at `tools/python-version-actions.js` that `add/python.ts` stamps onto every
+ * publishable Python lib's own `project.json`) reads/writes the right
+ * manifest (`package.json` vs `pyproject.toml`) — project-level config wins
+ * over the group's, so both kinds coexist in the one group correctly.
+ * Internal libraries live in `libs/` and apps in `apps/`, so release scoping
+ * still needs no custom tags.
  */
 export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
@@ -413,7 +421,7 @@ export default defineConfig({
 `
 
 /**
- * The Python package registry's `uv publish` upload URL for a registry config.
+ * The Python package registry's `twine upload` URL for a registry config.
  *
  * @remarks
  * Azure Artifacts feeds are **multi-protocol**: the same org/project/feed that
@@ -491,15 +499,19 @@ export function poolBlock (agent: string): string {
  * `nx release` versions BOTH `packages/*` (npm) and `python-packages/*`
  * (Python) from conventional commits and tags each — one unified release. When
  * `pythonPublishUrl` is set (Azure Artifacts — {@link pythonPublishUrl}), the
- * release step also exports `UV_PUBLISH_*` so `nx release` publishes the Python
- * packages with `uv`, reusing the base64 `PAT` decoded to the raw token
- * uv/pypi basic-auth needs (no second secret; Azure accepts any username). For
- * the public-npm registry that env is omitted, so a Python package there is
- * still versioned + tagged but its publish needs user-provided `UV_PUBLISH_*`.
+ * release step also exports `TWINE_*` so `nx release` publishes the Python
+ * packages with `twine`, reusing the base64 `PAT` decoded to the raw token
+ * twine/pypi basic-auth needs (no second secret; Azure accepts any username).
+ * For the public-npm registry that env is omitted, so a Python package there
+ * is still versioned + tagged but its publish needs user-provided `TWINE_*`.
+ * Before any Python target runs, a guarded step installs the fixed toolchain
+ * (`ruff`/`pytest`/`build`/`twine`) from the workspace's `requirements-dev.txt`
+ * — written by `add/python.ts` on the first Python `add` — so it is skipped
+ * cleanly on a workspace with no Python projects.
  *
  * @param agent - The build agent (vmImage or self-hosted pool name).
  * @param variableGroup - The Library variable group holding the base64 `PAT`.
- * @param pythonPublishUrl - The uv publish URL for Python packages, or
+ * @param pythonPublishUrl - The twine upload URL for Python packages, or
  * `undefined` to leave Python publishing unconfigured (public npm).
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
@@ -508,9 +520,9 @@ export function poolBlock (agent: string): string {
 export function azurePipelinesYaml (agent: string, variableGroup: string, pythonPublishUrl?: string): string {
   const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
   // Injected into the release step's node -e: when there are Python packages and
-  // an Azure feed, export uv publish credentials (raw PAT decoded from base64).
+  // an Azure feed, export twine publish credentials (raw PAT decoded from base64).
   const pythonPublishEnv = pythonPublishUrl
-    ? `if(hasPython){env.UV_PUBLISH_URL='${pythonPublishUrl}';env.UV_PUBLISH_USERNAME='AzureArtifacts';env.UV_PUBLISH_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
     : ''
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -566,6 +578,12 @@ steps:
     env:
       PAT: $(PAT)
 
+  # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
+  # by 'mnci2 add' to requirements-dev.txt on the first Python project. Plain
+  # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
+  - script: node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"
+    displayName: Install Python dependencies (ruff, pytest, build, twine)
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -580,8 +598,9 @@ steps:
   - script: npm run lint
     displayName: Lint
   # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
-  # notably Python's ruff (@nxlv/python projects own a \`lint\` target). For the
-  # eslint stack the JS lint runs twice, but Nx caches the repeat instantly.
+  # notably Python's ruff (every Python project owns a hand-authored \`lint\`
+  # target). For the eslint stack the JS lint runs twice, but Nx caches the
+  # repeat instantly.
   - script: npx nx run-many -t lint,test,build
     displayName: Lint, test and build everything
 

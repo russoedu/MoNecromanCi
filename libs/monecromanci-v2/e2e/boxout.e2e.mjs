@@ -421,9 +421,11 @@ enforce('alt: apps still pack per environment into the drop', tryRun('npx nx run
 && ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`))))
 
 /* ---------------------------------------------------------------------------
- * Python (@nxlv/python — uv + Ruff + pytest), added to the alt workspace so the
- * real toolchain (not just unit tests) proves the four Python kinds. uv, ruff
- * and python3 are present in this environment, so these are all enforced.
+ * Python — hand-authored pip-native toolchain (no uv, no Poetry, no plugin),
+ * added to the alt workspace so the real toolchain (not just unit tests)
+ * proves the four Python kinds. ruff, pytest, python3-venv and build/twine
+ * (installed from the generated requirements-dev.txt) are present in this
+ * environment, so these are all enforced.
  * ------------------------------------------------------------------------- */
 
 console.log('\n▸ mnci2 add python-app / python-function-app / python-lib / python-internal-lib')
@@ -432,47 +434,65 @@ run(`node ${CLI} add python-function-app pyfunc`, altWorkspace)
 run(`node ${CLI} add python-lib pyshared`, altWorkspace)
 run(`node ${CLI} add python-internal-lib pycore`, altWorkspace)
 
-const altNxPython = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
-enforce('python: @nxlv/python plugin registered with the uv package manager',
-  (altNxPython.plugins ?? []).some((plugin) => typeof plugin === 'object' && plugin.plugin === '@nxlv/python' && plugin.options?.packageManager === 'uv'))
+enforce('python: no plugin, no lock file — plain pip toolchain written once (requirements-dev.txt, tools/python-build.js, tools/python-version-actions.js)',
+  existsSync(path.join(altWorkspace, 'requirements-dev.txt'))
+  && existsSync(path.join(altWorkspace, 'tools/python-build.js'))
+  && existsSync(path.join(altWorkspace, 'tools/python-version-actions.js')))
+run('python3 -m pip install --quiet -r requirements-dev.txt', altWorkspace)
+
 const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
 const pysharedProject = existsSync(pysharedProjectPath) ? JSON.parse(readFileSync(pysharedProjectPath, 'utf8')) : {}
-enforce('python: publishable lib lives under python-packages/ with the plugin release hooks',
-  pysharedProject.targets?.['nx-release-publish']?.executor === '@nxlv/python:publish'
-  && typeof pysharedProject.release?.version?.versionActions === 'string')
-enforce('python: internal lib is a library under libs/ (never publishable)',
+enforce('python: publishable lib lives under python-packages/ with a hand-authored twine nx-release-publish target + a project-level versionActions override',
+  (pysharedProject.targets?.['nx-release-publish']?.options?.command ?? '').includes('twine upload')
+  && pysharedProject.release?.version?.versionActions === 'tools/python-version-actions.js')
+enforce('python: internal lib is a library under libs/ (never publishable, no build/package/publish target)',
   existsSync(path.join(altWorkspace, 'libs/pycore/project.json')))
-enforce('python: function app carries the Azure Functions v2 files',
-  ['function_app.py', 'host.json', 'requirements.txt'].every((file) => existsSync(path.join(altWorkspace, 'apps/pyfunc', file))))
+const pycoreProject = JSON.parse(readFileSync(path.join(altWorkspace, 'libs/pycore/project.json'), 'utf8'))
+enforce('python: internal lib has no build/package/publish targets — vendored by consumers, never released on its own',
+  !pycoreProject.targets?.build && !pycoreProject.targets?.package && !pycoreProject.targets?.['nx-release-publish'])
+enforce('python: function app carries the Azure Functions v2 files, and has no pyproject.toml/build target (source deploy, no wheel)',
+  ['function_app.py', 'host.json', 'requirements.txt'].every((file) => existsSync(path.join(altWorkspace, 'apps/pyfunc', file)))
+  && !existsSync(path.join(altWorkspace, 'apps/pyfunc/pyproject.toml')))
 
 /* ---------------------------------------------------------------------------
  * The same private-internal-lib / real-external-dependency proof as the JS
- * side, adapted to Python's mechanism: @nxlv/python's bundleLocalDependencies
- * vendors an imported internal lib's source straight into the wheel (like
- * rollup does for npm-lib), while a real declared dependency stays a real
- * `Requires-Dist` — EXCEPT, verified empirically, when BOTH land on the same
- * project: the build executor then drops the real dependency from the
- * wheel's metadata entirely (a genuine @nxlv/python limitation, not an mnci2
- * gap — see the README's "Known gaps"). So each mechanism is proven
- * separately, on the combination that's known to work: pyshared -> pycore
- * (internal), pysvc -> a real PyPI package (external).
+ * side, adapted to pip's mechanism: a hand-added [tool.mnci2] vendor = [...]
+ * entry (the pip-world counterpart of hand-wiring a `dependencies = [...]`
+ * entry — mnci2 wires no cross-project Python dependency automatically,
+ * exactly like every other kind) makes tools/python-build.js copy the
+ * internal lib's module straight into a staged build (like rollup inlines
+ * for npm-lib), while a real declared dependency stays a real Requires-Dist.
+ * No lock file means no pinned resolution: the wheel's Requires-Dist mirrors
+ * the pyproject.toml specifier verbatim (\`tomli>=2.0.0\`, not a resolved
+ * \`tomli==x.y.z\`).
  * ------------------------------------------------------------------------- */
 
-console.log('\n▸ wiring pyshared (publishable) -> pycore (private internal)')
+console.log('\n▸ wiring pyshared (publishable) -> pycore (private internal, vendored)')
 const pysharedPyprojectPath = path.join(altWorkspace, 'python-packages/pyshared/pyproject.toml')
-writeFileSync(pysharedPyprojectPath, `${readFileSync(pysharedPyprojectPath, 'utf8').replace('dependencies = []', 'dependencies = ["pycore"]')}\n[tool.uv.sources]\npycore = { path = "../../libs/pycore", editable = true }\n`)
-writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/hello.py'),
-  '"""Sample Hello World application."""\n\n\ndef hello():\n    """Return a friendly greeting."""\n    from pycore.hello import hello as core_hello\n    return "Hello pyshared uses " + core_hello()\n')
-writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/tests/test_hello.py'),
-  '"""Hello unit test module."""\n\nfrom pyshared.hello import hello\n\n\ndef test_hello():\n    """Test the hello function."""\n    assert hello() == "Hello pyshared uses Hello pycore"\n')
+writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci2]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+// Named greeting.py, not hello.py: pyshared/__init__.py (written by `add
+// python-lib`) already exports a top-level `hello` symbol, and a same-named
+// submodule would shadow it as soon as either gets imported (a real Python
+// footgun, hit empirically) — `pyshared.__init__`'s own generated hello() and
+// its generated test stay untouched and green. No local test file for this
+// one: pycore is vendored only at build time (tools/python-build.js), not
+// dev-installed, so it is genuinely not importable from a plain `pip install
+// -e .` dev environment — the wheel-content and clean-venv checks below are
+// the (stronger) proof that the vendored import actually resolves.
+writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/greeting.py'),
+  'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n')
 
 console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
 const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
 writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('dependencies = []', 'dependencies = ["tomli>=2.0.0"]'))
-writeFileSync(path.join(altWorkspace, 'apps/pysvc/pysvc/hello.py'),
-  '"""Sample Hello World application."""\n\n\ndef hello():\n    """Return a friendly greeting."""\n    import tomli\n    return "Hello pysvc uses tomli " + tomli.__version__\n')
-writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_hello.py'),
-  '"""Hello unit test module."""\n\nfrom pysvc.hello import hello\n\n\ndef test_hello():\n    """Test the hello function."""\n    assert hello().startswith("Hello pysvc uses tomli ")\n')
+// Also named greeting.py for the same shadowing reason as pyshared above.
+// Unlike pycore, tomli is a real installable PyPI package (declared in
+// pysvc's own pyproject.toml dependencies), so `pip install -e .` genuinely
+// makes it importable locally — this one keeps its test file.
+writeFileSync(path.join(altWorkspace, 'apps/pysvc/pysvc/greeting.py'),
+  'import tomli\n\n\ndef build_greeting():\n    return "Hello pysvc uses tomli " + tomli.__version__\n')
+writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
+  'from pysvc.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting().startswith("Hello pysvc uses tomli ")\n')
 
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
@@ -481,19 +501,19 @@ enforce('python: pytest runs green across the python projects (private-lib + ext
 
 const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
 const pysharedWheelPath = path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')
-enforce('python: build produces a wheel for the publishable lib', tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath))
+enforce('python: build produces a wheel for the publishable lib (vendoring pycore via tools/python-build.js)', tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath))
 const pysharedWheelEntries = existsSync(pysharedWheelPath) ? new AdmZipPy(pysharedWheelPath).getEntries().map((entry) => entry.entryName) : []
-enforce('python: publishable lib wheel inlines the private internal lib (pycore) — no separate install needed',
-  pysharedWheelEntries.includes('pycore/hello.py') && pysharedWheelEntries.includes('pyshared/hello.py'))
+enforce('python: publishable lib wheel vendors the private internal lib (pycore) — no separate install needed',
+  pysharedWheelEntries.includes('pycore/__init__.py') && pysharedWheelEntries.includes('pyshared/greeting.py'))
 // The strongest possible proof: install the real wheel into a clean venv (no
 // workspace/editable install in play) and run it — mirrors the sdk's "runs
 // standalone under node" check.
 const pysharedVenv = path.join(temporary, 'py-venv-pyshared')
 run(`python3 -m venv ${pysharedVenv}`, altWorkspace)
 run(`${pysharedVenv}/bin/pip install --quiet ${pysharedWheelPath}`, altWorkspace)
-const pysharedVenvRun = tryRunCapture(`${pysharedVenv}/bin/python3 -c "from pyshared.hello import hello; print(hello())"`, altWorkspace)
+const pysharedVenvRun = tryRunCapture(`${pysharedVenv}/bin/python3 -c "from pyshared.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
 enforce('python: publishable lib installs into a clean venv and runs correctly (private lib resolves with no extra install)',
-  pysharedVenvRun.ok && pysharedVenvRun.output.includes('Hello pyshared uses Hello pycore'),
+  pysharedVenvRun.ok && pysharedVenvRun.output.includes('Hello pyshared uses hello from pycore'),
   pysharedVenvRun.output)
 
 enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
@@ -512,24 +532,54 @@ enforce('python: function app zip actually contains the deployable source (funct
 const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
 // eslint-disable-next-line unicorn/prefer-blob-reading-methods -- adm-zip's readAsText, not FileReader's
 const pysvcMetadata = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA') : ''
-enforce('python: app wheel declares the real external dependency (tomli) with a real pinned version — not silently dropped',
-  /Requires-Dist:\s*tomli==\d+\.\d+/i.test(pysvcMetadata))
+enforce('python: app wheel declares the real external dependency (tomli) — not silently dropped',
+  /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcMetadata))
 const pysvcVenv = path.join(temporary, 'py-venv-pysvc')
 run(`python3 -m venv ${pysvcVenv}`, altWorkspace)
 run(`${pysvcVenv}/bin/pip install --quiet ${pysvcWheelPath}`, altWorkspace)
-const pysvcVenvRun = tryRunCapture(`${pysvcVenv}/bin/python3 -c "from pysvc.hello import hello; print(hello())"`, altWorkspace)
+const pysvcVenvRun = tryRunCapture(`${pysvcVenv}/bin/python3 -c "from pysvc.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
 enforce('python: app installs into a clean venv and runs correctly, resolving the real external dependency from PyPI',
   pysvcVenvRun.ok && pysvcVenvRun.output.includes('Hello pysvc uses tomli '),
   pysvcVenvRun.output)
-// Conventional-commit versioning reaches Python: `nx release` scopes
-// python-packages/*, so a dry-run tags the publishable Python lib from git
-// history (same mechanism as the npm packages). Needs a committed git repo.
+
+/* ---------------------------------------------------------------------------
+ * The exact combination that broke the old @nxlv/python bundleLocalDependencies
+ * (a vendored internal lib AND a real external dependency on the SAME
+ * project): verified empirically during design that pip's approach does not
+ * reproduce that bug. Proven here directly, not just asserted in a comment.
+ * ------------------------------------------------------------------------- */
+
+console.log('\n▸ combined proof: vendoring + a real external dependency on the SAME project')
+writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci2]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+enforce('python: build succeeds with both a vendored internal lib and a real external dependency on the same project',
+  tryRun('npx nx build pysvc', altWorkspace))
+const pysvcCombinedZip = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath) : null
+const pysvcCombinedEntries = pysvcCombinedZip ? pysvcCombinedZip.getEntries().map((entry) => entry.entryName) : []
+// eslint-disable-next-line unicorn/prefer-blob-reading-methods -- adm-zip's readAsText, not FileReader's
+const pysvcCombinedMetadata = pysvcCombinedZip ? pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA') : ''
+enforce('python: combined wheel vendors pycore AND keeps the real external dependency declared — no metadata drop (the old @nxlv/python bug does not reproduce with pip)',
+  pysvcCombinedEntries.includes('pycore/__init__.py') && /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcCombinedMetadata))
+
+/* ---------------------------------------------------------------------------
+ * Conventional-commit versioning AND publishing reach Python via the
+ * hand-written PythonVersionActions + twine nx-release-publish target.
+ * ------------------------------------------------------------------------- */
+
 run('git init -q -b main && git add -A', altWorkspace)
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"', altWorkspace)
 const altReleaseDryRun = tryRunCapture('npx nx release version --dry-run --verbose', altWorkspace)
-enforce('python: nx release versions the publishable python lib from conventional commits',
+enforce('python: nx release versions the publishable python lib from conventional commits (hand-written PythonVersionActions, no @nxlv/python)',
   altReleaseDryRun.ok && /shared[^\n]*new version/i.test(altReleaseDryRun.output) && altReleaseDryRun.output.includes('pyproject.toml'),
   altReleaseDryRun.output)
+// nx release publish --dry-run appends a literal --dryRun=true to whatever
+// command a plain nx:run-commands nx-release-publish target runs; verified
+// empirically this breaks an unguarded twine invocation, so the hand-authored
+// target detects and previews instead — proven here against the real Nx
+// release orchestration, not just the target's own unit test.
+const altReleasePublishDryRun = tryRunCapture('npx nx release publish --dry-run --verbose', altWorkspace)
+enforce('python: nx release publish --dry-run previews the twine upload instead of choking on the appended --dryRun flag',
+  altReleasePublishDryRun.ok && altReleasePublishDryRun.output.includes('[dry-run] would run: python3 -m twine upload'),
+  altReleasePublishDryRun.output)
 
 /* ---------------------------------------------------------------------------
  * Report

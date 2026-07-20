@@ -39,10 +39,10 @@ mnci2 add node-function-app api # @nx/node + an Azure Functions v4 overlay
 mnci2 add npm-lib sdk           # @nx/js publishable lib -> packages/
 mnci2 add internal-lib utils    # @nx/js private lib -> libs/
 
-# Python (via @nxlv/python — uv + Ruff + pytest)
-mnci2 add python-app svc            # uv app -> apps/ (wheel, zipped into the drop)
+# Python (hand-authored: pip + Ruff + pytest + PyPA build/twine — no plugin, no uv)
+mnci2 add python-app svc            # app -> apps/ (wheel, zipped into the drop)
 mnci2 add python-function-app fn    # Azure Functions (Python v2) -> apps/
-mnci2 add python-lib shared         # publishable -> python-packages/ (uv publish)
+mnci2 add python-lib shared         # publishable -> python-packages/ (twine upload)
 mnci2 add python-internal-lib core  # private shared lib -> libs/
 ```
 
@@ -122,7 +122,7 @@ no programmatic API yet; the two aliases are what make it work.)
 | ------------------ | ------------------------------------------------- | ---------------------------- |
 | `apps/`            | React / Node / Python apps (plain or Azure Functions) | Never (packed into the drop) |
 | `packages/`        | Publishable npm libraries (rollup-bundled)        | Yes — `nx release`, per-package tags |
-| `python-packages/` | Publishable Python packages (uv/hatch wheels)     | Yes — `uv publish` (Azure Artifacts) |
+| `python-packages/` | Publishable Python packages (hatchling wheels)    | Yes — `twine upload` (Azure Artifacts) |
 | `libs/`            | Internal libraries (TS or Python), never published | Never                        |
 
 No custom tags, no stamp file — the directory (and, for npm, the `private` flag)
@@ -213,9 +213,12 @@ the workspace wasn't synced+committed locally — see above), then one
   npm (`packages/*`) and Python (`python-packages/*`): version bump from
   conventional commits → `{projectName}@{version}` git tag pushed to `main`
   (tag-only, never a commit) → publish to the feed (npm via `.npmrc`, Python via
-  `uv` when an Azure feed is configured). Reuses the base64 `PAT`, decoded to the
-  raw token uv needs for the Python publish. Skipped cleanly when there is
-  nothing to release.
+  `twine` when an Azure feed is configured — installed from the generated
+  `requirements-dev.txt`, no uv, no Poetry). Reuses the base64 `PAT`, decoded to
+  the raw token twine needs for the Python publish. Skipped cleanly when there
+  is nothing to release. A guarded step installs the fixed Python toolchain
+  (`ruff`/`pytest`/`build`/`twine`) before any Python target runs, skipped
+  cleanly on a workspace with no Python projects.
 
 **npm auth** is the base64 PAT from a **variable group** (`--variable-group`,
 default `Build`): the group exposes `$(PAT)`, mapped as `env` on the npm steps
@@ -229,30 +232,33 @@ account (tag push), and **publish** rights on the feed for the PAT's owner.
 protocol.** The same `$(PAT)` variable is base64-encoded throughout — that's
 the raw value Azure Artifacts' "Connect to feed" instructions give you. npm's
 `.npmrc` `_password` field expects exactly that pre-encoded form, so it's used
-as-is. `uv`/pypi basic auth, by contrast, wants the **raw** token — so the
+as-is. `twine`/pypi basic auth, by contrast, wants the **raw** token — so the
 Python publish step in `azurePipelinesYaml` explicitly *decodes* the same
 `$(PAT)` (`Buffer.from(process.env.PAT, 'base64').toString()`) before handing
-it to `UV_PUBLISH_PASSWORD`. Both are correct for their protocol today, but
-it's an easy trap to get backwards: if you ever wire a third registry
-protocol, check whether it wants the pre-encoded or the raw form before
-assuming either convention.
+it to `TWINE_PASSWORD`. Both are correct for their protocol today, but it's an
+easy trap to get backwards: if you ever wire a third registry protocol, check
+whether it wants the pre-encoded or the raw form before assuming either
+convention.
 
 ## Dependency & risk notes
 
 Being upfront about what mnci2 leans on, so it's a conscious trade-off rather
 than a surprise:
 
-- **Two unofficial, small-team Nx plugins carry real weight**:
-  [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
-  (every Python kind) and [`oxc-standard`](https://github.com/JohnDeved/ox-standard)
-  (the oxlint/oxfmt StandardJS preset) — neither is `@nx`-scoped/officially
-  maintained. Azure Function generation deliberately avoids a third: it uses
-  the **official** `@nx/node:application` plus a small hand-written Azure
-  Functions v4 file overlay (see "How Node apps work" below) instead of a
-  third-party Azure Functions plugin — one less unofficial dependency, and no
-  generator-level workaround needed. If either of the two remaining plugins
-  stalls or breaks compatibility with a future Nx major, that surface needs a
-  real maintenance response, not just a version bump.
+- **One unofficial, small-team Nx plugin carries real weight**:
+  [`oxc-standard`](https://github.com/JohnDeved/ox-standard) (the oxlint/oxfmt
+  StandardJS preset) — not `@nx`-scoped/officially maintained. Neither Azure
+  Function generation nor any Python kind pulls in a third-party Nx plugin:
+  Node apps use the **official** `@nx/node:application` plus a small
+  hand-written Azure Functions v4 file overlay (see "How Node apps work"
+  below), and Python has no plugin at all — `add/python.ts` hand-authors
+  `pyproject.toml` + `project.json` directly around plain pip and the standard
+  PyPA `build`/`twine` tools (see "How Python projects work" below), a
+  deliberate simplification after `@nxlv/python` (the previous Python plugin)
+  turned out to require `uv`, which the company standardizing on this tool
+  does not use. If `oxc-standard` stalls or breaks compatibility with a future
+  Nx major, that surface needs a real maintenance response, not just a version
+  bump.
 - **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
   TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
   `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
@@ -274,18 +280,17 @@ than a surprise:
   from the zipped manifest — no `node_modules`/venv is bundled.
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
-- **A Python project that imports both a private internal lib AND a real
-  external PyPI dependency loses the external one.** Verified empirically:
-  `@nxlv/python`'s build executor correctly vendors an imported internal lib's
-  source into the wheel (`bundleLocalDependencies`) and, on its own, correctly
-  keeps a real dependency declared (`Requires-Dist`, pinned) — but combining
-  both on the *same* project silently drops the real dependency from the
-  built wheel's metadata entirely, so `pip install`ing it doesn't pull the
-  real dependency in and the package breaks at import time. This is a
-  `@nxlv/python` limitation, not an mnci2 config gap — there is no known
-  workaround today beyond keeping the two separate (e.g. re-exporting the
-  external usage through the internal lib instead of importing it directly
-  in the same project).
+- **No lock file for Python** — plain pip has none, matching the company
+  standard this migration was for. A published wheel's `Requires-Dist` mirrors
+  whatever specifier the `pyproject.toml` declares (e.g. `tomli>=2.0.0`)
+  verbatim, not a resolved/pinned version the way `uv.lock` would have
+  produced. `requirements-dev.txt` (the fixed `ruff`/`pytest`/`build`/`twine`
+  toolchain) is unpinned for the same reason — pin it by hand if the
+  workspace needs reproducible CI tool versions.
+- venv management is left to the user (same spirit as never managing
+  `node_modules` beyond `npm install`): `mnci2` neither creates nor activates
+  one. CI installs `requirements-dev.txt` straight into whatever `python3`
+  resolves to on the agent; locally, create your own with `python3 -m venv`.
 
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
@@ -351,38 +356,78 @@ get `react-app-<name>-dev` / `-uat` / `-prod`, and the classic release pipeline
 deploys each environment from its own artifact + tag. Need different
 environments? Edit `REACT_ENVIRONMENTS` in the generator.
 
-## Python (uv + Ruff + pytest via `@nxlv/python`)
+## Python (pip + Ruff + pytest + PyPA `build`/`twine` — no plugin, no uv)
 
 Python is the first non-JS language, and follows the same philosophy: the
-**industry-standard toolchain**, no per-project boilerplate. On the first
-`add python-*` mnci2 installs [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
-and registers it in `nx.json` with **uv** as the package manager (the
-`--preset=ts` repo has no `uv.lock` to auto-detect, so it is set explicitly).
-There is **no stack question** — Ruff (lint + format) and pytest are the
-standard, so they are always used (`--linter=ruff --unitTestRunner=pytest`,
-`hatch` build backend → wheel).
+**industry-standard toolchain**, no per-project boilerplate — but unlike every
+other kind, there is no Nx generator to delegate to. No maintained,
+Nx-23-compatible Python plugin supports pip (verified empirically: the
+previous plugin, `@nxlv/python`, ships only uv and Poetry providers; every
+alternative found on npm is either the same uv/Poetry architecture or years
+stale). So `add/python.ts` hand-authors the whole project — `pyproject.toml`
+(`hatchling` backend) + `project.json` with real targets + a sample module and
+test — the same way the old hand-built function app worked before it had a
+real generator, except this time there is no generator to eventually lean on.
+
+On the first `add python-*`, mnci2 also writes three small files once into the
+workspace root: `requirements-dev.txt` (the fixed `ruff`/`pytest`/`build`/
+`twine` toolchain — install with `python3 -m pip install -r
+requirements-dev.txt`), `tools/python-build.js` (the vendoring-aware build
+helper every `build` target calls), and `tools/python-version-actions.js` (the
+hand-written `nx release` version hook, see below). There is **no stack
+question** — Ruff (lint + format) and pytest are the standard, so they are
+always used, invoked as `python3 -m <tool>` everywhere (not a hard-coded venv
+path), so the exact same command works whether or not a venv is activated.
 
 | Kind | Location | Build / deploy |
 | ---- | -------- | -------------- |
-| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel, zipped into `dist/drop/python-app-<name>.zip` |
-| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); the **source** is zipped into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
-| `python-lib` | `python-packages/<name>` | publishable wheel; a `publish` target (`uv publish`) |
-| `python-internal-lib` | `libs/<name>` | private shared code, bundled into consumers' wheels |
+| `python-app` | `apps/<name>` | `python -m build` wheel (via `tools/python-build.js`), zipped into `dist/drop/python-app-<name>.zip` |
+| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); no `pyproject.toml`/wheel — the **source** is zipped into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
+| `python-lib` | `python-packages/<name>` | publishable wheel; a hand-authored `nx-release-publish` target (`twine upload --skip-existing`) |
+| `python-internal-lib` | `libs/<name>` | private shared code, lint + test only — no build/package target of its own |
 
 - **Apps** get a `package` target that fits the existing CI unchanged — they
   own a `project.json`, so the pipeline's `apps/*` pack step tags them
   `python-app-<name>` / `python-function-app-<name>` just like the TS apps.
+- **Internal-lib vendoring** replaces `@nxlv/python`'s `bundleLocalDependencies`:
+  plain pip has no bundled-local-dependency feature, so a project that imports
+  a workspace-internal Python library needs a hand-added `[tool.mnci2] vendor =
+  ["<lib>"]` entry in its own `pyproject.toml` (the pip-world counterpart of
+  hand-wiring a `dependencies = [...]` entry — mnci2 wires no cross-project
+  Python dependency automatically, exactly like every other kind).
+  `tools/python-build.js` reads that entry, copies the named `libs/<name>`
+  module into a staged copy of the project, and builds from there — so the
+  resulting wheel contains the vendored module as a real top-level package.
+  Verified empirically that this does **not** reproduce the old
+  `@nxlv/python` bug where combining a vendored internal lib and a real
+  external dependency on the same project silently dropped the external one
+  from the wheel's metadata — both survive correctly with the hand-rolled
+  approach.
 - **Release** is unified with npm: `nx release` scopes both `packages/*` and
-  `python-packages/*`, so a Python package is **versioned from conventional
-  commits and tagged** `{projectName}@{version}` exactly like an npm one — its
-  `pyproject.toml` version bumps, tag-only (never a commit). Each project's own
-  `versionActions` (the `@nxlv/python` one the plugin stamps) reads/writes the
-  right manifest. **Publishing** reuses the registry: an Azure Artifacts feed is
-  **multi-protocol**, so the same org/project/feed serves Python — the release
-  step exports `UV_PUBLISH_*` (URL + the base64 `PAT` decoded to the raw token
-  uv needs, no second secret) and `nx release` publishes the wheels with `uv`.
-  (On a public-npm workspace a Python package is still versioned + tagged, but
-  publishing it needs user-provided `UV_PUBLISH_*` — e.g. a PyPI token.)
+  `python-packages/*` in one flat project list (deliberately not two named
+  `release.groups` — Nx hard-errors the whole release when an explicit group
+  matches zero projects, a real failure mode for a Python-only or npm-only
+  workspace, verified empirically), so a Python package is **versioned from
+  conventional commits and tagged** `{projectName}@{version}` exactly like an
+  npm one — its `pyproject.toml` version bumps, tag-only (never a commit).
+  Each publishable Python lib gets a project-level
+  `release.version.versionActions` override pointing at
+  `tools/python-version-actions.js` (a hand-written implementation of Nx's
+  `VersionActions` interface — six methods, verified empirically against a
+  real `nx release version --dry-run`), which wins over the workspace's
+  default (npm's) `versionActions` for that one project. **Publishing** reuses
+  the registry: an Azure Artifacts feed is **multi-protocol**, so the same
+  org/project/feed serves Python — the release step exports `TWINE_*` (URL +
+  the base64 `PAT` decoded to the raw token twine needs, no second secret) and
+  `nx release` publishes the wheels with `twine`. (On a public-npm workspace a
+  Python package is still versioned + tagged, but publishing it needs
+  user-provided `TWINE_*` — e.g. a PyPI token.) The hand-authored
+  `nx-release-publish` target also detects and previews (rather than
+  hard-failing on) the literal `--dryRun=true` Nx appends when running `nx
+  release publish --dry-run` — a plain `nx:run-commands` target, unlike
+  `@nx/js:release-publish`, has no built-in awareness of that flag.
 - **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
   target runs alongside the JS build even on the oxlint stack (whose
-  `npm run lint` only covers JS).
+  `npm run lint` only covers JS). A guarded pipeline step installs
+  `requirements-dev.txt` first, skipped cleanly when the workspace has no
+  Python projects.

@@ -61,7 +61,12 @@ describe('withReleaseConfig', () => {
     expect(patched.defaultBase).toBe('main')
     expect(patched.release).toMatchObject({
       projectsRelationship: 'independent',
-      // Both publishable dirs: npm (packages/*) and Python (python-packages/*).
+      // Both publishable dirs, in one flat list — not two named release
+      // groups: Nx hard-errors the whole release when any explicit group
+      // matches zero projects, which a Python-only (or npm-only) workspace
+      // would hit immediately. Each project's own versionActions (npm's
+      // default, or the hand-written PythonVersionActions stamped onto every
+      // python-lib by add/python.ts) wins over this shared config anyway.
       projects:             ['packages/*', 'python-packages/*'],
       releaseTag:           { pattern: '{projectName}@{version}' },
       version:              {
@@ -159,28 +164,30 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('pwsh')
   })
 
-  it('folds uv publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
+  it('folds twine publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', url)
 
     // One unified release step (npm + Python), not a separate publish step.
     expect(pipeline).toContain('Release — version, tag and publish (npm + Python)')
     expect(pipeline).not.toContain('nx run-many -t publish')
-    // The release step exports uv publish creds when there are Python packages.
-    expect(pipeline).toContain(`UV_PUBLISH_URL='${url}'`)
-    // Reuses the base64 PAT from the group, decoded to the raw token uv needs.
+    // The release step exports twine publish creds when there are Python packages.
+    expect(pipeline).toContain(`TWINE_REPOSITORY_URL='${url}'`)
+    // Reuses the base64 PAT from the group, decoded to the raw token twine needs.
     expect(pipeline).toContain(`Buffer.from(process.env.PAT,'base64')`)
     // Guarded on either publishable dir.
     expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
     expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    // A guarded step installs the fixed pip toolchain before any Python target runs.
+    expect(pipeline).toContain('python3 -m pip install -r requirements-dev.txt')
   })
 
-  it('still versions/tags Python on public npm, but exports no uv publish creds', () => {
+  it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
     // Python packages are always in the release scope (versioning + tags)…
     expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    // …but without an Azure feed the release step sets no UV_PUBLISH_* env.
-    expect(pipeline).not.toContain('UV_PUBLISH_URL')
+    // …but without an Azure feed the release step sets no TWINE_* env.
+    expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
 
   it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {

@@ -26,12 +26,14 @@ export type { AddOptions } from './add/shared'
  * The TS/JS kinds use the official `@nx/*` generators only — `node-app` and
  * `node-function-app` are both the plain `@nx/node:application` (no
  * third-party Azure Functions plugin; `node-function-app` is that generator
- * plus a hand-written Azure Functions v4 file overlay). The Python kinds use
- * the community-standard [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
- * with **uv + Ruff + pytest** — the industry-standard Python toolchain, and
- * follow the identical app/function-app split. Every kind builds to its own
- * Nx-default output location — no post-generation build-output redirection.
- * Each kind's generation logic lives in its own module under `add/` — see
+ * plus a hand-written Azure Functions v4 file overlay). No generator exists
+ * for the Python kinds either — `add/python.ts` hand-authors the whole
+ * project (`pyproject.toml` + `project.json` + sample module/tests) around
+ * **pip + Ruff + pytest + the standard PyPA `build`/`twine`** — the
+ * industry-standard, uv-free Python toolchain — and follows the identical
+ * app/function-app split. Every kind builds to its own Nx-default output
+ * location — no post-generation build-output redirection. Each kind's
+ * generation logic lives in its own module under `add/` — see
  * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
  * (internal-lib is small enough to stay inline below).
  *
