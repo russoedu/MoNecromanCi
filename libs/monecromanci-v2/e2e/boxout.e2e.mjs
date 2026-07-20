@@ -215,7 +215,7 @@ if (functionAppGenerated) {
   // The rewired function app bundles to ONE self-contained deployable folder
   // (the plugin's executors are bypassed — their shared prepare-build breaks
   // on Nx 23 workspaces).
-  const bundleDirectory = path.join(workspace, 'dist/function-apps/api')
+  const bundleDirectory = path.join(workspace, 'dist/apps/api')
   enforce('function app bundles to a single main.cjs', existsSync(path.join(bundleDirectory, 'main.cjs')))
   enforce('bundle folder is a complete deployable (host.json + package.json)',
     existsSync(path.join(bundleDirectory, 'host.json')) && existsSync(path.join(bundleDirectory, 'package.json')))

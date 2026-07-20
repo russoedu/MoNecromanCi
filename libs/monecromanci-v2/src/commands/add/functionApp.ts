@@ -61,7 +61,7 @@ function ensurePackageInstalled (workspaceRoot: string, packageName: string): vo
  * @param type - The app kind slug (currently only `function-app`).
  * @param name - The project name.
  * @param buildOutDirectory - The build output folder to zip, workspace-relative
- * (`dist/function-apps/<name>`).
+ * (`dist/apps/<name>`).
  * @returns The nx:run-commands target object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
@@ -104,7 +104,8 @@ import './functions/hello.js'
  * relative"). An Azure Function app is just a Node.js app packed with
  * `package.json` + `host.json`, so v2 keeps the plugin for generation and
  * rewires the build to the official `@nx/esbuild` executor, which emits a
- * fully self-contained deployable folder at `dist/function-apps/<name>`:
+ * fully self-contained deployable folder at `dist/apps/<name>` (the same
+ * workspace-root `dist/` convention every other project kind uses):
  * one `main.cjs` with every dependency (including private internal libs)
  * compiled in, plus `host.json` and `package.json` copied as assets. CI then
  * packages function apps with a plain artifact-publish step — no shell
@@ -138,7 +139,7 @@ function repairFunctionApp (workspaceRoot: string, name: string, scope: string, 
   const appRoot = join(workspaceRoot, 'apps', name)
   const rootManifest = readJson<{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
   const azureFunctionsVersion = rootManifest.dependencies?.['@azure/functions'] ?? rootManifest.devDependencies?.['@azure/functions'] ?? '^4.0.0'
-  const outputPath = `dist/function-apps/${name}`
+  const outputPath = `dist/apps/${name}`
 
   writeFileEnsured(join(appRoot, 'package.json'), toJson({
     name:         `${scope}/${name}`,

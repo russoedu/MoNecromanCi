@@ -263,12 +263,12 @@ both be absolute or both be relative"), so v2 rewires the generated app to
 the official `@nx/esbuild` executor instead:
 
 - `build` = `@nx/esbuild:esbuild` emitting ONE self-contained CJS bundle to
-  `dist/function-apps/<name>/main.cjs` — every dependency, `@azure/functions`
+  `dist/apps/<name>/main.cjs` — every dependency, `@azure/functions`
   and private internal libs included, is compiled in. The only external is
   `@azure/functions-core`, a virtual module the Functions host injects at run
   time. `host.json` + `package.json` (`main: "main.cjs"`) are copied in as
   assets, so the output folder IS the deployable — no `npm install`, ever.
-- `start` = `func start` run inside `dist/function-apps/<name>` (after build)
+- `start` = `func start` run inside `dist/apps/<name>` (after build)
   for local development.
 - `test` = a self-contained `jest` run (the app's own `jest.config.mjs` +
   `tsconfig.spec.json`, ts-jest transform). The plugin-generated kinds get

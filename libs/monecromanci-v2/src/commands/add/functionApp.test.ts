@@ -69,7 +69,7 @@ describe('runAdd function-app', () => {
     const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as { targets: Record<string, { executor: string, options: Record<string, unknown> }> }
     expect(project.targets.build.executor).toBe('@nx/esbuild:esbuild')
     expect(project.targets.build.options).toMatchObject({
-      outputPath: 'dist/function-apps/api',
+      outputPath: 'dist/apps/api',
       bundle:     true,
       thirdParty: true,
       // Virtual module the Functions host injects at run time; a CJS bundle
@@ -78,7 +78,7 @@ describe('runAdd function-app', () => {
       format:     ['cjs'],
       assets:     expect.arrayContaining([expect.objectContaining({ glob: 'host.json' }), expect.objectContaining({ glob: 'package.json' })]),
     })
-    expect(project.targets.start.options).toMatchObject({ command: 'func start', cwd: 'dist/function-apps/api' })
+    expect(project.targets.start.options).toMatchObject({ command: 'func start', cwd: 'dist/apps/api' })
     // The plugin's publish executor shares the same broken build path.
     expect(project.targets).not.toHaveProperty('publish')
     // A hand-rewired app gets no jest from a plugin generator, so wire it here:
@@ -87,7 +87,7 @@ describe('runAdd function-app', () => {
     // The package target zips the bundle folder into the drop under the exact
     // name CI turns into a build tag.
     expect(project.targets.package).toMatchObject({ executor: 'nx:run-commands', dependsOn: ['build'], outputs: ['{workspaceRoot}/dist/drop/function-app-api.zip'] })
-    expect(project.targets.package.options.command).toContain(`addLocalFolder('dist/function-apps/api')`)
+    expect(project.targets.package.options.command).toContain(`addLocalFolder('dist/apps/api')`)
     expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/function-app-api.zip')`)
 
     const tsconfig = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), 'utf8')) as { compilerOptions: Record<string, unknown>, exclude: string[] }
