@@ -23,6 +23,13 @@
       "options": {
         "command": "npm run lint -w monecromanci-v2"
       }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "npm run test:e2e -w monecromanci-v2"
+      }
     }
   }
 }
