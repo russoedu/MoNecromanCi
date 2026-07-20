@@ -274,6 +274,18 @@ than a surprise:
   from the zipped manifest — no `node_modules`/venv is bundled.
 - Changelog files are off (unpushable under the tag-only model); the git tag
   history is the changelog for now.
+- **A Python project that imports both a private internal lib AND a real
+  external PyPI dependency loses the external one.** Verified empirically:
+  `@nxlv/python`'s build executor correctly vendors an imported internal lib's
+  source into the wheel (`bundleLocalDependencies`) and, on its own, correctly
+  keeps a real dependency declared (`Requires-Dist`, pinned) — but combining
+  both on the *same* project silently drops the real dependency from the
+  built wheel's metadata entirely, so `pip install`ing it doesn't pull the
+  real dependency in and the package breaks at import time. This is a
+  `@nxlv/python` limitation, not an mnci2 config gap — there is no known
+  workaround today beyond keeping the two separate (e.g. re-exporting the
+  external usage through the internal lib instead of importing it directly
+  in the same project).
 
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 

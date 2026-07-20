@@ -199,8 +199,7 @@ function syncProjectReferences (workspaceRoot: string): void {
  * generator-default blocks, so there's no "stay in lockstep" invariant to
  * silently drift. `add` passes the result back to the `@nx/*`
  * generators explicitly (predictable regardless of Nx's own default
- * resolution) and uses the runner to wire the hand-built function app. The
- * return shape is generator-facing: `linter` is `eslint`, or `none` when the
+ * resolution). The return shape is generator-facing: `linter` is `eslint`, or `none` when the
  * workspace chose oxlint (oxlint is not an Nx linter). Missing/blank (e.g. a
  * workspace generated before this field existed) falls back to the box-out
  * opinion (eslint + jest).

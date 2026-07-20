@@ -259,10 +259,20 @@ enforce(
  * ------------------------------------------------------------------------- */
 
 enforce('nx run-many -t package succeeds', tryRun('npx nx run-many -t package', workspace), 'see log above')
+const AdmZip = createRequire(path.join(workspace, 'package.json'))('adm-zip')
 enforce('react app builds per environment into the drop (dev/uat/prod zips)',
   ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(workspace, `dist/drop/react-app-web-${environment}.zip`))))
 enforce('react app scaffolds a committed .env per environment',
   ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(workspace, `apps/web/.env.${environment}`))))
+enforce('react app zips actually contain a built SPA (index.html + assets), not just an empty drop',
+  ['dev', 'uat', 'prod'].every((environment) => {
+    const zipPath = path.join(workspace, `dist/drop/react-app-web-${environment}.zip`)
+    if (!existsSync(zipPath)) {
+      return false
+    }
+    const entries = new AdmZip(zipPath).getEntries().map((entry) => entry.entryName)
+    return entries.includes('index.html') && entries.some((entry) => entry.startsWith('assets/') && entry.endsWith('.js'))
+  }))
 
 // A browser bundle inlines everything by default (no npm install step at
 // runtime, unlike the published sdk) — prove BOTH the private lib and the
@@ -296,7 +306,11 @@ const nodeAppRun = tryRunCapture('node apps/svc/dist/main.js', workspace)
 enforce('node app runs standalone, resolving the inlined-by-tsc private lib and the real external dependency correctly',
   nodeAppRun.ok && nodeAppRun.output.includes('utils') && nodeAppRun.output.includes('1m'),
   nodeAppRun.output)
-enforce('node app packs into the drop (node-app-svc.zip)', existsSync(path.join(workspace, 'dist/drop/node-app-svc.zip')))
+const nodeAppZip = path.join(workspace, 'dist/drop/node-app-svc.zip')
+enforce('node app packs into the drop (node-app-svc.zip)', existsSync(nodeAppZip))
+const nodeAppZipEntries = existsSync(nodeAppZip) ? new AdmZip(nodeAppZip).getEntries().map((entry) => entry.entryName) : []
+enforce('node app zip actually contains the runnable dist shim, not just an empty drop',
+  nodeAppZipEntries.includes('main.js'))
 
 enforce('node function app bundles the compiled entry the same way', existsSync(path.join(workspace, 'apps/api/dist/main.js')))
 const nodeFunctionAppRun = tryRunCapture('node apps/api/dist/main.js', workspace)
@@ -315,7 +329,6 @@ enforce('node function app packs into the drop (node-function-app-api.zip)', exi
 // dependencies from the zipped package.json at deploy time (same model
 // python-function-app already relies on for requirements.txt). Verify the
 // zip's actual entry list rather than assuming the package target's shape.
-const AdmZip = createRequire(path.join(workspace, 'package.json'))('adm-zip')
 const zipEntries = existsSync(nodeFunctionAppZip) ? new AdmZip(nodeFunctionAppZip).getEntries().map((entry) => entry.entryName) : []
 enforce('node function app zip contains the dist shim, host.json and the repaired manifest at its root',
   zipEntries.includes('main.js') && zipEntries.includes('host.json') && zipEntries.includes('package.json'))
@@ -337,6 +350,19 @@ const publishedDependencies = JSON.parse(readFileSync(path.join(workspace, 'pack
 enforce('sdk publishable manifest never mentions the private lib', !Object.hasOwn(publishedDependencies, '@demo/utils'))
 enforce('sdk publishable manifest declares the real external dependency (ms) with a real version',
   typeof publishedDependencies.ms === 'string' && /^[~^]?\d+\.\d+\.\d+/.test(publishedDependencies.ms))
+// The strongest possible proof that publishing will actually work: ask npm
+// itself what it would pack, rather than trusting the dist folder's presence
+// on disk. This is exactly the check that would have caught the earlier
+// root-dist/ regression (npm pack silently produced an empty tarball once
+// dist lived outside the package directory).
+const sdkPackDryRun = tryRunCapture('npm pack --dry-run --json', path.join(workspace, 'packages/sdk'))
+let sdkPackedFiles = []
+try {
+  sdkPackedFiles = JSON.parse(sdkPackDryRun.output)[0]?.files?.map((file) => file.path) ?? []
+} catch { /* leaves sdkPackedFiles empty -> the check below fails and surfaces the raw output */ }
+enforce('sdk: `npm pack` would actually include the built bundle, not just package.json',
+  sdkPackDryRun.ok && sdkPackedFiles.includes('dist/index.esm.js') && sdkPackedFiles.includes('package.json'),
+  sdkPackDryRun.output)
 
 /* ---------------------------------------------------------------------------
  * Release config resolves for real
@@ -418,17 +444,83 @@ enforce('python: internal lib is a library under libs/ (never publishable)',
   existsSync(path.join(altWorkspace, 'libs/pycore/project.json')))
 enforce('python: function app carries the Azure Functions v2 files',
   ['function_app.py', 'host.json', 'requirements.txt'].every((file) => existsSync(path.join(altWorkspace, 'apps/pyfunc', file))))
+
+/* ---------------------------------------------------------------------------
+ * The same private-internal-lib / real-external-dependency proof as the JS
+ * side, adapted to Python's mechanism: @nxlv/python's bundleLocalDependencies
+ * vendors an imported internal lib's source straight into the wheel (like
+ * rollup does for npm-lib), while a real declared dependency stays a real
+ * `Requires-Dist` — EXCEPT, verified empirically, when BOTH land on the same
+ * project: the build executor then drops the real dependency from the
+ * wheel's metadata entirely (a genuine @nxlv/python limitation, not an mnci2
+ * gap — see the README's "Known gaps"). So each mechanism is proven
+ * separately, on the combination that's known to work: pyshared -> pycore
+ * (internal), pysvc -> a real PyPI package (external).
+ * ------------------------------------------------------------------------- */
+
+console.log('\n▸ wiring pyshared (publishable) -> pycore (private internal)')
+const pysharedPyprojectPath = path.join(altWorkspace, 'python-packages/pyshared/pyproject.toml')
+writeFileSync(pysharedPyprojectPath, `${readFileSync(pysharedPyprojectPath, 'utf8').replace('dependencies = []', 'dependencies = ["pycore"]')}\n[tool.uv.sources]\npycore = { path = "../../libs/pycore", editable = true }\n`)
+writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/hello.py'),
+  '"""Sample Hello World application."""\n\n\ndef hello():\n    """Return a friendly greeting."""\n    from pycore.hello import hello as core_hello\n    return "Hello pyshared uses " + core_hello()\n')
+writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/tests/test_hello.py'),
+  '"""Hello unit test module."""\n\nfrom pyshared.hello import hello\n\n\ndef test_hello():\n    """Test the hello function."""\n    assert hello() == "Hello pyshared uses Hello pycore"\n')
+
+console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
+const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
+writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('dependencies = []', 'dependencies = ["tomli>=2.0.0"]'))
+writeFileSync(path.join(altWorkspace, 'apps/pysvc/pysvc/hello.py'),
+  '"""Sample Hello World application."""\n\n\ndef hello():\n    """Return a friendly greeting."""\n    import tomli\n    return "Hello pysvc uses tomli " + tomli.__version__\n')
+writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_hello.py'),
+  '"""Hello unit test module."""\n\nfrom pysvc.hello import hello\n\n\ndef test_hello():\n    """Test the hello function."""\n    assert hello().startswith("Hello pysvc uses tomli ")\n')
+
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: pytest runs green across the python projects',
+enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included)',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: build produces a wheel for the publishable lib',
-  tryRun('npx nx build pyshared', altWorkspace)
-  && existsSync(path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')))
+
+const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
+const pysharedWheelPath = path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')
+enforce('python: build produces a wheel for the publishable lib', tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath))
+const pysharedWheelEntries = existsSync(pysharedWheelPath) ? new AdmZipPy(pysharedWheelPath).getEntries().map((entry) => entry.entryName) : []
+enforce('python: publishable lib wheel inlines the private internal lib (pycore) — no separate install needed',
+  pysharedWheelEntries.includes('pycore/hello.py') && pysharedWheelEntries.includes('pyshared/hello.py'))
+// The strongest possible proof: install the real wheel into a clean venv (no
+// workspace/editable install in play) and run it — mirrors the sdk's "runs
+// standalone under node" check.
+const pysharedVenv = path.join(temporary, 'py-venv-pyshared')
+run(`python3 -m venv ${pysharedVenv}`, altWorkspace)
+run(`${pysharedVenv}/bin/pip install --quiet ${pysharedWheelPath}`, altWorkspace)
+const pysharedVenvRun = tryRunCapture(`${pysharedVenv}/bin/python3 -c "from pyshared.hello import hello; print(hello())"`, altWorkspace)
+enforce('python: publishable lib installs into a clean venv and runs correctly (private lib resolves with no extra install)',
+  pysharedVenvRun.ok && pysharedVenvRun.output.includes('Hello pyshared uses Hello pycore'),
+  pysharedVenvRun.output)
+
 enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
   tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace)
   && existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip'))
   && existsSync(path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')))
+const pysvcZipPath = path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip')
+const pysvcZipEntries = existsSync(pysvcZipPath) ? new AdmZipPy(pysvcZipPath).getEntries().map((entry) => entry.entryName) : []
+enforce('python: app zip actually contains the built wheel (not just an empty drop)',
+  pysvcZipEntries.some((entry) => /^pysvc-.*\.whl$/.test(entry)))
+const pyfuncZipPath = path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')
+const pyfuncZipEntries = existsSync(pyfuncZipPath) ? new AdmZipPy(pyfuncZipPath).getEntries().map((entry) => entry.entryName) : []
+enforce('python: function app zip actually contains the deployable source (function_app.py, host.json, requirements.txt)',
+  ['function_app.py', 'host.json', 'requirements.txt'].every((file) => pyfuncZipEntries.includes(file)))
+
+const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
+// eslint-disable-next-line unicorn/prefer-blob-reading-methods -- adm-zip's readAsText, not FileReader's
+const pysvcMetadata = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA') : ''
+enforce('python: app wheel declares the real external dependency (tomli) with a real pinned version — not silently dropped',
+  /Requires-Dist:\s*tomli==\d+\.\d+/i.test(pysvcMetadata))
+const pysvcVenv = path.join(temporary, 'py-venv-pysvc')
+run(`python3 -m venv ${pysvcVenv}`, altWorkspace)
+run(`${pysvcVenv}/bin/pip install --quiet ${pysvcWheelPath}`, altWorkspace)
+const pysvcVenvRun = tryRunCapture(`${pysvcVenv}/bin/python3 -c "from pysvc.hello import hello; print(hello())"`, altWorkspace)
+enforce('python: app installs into a clean venv and runs correctly, resolving the real external dependency from PyPI',
+  pysvcVenvRun.ok && pysvcVenvRun.output.includes('Hello pysvc uses tomli '),
+  pysvcVenvRun.output)
 // Conventional-commit versioning reaches Python: `nx release` scopes
 // python-packages/*, so a dry-run tags the publishable Python lib from git
 // history (same mechanism as the npm packages). Needs a committed git repo.
