@@ -139,6 +139,49 @@ function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<stri
 }
 
 /**
+ * Redirects a Python project's `build` target output to the workspace-root `dist/`.
+ *
+ * @remarks
+ * `@nxlv/python:uv-project` always writes a `build` target with
+ * `outputPath: '{projectRoot}/dist'` — unlike the TS/JS kinds, this is a
+ * plain `project.json` option (no generator-native config file to edit), and
+ * `uv build` stages the package from a temporary copy before writing the
+ * wheel to `outputPath`, so redirecting it outside the project directory is
+ * safe (verified empirically: the wheel's contents are unaffected by where
+ * the artifact file ends up — unlike npm-lib/internal-lib, Python's
+ * packaging has no directory-boundary restriction). `{workspaceRoot}` is an
+ * Nx-recognized token, resolved the same way in `outputs` and `options`.
+ *
+ * @param projectJsonPath - Absolute path to the project's `project.json`.
+ * @param outputPath - The workspace-relative dist path (e.g. `dist/apps/svc`).
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function redirectBuildOutput (projectJsonPath: string, outputPath: string): void {
+  const project = readJson<Record<string, unknown>>(projectJsonPath)
+  const targets = (project.targets as Record<string, Record<string, unknown>> | undefined) ?? {}
+  const build = (targets.build as Record<string, unknown> | undefined) ?? {}
+  const options = (build.options as Record<string, unknown> | undefined) ?? {}
+  writeFileEnsured(projectJsonPath, toJson({
+    ...project,
+    targets: {
+      ...targets,
+      build: {
+        ...build,
+        // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
+        outputs: [`{workspaceRoot}/${outputPath}`],
+        options: {
+          ...options,
+          // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
+          outputPath: `{workspaceRoot}/${outputPath}`,
+        },
+      },
+    },
+  }))
+}
+
+/**
  * Reads a Python project's module directory name from its `project.json`.
  *
  * @remarks
@@ -161,10 +204,11 @@ function pythonModuleDirectory (projectJsonPath: string, name: string): string {
  * The `package` target for a Python app: zip its built wheel into the drop.
  *
  * @remarks
- * Zips `apps/<name>/dist` (the `@nxlv/python:build` wheel + sdist) into
- * `dist/drop/python-app-<name>.zip` — basename exactly `python-app-<name>`, the
- * string CI turns into the per-app build tag. `dependsOn: build` guarantees the
- * wheel exists; same cross-platform `adm-zip` one-liner used throughout `add`.
+ * Zips `dist/apps/<name>` (the `@nxlv/python:build` wheel + sdist, redirected
+ * there by {@link redirectBuildOutput}) into `dist/drop/python-app-<name>.zip`
+ * — basename exactly `python-app-<name>`, the string CI turns into the
+ * per-app build tag. `dependsOn: build` guarantees the wheel exists; same
+ * cross-platform `adm-zip` one-liner used throughout `add`.
  *
  * @param name - The Python app's project name.
  * @returns The nx:run-commands target object.
@@ -173,7 +217,7 @@ function pythonModuleDirectory (projectJsonPath: string, name: string): string {
  */
 function pythonAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/python-app-${name}.zip`
-  const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
+  const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
   return {
     executor:  'nx:run-commands',
     dependsOn: ['build'],
@@ -318,8 +362,10 @@ def test_build_greeting() -> None:
 export function addPythonApp (workspaceRoot: string, name: string): void {
   preparePython(workspaceRoot)
   runUvProject(workspaceRoot, { name, directory: `apps/${name}`, projectType: 'application' })
+  const projectJsonPath = join(workspaceRoot, 'apps', name, 'project.json')
+  redirectBuildOutput(projectJsonPath, `dist/apps/${name}`)
   ensureAdmZip(workspaceRoot)
-  addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), { package: pythonAppPackageTarget(name) })
+  addProjectJsonTargets(projectJsonPath, { package: pythonAppPackageTarget(name) })
 }
 
 /**
@@ -341,6 +387,7 @@ export function addPythonFunctionApp (workspaceRoot: string, name: string): void
   preparePython(workspaceRoot)
   runUvProject(workspaceRoot, { name, directory: `apps/${name}`, projectType: 'application' })
   const pythonFunctionAppRoot = join(workspaceRoot, 'apps', name)
+  redirectBuildOutput(join(pythonFunctionAppRoot, 'project.json'), `dist/apps/${name}`)
   const moduleDirectory = pythonModuleDirectory(join(pythonFunctionAppRoot, 'project.json'), name)
   writeFileEnsured(join(pythonFunctionAppRoot, 'function_app.py'), pythonFunctionAppMain(moduleDirectory))
   writeFileEnsured(join(pythonFunctionAppRoot, 'host.json'), PYTHON_FUNCTION_APP_HOST_JSON)
@@ -369,6 +416,7 @@ export function addPythonFunctionApp (workspaceRoot: string, name: string): void
 export function addPythonLib (workspaceRoot: string, name: string): void {
   preparePython(workspaceRoot)
   runUvProject(workspaceRoot, { name, directory: `python-packages/${name}`, projectType: 'library', publishable: true })
+  redirectBuildOutput(join(workspaceRoot, 'python-packages', name, 'project.json'), `dist/python-packages/${name}`)
 }
 
 /**
@@ -388,4 +436,5 @@ export function addPythonLib (workspaceRoot: string, name: string): void {
 export function addPythonInternalLib (workspaceRoot: string, name: string): void {
   preparePython(workspaceRoot)
   runUvProject(workspaceRoot, { name, directory: `libs/${name}`, projectType: 'library' })
+  redirectBuildOutput(join(workspaceRoot, 'libs', name, 'project.json'), `dist/libs/${name}`)
 }
