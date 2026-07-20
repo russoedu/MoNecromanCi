@@ -8,6 +8,10 @@ jest.mock('commander', () => {
   }
 
   class FakeCommand {
+    private static stripBrackets (flag: string): string {
+      return flag.replace(/^[[<]/, '').replace(/[\]>]$/, '')
+    }
+
     private readonly subcommands:       FakeCommand[] = []
     private readonly argumentNames:     string[] = []
     private readonly optionDefinitions: OptionDefinition[] = []
@@ -26,7 +30,17 @@ jest.mock('commander', () => {
     }
 
     argument (flag: string): this {
-      this.argumentNames.push(flag.replace(/^[[<]/, '').replace(/[\]>]$/, ''))
+      this.argumentNames.push(FakeCommand.stripBrackets(flag))
+      return this
+    }
+
+    // Mirrors `.argument()` for the one place cli.ts uses `Argument#choices()`
+    // (the `add` command's `[kind]`) — choice validation itself is proven
+    // against the real `commander` package in cli.choices.test.ts, since a
+    // hand-rolled mock re-implementing that validation would just be a second,
+    // divergent copy of commander's own logic.
+    addArgument (argument: { flag: string }): this {
+      this.argumentNames.push(FakeCommand.stripBrackets(argument.flag))
       return this
     }
 
@@ -74,7 +88,16 @@ jest.mock('commander', () => {
     }
   }
 
-  return { Command: FakeCommand }
+  class FakeArgument {
+    flag: string
+    constructor (flag: string, _description?: string) {
+      this.flag = flag
+    }
+
+    choices (_values: readonly string[]): this { return this }
+  }
+
+  return { Command: FakeCommand, Argument: FakeArgument }
 })
 
 jest.mock('./commands/add', () => ({ runAdd: jest.fn(), PROJECT_KINDS: [] }))

@@ -3,6 +3,7 @@ import { runNpx, runShell } from '../nx'
 import { applyOverlay, DEFAULT_STACK, type RegistryConfig, type StackConfig } from '../overlay'
 import { promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
+import { assertValidProjectName } from '../util/names'
 
 /**
  * Options accepted by {@link runNew}.
@@ -106,6 +107,12 @@ async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
  */
 export async function runNew (name: string | undefined, options: NewOptions): Promise<void> {
   const workspaceName = name ?? await promptText('Workspace name')
+  // Fails fast, before any further prompt or side effect: the name becomes a
+  // directory, a `create-nx-workspace` argument and (derived) an npm scope, so
+  // a bad one should never get this far — and an explicitly empty `name`
+  // argument bypasses promptText's own non-empty check, which only fires on
+  // the prompted path.
+  assertValidProjectName(workspaceName, 'Workspace name')
   const scope = options.scope ?? (options.yes ? `@${workspaceName}` : await promptText('npm scope for publishable packages', `@${workspaceName}`))
   const registry = await resolveRegistry(options)
   const agent = options.agent ?? (options.yes ? 'ubuntu-latest' : await promptText('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest'))

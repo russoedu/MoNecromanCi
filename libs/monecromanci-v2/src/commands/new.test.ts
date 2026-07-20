@@ -118,4 +118,18 @@ describe('runNew', () => {
 
     await expect(runNew('demo', { yes: true })).rejects.toThrow('toolchain failed with exit code 1')
   })
+
+  it('rejects an invalid workspace name before creating anything (no create-nx-workspace, no install)', async () => {
+    await expect(runNew('Not Valid!', { yes: true })).rejects.toThrow('Workspace name \'Not Valid!\' is invalid')
+
+    expect(mockRunNpx).not.toHaveBeenCalled()
+    expect(mockApplyOverlay).not.toHaveBeenCalled()
+    expect(mockRunShell).not.toHaveBeenCalled()
+  })
+
+  it('rejects an explicitly empty workspace name (bypasses promptText, since `??` only substitutes on undefined)', async () => {
+    await expect(runNew('', { yes: true })).rejects.toThrow('Workspace name \'\' is invalid')
+
+    expect(mockRunNpx).not.toHaveBeenCalled()
+  })
 })

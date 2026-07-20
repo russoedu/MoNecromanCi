@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, mnci2Config, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -245,6 +245,13 @@ describe('generatorDefaults', () => {
   })
 })
 
+describe('mnci2Config', () => {
+  it('carries the stack through unchanged — the single source of truth `add` reads back', () => {
+    expect(mnci2Config({ linter: 'oxlint', testRunner: 'vitest' })).toEqual({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
+    expect(mnci2Config({ linter: 'eslint', testRunner: 'jest' })).toEqual({ stack: { linter: 'eslint', testRunner: 'jest' } })
+  })
+})
+
 describe('rootScripts', () => {
   it('keeps nx lint (and no formatter) for eslint', () => {
     const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
@@ -299,11 +306,18 @@ describe('applyOverlay', () => {
     expect(nxJson.sync?.applyChanges).toBe(true)
   })
 
-  it('writes the stack as nx.json generator defaults (honoured by later `add`)', () => {
+  it('writes the stack as nx.json generator defaults (for a user\'s own direct `nx g`)', () => {
     overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { generators: Record<string, { linter: string, unitTestRunner: string }> }
     expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
+  })
+
+  it('writes mnci2.stack — the single source of truth `add` reads back, not the generator defaults', () => {
+    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci2: { stack: { linter: string, testRunner: string } } }
+    expect(nxJson.mnci2.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
   })
 
   it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {

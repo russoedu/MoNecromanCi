@@ -184,6 +184,12 @@ enforce('internal lib named under the scope (the sdk import path)', internalLibr
 
 enforce('no per-project eslint config beyond the root one', !existsSync(path.join(workspace, 'packages/sdk/eslint.config.mjs')) || existsSync(path.join(workspace, 'eslint.config.mjs')))
 
+// A typo'd kind must be a clear, real failure -- not a silent "success" that
+// creates nothing (the exact bug this check regression-tests: it used to
+// print "Added totally-bogus-kind 'thing'." and exit 0).
+enforce('add: an unrecognized kind is rejected up front, not a silent false "success"',
+  !tryRun(`node ${CLI} add totally-bogus-kind thing`, workspace) && !existsSync(path.join(workspace, 'apps/thing')))
+
 /* ---------------------------------------------------------------------------
  * Real toolchain runs inside the generated repo
  * ------------------------------------------------------------------------- */

@@ -302,11 +302,15 @@ export function rootScripts (stack: StackConfig): Record<string, string> {
  * The Nx `generators` defaults patched into `nx.json` from the chosen stack.
  *
  * @remarks
- * This is how the one-time `new` choice reaches every later `mnci2 add`: the
- * `@nx/*` generators read `linter`/`unitTestRunner` from here, and `add`
- * itself reads it back to wire the hand-built function app to the same runner.
- * oxlint is not an Nx linter, so it maps to `linter: 'none'` — the workspace
- * `oxlint.config.mts` + the `oxlint` root script cover linting instead.
+ * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci2 add`)
+ * pick up the workspace's chosen linter/runner automatically. oxlint is not an
+ * Nx linter, so it maps to `linter: 'none'` — the workspace `oxlint.config.mts`
+ * + the `oxlint` root script cover linting instead.
+ *
+ * `mnci2 add` itself does **not** read this back — see {@link mnci2Config} for
+ * the dedicated, single-source-of-truth block it reads instead. The two used
+ * to be conflated (`add` inferred the stack from one of these three identical
+ * blocks), an implicit "all three stay in lockstep" invariant nothing enforced.
  *
  * @param stack - The chosen stack.
  * @returns The `generators` object for `nx.json`.
@@ -320,6 +324,25 @@ export function generatorDefaults (stack: StackConfig): Record<string, unknown> 
     '@nx/react:library':     shared,
     '@nx/js:library':        shared,
   }
+}
+
+/**
+ * The `mnci2` block patched into `nx.json` from the chosen stack.
+ *
+ * @remarks
+ * The single source of truth `mnci2 add` reads back (`readWorkspaceStack` in
+ * `add.ts`) — deliberately separate from {@link generatorDefaults}, which
+ * serves Nx's own generator-default mechanism instead (a real, independent
+ * feature: it makes a user's own direct `nx g` pick up the right defaults
+ * too). One value, one place `add` trusts, with no invariant to keep in sync.
+ *
+ * @param stack - The chosen stack.
+ * @returns The `mnci2` object for `nx.json`.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function mnci2Config (stack: StackConfig): Record<string, unknown> {
+  return { stack: { linter: stack.linter, testRunner: stack.testRunner } }
 }
 
 /**
@@ -643,7 +666,8 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
-  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync }))
+  const mnci2 = { ...(nxJson.mnci2 as Record<string, unknown> | undefined), ...mnci2Config(options.stack) }
+  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci2 }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,

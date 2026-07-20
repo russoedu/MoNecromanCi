@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Command } from 'commander'
-import { runAdd, type AddOptions, type ProjectKind } from './commands/add'
+import { Argument, Command } from 'commander'
+import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
 import { logger } from './util/logger'
@@ -57,7 +57,10 @@ export function buildProgram (): Command {
 
   program
     .command('add')
-    .argument('[kind]', 'react-app | function-app | npm-lib | internal-lib')
+    // choices() rejects an unrecognized kind with a clean commander usage
+    // error (and lists the valid ones in --help) before runAdd ever runs —
+    // instead of a typo silently doing nothing but reporting "success".
+    .addArgument(new Argument('[kind]', 'project kind').choices(PROJECT_KINDS))
     .argument('[name]', 'project name')
     .description('Add a project by delegating to the matching Nx plugin generator')
     .option('--scope <scope>', 'npm scope for a publishable lib (defaults to @<workspace name>)')

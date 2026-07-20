@@ -1,7 +1,6 @@
 jest.mock('../nx', () => ({
   runNx:    jest.fn(),
   runShell: jest.fn(() => 0),
-  quote:    jest.fn((value: string) => `"${value}"`),
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -12,7 +11,7 @@ import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
 import { runNx, runShell } from '../nx'
 import { promptText } from '../prompts'
-import { runAdd } from './add'
+import { runAdd, type ProjectKind } from './add'
 
 const mockRunNx = jest.mocked(runNx)
 const mockRunShell = jest.mocked(runShell)
@@ -113,7 +112,7 @@ describe('runAdd', () => {
     // Plain npm install — `nx add` would run the plugin's bare init generator, which requires args and always fails.
     expect(mockRunShell).toHaveBeenNthCalledWith(2, 'npm', ['install', '--save-dev', '@nxazure/func'], workspaceRoot)
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['g', '@nxazure/func:init', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
-    expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template="HTTP trigger"'], workspaceRoot)
+    expect(mockRunNx).toHaveBeenNthCalledWith(2, ['g', '@nxazure/func:new', 'hello', '--project=api', '--template=HTTP trigger'], workspaceRoot)
     // One install materialises the repaired app's @azure/functions dependency,
     // the esbuild toolchain its build target needs, the jest toolchain its test
     // target runs, AND adm-zip for its package target (a hand-rewired app
@@ -270,7 +269,7 @@ describe('runAdd', () => {
   })
 
   it('honors an oxlint workspace: --linter=none and no per-lib eslint config', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'none', unitTestRunner: 'jest' } } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci2: { stack: { linter: 'oxlint', testRunner: 'jest' } } }))
 
     await runAdd('npm-lib', 'sdk', {})
 
@@ -281,7 +280,7 @@ describe('runAdd', () => {
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'eslint', unitTestRunner: 'vitest' } } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci2: { stack: { linter: 'eslint', testRunner: 'vitest' } } }))
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web' }))
 
@@ -292,7 +291,7 @@ describe('runAdd', () => {
   })
 
   it('wires the function app to vitest when the workspace chose it', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ generators: { '@nx/js:library': { linter: 'eslint', unitTestRunner: 'vitest' } } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci2: { stack: { linter: 'eslint', testRunner: 'vitest' } } }))
 
     await runAdd('function-app', 'api', {})
 
@@ -331,6 +330,14 @@ describe('runAdd', () => {
     expect(mockSelect).toHaveBeenCalled()
     expect(mockPromptText).toHaveBeenCalledWith('Project name')
     expect(mockRunNx.mock.calls.at(-1)?.[0]).toContain('apps/shop')
+  })
+
+  it('rejects an unrecognized kind with a clear error instead of a silent false "success" (defense in depth for a non-CLI caller)', async () => {
+    // The CLI itself already rejects a bad kind before runAdd runs (commander
+    // Argument#choices() in cli.ts); this proves runAdd's own switch has no
+    // silent fallthrough for any other caller that bypasses that layer.
+    await expect(runAdd('bogus-kind' as ProjectKind, 'thing', {})).rejects.toThrow('Unknown project kind \'bogus-kind\'')
+    expect(mockRunNx).not.toHaveBeenCalled()
   })
 
   it('adds a Python app: installs+registers @nxlv/python (uv), generates ruff+pytest, packages the wheel', async () => {
@@ -444,5 +451,18 @@ describe('runAdd', () => {
     expect(mockRunNx).not.toHaveBeenCalledWith(['add', '@nxlv/python'], workspaceRoot)
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { plugins: unknown[] }
     expect(nxJson.plugins).toHaveLength(1)
+  })
+
+  it('rejects an invalid project name before any install or generator call', async () => {
+    await expect(runAdd('react-app', 'Not Valid!', {})).rejects.toThrow('Project name \'Not Valid!\' is invalid')
+
+    expect(mockRunNx).not.toHaveBeenCalled()
+    expect(mockRunShell).not.toHaveBeenCalled()
+  })
+
+  it('rejects an explicitly empty project name (bypasses promptText, since `??` only substitutes on undefined)', async () => {
+    await expect(runAdd('react-app', '', {})).rejects.toThrow('Project name \'\' is invalid')
+
+    expect(mockRunNx).not.toHaveBeenCalled()
   })
 })

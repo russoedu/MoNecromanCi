@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
-import { quote, runNx, runShell } from '../nx'
+import { runNx, runShell } from '../nx'
 import { promptText } from '../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 import { logger } from '../util/logger'
+import { assertValidProjectName } from '../util/names'
 
 /* The generator flags below are the plugins' own options; v2 adds no config
  * of its own on top of what @nx/react, @nx/js and @nxazure/func emit. */
@@ -173,6 +174,11 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     choices: PROJECT_KINDS.map((value) => ({ name: value, value })),
   })
   const resolvedName = name ?? await promptText('Project name')
+  // Fails fast, before any install or generator call: the name becomes a
+  // directory, an argv token and (for Python kinds) a module identifier — and
+  // an explicitly empty `name` argument bypasses promptText's own non-empty
+  // check, which only fires on the prompted path.
+  assertValidProjectName(resolvedName, 'Project name')
 
   switch (resolvedKind) {
     case 'react-app': {
@@ -203,7 +209,9 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       ensureFunctionCoreTools(workspaceRoot)
       ensurePackageInstalled(workspaceRoot, '@nxazure/func')
       runNx(['g', '@nxazure/func:init', resolvedName, `--directory=apps/${resolvedName}`, '--no-interactive'], workspaceRoot)
-      runNx(['g', '@nxazure/func:new', 'hello', `--project=${resolvedName}`, `--template=${quote('HTTP trigger')}`], workspaceRoot)
+      // No shell quoting needed: runShell passes arguments as a real argv array
+      // (cross-spawn), so a value with an embedded space stays one argv token.
+      runNx(['g', '@nxazure/func:new', 'hello', `--project=${resolvedName}`, '--template=HTTP trigger'], workspaceRoot)
       repairFunctionApp(workspaceRoot, resolvedName, options.scope ?? defaultScope(workspaceRoot), stack.testRunner)
       // One install materialises everything the repair introduced: the app's
       // @azure/functions dependency, the esbuild toolchain that bundles it, the
@@ -303,6 +311,16 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       preparePython(workspaceRoot)
       runUvProject(workspaceRoot, { name: resolvedName, directory: `libs/${resolvedName}`, projectType: 'library' })
       break
+    }
+    default: {
+      // Unreachable while every ProjectKind has a case above: `exhaustive`
+      // being `never` makes adding a 9th kind without a matching case a
+      // *compile-time* error, not just a runtime gap. The CLI itself already
+      // rejects an unrecognized value before this ever runs (cli.ts's
+      // Argument#choices()); this is the last line of defense for any other
+      // caller of runAdd (e.g. a future programmatic use).
+      const exhaustive: never = resolvedKind
+      throw new Error(`Unknown project kind '${exhaustive as string}'. Expected one of: ${PROJECT_KINDS.join(', ')}.`)
     }
   }
 
@@ -521,15 +539,20 @@ function addNxTargets (manifestPath: string, newTargets: Record<string, unknown>
 }
 
 /**
- * The workspace stack, read back from the `nx.json` generator defaults `new` wrote.
+ * The workspace stack, read back from the `nx.json` `mnci2.stack` block `new` wrote.
  *
  * @remarks
- * How a one-time `mnci2 new` choice reaches `add`: the `linter`/`unitTestRunner`
- * defaults are the source of truth. `add` passes them back to the `@nx/*`
- * generators explicitly (predictable regardless of Nx's default resolution) and
- * uses the runner to wire the hand-built function app. `linter` is the
- * generator value — `eslint`, or `none` when the workspace chose oxlint.
- * Missing/blank defaults fall back to the box-out opinion (eslint + jest).
+ * How a one-time `mnci2 new` choice reaches `add`: `mnci2.stack` ({@link
+ * mnci2Config} in `overlay.ts`) is the single source of truth — a dedicated
+ * block, not inferred from one of Nx's own (three, always-identical)
+ * generator-default blocks, so there's no "stay in lockstep" invariant to
+ * silently drift. `add` passes the result back to the `@nx/*` generators
+ * explicitly (predictable regardless of Nx's own default resolution) and uses
+ * the runner to wire the hand-built function app. The return shape is
+ * generator-facing: `linter` is `eslint`, or `none` when the workspace chose
+ * oxlint (oxlint is not an Nx linter). Missing/blank (e.g. a workspace
+ * generated before this field existed) falls back to the box-out opinion
+ * (eslint + jest).
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @returns The linter and test runner to apply.
@@ -537,11 +560,11 @@ function addNxTargets (manifestPath: string, newTargets: Record<string, unknown>
  * @typeParam None - this function has no generic type parameters.
  */
 function readWorkspaceStack (workspaceRoot: string): { linter: 'eslint' | 'none', testRunner: 'jest' | 'vitest' } {
-  const nxJson = readJson<{ generators?: Record<string, { linter?: string, unitTestRunner?: string }> }>(join(workspaceRoot, 'nx.json'))
-  const defaults = nxJson.generators?.['@nx/js:library']
+  const nxJson = readJson<{ mnci2?: { stack?: { linter?: string, testRunner?: string } } }>(join(workspaceRoot, 'nx.json'))
+  const stack = nxJson.mnci2?.stack
   return {
-    linter:     defaults?.linter === 'none' ? 'none' : 'eslint',
-    testRunner: defaults?.unitTestRunner === 'vitest' ? 'vitest' : 'jest',
+    linter:     stack?.linter === 'oxlint' ? 'none' : 'eslint',
+    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
 }
 
