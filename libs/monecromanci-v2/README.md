@@ -203,6 +203,42 @@ overwrite the hand-set password). Two one-time grants are required (project
 admin): **Contribute** on the repo for the *Project Collection Build Service*
 account (tag push), and **publish** rights on the feed for the PAT's owner.
 
+**The one PAT, two different encodings — read this before wiring a third
+protocol.** The same `$(PAT)` variable is base64-encoded throughout — that's
+the raw value Azure Artifacts' "Connect to feed" instructions give you. npm's
+`.npmrc` `_password` field expects exactly that pre-encoded form, so it's used
+as-is. `uv`/pypi basic auth, by contrast, wants the **raw** token — so the
+Python publish step in `azurePipelinesYaml` explicitly *decodes* the same
+`$(PAT)` (`Buffer.from(process.env.PAT, 'base64').toString()`) before handing
+it to `UV_PUBLISH_PASSWORD`. Both are correct for their protocol today, but
+it's an easy trap to get backwards: if you ever wire a third registry
+protocol, check whether it wants the pre-encoded or the raw form before
+assuming either convention.
+
+## Dependency & risk notes
+
+Being upfront about what mnci2 leans on, so it's a conscious trade-off rather
+than a surprise:
+
+- **Three unofficial, small-team Nx plugins carry real weight**:
+  [`@nxazure/func`](https://github.com/AlexPshul/nxazure) (all
+  Azure Function generation), [`@nxlv/python`](https://github.com/lucasvieirasilva/nx-plugins)
+  (every Python kind), and [`oxc-standard`](https://github.com/JohnDeved/ox-standard)
+  (the oxlint/oxfmt StandardJS preset) — none are `@nx`-scoped/officially
+  maintained. `@nxazure/func` already needs a hand-written workaround (see
+  below): its own `build`/`start`/`publish` executors are broken on Nx 23, so
+  `add function-app` keeps the plugin only for generation and rewires the
+  build to the official `@nx/esbuild` executor. If any of the three stalls or
+  breaks compatibility with a future Nx major, that surface needs a real
+  maintenance response, not just a version bump.
+- **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
+  TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
+  `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
+  because the alias trick is what makes it work at all today (see "Stack"
+  above). A semver-compatible upstream release could still change behavior or
+  break the alias before the rest of the ecosystem (Nx, typescript-eslint)
+  catches up — worth a periodic re-check, not a "set and forget."
+
 ## Known gaps (accepted for the experiment)
 
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
