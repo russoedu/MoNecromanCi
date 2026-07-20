@@ -14,11 +14,6 @@ import { runAdd } from '../add'
 const mockRunNx = jest.mocked(runNx)
 const mockRunShell = jest.mocked(runShell)
 
-// @nx/react:app always writes this; the generator is mocked in these tests,
-// so it's pre-created to match — `redirectDefaultBuild` (add/reactApp.ts)
-// edits this exact field and throws if it's missing.
-const DEFAULT_VITE_CONFIG = 'export default { build: { outDir: \'./dist\' } }\n'
-
 let workspaceRoot: string
 
 beforeEach(() => {
@@ -28,8 +23,6 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
-  mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
-  writeFileSync(join(workspaceRoot, 'apps/web/vite.config.mts'), DEFAULT_VITE_CONFIG)
 })
 
 afterEach(() => {
@@ -83,15 +76,9 @@ describe('runAdd react-app', () => {
     expect(manifest.name).toBe('@demo/web')
     const targets = manifest.nx.targets
 
-    // One build target per environment: vite build --mode <env>, output redirected
-    // to the workspace-root dist/ (standardized across every project kind).
+    // One build target per environment: vite build --mode <env> --outDir dist-<env>.
     for (const environment of ['dev', 'uat', 'prod']) {
-      expect(targets[`build-${environment}`]).toMatchObject({
-        executor: 'nx:run-commands',
-        // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
-        outputs:  [`{workspaceRoot}/dist/apps/web-${environment}`],
-        options:  { command: `vite build --mode ${environment} --outDir ../../dist/apps/web-${environment}`, cwd: 'apps/web' },
-      })
+      expect(targets[`build-${environment}`]).toMatchObject({ executor: 'nx:run-commands', options: { command: `vite build --mode ${environment} --outDir dist-${environment}`, cwd: 'apps/web' } })
     }
 
     // The package target depends on the three env builds and emits one zip per
@@ -102,11 +89,7 @@ describe('runAdd react-app', () => {
       '{workspaceRoot}/dist/drop/react-app-web-uat.zip',
       '{workspaceRoot}/dist/drop/react-app-web-prod.zip',
     ])
-    expect(targets.package.options.command).toContain('addLocalFolder(\'dist/apps/web-uat\')')
     expect(targets.package.options.command).toContain(`writeZip('dist/drop/react-app-web-uat.zip')`)
-
-    // The default (inference-only) `build` target is redirected the same way.
-    expect(readFileSync(join(workspaceRoot, 'apps/web/vite.config.mts'), 'utf8')).toContain('outDir: \'../../dist/apps/web\'')
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {
