@@ -129,6 +129,23 @@ are the whole model. Publishable Python packages get their own
 `python-packages/` dir so the npm `nx release` (`packages/*`) is never entangled
 with Python publishing.
 
+### Build output: root `dist/`, with two hard exceptions
+
+Every kind builds to `dist/<projectRoot>` at the workspace root (mirroring
+Nx's own classic convention) — `dist/apps/web`, `dist/apps/api`,
+`dist/python-packages/pyshared`, and so on — **except `npm-lib` and
+`internal-lib`**, which build to their own `<projectRoot>/dist` as before.
+That's not an oversight: both are resolved as npm-workspace packages through
+`package.json`'s `exports` field, and Node hard-rejects any `exports` target
+that escapes the package's own directory
+(`ERR_INVALID_PACKAGE_TARGET` — verified empirically). `npm-lib` is doubly
+constrained: `npm pack`/`nx release publish` only ever includes files inside
+the package directory tree, so relocating its `dist` would silently publish
+an empty package. Every other kind (`react-app`, `function-app`, and all four
+Python kinds) has no such constraint — verified empirically that `uv build`
+stages from a temporary copy and the wheel's contents don't depend on where
+the output file lands — so all of them are standardized to root `dist/`.
+
 ## Published packages CAN depend on internal libraries
 
 Import an internal lib from an npm-lib directly — and do **not** add it to the
@@ -146,6 +163,13 @@ externalizes exactly what the manifest declares (`dependencies` +
 undeclared internal lib is compiled from source INTO the bundle — the private
 name never reaches the published `package.json`. Trade-off: the published
 output is a single bundle (no per-file deep imports).
+
+Function apps and React apps go the other way, and the e2e proves both
+directions for real: a `function-app`/`react-app` build has no install step at
+deploy/runtime, so it must inline **everything** — the private internal lib
+AND real npm dependencies alike — while a publishable `npm-lib`'s bundle must
+keep real npm dependencies external (declared, not bundled) for the published
+tarball to install correctly downstream.
 
 Cross-project imports (`@scope/lib`) resolve through **TypeScript project
 references** under `--preset=ts`, and those references are maintained by
@@ -294,9 +318,11 @@ with Vite's own **modes**:
   public by definition; real secrets never belong here). The files are
   committed (an allow-rule keeps them out of `.gitignore`).
 - Adds `build-dev` / `build-uat` / `build-prod` targets, each
-  `vite build --mode <env> --outDir dist-<env>`, so every environment gets its
-  own compiled-in config. The default inferred `build` (single build) stays for
-  local dev and the CI verify step.
+  `vite build --mode <env> --outDir <root>/dist/apps/<name>-<env>`, so every
+  environment gets its own compiled-in config, built (like every other kind)
+  under the workspace-root `dist/`. The default inferred `build` (single
+  build, redirected to `dist/apps/<name>` via a post-generation edit of
+  `vite.config.mts`) stays for local dev and the CI verify step.
 - `package` builds all three and zips each into
   `dist/drop/react-app-<name>-<env>.zip` — **one artifact per environment**.
 
@@ -318,10 +344,10 @@ standard, so they are always used (`--linter=ruff --unitTestRunner=pytest`,
 
 | Kind | Location | Build / deploy |
 | ---- | -------- | -------------- |
-| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel, zipped into `dist/drop/python-app-<name>.zip` |
+| `python-app` | `apps/<name>` | `@nxlv/python:build` wheel to `dist/apps/<name>`, zipped into `dist/drop/python-app-<name>.zip` |
 | `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); the **source** is zipped into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
-| `python-lib` | `python-packages/<name>` | publishable wheel; a `publish` target (`uv publish`) |
-| `python-internal-lib` | `libs/<name>` | private shared code, bundled into consumers' wheels |
+| `python-lib` | `python-packages/<name>` | publishable wheel to `dist/python-packages/<name>`; a `publish` target (`uv publish`) |
+| `python-internal-lib` | `libs/<name>` | private shared code, built to `dist/libs/<name>`, bundled into consumers' wheels |
 
 - **Apps** get a `package` target that fits the existing CI unchanged — they
   own a `project.json`, so the pipeline's `apps/*` pack step tags them

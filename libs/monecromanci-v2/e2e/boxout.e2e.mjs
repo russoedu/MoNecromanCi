@@ -14,7 +14,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -144,20 +144,66 @@ console.log('\n▸ mnci2 add internal-lib utils')
 run(`node ${CLI} add internal-lib utils`, workspace)
 
 /* ---------------------------------------------------------------------------
- * The dependency chain: a PUBLISHED package using a PRIVATE internal lib.
- * The internal lib is imported directly and NEVER declared in the consumer's
- * dependencies — npm workspaces links every member into root node_modules,
- * and rollup (which externalizes only manifest deps) inlines it from source.
+ * The dependency chain: a PUBLISHED package using a PRIVATE internal lib AND a
+ * real EXTERNAL dependency (ms) — opposite fates. The internal lib is imported
+ * directly and NEVER declared in the consumer's dependencies — npm workspaces
+ * links every member into root node_modules, and rollup (which externalizes
+ * only manifest deps) inlines it from source. `ms` IS declared, so rollup
+ * externalizes it: the published tarball must still work when `npm install`d
+ * standalone, which only holds if real dependencies stay real `require`/
+ * `import`s rather than getting bundled in.
  * ------------------------------------------------------------------------- */
 
-console.log('\n▸ wiring sdk (published) -> utils (private internal)')
+console.log('\n▸ wiring sdk (published) -> utils (private internal) + ms (real external dependency)')
+run('npm install ms @types/ms --save-dev', workspace)
+const msVersion = JSON.parse(readFileSync(path.join(workspace, 'node_modules/ms/package.json'), 'utf8')).version
+const msSource = readFileSync(path.join(workspace, 'node_modules/ms/index.js'), 'utf8')
+// A literal string constant from ms's own installed source — survives
+// minification (string literals are never renamed), so its presence proves
+// real inlined code, not just "no import statement remains". Extracted live
+// rather than hardcoded so a future ms release can't silently break the check.
+const MS_SOURCE_MARKER = 'val is not a non-empty string or a valid number. val='
+if (!msSource.includes(MS_SOURCE_MARKER)) {
+  throw new Error(`ms@${msVersion} source changed — update the e2e's inline-detection marker`)
+}
 writeFileSync(path.join(workspace, 'libs/utils/src/lib/utils.ts'), 'export function utils(): string {\n  return \'utils\';\n}\n')
-writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.ts'), 'import { utils } from \'@demo/utils\';\n\nexport function sdk(): string {\n  return \'sdk uses \' + utils();\n}\n')
-writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'), 'import { sdk } from \'./sdk.js\';\n\ndescribe(\'sdk\', () => {\n  it(\'uses the internal lib\', () => {\n    expect(sdk()).toEqual(\'sdk uses utils\');\n  });\n});\n')
+const sdkManifestPath = path.join(workspace, 'packages/sdk/package.json')
+const sdkManifestForDependency = JSON.parse(readFileSync(sdkManifestPath, 'utf8'))
+sdkManifestForDependency.dependencies = { ...sdkManifestForDependency.dependencies, ms: `^${msVersion}` }
+writeFileSync(sdkManifestPath, `${JSON.stringify(sdkManifestForDependency, undefined, 2)}\n`)
+writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nexport function sdk(): string {\n  return \'sdk uses \' + utils() + \' and \' + ms(60000);\n}\n')
+writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'), 'import { sdk } from \'./sdk.js\';\n\ndescribe(\'sdk\', () => {\n  it(\'uses the internal lib and the external dependency\', () => {\n    expect(sdk()).toEqual(\'sdk uses utils and 1m\');\n  });\n});\n')
 run('npx nx sync', workspace)
 
 console.log('\n▸ mnci2 add react-app web')
 run(`node ${CLI} add react-app web`, workspace)
+
+// A browser bundle inlines everything by default (same direction as a function
+// app's self-contained deploy), so wire the same private-lib + real-external
+// pair here too. `App` itself is unit-tested under Jest, which (unlike Vite)
+// has no `import.meta.env` support — verified empirically — so the deps go in
+// `main.tsx` (the Vite entry point, never imported by a spec file) instead.
+console.log('\n▸ wiring react app (web) -> utils (private internal) + ms (real external dependency)')
+writeFileSync(path.join(workspace, 'apps/web/src/main.tsx'), [
+  'import { StrictMode } from \'react\';',
+  'import * as ReactDOM from \'react-dom/client\';',
+  'import ms from \'ms\';',
+  'import { utils } from \'@demo/utils\';',
+  'import App from \'./app/app\';',
+  '',
+  'console.log(\'deps-check:\', utils(), ms(60000), import.meta.env.VITE_API_URL);',
+  '',
+  'const root = ReactDOM.createRoot(',
+  '  document.getElementById(\'root\') as HTMLElement,',
+  ');',
+  '',
+  'root.render(',
+  '  <StrictMode>',
+  '    <App />',
+  '  </StrictMode>,',
+  ');',
+  '',
+].join('\n'))
 
 console.log('\n▸ mnci2 add function-app api')
 const coreToolsAvailable = tryRun('func --version', workspace)
@@ -166,6 +212,15 @@ if (coreToolsAvailable) {
   enforce('function app generated (@nxazure/func)', functionAppGenerated, 'generator failed — see log above')
 } else {
   pending('function app generated (@nxazure/func)', false, 'Azure Functions Core Tools not installed locally')
+}
+if (functionAppGenerated) {
+  // A function app's whole point is a self-contained deploy (no npm install at
+  // Azure deploy time), so — unlike the sdk's real external dependency — BOTH
+  // the private lib and ms must end up genuinely inlined, not just imported.
+  console.log('\n▸ wiring function app (api) -> utils (private internal) + ms (real external dependency)')
+  writeFileSync(path.join(workspace, 'apps/api/src/deps.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nexport function apiDeps(): string {\n  return \'api uses \' + utils() + \' and \' + ms(60000);\n}\n')
+  writeFileSync(path.join(workspace, 'apps/api/src/main.ts'), '// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport \'./functions/hello.js\';\nimport { apiDeps } from \'./deps.js\';\n\n// eslint-disable-next-line no-console -- proves apiDeps (and its private-lib +\n// external-dep imports) are reachable, so esbuild bundles them rather than\n// tree-shaking them away; never actually invoked (no Functions host here).\nconsole.log(apiDeps());\n')
+  run('npx nx sync', workspace)
 }
 
 /* ---------------------------------------------------------------------------
@@ -211,6 +266,24 @@ enforce('react app builds per environment into the drop (dev/uat/prod zips)',
 enforce('react app scaffolds a committed .env per environment',
   ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(workspace, `apps/web/.env.${environment}`))))
 
+// A browser bundle inlines everything by default (no npm install step at
+// runtime, unlike the published sdk) — prove BOTH the private lib and the
+// real external dependency (ms) are genuinely inlined per environment, and
+// that each environment's build bakes in only its own VITE_API_URL (proving
+// the three builds are genuinely separate compiles, not one bundle copied
+// three times).
+for (const environment of ['dev', 'uat', 'prod']) {
+  const assetsDirectory = path.join(workspace, `dist/apps/web-${environment}/assets`)
+  const jsAsset = existsSync(assetsDirectory) ? readdirSync(assetsDirectory).find((file) => file.endsWith('.js')) : undefined
+  const bundleText = jsAsset ? readFileSync(path.join(assetsDirectory, jsAsset), 'utf8') : ''
+  enforce(`react app (${environment}) bundle inlines the private lib (utils) and the real external dependency (ms)`,
+    bundleText.includes('utils') && bundleText.includes(MS_SOURCE_MARKER))
+  const ownUrl = `https://api.${environment}.example.com`
+  const otherUrls = ['dev', 'uat', 'prod'].filter((other) => other !== environment).map((other) => `https://api.${other}.example.com`)
+  enforce(`react app (${environment}) bundle bakes in only its own VITE_API_URL`,
+    bundleText.includes(ownUrl) && otherUrls.every((url) => !bundleText.includes(url)))
+}
+
 if (functionAppGenerated) {
   // The rewired function app bundles to ONE self-contained deployable folder
   // (the plugin's executors are bypassed — their shared prepare-build breaks
@@ -222,6 +295,12 @@ if (functionAppGenerated) {
   const bundle = readFileSync(path.join(bundleDirectory, 'main.cjs'), 'utf8')
   enforce('bundle inlines @azure/functions; only the host-injected functions-core stays external',
     bundle.includes('@azure/functions-core') && !/require\("@azure\/functions"\)/.test(bundle))
+  // A function app's whole point is a self-contained deploy: the private lib
+  // AND the real external dependency (ms) must both be genuinely inlined —
+  // there is no npm install step at Azure deploy time to resolve either one.
+  enforce('bundle inlines the private lib (@demo/utils) — no import of it remains', !bundle.includes('@demo/utils'))
+  enforce('bundle inlines the real external dependency (ms), not left as a require',
+    bundle.includes(MS_SOURCE_MARKER) && !/require\(["']ms["']\)/.test(bundle))
   const functionAppManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'))
   enforce('function app manifest repaired (name, bundled main, runtime SDK dependency)',
     functionAppManifest.name === '@demo/api'
@@ -246,13 +325,17 @@ if (functionAppGenerated) {
 
 const sdkBundle = readFileSync(path.join(workspace, 'packages/sdk/dist/index.esm.js'), 'utf8')
 enforce('sdk bundle inlines the private lib (no import of it remains)', !sdkBundle.includes('@demo/utils'))
+enforce('sdk bundle keeps the real external dependency (ms) external — not inlined',
+  sdkBundle.includes('from \'ms\'') && !sdkBundle.includes(MS_SOURCE_MARKER))
 enforce(
-  'sdk bundle runs standalone under node',
-  tryRun(`node --input-type=module -e "import { sdk } from './packages/sdk/dist/index.esm.js'; if (sdk() !== 'sdk uses utils') { throw new Error('wrong output: ' + sdk()) }"`, workspace),
+  'sdk bundle runs standalone under node, resolving the inlined private lib and the external dependency correctly',
+  tryRun(`node --input-type=module -e "import { sdk } from './packages/sdk/dist/index.esm.js'; if (sdk() !== 'sdk uses utils and 1m') { throw new Error('wrong output: ' + sdk()) }"`, workspace),
   'see log above',
 )
 const publishedDependencies = JSON.parse(readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8')).dependencies ?? {}
 enforce('sdk publishable manifest never mentions the private lib', !Object.hasOwn(publishedDependencies, '@demo/utils'))
+enforce('sdk publishable manifest declares the real external dependency (ms) with a real version',
+  typeof publishedDependencies.ms === 'string' && /^[~^]?\d+\.\d+\.\d+/.test(publishedDependencies.ms))
 
 /* ---------------------------------------------------------------------------
  * Release config resolves for real
@@ -338,9 +421,9 @@ enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
 enforce('python: pytest runs green across the python projects',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: build produces a wheel for the publishable lib',
+enforce('python: build produces a wheel for the publishable lib, standardized to root dist/',
   tryRun('npx nx build pyshared', altWorkspace)
-  && existsSync(path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')))
+  && existsSync(path.join(altWorkspace, 'dist/python-packages/pyshared/pyshared-1.0.0-py3-none-any.whl')))
 enforce('python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
   tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace)
   && existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip'))
