@@ -29,6 +29,13 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+  // @nx/react:app always writes this; the generator is mocked here, so it's
+  // pre-created for every react-app name this file uses — `redirectDefaultBuild`
+  // (add/reactApp.ts) edits this exact field and throws if it's missing.
+  for (const name of ['web', 'shop']) {
+    mkdirSync(join(workspaceRoot, 'apps', name), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps', name, 'vite.config.mts'), 'export default { build: { outDir: \'./dist\' } }\n')
+  }
 })
 
 afterEach(() => {

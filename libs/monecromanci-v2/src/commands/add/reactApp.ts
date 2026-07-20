@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx } from '../../nx'
-import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
+import { fileExists, readJson, replaceInFile, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 import { ensureAdmZip, hasPlugin, type WorkspaceStack } from './shared'
 
@@ -62,9 +62,10 @@ VITE_API_URL=https://api.${environment}.example.com
  *
  * @remarks
  * One `build-<env>` target per {@link REACT_ENVIRONMENTS} entry runs
- * `vite build --mode <env> --outDir dist-<env>`, so each environment gets its
- * own compiled-in `VITE_*` config. The `package` target depends on all three
- * and zips each `dist-<env>` into `dist/drop/react-app-<name>-<env>.zip` — one
+ * `vite build --mode <env> --outDir <root>/dist/apps/<name>-<env>`, so each
+ * environment gets its own compiled-in `VITE_*` config, built (like every
+ * other kind) under the workspace-root `dist/`. The `package` target depends
+ * on all three and zips each into `dist/drop/react-app-<name>-<env>.zip` — one
  * artifact per environment. CI needs no change: the "tag per app" step derives
  * `##vso[build.addbuildtag]react-app-<name>-<env>` straight from the zip
  * filenames, so a classic release pipeline can deploy each environment from its
@@ -79,15 +80,16 @@ VITE_API_URL=https://api.${environment}.example.com
 export function reactAppTargets (name: string): Record<string, unknown> {
   const targets: Record<string, unknown> = {}
   for (const environment of REACT_ENVIRONMENTS) {
+    const outDirectory = `../../dist/apps/${name}-${environment}`
     targets[`build-${environment}`] = {
       executor: 'nx:run-commands',
       // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
-      outputs:  [`{workspaceRoot}/apps/${name}/dist-${environment}`],
-      options:  { command: `vite build --mode ${environment} --outDir dist-${environment}`, cwd: `apps/${name}` },
+      outputs:  [`{workspaceRoot}/dist/apps/${name}-${environment}`],
+      options:  { command: `vite build --mode ${environment} --outDir ${outDirectory}`, cwd: `apps/${name}` },
     }
   }
   const zipStatements = REACT_ENVIRONMENTS
-    .map((environment) => `z=new A();z.addLocalFolder('apps/${name}/dist-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`)
+    .map((environment) => `z=new A();z.addLocalFolder('dist/apps/${name}-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`)
     .join(';')
   targets.package = {
     executor:  'nx:run-commands',
@@ -97,6 +99,32 @@ export function reactAppTargets (name: string): Record<string, unknown> {
     options:   { command: `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');let z;${zipStatements}"` },
   }
   return targets
+}
+
+/**
+ * Redirects the default (inference-only) `build` target's output to root `dist/`.
+ *
+ * @remarks
+ * `@nx/react:app --bundler=vite` writes `vite.config.mts` with a fixed
+ * `build.outDir: './dist'` and exposes no generator flag to override it, so
+ * this is a targeted post-generation edit of that field — the same category
+ * of thing {@link reactAppTargets}'s per-env builds already do, applied to
+ * the generator's own default build. Throws (via {@link replaceInFile}) if
+ * the expected field is missing, rather than silently leaving the build
+ * in-project on a future `@nx/react` version.
+ *
+ * @param reactAppRoot - Absolute path to the React app's project directory.
+ * @param name - The React app's project name.
+ * @returns Nothing.
+ * @throws Error when `vite.config.mts`'s `outDir` field is not found.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function redirectDefaultBuild (reactAppRoot: string, name: string): void {
+  replaceInFile(
+    join(reactAppRoot, 'vite.config.mts'),
+    /outDir: '\.\/dist'/,
+    `outDir: '../../dist/apps/${name}'`,
+  )
 }
 
 /**
@@ -183,6 +211,7 @@ export function addReactApp (workspaceRoot: string, name: string, stack: Workspa
   ], workspaceRoot)
   ensureAdmZip(workspaceRoot)
   const reactAppRoot = join(workspaceRoot, 'apps', name)
+  redirectDefaultBuild(reactAppRoot, name)
   for (const environment of REACT_ENVIRONMENTS) {
     writeFileEnsured(join(reactAppRoot, `.env.${environment}`), reactEnvironmentFile(environment))
   }
