@@ -168,10 +168,14 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * yet) from hard-erroring. Changelog files are disabled because they would be
  * unpushable under the tag-only model.
  *
- * The git options live under `version.git` (not a top-level `release.git`):
- * Nx rejects the top-level form for the `nx release version` subcommand,
- * which is exactly what users run for dry-runs. `push: true` pushes the tag
- * (and only the tag — there is no commit to push).
+ * The git options live under a top-level `git` (not `version.git`): the
+ * guarded CI release step and the generated `release:preview` script both run
+ * the combined `nx release` command (never the bare `nx release version`
+ * subcommand), and Nx hard-errors that combined command when git options are
+ * granular (`version.git`/`changelog.git`) instead of top-level — the reverse
+ * of the bare `version` subcommand's own requirement, which is why the two
+ * forms aren't interchangeable (verified empirically). `push: true` pushes
+ * the tag (and only the tag — there is no commit to push).
  *
  * Two directories are released: `packages/*` (publishable **npm** libraries)
  * and `python-packages/*` (publishable **Python** packages) — deliberately one
@@ -194,10 +198,10 @@ export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
   projects:             ['packages/*', 'python-packages/*'],
   releaseTag:           { pattern: '{projectName}@{version}' },
+  git:                  { commit: false, tag: true, push: true },
   version:              {
     conventionalCommits:            true,
     fallbackCurrentVersionResolver: 'disk',
-    git:                            { commit: false, tag: true, push: true },
     // Build only what is being released. Without this, @nx/js:lib's generator
     // defaults the pre-version command to building EVERY project, so a broken
     // (or merely slow) app build would block releasing unrelated packages.

@@ -64,15 +64,15 @@
     "releaseTag": {
       "pattern": "{projectName}@{version}"
     },
+    "git": {
+      "commit": false,
+      "tag": true,
+      "push": true
+    },
     "version": {
       "preVersionCommand": "npx nx run-many -t build --projects=packages/*,python-packages/*",
       "conventionalCommits": true,
-      "fallbackCurrentVersionResolver": "disk",
-      "git": {
-        "commit": false,
-        "tag": true,
-        "push": true
-      }
+      "fallbackCurrentVersionResolver": "disk"
     },
     "changelog": {
       "workspaceChangelog": false
