@@ -5,7 +5,7 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
@@ -27,6 +27,10 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+  // The generator is mocked, so pre-create the manifest it would have written
+  // (every test here adds a lib named 'sdk') — addNpmLib patches it in place.
+  mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+  writeFileSync(join(workspaceRoot, 'packages/sdk/package.json'), JSON.stringify({ name: '@demo/sdk' }))
 })
 
 afterEach(() => {
@@ -47,6 +51,13 @@ describe('runAdd npm-lib', () => {
       '--linter=eslint',
       '--no-interactive',
     ], workspaceRoot)
+  })
+
+  it('marks the manifest publicly publishable (npm treats a new scoped package as private otherwise)', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')) as { publishConfig: { access: string } }
+    expect(manifest.publishConfig).toEqual({ access: 'public' })
   })
 
   it('teaches the npm-lib dependency check to ignore private workspace packages', async () => {

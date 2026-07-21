@@ -2,6 +2,9 @@
   "name": "@mnci/nx-python-pip",
   "version": "0.1.0",
   "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) — no uv, no Poetry, no lock file.",
+  "publishConfig": {
+    "access": "public"
+  },
   "generators": "./generators.json",
   "executors": "./executors.json",
   "main": "./dist/index.js",

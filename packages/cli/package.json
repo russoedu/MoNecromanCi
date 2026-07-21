@@ -5,6 +5,9 @@
   "bin": {
     "mnci2": "./dist/cli.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist"
   ],
