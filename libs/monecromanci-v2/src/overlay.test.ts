@@ -143,6 +143,16 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('eq(variables[\'Build.SourceBranchName\'], \'main\')')
   })
 
+  it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN variable), not PAT, for the public npm registry', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'npm')
+
+    expect(pipeline).toContain('NODE_AUTH_TOKEN: $(NPM_TOKEN)')
+    expect(pipeline).not.toContain('PAT: $(PAT)')
+    // Still reads secrets from the same Library variable group — only the
+    // variable name inside it differs, so no new CLI-collected value is needed.
+    expect(pipeline).toContain('- group: Build')
+  })
+
   it('does not reference any custom CI engine — the pipeline is plain Nx', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -270,6 +280,13 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('npmAuthenticate')
     expect(workflow).not.toContain('- group:')
     expect(workflow).not.toContain('NODE_AUTH_TOKEN')
+  })
+
+  it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN secret), not PAT, for the public npm registry', () => {
+    const workflow = githubActionsYaml('ubuntu-latest', undefined, 'npm')
+
+    expect(workflow).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}')
+    expect(workflow).not.toContain('secrets.PAT')
   })
 
   it('does not reference any custom CI engine — the workflow is plain Nx', () => {
@@ -426,6 +443,18 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(false)
     const workflow = readFileSync(join(workspaceRoot, '.github/workflows/ci.yml'), 'utf8')
     expect(workflow).toContain('runs-on: ubuntu-latest')
+    // Public npm: the CI must actually be able to authenticate a publish —
+    // NODE_AUTH_TOKEN (matching .npmrc), not the Azure-Artifacts-only PAT.
+    expect(workflow).toContain('NODE_AUTH_TOKEN')
+    expect(workflow).not.toContain('secrets.PAT')
+  })
+
+  it('threads the registry kind through to azure-pipelines.yml too, when both providers are chosen for a public npm registry', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+
+    const pipeline = readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')
+    expect(pipeline).toContain('NODE_AUTH_TOKEN: $(NPM_TOKEN)')
+    expect(pipeline).not.toContain('PAT: $(PAT)')
   })
 
   it('writes both pipeline files when ci: "both"', () => {
