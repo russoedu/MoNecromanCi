@@ -17,12 +17,12 @@ function readVersion (): string {
 }
 
 /**
- * Builds the commander program for the v2 CLI.
+ * Builds the commander program for the CLI.
  *
  * @remarks
- * Two commands only — `new` and `add` — per the box-out scope. Everything a
- * generated repo needs day-to-day (build/test/lint/release) is plain Nx, so
- * the CLI deliberately has no wrapper commands for those.
+ * Two commands only — `new` and `add`. Everything a generated repo needs
+ * day-to-day (build/test/lint/release) is plain Nx, so the CLI deliberately
+ * has no wrapper commands for those.
  *
  * @param None - this function takes no parameters.
  * @returns The configured commander program.

@@ -1,30 +1,24 @@
-# MoNecromanCI v2 (box-out)
+# @mnci/cli
 
-> **Experiment**: rebuild MoNecromanCI's core value — an opinionated
-> one-command NX monorepo with automatic commit-message versioning — as a
-> **thin CLI over what Nx already ships**, instead of hand-rolling templates,
-> configs and CI engines.
-
-This package is the "box-out" rethink of [`monecromanci`](../monecromanci).
-If promoted, it replaces v1's source and ships as `monecromanci@2.0.0`.
-Until then it is private, and its binary is `mnci2` so both CLIs can coexist.
+> A **thin CLI over what Nx already ships**: an opinionated one-command Nx
+> monorepo with automatic commit-message versioning, instead of hand-rolling
+> templates, configs and CI engines.
 
 ## The thesis
 
-v1 hand-rolls almost everything: a template engine emitting ~15 files per
-project, a packaged shared toolchain (`monecromanci-toolchain`), a 6-step CI
-engine, a custom dist-package dependency injector, and a doctor/drift-sync
-system to keep all of that consistent. Most of that now has a first-party (or
-established community) Nx equivalent:
+Most of what a monorepo tool needs to hand-roll — a template engine, a shared
+config package, a custom CI engine, a dependency-injection step for published
+packages, a doctor/drift-sync system to keep it all consistent — already has a
+first-party (or established community) Nx equivalent:
 
-| v1 hand-rolled                                   | v2 uses instead                                             |
+| Hand-rolled elsewhere                            | This CLI uses instead                                        |
 | ------------------------------------------------ | ----------------------------------------------------------- |
 | Template engine + per-project config files       | `create-nx-workspace --preset=ts` + `nx g` plugin generators |
-| `monecromanci-toolchain` shared configs          | The configs the Nx generators emit (one root ESLint/tsconfig) |
-| `.build-templates/` 6-step CI engine             | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline) |
-| `generate-dist-package.mjs` dependency injection | `nx release` updates dependent versions natively             |
+| A shared toolchain package for configs           | The configs the Nx generators emit (one root ESLint/tsconfig) |
+| A custom multi-step CI engine                    | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline) |
+| A dist-package dependency injector               | `nx release` updates dependent versions natively             |
 | Hand-written Azure Function templates            | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
-| doctor/drift sync of tool-owned files            | Nothing to drift: v2 owns 5 small files, Nx owns the rest    |
+| doctor/drift sync of tool-owned files             | Nothing to drift: this CLI owns 5 small files, Nx owns the rest |
 
 ## Commands (deliberately just two)
 

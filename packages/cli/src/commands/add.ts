@@ -205,7 +205,7 @@ function syncProjectReferences (workspaceRoot: string): void {
  * generators explicitly (predictable regardless of Nx's own default
  * resolution). The return shape is generator-facing: `linter` is `eslint`, or `none` when the
  * workspace chose oxlint (oxlint is not an Nx linter). Missing/blank (e.g. a
- * workspace generated before this field existed) falls back to the box-out
+ * workspace generated before this field existed) falls back to the default
  * opinion (eslint + jest).
  *
  * @param workspaceRoot - Absolute path to the workspace.

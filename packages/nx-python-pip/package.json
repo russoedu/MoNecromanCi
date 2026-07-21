@@ -34,30 +34,26 @@
     "nx-plugin",
     "python",
     "pip",
-    "monecromanci"
+    "azure-functions"
   ],
   "author": "Eduardo Russo",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/russoedu/MoNecromanCi.git",
-    "directory": "libs/nx-python-pip"
-  },
-  "homepage": "https://github.com/russoedu/MoNecromanCi/tree/main/libs/nx-python-pip#readme",
-  "bugs": {
-    "url": "https://github.com/russoedu/MoNecromanCi/issues"
+    "directory": "packages/nx-python-pip"
   },
   "peerDependencies": {
     "@nx/devkit": ">=21.0.0",
     "nx": ">=21.0.0"
   },
   "devDependencies": {
-    "@nx/devkit": "23.0.1",
+    "@nx/devkit": "23.1.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.1",
     "eslint": "^10.6.0",
     "jest": "^30.4.2",
-    "nx": "23.0.1",
+    "nx": "23.1.0",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   }

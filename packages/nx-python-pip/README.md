@@ -11,9 +11,9 @@ ships only `uv` and Poetry providers, and every alternative found on npm is
 either the same uv/Poetry architecture or years stale. If your organization
 standardizes on plain pip (no uv, no Poetry), this plugin fills that gap.
 
-It was built for and is used by [`monecromanci-v2`](../monecromanci-v2)'s
-`mnci2 add python-*` commands, but has no dependency on mnci2 — any Nx 21+
-workspace can install and use it directly.
+It was built for and is used by [`@mnci/cli`](../cli)'s `mnci2 add python-*`
+commands, but has no dependency on `@mnci/cli` — any Nx 21+ workspace can
+install and use it directly.
 
 ## Install
 

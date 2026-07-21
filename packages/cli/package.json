@@ -1,8 +1,7 @@
 {
-  "name": "monecromanci-v2",
-  "version": "2.0.0-alpha.0",
-  "private": true,
-  "description": "MoNecromanCI v2 (box-out experiment) — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
+  "name": "@mnci/cli",
+  "version": "1.0.0",
+  "description": "MoNecromanCI CLI — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
   "bin": {
     "mnci2": "./dist/cli.js"
   },
@@ -19,7 +18,7 @@
     "lint:fix": "eslint . --fix",
     "test": "jest",
     "test:cov": "jest --coverage",
-    "test:e2e": "node e2e/boxout.e2e.mjs",
+    "test:e2e": "node e2e/cli.e2e.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "start": "node dist/cli.js"
   },
@@ -39,7 +38,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/russoedu/MoNecromanCi.git",
-    "directory": "libs/monecromanci-v2"
+    "directory": "packages/cli"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.5.2",

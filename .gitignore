@@ -2,7 +2,10 @@ node_modules/
 dist/
 coverage/
 *.log
+*.tsbuildinfo
 .nx/
 .DS_Store
 .pipeline-out/
 .pipeline-staging/
+
+test-output

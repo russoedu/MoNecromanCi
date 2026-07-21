@@ -285,6 +285,7 @@ describe('githubActionsYaml', () => {
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN secret), not PAT, for the public npm registry', () => {
     const workflow = githubActionsYaml('ubuntu-latest', undefined, 'npm')
 
+    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal GitHub Actions expression syntax the generated workflow must contain.
     expect(workflow).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}')
     expect(workflow).not.toContain('secrets.PAT')
   })

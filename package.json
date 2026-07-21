@@ -1,0 +1,82 @@
+{
+  "name": "@mnci/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "build": "nx run-many -t build",
+    "lint": "nx run-many -t lint",
+    "test": "nx run-many -t test",
+    "affected": "nx affected -t lint,test,build",
+    "graph": "nx graph",
+    "release:preview": "nx release --dry-run",
+    "prepare": "husky"
+  },
+  "private": true,
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@eslint/js": "^9.8.0",
+    "@eslint/markdown": "^8.0.2",
+    "@nx/eslint": "23.1.0",
+    "@nx/eslint-plugin": "23.1.0",
+    "@nx/jest": "23.1.0",
+    "@nx/js": "23.1.0",
+    "@nx/rollup": "23.1.0",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@swc-node/register": "1.11.1",
+    "@swc/cli": "~0.8.1",
+    "@swc/core": "1.15.8",
+    "@swc/helpers": "0.5.18",
+    "@swc/jest": "~0.2.38",
+    "@types/jest": "~30.0.0",
+    "@types/node": "^24.0.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-jest": "^29.15.3",
+    "eslint-plugin-jsonc": "^3.2.0",
+    "eslint-plugin-n": "^18.2.1",
+    "eslint-plugin-promise": "^7.3.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "eslint-plugin-tsdoc": "^0.5.2",
+    "eslint-plugin-tsdoc-require-2": "^1.2.3",
+    "eslint-plugin-unicorn": "^69.0.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "eslint-plugin-yml": "^3.5.0",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "jest": "~30.3.0",
+    "jest-environment-node": "~30.3.0",
+    "jest-util": "~30.3.0",
+    "jsonc-eslint-parser": "^2.1.0",
+    "nx": "23.1.0",
+    "prettier": "^3.8.1",
+    "rollup": "^4.14.0",
+    "swc-loader": "0.1.15",
+    "ts-jest": "^29.4.7",
+    "ts-node": "10.9.1",
+    "tslib": "^2.3.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.62.0",
+    "verdaccio": "^6.3.2"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {},
+  "nx": {
+    "includedScripts": [],
+    "targets": {
+      "local-registry": {
+        "executor": "@nx/js:verdaccio",
+        "options": {
+          "port": 4873,
+          "config": ".verdaccio/config.yml",
+          "storage": "tmp/local-registry/storage"
+        }
+      }
+    }
+  }
+}

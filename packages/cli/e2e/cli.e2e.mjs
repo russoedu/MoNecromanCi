@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * E2E: the box-out thesis, verified for real.
+ * E2E: the CLI's thesis, verified for real.
  *
- * Runs the BUILT v2 CLI against the real network: `new` (which runs the
+ * Runs the BUILT CLI against the real network: `new` (which runs the
  * latest create-nx-workspace and real npm installs), then `add` for one of
  * each kind, then real `nx run-many -t lint,test,build` and a real
  * `nx release version --dry-run` inside the generated repo. Every ENFORCED
@@ -630,7 +630,7 @@ enforce('python: nx release publish --dry-run previews the twine upload via the 
  * Report
  * ------------------------------------------------------------------------- */
 
-console.log('\n=== box-out e2e ===')
+console.log('\n=== cli e2e ===')
 const failed = results.enforced.filter((result) => !result.ok)
 for (const result of results.enforced) {
   console.log(`  ${result.ok ? '✓' : '✗'} ENFORCED  ${result.label}`)

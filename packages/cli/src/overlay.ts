@@ -5,9 +5,8 @@ import { markExecutable, readJson, toJson, writeFileEnsured } from './util/fsx'
  * Where a generated monorepo publishes its npm packages.
  *
  * @remarks
- * v2 supports Azure Artifacts (the user's daily-job registry) and the public
- * npm registry. Ported from v1's `RegistryConfig`, minus GitHub Packages —
- * out of scope for the box-out experiment.
+ * Supports Azure Artifacts and the public npm registry. GitHub Packages is
+ * out of scope for this cut.
  *
  * @typeParam None - this type has no generic type parameters.
  */
@@ -54,9 +53,9 @@ export interface StackConfig {
  * The `--yes` / flagless defaults — the current opinionated stack.
  *
  * @remarks
- * ESLint and Jest: the combination existing generated repos (and the box-out
- * e2e) already assume, so defaulting to it keeps behaviour unchanged when the
- * stack is not chosen explicitly.
+ * ESLint and Jest: the combination existing generated repos (and the e2e
+ * suite) already assume, so defaulting to it keeps behaviour unchanged when
+ * the stack is not chosen explicitly.
  */
 export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
 
@@ -520,9 +519,8 @@ function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
 }
 
 /**
- * The env var name + value pair that authenticates `npm ci`/`nx release
- * publish`, keyed by registry kind — two genuinely different secrets, never
- * conflated.
+ * The env var name + value pair that authenticates `npm ci`/`nx release publish`,
+ * keyed by registry kind — two genuinely different secrets, never conflated.
  *
  * @remarks
  * Azure Artifacts' `.npmrc` (`npmrcContent`) reads a base64-encoded PAT via
