@@ -67,7 +67,8 @@
     "git": {
       "commit": false,
       "tag": true,
-      "push": true
+      "push": true,
+      "pushArgs": "--tags"
     },
     "version": {
       "preVersionCommand": "npx nx run-many -t build --projects=packages/*,python-packages/*",
