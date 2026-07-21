@@ -69,13 +69,14 @@ describe('withReleaseConfig', () => {
       // python-lib by add/python.ts) wins over this shared config anyway.
       projects:             ['packages/*', 'python-packages/*'],
       releaseTag:           { pattern: '{projectName}@{version}' },
+      // Tag-only model: nothing is ever committed to main; the tag is pushed.
+      // Top-level (not version.git) — Nx rejects granular git config for the
+      // combined `nx release` command, which is what CI and release:preview
+      // both run (never the bare `nx release version` subcommand).
+      git:                  { commit: false, tag: true, push: true },
       version:              {
         conventionalCommits:            true,
         fallbackCurrentVersionResolver: 'disk',
-        // Tag-only model: nothing is ever committed to main; the tag is pushed.
-        // Lives under version.git — Nx rejects a top-level release.git for the
-        // `nx release version` subcommand (the dry-run every user runs).
-        git:                            { commit: false, tag: true, push: true },
         // Releasing packages must not require building apps; both globs listed
         // (nx run-many no-ops on an empty one).
         preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
