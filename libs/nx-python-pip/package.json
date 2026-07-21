@@ -1,0 +1,64 @@
+{
+  "name": "@mnci/nx-python-pip",
+  "version": "0.1.0",
+  "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) — no uv, no Poetry, no lock file.",
+  "generators": "./generators.json",
+  "executors": "./executors.json",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./release/version-actions": {
+      "types": "./dist/release/versionActions.d.ts",
+      "default": "./dist/release/versionActions.js"
+    },
+    "./package.json": "./package.json",
+    "./generators.json": "./generators.json",
+    "./executors.json": "./executors.json"
+  },
+  "files": [
+    "dist",
+    "generators.json",
+    "executors.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
+    "test": "jest",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "nx",
+    "nx-plugin",
+    "python",
+    "pip",
+    "monecromanci"
+  ],
+  "author": "Eduardo Russo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/russoedu/MoNecromanCi.git",
+    "directory": "libs/nx-python-pip"
+  },
+  "homepage": "https://github.com/russoedu/MoNecromanCi/tree/main/libs/nx-python-pip#readme",
+  "bugs": {
+    "url": "https://github.com/russoedu/MoNecromanCi/issues"
+  },
+  "peerDependencies": {
+    "@nx/devkit": ">=21.0.0",
+    "nx": ">=21.0.0"
+  },
+  "devDependencies": {
+    "@nx/devkit": "23.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "jest": "^30.4.2",
+    "nx": "23.0.1",
+    "ts-jest": "^29.4.11",
+    "typescript": "^6.0.3"
+  }
+}

@@ -17,23 +17,25 @@ export type { AddOptions } from './add/shared'
  * The project kinds v2 can add — deliberately just nine.
  *
  * @remarks
- * Each maps to an official (or established community) Nx plugin generator;
+ * Each maps to an official (or established first-party) Nx plugin generator;
  * v2 itself writes no project files (bar thin overlays). Layout convention
  * drives release scoping: `apps/` (never released), `packages/` (publishable
  * npm, released by `nx release`), `libs/` (internal, never released),
- * `python-packages/` (publishable Python, published by `uv`).
+ * `python-packages/` (publishable Python, published by `twine`).
  *
  * The TS/JS kinds use the official `@nx/*` generators only — `node-app` and
  * `node-function-app` are both the plain `@nx/node:application` (no
  * third-party Azure Functions plugin; `node-function-app` is that generator
- * plus a hand-written Azure Functions v4 file overlay). No generator exists
- * for the Python kinds either — `add/python.ts` hand-authors the whole
- * project (`pyproject.toml` + `project.json` + sample module/tests) around
- * **pip + Ruff + pytest + the standard PyPA `build`/`twine`** — the
- * industry-standard, uv-free Python toolchain — and follows the identical
- * app/function-app split. Every kind builds to its own Nx-default output
- * location — no post-generation build-output redirection. Each kind's
- * generation logic lives in its own module under `add/` — see
+ * plus a hand-written Azure Functions v4 file overlay). The Python kinds use
+ * **`@mnci/nx-python-pip`** (`libs/nx-python-pip` in this same monorepo) — a
+ * real Nx plugin this project built and maintains, since no maintained
+ * Nx-23-compatible plugin supports pip (every one found ships uv/Poetry
+ * only). Its generators write `pyproject.toml` + `project.json` + a sample
+ * module/tests around **pip + Ruff + pytest + the standard PyPA
+ * `build`/`twine`** — the industry-standard, uv-free Python toolchain — and
+ * follow the identical app/function-app split. Every kind builds to its own
+ * Nx-default output location — no post-generation build-output redirection.
+ * Each kind's generation logic lives in its own module under `add/` — see
  * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
  * (internal-lib is small enough to stay inline below).
  *

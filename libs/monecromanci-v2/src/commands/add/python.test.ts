@@ -5,12 +5,13 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runShell } from '../../nx'
+import { runNx, runShell } from '../../nx'
 import { runAdd } from '../add'
 
+const mockRunNx = jest.mocked(runNx)
 const mockRunShell = jest.mocked(runShell)
 
 let workspaceRoot: string
@@ -30,117 +31,97 @@ afterEach(() => {
 })
 
 describe('runAdd python', () => {
-  it('adds a Python app: hand-authored pyproject.toml + project.json, ruff/pytest/build, packages the wheel', async () => {
+  it('adds a Python app: delegates to @mnci/nx-python-pip:application, installs the plugin + tooling, packages the wheel', async () => {
+    // The generator is mocked, so pre-create the project.json it would write.
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/svc/project.json'), JSON.stringify({ name: 'svc', targets: { lint: {}, test: {}, build: {} } }))
+
     await runAdd('python-app', 'svc', {})
 
-    // No plugin, no uv — just a Python preflight check.
+    // No uv, no hand-authored files — just a Python preflight check.
     expect(mockRunShell).toHaveBeenCalledWith('python3', ['--version'], workspaceRoot)
 
-    // Shared pip-native tooling written once.
+    // The plugin gets installed (npm, not `nx add` — no nx.json plugins registration needed).
+    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', '@mnci/nx-python-pip', '--no-audit', '--no-fund'], workspaceRoot)
+    // Delegates to the plugin's generator, exactly like every other kind.
+    expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:application', 'svc', '--directory=apps/svc', '--no-interactive'], workspaceRoot)
+
+    // requirements-dev.txt (the fixed toolchain) written once.
     expect(readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')).toContain('pytest')
-    expect(readFileSync(join(workspaceRoot, 'tools/python-build.js'), 'utf8')).toContain('python -m build')
-    expect(readFileSync(join(workspaceRoot, 'tools/python-version-actions.js'), 'utf8')).toContain('class PythonVersionActions')
-
-    // Hand-authored pyproject.toml, no uv/Poetry section anywhere.
-    const pyproject = readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')
-    expect(pyproject).toContain('name = "svc"')
-    expect(pyproject).toContain('[build-system]')
-    expect(pyproject).toContain('packages = ["svc"]')
-    expect(pyproject).not.toMatch(/uv|poetry/i)
-
-    expect(readFileSync(join(workspaceRoot, 'apps/svc/svc/__init__.py'), 'utf8')).toContain('def hello')
-    expect(readFileSync(join(workspaceRoot, 'apps/svc/tests/test_svc.py'), 'utf8')).toContain('from svc import hello')
+    // No hand-authored pyproject.toml/module — that is entirely the plugin's job.
+    expect(() => readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')).toThrow()
 
     // adm-zip + a package target zipping the built wheel into the drop under the
-    // exact name CI turns into a build tag.
+    // exact name CI turns into a build tag, merged into the plugin-written project.json.
     expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
     const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/svc/project.json'), 'utf8')) as {
-      targets: Record<string, { dependsOn?: string[], outputs?: string[], options: { command: string, cwd?: string } }>
+      targets: Record<string, { dependsOn?: string[], outputs?: string[], options: { command: string } }>
     }
-    expect(project.targets.lint.options.command).toBe('python3 -m ruff check .')
-    expect(project.targets.lint.options.cwd).toBe('apps/svc')
-    expect(project.targets.test.options.command).toContain('python3 -m pytest')
-    expect(project.targets.build.options.command).toBe('node tools/python-build.js apps/svc')
-    expect(project.targets.build.outputs).toEqual(['{workspaceRoot}/apps/svc/dist'])
+    expect(project.targets.lint).toBeDefined()
     expect(project.targets.package.dependsOn).toEqual(['build'])
     expect(project.targets.package.outputs).toEqual(['{workspaceRoot}/dist/drop/python-app-svc.zip'])
     expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
     expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/python-app-svc.zip')`)
   })
 
-  it('adds a Python Azure Function: writes the v2 files + a tested helper, packages the source zip, no build/pyproject', async () => {
+  it('adds a Python Azure Function: delegates to @mnci/nx-python-pip:function-application, packages the source zip', async () => {
+    mkdirSync(join(workspaceRoot, 'apps/api'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/api/project.json'), JSON.stringify({ name: 'api', targets: { lint: {}, test: {} } }))
+
     await runAdd('python-function-app', 'api', {})
 
-    // Azure Functions v2 programming model, importing the tested module helper.
-    const functionApp = readFileSync(join(workspaceRoot, 'apps/api/function_app.py'), 'utf8')
-    expect(functionApp).toContain('func.FunctionApp(')
-    expect(functionApp).toContain('from api.greeting import build_greeting')
-    expect(readFileSync(join(workspaceRoot, 'apps/api/host.json'), 'utf8')).toContain('extensionBundle')
-    expect(readFileSync(join(workspaceRoot, 'apps/api/requirements.txt'), 'utf8')).toContain('azure-functions')
-    // A pure, dependency-free helper + test so pytest is green out of the box.
-    expect(readFileSync(join(workspaceRoot, 'apps/api/api/greeting.py'), 'utf8')).toContain('def build_greeting')
-    expect(readFileSync(join(workspaceRoot, 'apps/api/tests/test_greeting.py'), 'utf8')).toContain('from api.greeting import build_greeting')
+    expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:function-application', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
 
-    // Source deploy: no pyproject.toml, no build target — just lint/test/package.
-    expect(() => readFileSync(join(workspaceRoot, 'apps/api/pyproject.toml'), 'utf8')).toThrow()
+    // The deployable is source (not the wheel): mnci2's own package target zips
+    // the files the plugin's generator would have written.
     const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as {
       targets: Record<string, { outputs?: string[], options: { command: string } }>
     }
-    expect(project.targets.build).toBeUndefined()
-    expect(project.targets.test.options.command).toBe('python3 -m pytest')
-
-    // The deployable is source (not the wheel): package zips those files.
     expect(project.targets.package.outputs).toEqual(['{workspaceRoot}/dist/drop/python-function-app-api.zip'])
     expect(project.targets.package.options.command).toContain(`addLocalFile('apps/api/function_app.py')`)
     expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/api/api','api')`)
     expect(project.targets.package.options.command).toContain(`writeZip('dist/drop/python-function-app-api.zip')`)
   })
 
-  it('adds a publishable Python lib under python-packages/ with a hand-authored twine nx-release-publish target', async () => {
+  it('adds a publishable Python lib: delegates to @mnci/nx-python-pip:library, no post-generation merge needed', async () => {
     await runAdd('python-lib', 'shared', {})
 
-    const pyproject = readFileSync(join(workspaceRoot, 'python-packages/shared/pyproject.toml'), 'utf8')
-    expect(pyproject).toContain('name = "shared"')
-    expect(pyproject).toContain('version = "1.0.0"')
-
-    const project = JSON.parse(readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')) as {
-      projectType: string
-      release?:    { version?: { versionActions?: string } }
-      targets:     Record<string, { dependsOn?: string[], options: { command: string, cwd?: string } }>
-    }
-    expect(project.projectType).toBe('library')
-    expect(project.targets.build.options.command).toBe('node tools/python-build.js python-packages/shared')
-    expect(project.targets['nx-release-publish'].dependsOn).toEqual(['build'])
-    expect(project.targets['nx-release-publish'].options.command).toContain('python3 -m twine upload --skip-existing dist/*')
-    // Guards against `nx release publish --dry-run`'s appended --dryRun=true,
-    // which a plain nx:run-commands target (unlike @nx/js:release-publish)
-    // does not otherwise understand and would pass straight to twine.
-    expect(project.targets['nx-release-publish'].options.command).toContain('isDryRun')
-    expect(project.targets['nx-release-publish'].options.cwd).toBe('python-packages/shared')
-    // No packaging target — a lib is released as a wheel, never zipped.
-    expect(project.targets.package).toBeUndefined()
-    // Project-level versionActions override (wins over the workspace release
-    // config's default, since Nx errors the whole release when an explicit
-    // release group matches zero projects — see overlay.ts's RELEASE_CONFIG).
-    expect(project.release?.version?.versionActions).toBe('tools/python-version-actions.js')
+    expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:library', 'shared', '--directory=python-packages/shared', '--no-interactive'], workspaceRoot)
+    // The plugin's own generator wires nx-release-publish + versionActions —
+    // mnci2 does no post-generation file writing for this kind at all.
+    expect(() => readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')).toThrow()
   })
 
-  it('adds a private Python lib under libs/ — lint + test only, no build/publish (vendored by consumers, never released)', async () => {
+  it('adds a private Python lib under libs/: delegates to @mnci/nx-python-pip:internal-library', async () => {
     await runAdd('python-internal-lib', 'core', {})
 
-    const pyproject = readFileSync(join(workspaceRoot, 'libs/core/pyproject.toml'), 'utf8')
-    expect(pyproject).toContain('name = "core"')
-
-    const project = JSON.parse(readFileSync(join(workspaceRoot, 'libs/core/project.json'), 'utf8')) as {
-      targets: Record<string, unknown>
-    }
-    expect(Object.keys(project.targets).toSorted((a, b) => a.localeCompare(b))).toEqual(['lint', 'test'])
+    expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:internal-library', 'core', '--directory=libs/core', '--no-interactive'], workspaceRoot)
   })
 
   it('fails fast when Python is not installed', async () => {
-    mockRunShell.mockImplementation(() => 1)
+    mockRunShell.mockImplementation((command: string) => (command === 'python3' || command === 'python' ? 1 : 0))
 
     await expect(runAdd('python-app', 'svc', {})).rejects.toThrow('Python not found')
+    expect(mockRunNx).not.toHaveBeenCalled()
+  })
+
+  it('does not reinstall the plugin when already present', async () => {
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: { '@mnci/nx-python-pip': '^0.1.0' } }))
+
+    await runAdd('python-internal-lib', 'core', {})
+
+    expect(mockRunShell).not.toHaveBeenCalledWith('npm', ['install', '--save-dev', '@mnci/nx-python-pip', '--no-audit', '--no-fund'], workspaceRoot)
+  })
+
+  it('honours MNCI2_PYTHON_PIP_SPEC to install a local build instead of the published package (used by the e2e suite)', async () => {
+    process.env.MNCI2_PYTHON_PIP_SPEC = '/tmp/mnci-nx-python-pip-0.1.0.tgz'
+    try {
+      await runAdd('python-internal-lib', 'core', {})
+
+      expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', '/tmp/mnci-nx-python-pip-0.1.0.tgz', '--no-audit', '--no-fund'], workspaceRoot)
+    } finally {
+      delete process.env.MNCI2_PYTHON_PIP_SPEC
+    }
   })
 
   it('does not overwrite an existing requirements-dev.txt (user edits survive repeat adds)', async () => {

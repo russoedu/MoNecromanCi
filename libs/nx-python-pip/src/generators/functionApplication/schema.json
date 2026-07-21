@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipFunctionApplication",
+  "title": "Create a Python Azure Function app (v2 programming model)",
+  "description": "Hand-authors an Azure Functions v2 Python app: function_app.py + host.json + requirements.txt + a tested pure helper. No pyproject.toml/wheel build — the deployable is the source tree, not a wheel.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The project name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "What name would you like to use?",
+      "pattern": "^[a-zA-Z][^:]*$"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Workspace-relative directory for the project (defaults to apps/<name>)."
+    }
+  },
+  "required": ["name"]
+}

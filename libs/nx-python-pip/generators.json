@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "generators": {
+    "application": {
+      "factory": "./dist/generators/application/generator",
+      "schema": "./dist/generators/application/schema.json",
+      "description": "Create a pip-native Python application (pyproject.toml + project.json with lint/test/build targets)."
+    },
+    "library": {
+      "factory": "./dist/generators/library/generator",
+      "schema": "./dist/generators/library/schema.json",
+      "description": "Create a publishable pip-native Python library (adds a twine nx-release-publish target + a versionActions override)."
+    },
+    "internal-library": {
+      "factory": "./dist/generators/internalLibrary/generator",
+      "schema": "./dist/generators/internalLibrary/schema.json",
+      "description": "Create a private, never-published Python library (lint/test only)."
+    },
+    "function-application": {
+      "factory": "./dist/generators/functionApplication/generator",
+      "schema": "./dist/generators/functionApplication/schema.json",
+      "description": "Create a Python Azure Function app (v2 programming model), deployed as source, not a wheel."
+    }
+  }
+}

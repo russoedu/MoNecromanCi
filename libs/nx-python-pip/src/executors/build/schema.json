@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipBuild",
+  "title": "Build a Python wheel/sdist with python -m build",
+  "description": "Runs `python -m build`. When the project's pyproject.toml declares [tool.mnci-python-pip] vendor = [...], the named libs/<name> modules are copied into a staged copy of the project first, so the built wheel bundles them as real top-level packages.",
+  "type": "object",
+  "properties": {},
+  "required": []
+}

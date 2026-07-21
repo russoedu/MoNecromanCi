@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipPublish",
+  "title": "Publish a Python wheel/sdist with twine",
+  "description": "Runs `python -m twine upload --skip-existing dist/*`. Credentials (TWINE_USERNAME/TWINE_PASSWORD/TWINE_REPOSITORY_URL) are read from the environment by twine itself. Detects the --dryRun flag `nx release publish --dry-run` appends and previews instead of uploading for real.",
+  "type": "object",
+  "properties": {
+    "dryRun": {
+      "type": "boolean",
+      "description": "Preview instead of actually uploading. Set automatically by `nx release publish --dry-run`.",
+      "default": false
+    }
+  },
+  "required": []
+}

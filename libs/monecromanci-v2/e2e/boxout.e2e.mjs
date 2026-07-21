@@ -13,7 +13,7 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -421,12 +421,25 @@ enforce('alt: apps still pack per environment into the drop', tryRun('npx nx run
 && ['dev', 'uat', 'prod'].every((environment) => existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`))))
 
 /* ---------------------------------------------------------------------------
- * Python — hand-authored pip-native toolchain (no uv, no Poetry, no plugin),
+ * Python — @mnci/nx-python-pip (this monorepo's own Nx plugin, libs/nx-python-pip),
  * added to the alt workspace so the real toolchain (not just unit tests)
- * proves the four Python kinds. ruff, pytest, python3-venv and build/twine
- * (installed from the generated requirements-dev.txt) are present in this
- * environment, so these are all enforced.
+ * proves the four Python kinds. Packed straight from libs/nx-python-pip's own
+ * build output (MNCI2_PYTHON_PIP_SPEC) instead of the published registry
+ * package — the same "install from a local tarball" technique used to
+ * empirically verify the plugin itself, standing in for a real `npm install
+ * @mnci/nx-python-pip` in production. ruff, pytest, python3-venv and
+ * build/twine (installed from the generated requirements-dev.txt) are
+ * present in this environment, so these are all enforced.
  * ------------------------------------------------------------------------- */
+
+console.log('\n▸ packing @mnci/nx-python-pip (libs/nx-python-pip) for the e2e to install locally')
+const nxPythonPipDirectory = path.resolve(SCRIPT_DIR, '..', '..', 'nx-python-pip')
+run('npm run build', nxPythonPipDirectory)
+const nxPythonPipPackDirectory = path.join(temporary, 'nx-python-pip-pack')
+mkdirSync(nxPythonPipPackDirectory, { recursive: true })
+const packOutput = execSync(`npm pack --silent --pack-destination "${nxPythonPipPackDirectory}"`, { cwd: nxPythonPipDirectory, encoding: 'utf8' }).trim()
+const nxPythonPipTarball = path.join(nxPythonPipPackDirectory, packOutput.split('\n').at(-1))
+process.env.MNCI2_PYTHON_PIP_SPEC = nxPythonPipTarball
 
 console.log('\n▸ mnci2 add python-app / python-function-app / python-lib / python-internal-lib')
 run(`node ${CLI} add python-app pysvc`, altWorkspace)
@@ -434,17 +447,19 @@ run(`node ${CLI} add python-function-app pyfunc`, altWorkspace)
 run(`node ${CLI} add python-lib pyshared`, altWorkspace)
 run(`node ${CLI} add python-internal-lib pycore`, altWorkspace)
 
-enforce('python: no plugin, no lock file — plain pip toolchain written once (requirements-dev.txt, tools/python-build.js, tools/python-version-actions.js)',
-  existsSync(path.join(altWorkspace, 'requirements-dev.txt'))
-  && existsSync(path.join(altWorkspace, 'tools/python-build.js'))
-  && existsSync(path.join(altWorkspace, 'tools/python-version-actions.js')))
+const altPythonManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+enforce('python: no hand-rolled files — @mnci/nx-python-pip installed as a real devDependency, requirements-dev.txt the only file mnci2 itself writes',
+  Boolean(altPythonManifest.devDependencies?.['@mnci/nx-python-pip'])
+  && existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-python-pip/generators.json'))
+  && existsSync(path.join(altWorkspace, 'requirements-dev.txt'))
+  && !existsSync(path.join(altWorkspace, 'tools/python-build.js')))
 run('python3 -m pip install --quiet -r requirements-dev.txt', altWorkspace)
 
 const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
 const pysharedProject = existsSync(pysharedProjectPath) ? JSON.parse(readFileSync(pysharedProjectPath, 'utf8')) : {}
-enforce('python: publishable lib lives under python-packages/ with a hand-authored twine nx-release-publish target + a project-level versionActions override',
-  (pysharedProject.targets?.['nx-release-publish']?.options?.command ?? '').includes('twine upload')
-  && pysharedProject.release?.version?.versionActions === 'tools/python-version-actions.js')
+enforce('python: publishable lib lives under python-packages/ with the plugin\'s twine nx-release-publish target + a project-level versionActions override',
+  (pysharedProject.targets?.['nx-release-publish']?.executor ?? '') === '@mnci/nx-python-pip:publish'
+  && pysharedProject.release?.version?.versionActions === '@mnci/nx-python-pip/release/version-actions')
 enforce('python: internal lib is a library under libs/ (never publishable, no build/package/publish target)',
   existsSync(path.join(altWorkspace, 'libs/pycore/project.json')))
 const pycoreProject = JSON.parse(readFileSync(path.join(altWorkspace, 'libs/pycore/project.json'), 'utf8'))
@@ -456,29 +471,31 @@ enforce('python: function app carries the Azure Functions v2 files, and has no p
 
 /* ---------------------------------------------------------------------------
  * The same private-internal-lib / real-external-dependency proof as the JS
- * side, adapted to pip's mechanism: a hand-added [tool.mnci2] vendor = [...]
- * entry (the pip-world counterpart of hand-wiring a `dependencies = [...]`
- * entry — mnci2 wires no cross-project Python dependency automatically,
- * exactly like every other kind) makes tools/python-build.js copy the
- * internal lib's module straight into a staged build (like rollup inlines
- * for npm-lib), while a real declared dependency stays a real Requires-Dist.
- * No lock file means no pinned resolution: the wheel's Requires-Dist mirrors
- * the pyproject.toml specifier verbatim (\`tomli>=2.0.0\`, not a resolved
- * \`tomli==x.y.z\`).
+ * side, adapted to pip's mechanism: a hand-added [tool.mnci-python-pip]
+ * vendor = [...] entry (the pip-world counterpart of hand-wiring a
+ * dependencies = [...] entry — mnci2 wires no cross-project Python
+ * dependency automatically, exactly like every other kind) makes the
+ * plugin's build executor copy the internal lib's module — resolved via the
+ * real Nx project graph, not a hard-coded libs/ path — straight into a
+ * staged build (like rollup inlines for npm-lib), while a real declared
+ * dependency stays a real Requires-Dist. No lock file means no pinned
+ * resolution: the wheel's Requires-Dist mirrors the pyproject.toml specifier
+ * verbatim (\`tomli>=2.0.0\`, not a resolved \`tomli==x.y.z\`).
  * ------------------------------------------------------------------------- */
 
 console.log('\n▸ wiring pyshared (publishable) -> pycore (private internal, vendored)')
 const pysharedPyprojectPath = path.join(altWorkspace, 'python-packages/pyshared/pyproject.toml')
-writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci2]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
-// Named greeting.py, not hello.py: pyshared/__init__.py (written by `add
-// python-lib`) already exports a top-level `hello` symbol, and a same-named
-// submodule would shadow it as soon as either gets imported (a real Python
-// footgun, hit empirically) — `pyshared.__init__`'s own generated hello() and
-// its generated test stay untouched and green. No local test file for this
-// one: pycore is vendored only at build time (tools/python-build.js), not
-// dev-installed, so it is genuinely not importable from a plain `pip install
-// -e .` dev environment — the wheel-content and clean-venv checks below are
-// the (stronger) proof that the vendored import actually resolves.
+writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci-python-pip]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+// Named greeting.py, not hello.py: pyshared/__init__.py (written by the
+// plugin's `library` generator) already exports a top-level `hello` symbol,
+// and a same-named submodule would shadow it as soon as either gets
+// imported (a real Python footgun, hit empirically) — `pyshared.__init__`'s
+// own generated hello() and its generated test stay untouched and green. No
+// local test file for this one: pycore is vendored only at build time (the
+// plugin's `build` executor), not dev-installed, so it is genuinely not
+// importable from a plain `pip install -e .` dev environment — the
+// wheel-content and clean-venv checks below are the (stronger) proof that
+// the vendored import actually resolves.
 writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/greeting.py'),
   'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n')
 
@@ -501,7 +518,7 @@ enforce('python: pytest runs green across the python projects (private-lib + ext
 
 const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
 const pysharedWheelPath = path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')
-enforce('python: build produces a wheel for the publishable lib (vendoring pycore via tools/python-build.js)', tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath))
+enforce('python: build produces a wheel for the publishable lib (vendoring pycore via the plugin\'s build executor)', tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath))
 const pysharedWheelEntries = existsSync(pysharedWheelPath) ? new AdmZipPy(pysharedWheelPath).getEntries().map((entry) => entry.entryName) : []
 enforce('python: publishable lib wheel vendors the private internal lib (pycore) — no separate install needed',
   pysharedWheelEntries.includes('pycore/__init__.py') && pysharedWheelEntries.includes('pyshared/greeting.py'))
@@ -550,7 +567,7 @@ enforce('python: app installs into a clean venv and runs correctly, resolving th
  * ------------------------------------------------------------------------- */
 
 console.log('\n▸ combined proof: vendoring + a real external dependency on the SAME project')
-writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci2]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci-python-pip]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
 enforce('python: build succeeds with both a vendored internal lib and a real external dependency on the same project',
   tryRun('npx nx build pysvc', altWorkspace))
 const pysvcCombinedZip = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath) : null
@@ -561,23 +578,21 @@ enforce('python: combined wheel vendors pycore AND keeps the real external depen
   pysvcCombinedEntries.includes('pycore/__init__.py') && /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcCombinedMetadata))
 
 /* ---------------------------------------------------------------------------
- * Conventional-commit versioning AND publishing reach Python via the
- * hand-written PythonVersionActions + twine nx-release-publish target.
+ * Conventional-commit versioning AND publishing reach Python via
+ * @mnci/nx-python-pip's PythonVersionActions + publish executor.
  * ------------------------------------------------------------------------- */
 
 run('git init -q -b main && git add -A', altWorkspace)
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"', altWorkspace)
 const altReleaseDryRun = tryRunCapture('npx nx release version --dry-run --verbose', altWorkspace)
-enforce('python: nx release versions the publishable python lib from conventional commits (hand-written PythonVersionActions, no @nxlv/python)',
+enforce('python: nx release versions the publishable python lib from conventional commits (@mnci/nx-python-pip\'s PythonVersionActions, no @nxlv/python)',
   altReleaseDryRun.ok && /shared[^\n]*new version/i.test(altReleaseDryRun.output) && altReleaseDryRun.output.includes('pyproject.toml'),
   altReleaseDryRun.output)
-// nx release publish --dry-run appends a literal --dryRun=true to whatever
-// command a plain nx:run-commands nx-release-publish target runs; verified
-// empirically this breaks an unguarded twine invocation, so the hand-authored
-// target detects and previews instead — proven here against the real Nx
-// release orchestration, not just the target's own unit test.
+// nx release publish --dry-run sets a real, typed dryRun option on every
+// nx-release-publish executor (verified empirically) — no argv-parsing trick
+// needed, unlike the plain nx:run-commands version this plugin replaced.
 const altReleasePublishDryRun = tryRunCapture('npx nx release publish --dry-run --verbose', altWorkspace)
-enforce('python: nx release publish --dry-run previews the twine upload instead of choking on the appended --dryRun flag',
+enforce('python: nx release publish --dry-run previews the twine upload via the plugin\'s typed dryRun executor option',
   altReleasePublishDryRun.ok && altReleasePublishDryRun.output.includes('[dry-run] would run: python3 -m twine upload'),
   altReleasePublishDryRun.output)
 

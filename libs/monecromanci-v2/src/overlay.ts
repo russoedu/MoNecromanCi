@@ -168,11 +168,12 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * that has added Python packages but no npm ones yet, or vice versa (verified
  * empirically). A flat list has no such all-or-nothing requirement: it stays
  * releasable as soon as *either* glob matches something. Each project's own
- * `versionActions` (npm's default, or the hand-written `PythonVersionActions`
- * at `tools/python-version-actions.js` that `add/python.ts` stamps onto every
- * publishable Python lib's own `project.json`) reads/writes the right
- * manifest (`package.json` vs `pyproject.toml`) — project-level config wins
- * over the group's, so both kinds coexist in the one group correctly.
+ * `versionActions` (npm's default, or `@mnci/nx-python-pip`'s
+ * `PythonVersionActions` — stamped onto every publishable Python lib's own
+ * `project.json` by that plugin's own `library` generator, not by anything
+ * here) reads/writes the right manifest (`package.json` vs `pyproject.toml`)
+ * — project-level config wins over the group's, so both kinds coexist in the
+ * one group correctly.
  * Internal libraries live in `libs/` and apps in `apps/`, so release scoping
  * still needs no custom tags.
  */
@@ -627,8 +628,8 @@ steps:
   # Version + tag + publish, in one release, for npm (packages/*) AND Python
   # (python-packages/*) — conventional commits, tag-only push. Portable guard:
   # nx release errors on an empty scope, so skip cleanly when there is nothing
-  # to release. When there are Python packages and an Azure feed, uv publish
-  # credentials are exported (raw PAT, decoded from the base64 variable).
+  # to release. When there are Python packages and an Azure feed, twine
+  # publish credentials are exported (raw PAT, decoded from the base64 variable).
   - script: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
     displayName: Release — version, tag and publish (npm + Python)
     condition: ${onMain}

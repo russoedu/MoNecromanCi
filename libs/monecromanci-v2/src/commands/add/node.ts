@@ -153,11 +153,11 @@ import './functions/hello'
  * The `host.json` written into a generated Node function app.
  *
  * @remarks
- * Identical shape to the Python function app's `host.json`
- * (`PYTHON_FUNCTION_APP_HOST_JSON` in `add/python.ts`) — the schema is
- * language-agnostic. The v4 extension bundle is what the Functions host uses
- * to resolve bindings; `version: 2.0` is the runtime schema. Deliberately
- * minimal.
+ * Identical shape to the Python function app's `host.json` (written by
+ * `@mnci/nx-python-pip:function-application`, the plugin `add/python.ts`
+ * delegates to) — the schema is language-agnostic. The v4 extension bundle
+ * is what the Functions host uses to resolve bindings; `version: 2.0` is the
+ * runtime schema. Deliberately minimal.
  */
 export const NODE_FUNCTION_APP_HOST_JSON = `{
   "version": "2.0",
