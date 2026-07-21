@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipInternalLibrary",
+  "title": "Create a private, never-published Python library",
+  "description": "Hand-authors a private Python library: pyproject.toml + project.json (lint/test only, no build/publish target) + a sample module and pytest. Consumers vendor its module into their own wheel at build time via [tool.mnci-python-pip] vendor = [...].",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The project name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "What name would you like to use?",
+      "pattern": "^[a-zA-Z][^:]*$"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Workspace-relative directory for the project (defaults to libs/<name>)."
+    }
+  },
+  "required": ["name"]
+}

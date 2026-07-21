@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipTest",
+  "title": "Test a Python project with pytest",
+  "type": "object",
+  "properties": {
+    "installEditable": {
+      "type": "boolean",
+      "description": "Run `pip install -e .` before pytest, so the project's own declared dependencies are importable. Set to false for projects with no pyproject.toml (e.g. an Azure Function app, which deploys as source, not a wheel).",
+      "default": true
+    }
+  },
+  "required": []
+}

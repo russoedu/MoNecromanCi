@@ -1,55 +1,41 @@
-<p align="center">
-  <img src="libs/monecromanci/logo.svg" alt="MoNecromanCI logo" width="160">
-</p>
-
 # MoNecromanCI
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/monecromanci"><img src="https://img.shields.io/npm/v/monecromanci.svg" alt="npm version"></a>
-  <a href="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml"><img src="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/russoedu/MoNecromanCi/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/russoedu/MoNecromanCi/badges/.github/badges/coverage.json" alt="coverage"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/npm/l/monecromanci.svg" alt="license"></a>
-</p>
+An opinionated one-command Nx monorepo, with automatic commit-message-driven
+versioning, built as a **thin CLI over what Nx already ships** — no
+hand-rolled templates, shared config packages, or custom CI engines.
 
-> **MO**no(repo) + **NECROMAN**cy + **CI**. An interactive CLI that summons,
-> conjures, raises and validates NX monorepos — Node + TypeScript, Jest,
-> ESLint, real VSCode `.ts` debugging, and a complete CI pipeline (Azure DevOps
-> **and/or** GitHub Actions), with near-zero per-project configuration.
+This repository is itself an Nx monorepo, built and managed by the CLI it
+ships — `mnci2 new`/`mnci2 add` scaffolded this workspace's own root and both
+of its packages.
 
-This repository is both the tool's source (`libs/monecromanci`) and, being
-dogfooded, a monorepo *managed by* the tool it builds.
+## Packages
 
-For the full feature tour — the nine project kinds and their Nx tags, every
-CLI command, `resurrect`-ing an existing repo, CI/registry options, and how
-commit-message-driven releases work — see
-**[`libs/monecromanci/README.md`](libs/monecromanci/README.md)**. Release
-mechanics specifically (versioning, tagging, first publish, CI auth) are in
-[`docs/nx-release.md`](docs/nx-release.md).
+| Package | What it is |
+| --- | --- |
+| [`@mnci/cli`](packages/cli) | The CLI itself — `mnci2 new` (scaffold a monorepo) and `mnci2 add` (delegate to the matching official/community Nx generator for React apps, Node apps, Azure Function apps, npm/Python libraries). |
+| [`@mnci/nx-python-pip`](packages/nx-python-pip) | An Nx plugin for pip-native Python projects (Ruff, pytest, PyPA `build`/`twine` — no uv, no Poetry) that `@mnci/cli`'s Python commands delegate to. Has no dependency on `@mnci/cli` itself; usable standalone in any Nx 21+ workspace. |
+
+See each package's own README for the full command/generator/executor
+reference.
 
 ## Common commands
 
 ```sh
 npm run build          # build all projects
 npm run test           # run all tests
-npm run lint           # lint everything
-npm run affected       # lint + test + build only what changed
-npm run graph          # open the project graph
+npm run lint            # lint everything
+npm run affected        # lint + test + build only what changed
+npm run graph            # open the project graph
+npm run release:preview  # preview the next automated release — no changes made
 ```
 
-```sh
-npx monecromanci validate   # (ritual)   nx affected -t lint test build, before pushing
-npx monecromanci spell      # (scry)     changed projects + a ready-made commit scope
-npx monecromanci release    # (foretell) preview the next automated release — no changes made
-```
+## Releasing
 
-## Debugging
+Versions are computed by `nx release` from **Conventional Commits** since each
+package's last release tag (enforced at commit time by commitlint's husky
+hook) — nothing is hand-edited. On `main`, CI runs the release automatically;
+`npm run release:preview` shows what would happen without changing anything.
 
-Open `MoNecromanCI Monorepo.code-workspace` in VSCode. Use the **Run and Debug** panel:
-breakpoints work in `.ts` test files (and step into internal libs). The
-`Orta.vscode-jest` extension also adds a **Debug** lens above each test.
+## License
 
-## Adding projects
-
-```sh
-npx monecromanci add    # (alias: conjure) function-app | node-app | react-app | vue-app | svelte-app | nextjs-app | internal-lib | publishable-lib | cli-tool
-```
+MIT — see [LICENSE](LICENSE).

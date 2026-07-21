@@ -1,0 +1,60 @@
+{
+  "name": "@mnci/cli",
+  "version": "1.0.0",
+  "description": "MoNecromanCI CLI — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
+  "bin": {
+    "mnci2": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": "^22.13.0 || >=24"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "test:e2e": "node e2e/cli.e2e.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "start": "node dist/cli.js"
+  },
+  "keywords": [
+    "nx",
+    "monorepo",
+    "azure-devops",
+    "azure-functions",
+    "react",
+    "cli",
+    "scaffold",
+    "typescript",
+    "python"
+  ],
+  "author": "Eduardo Russo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/russoedu/MoNecromanCi.git",
+    "directory": "packages/cli"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0",
+    "cross-spawn": "^7.0.6"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^26.0.1",
+    "eslint": "^10.6.0",
+    "jest": "^30.4.2",
+    "js-yaml": "^5.2.1",
+    "ts-jest": "^29.4.11",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  }
+}

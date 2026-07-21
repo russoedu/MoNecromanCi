@@ -1,25 +1,23 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
-    "ignoreDeprecations": "6.0",
-    "target": "es2024",
-    "types": [
-      "jest",
-      "node"
-    ],
-    "sourceMap": true,
-    "declaration": true,
+    "composite": true,
     "declarationMap": true,
-    "removeComments": false,
-    "forceConsistentCasingInFileNames": true,
+    "emitDeclarationOnly": true,
+    "importHelpers": true,
     "isolatedModules": true,
+    "lib": ["es2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmitOnError": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
-    "strictNullChecks": true,
-    "strictPropertyInitialization": false
+    "target": "es2022",
+    "customConditions": ["@org/source"],
+    "noUncheckedSideEffectImports": false,
+    "types": ["*"]
   }
 }

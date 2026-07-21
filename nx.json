@@ -1,91 +1,111 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "workspaceLayout": {
-    "appsDir": "apps",
-    "libsDir": "libs"
-  },
-  "defaultBase": "main",
   "namedInputs": {
-    "sharedGlobals": [
-      "{workspaceRoot}/package.json",
-      "{workspaceRoot}/package-lock.json",
-      "{workspaceRoot}/nx.json",
-      "{workspaceRoot}/tsconfig.base.json",
-      "{workspaceRoot}/jest.preset.mjs",
-      "{workspaceRoot}/eslint.config.mjs"
-    ],
     "default": [
       "{projectRoot}/**/*",
       "sharedGlobals"
     ],
     "production": [
       "default",
-      "!{projectRoot}/coverage/**",
-      "!{projectRoot}/dist/**",
-      "!{projectRoot}/doc/**",
-      "!{projectRoot}/**/*.test.ts",
-      "!{projectRoot}/src/_jest/**"
-    ]
+      "!{projectRoot}/.eslintrc.json",
+      "!{projectRoot}/eslint.config.mjs",
+      "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+      "!{projectRoot}/tsconfig.spec.json",
+      "!{projectRoot}/jest.config.[jt]s",
+      "!{projectRoot}/src/test-setup.[jt]s",
+      "!{projectRoot}/test-setup.[jt]s"
+    ],
+    "sharedGlobals": []
   },
-  "targetDefaults": {
-    "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "production",
-        "^production"
-      ],
-      "cache": true
-    },
-    "lint": {
-      "inputs": [
-        "default",
-        "^production"
-      ],
-      "cache": true
-    },
-    "test": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "default",
-        "^production"
-      ],
-      "cache": true
-    },
-    "doc": {
-      "inputs": [
-        "production",
-        "^production"
-      ],
-      "cache": true
-    },
-    "nx-release-publish": {
-      "dependsOn": [
-        "build"
-      ],
+  "plugins": [
+    {
+      "plugin": "@nx/js/typescript",
       "options": {
-        "packageRoot": "{projectRoot}/dist"
+        "typecheck": {
+          "targetName": "typecheck"
+        },
+        "build": {
+          "targetName": "build",
+          "configName": "tsconfig.lib.json",
+          "buildDepsName": "build-deps",
+          "watchDepsName": "watch-deps"
+        }
+      }
+    },
+    {
+      "plugin": "@nx/rollup/plugin",
+      "options": {
+        "buildTargetName": "build",
+        "buildDepsTargetName": "build-deps",
+        "watchDepsTargetName": "watch-deps"
+      }
+    },
+    {
+      "plugin": "@nx/eslint/plugin",
+      "options": {
+        "targetName": "lint"
+      }
+    },
+    {
+      "plugin": "@nx/jest/plugin",
+      "options": {
+        "targetName": "test"
       }
     }
-  },
+  ],
+  "analytics": false,
+  "defaultBase": "main",
   "release": {
     "projectsRelationship": "independent",
     "projects": [
-      "tag:type:publishable-lib"
+      "packages/*",
+      "python-packages/*"
     ],
     "releaseTag": {
       "pattern": "{projectName}@{version}"
     },
     "version": {
+      "preVersionCommand": "npx nx run-many -t build --projects=packages/*,python-packages/*",
       "conventionalCommits": true,
-      "fallbackCurrentVersionResolver": "disk"
+      "fallbackCurrentVersionResolver": "disk",
+      "git": {
+        "commit": false,
+        "tag": true,
+        "push": true
+      }
     },
     "changelog": {
-      "projectChangelogs": true
+      "workspaceChangelog": false
     }
   },
-  "analytics": false
+  "generators": {
+    "@nx/react:application": {
+      "linter": "eslint",
+      "unitTestRunner": "jest"
+    },
+    "@nx/react:library": {
+      "linter": "eslint",
+      "unitTestRunner": "jest"
+    },
+    "@nx/js:library": {
+      "linter": "eslint",
+      "unitTestRunner": "jest"
+    }
+  },
+  "sync": {
+    "applyChanges": true
+  },
+  "mnci2": {
+    "stack": {
+      "linter": "eslint",
+      "testRunner": "jest"
+    }
+  },
+  "targetDefaults": {
+    "test": {
+      "dependsOn": [
+        "^build"
+      ]
+    }
+  }
 }

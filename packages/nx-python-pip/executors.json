@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "executors": {
+    "build": {
+      "implementation": "./dist/executors/build/executor",
+      "schema": "./dist/executors/build/schema.json",
+      "description": "Build a Python wheel/sdist with python -m build, vendoring internal libs declared via [tool.mnci-python-pip] vendor."
+    },
+    "test": {
+      "implementation": "./dist/executors/test/executor",
+      "schema": "./dist/executors/test/schema.json",
+      "description": "Run pytest, optionally installing the project in editable mode first."
+    },
+    "lint": {
+      "implementation": "./dist/executors/lint/executor",
+      "schema": "./dist/executors/lint/schema.json",
+      "description": "Run ruff check ."
+    },
+    "publish": {
+      "implementation": "./dist/executors/publish/executor",
+      "schema": "./dist/executors/publish/schema.json",
+      "description": "Publish a wheel/sdist with twine upload; honours nx release publish --dry-run."
+    }
+  }
+}

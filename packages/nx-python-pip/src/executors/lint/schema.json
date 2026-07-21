@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxPythonPipLint",
+  "title": "Lint a Python project with ruff",
+  "type": "object",
+  "properties": {},
+  "required": []
+}
