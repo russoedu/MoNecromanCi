@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, mnci2Config, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnci2Config, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -239,6 +239,113 @@ describe('azurePipelinesYaml', () => {
   })
 })
 
+describe('githubActionsYaml', () => {
+  it('stamps the chosen agent as runs-on', () => {
+    expect(githubActionsYaml('ubuntu-latest')).toContain('runs-on: ubuntu-latest')
+    expect(githubActionsYaml('MyRunnerLabel')).toContain('runs-on: MyRunnerLabel')
+  })
+
+  it('is valid YAML with the expected top-level shape', () => {
+    const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
+      on?:          { push?: unknown, pull_request?: unknown }
+      permissions?: { contents?: string }
+      jobs?:        { ci?: { steps?: unknown[] } }
+    }
+    expect(document_.on?.push).toBeTruthy()
+    expect(document_.on?.pull_request).toBeTruthy()
+    expect(document_.permissions?.contents).toBe('write')
+    expect(Array.isArray(document_.jobs?.ci?.steps)).toBe(true)
+  })
+
+  it('does not attach HEAD to a branch (actions/checkout is never detached on a push-triggered run)', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+    expect(workflow).toContain('actions/checkout@v4')
+    expect(workflow).not.toContain('checkout -B')
+  })
+
+  it('authenticates npm via a PAT repository secret, not a variable group', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain('secrets.PAT')
+    expect(workflow).not.toContain('npmAuthenticate')
+    expect(workflow).not.toContain('- group:')
+    expect(workflow).not.toContain('NODE_AUTH_TOKEN')
+  })
+
+  it('does not reference any custom CI engine — the workflow is plain Nx', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).not.toContain('build-templates')
+    expect(workflow).not.toContain('monecromanci-toolchain')
+    expect(workflow).not.toContain('.mjs')
+  })
+
+  it('folds twine publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
+    const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
+    const workflow = githubActionsYaml('ubuntu-latest', url)
+
+    expect(workflow).toContain('Release — version, tag and publish (npm + Python)')
+    expect(workflow).not.toContain('nx run-many -t publish')
+    expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
+    expect(workflow).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(workflow).toContain(`globSync('packages/*/package.json')`)
+    expect(workflow).toContain('python3 -m pip install -r requirements-dev.txt')
+  })
+
+  it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
+  })
+
+  it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain('npm run lint')
+    expect(workflow).toContain('npx nx run-many -t lint,test,build')
+    expect(workflow).not.toContain('nx affected')
+  })
+
+  it('checks the workspace is synced early, before lint/test/build (fails fast on a stale TS reference)', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const installIndex = workflow.indexOf('npm ci')
+    const syncCheckIndex = workflow.indexOf('nx sync:check')
+    const lintIndex = workflow.indexOf('npm run lint')
+
+    expect(syncCheckIndex).toBeGreaterThan(installIndex)
+    expect(lintIndex).toBeGreaterThan(syncCheckIndex)
+  })
+
+  it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const packIndex = workflow.indexOf('nx run-many -t package')
+    const uploadIndex = workflow.indexOf('actions/upload-artifact@v4')
+    const releaseIndex = workflow.indexOf('nx release --yes')
+
+    expect(packIndex).toBeGreaterThan(-1)
+    expect(uploadIndex).toBeGreaterThan(packIndex)
+    expect(releaseIndex).toBeGreaterThan(uploadIndex)
+    expect(workflow).toContain('path: dist/drop')
+    // No Azure classic-Release-pipeline build-tag mechanism — no equivalent on GitHub.
+    expect(workflow).not.toContain('addbuildtag')
+  })
+
+  it('runs the same guard scripts as azure-pipelines.yml (both providers can never drift)', () => {
+    const azure = azurePipelinesYaml('ubuntu-latest', 'Build', 'https://example.invalid/pypi/upload/')
+    const github = githubActionsYaml('ubuntu-latest', 'https://example.invalid/pypi/upload/')
+
+    expect(github).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(azure).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(github).toContain(`globSync('apps/*/project.json')`)
+    expect(azure).toContain(`globSync('apps/*/project.json')`)
+    expect(github).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(azure).toContain(`Buffer.from(process.env.PAT,'base64')`)
+  })
+})
+
 describe('generatorDefaults', () => {
   it('maps eslint straight through', () => {
     const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<string, { linter: string, unitTestRunner: string }>
@@ -279,7 +386,7 @@ describe('applyOverlay', () => {
   let workspaceRoot: string
 
   const overlayWith = (stack: StackConfig): void =>
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack })
 
   beforeEach(() => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-overlay-'))
@@ -292,7 +399,7 @@ describe('applyOverlay', () => {
   })
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as Record<string, unknown>
     expect(nxJson.$schema).toBe('s')
@@ -306,8 +413,30 @@ describe('applyOverlay', () => {
     expect(pipeline).toContain('- group: Build')
   })
 
+  it('writes only azure-pipelines.yml when ci: "azure" (the default)', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+
+    expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.github/workflows/ci.yml'))).toBe(false)
+  })
+
+  it('writes only .github/workflows/ci.yml when ci: "github"', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+
+    expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(false)
+    const workflow = readFileSync(join(workspaceRoot, '.github/workflows/ci.yml'), 'utf8')
+    expect(workflow).toContain('runs-on: ubuntu-latest')
+  })
+
+  it('writes both pipeline files when ci: "both"', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+
+    expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.github/workflows/ci.yml'))).toBe(true)
+  })
+
   it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { sync?: { applyChanges?: boolean } }
     expect(nxJson.sync?.applyChanges).toBe(true)
@@ -356,7 +485,7 @@ describe('applyOverlay', () => {
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const mode = statSync(join(workspaceRoot, '.husky/commit-msg')).mode
     expect(mode & 0o111).not.toBe(0)
@@ -377,7 +506,7 @@ describe('applyOverlay', () => {
   })
 
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as Record<string, unknown>
     expect(manifest.name).toBe('@demo/source')
@@ -387,7 +516,7 @@ describe('applyOverlay', () => {
   })
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     expect(manifest.scripts).toEqual({
@@ -404,7 +533,7 @@ describe('applyOverlay', () => {
   it('keeps any scripts the preset generated that the curated set does not own', () => {
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', scripts: { postinstall: 'echo hi' } }))
 
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     expect(manifest.scripts.postinstall).toBe('echo hi')

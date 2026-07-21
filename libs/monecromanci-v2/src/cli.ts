@@ -49,6 +49,7 @@ export function buildProgram (): Command {
     .option('--artifacts-feed <name>', 'Azure Artifacts feed')
     .option('--agent <pool>', 'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name')
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
+    .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--linter <linter>', 'linter: eslint | oxlint')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
     .action(async (name: string | undefined, options: NewOptions) => {

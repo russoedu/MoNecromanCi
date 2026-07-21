@@ -1,16 +1,17 @@
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({ applyOverlay: jest.fn(), DEFAULT_STACK: { linter: 'eslint', testRunner: 'jest' } }))
-jest.mock('../prompts', () => ({ promptRegistry: jest.fn(), promptStack: jest.fn(), promptText: jest.fn() }))
+jest.mock('../prompts', () => ({ promptCi: jest.fn(), promptRegistry: jest.fn(), promptStack: jest.fn(), promptText: jest.fn() }))
 
 import { join } from 'node:path'
 import { runNpx, runShell } from '../nx'
 import { applyOverlay } from '../overlay'
-import { promptRegistry, promptStack, promptText } from '../prompts'
+import { promptCi, promptRegistry, promptStack, promptText } from '../prompts'
 import { runNew } from './new'
 
 const mockRunNpx = jest.mocked(runNpx)
 const mockRunShell = jest.mocked(runShell)
 const mockApplyOverlay = jest.mocked(applyOverlay)
+const mockPromptCi = jest.mocked(promptCi)
 const mockPromptRegistry = jest.mocked(promptRegistry)
 const mockPromptStack = jest.mocked(promptStack)
 const mockPromptText = jest.mocked(promptText)
@@ -46,6 +47,7 @@ describe('runNew', () => {
       registry:      { kind: 'npm' },
       agent:         'ubuntu-latest',
       variableGroup: 'Build',
+      ci:            'azure',
       stack:         DEFAULT_STACK,
     })
   })
@@ -57,6 +59,34 @@ describe('runNew', () => {
       agent:         'MyPool',
       variableGroup: 'CiSecrets',
     }))
+  })
+
+  it('passes an explicit --ci flag through to the overlay without prompting', async () => {
+    await runNew('demo', { yes: true, ci: 'github' })
+
+    expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ ci: 'github' }))
+    expect(mockPromptCi).not.toHaveBeenCalled()
+  })
+
+  it('accepts --ci both', async () => {
+    await runNew('demo', { yes: true, ci: 'both' })
+
+    expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ ci: 'both' }))
+  })
+
+  it('skips the Azure-only variable-group prompt when --ci github is chosen (falls back to the Build default unasked)', async () => {
+    mockPromptText
+      .mockResolvedValueOnce('shop') // workspace name
+      .mockResolvedValueOnce('@shop') // scope
+      .mockResolvedValueOnce('ubuntu-latest') // agent
+    mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
+    mockPromptStack.mockResolvedValue(DEFAULT_STACK)
+
+    await runNew(undefined, { ci: 'github' })
+
+    expect(mockPromptCi).not.toHaveBeenCalled()
+    expect(mockPromptText).not.toHaveBeenCalledWith('Azure DevOps variable group holding the npm PAT', 'Build')
+    expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ ci: 'github', variableGroup: 'Build' }))
   })
 
   it('installs the commit toolchain for real (default stack adds nothing extra)', async () => {
@@ -86,8 +116,10 @@ describe('runNew', () => {
       registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
       agent:         'ubuntu-latest',
       variableGroup: 'Build',
+      ci:            'azure',
       stack:         DEFAULT_STACK,
     })
+    expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptRegistry).not.toHaveBeenCalled()
     expect(mockPromptStack).not.toHaveBeenCalled()
     expect(mockPromptText).not.toHaveBeenCalled()
@@ -100,14 +132,16 @@ describe('runNew', () => {
       .mockResolvedValueOnce('ubuntu-latest') // agent
       .mockResolvedValueOnce('Build') // variable group
     mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
+    mockPromptCi.mockResolvedValue('azure')
     mockPromptStack.mockResolvedValue({ linter: 'oxlint', testRunner: 'vitest' })
 
     await runNew(undefined, {})
 
     expect(mockPromptText).toHaveBeenCalledWith('Workspace name')
-    expect(mockPromptText).toHaveBeenCalledWith('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest')
+    expect(mockPromptText).toHaveBeenCalledWith('CI build agent/runner (vmImage, GitHub Actions runner label, or self-hosted pool name)', 'ubuntu-latest')
     expect(mockPromptText).toHaveBeenCalledWith('Azure DevOps variable group holding the npm PAT', 'Build')
     expect(mockPromptRegistry).toHaveBeenCalled()
+    expect(mockPromptCi).toHaveBeenCalled()
     expect(mockPromptStack).toHaveBeenCalled()
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ stack: { linter: 'oxlint', testRunner: 'vitest' } }))
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')

@@ -127,6 +127,36 @@ const tsApiManifest = JSON.parse(readFileSync(path.join(workspace, 'node_modules
 enforce('dual compiler: the importable TypeScript API stays TS6 (Nx graph/Vite/eslint)', String(tsApiManifest.version).startsWith('6'))
 
 /* ---------------------------------------------------------------------------
+ * new --ci both — GitHub Actions CI generation, alongside Azure Pipelines
+ * ------------------------------------------------------------------------- */
+
+const workspaceGithub = path.join(temporary, 'demo-github')
+console.log(`\n▸ mnci2 new demo-github --ci both (in ${temporary})`)
+run(`node ${CLI} new demo-github --yes --registry npm --scope @demo --ci both`, temporary)
+
+enforce('azure-pipelines.yml still written when --ci both', existsSync(path.join(workspaceGithub, 'azure-pipelines.yml')))
+const workflowPath = path.join(workspaceGithub, '.github/workflows/ci.yml')
+enforce('.github/workflows/ci.yml written when --ci both', existsSync(workflowPath))
+
+const workflowYaml = readFileSync(workflowPath, 'utf8')
+enforce('workflow stamps the CLI agent as runs-on', workflowYaml.includes('runs-on: ubuntu-latest'))
+enforce('workflow authenticates npm via a PAT repository secret, not a variable group',
+  workflowYaml.includes('secrets.PAT') && !workflowYaml.includes('npmAuthenticate') && !workflowYaml.includes('- group:'))
+enforce('workflow does not attach HEAD to a branch (actions/checkout is never detached on push)',
+  workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B'))
+enforce('workflow packs apps to a drop artifact (no Azure build-tag mechanism)',
+  workflowYaml.includes('nx run-many -t package') && workflowYaml.includes('actions/upload-artifact@v4') && !workflowYaml.includes('addbuildtag'))
+let workflowParsed = null
+try {
+  workflowParsed = yaml.load(workflowYaml)
+} catch { /* leaves workflowParsed null → the check below fails with the parse error surfaced above */ }
+enforce('.github/workflows/ci.yml is valid YAML (on + permissions + jobs.ci.steps)',
+  Boolean(workflowParsed)
+  && Boolean(workflowParsed.on?.push) && Boolean(workflowParsed.on?.pull_request)
+  && workflowParsed.permissions?.contents === 'write'
+  && Array.isArray(workflowParsed.jobs?.ci?.steps))
+
+/* ---------------------------------------------------------------------------
  * add — one of each kind
  * ------------------------------------------------------------------------- */
 

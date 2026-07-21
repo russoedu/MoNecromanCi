@@ -70,7 +70,9 @@ each a single cross-platform command:
    is ever pushed to `main`; future runs resolve versions from tag names.
 3. Writes `.npmrc` (Azure Artifacts feed or public npm — scope routing makes
    accidental public publishes impossible), `commitlint.config.mjs`, a husky
-   `commit-msg` hook, `azure-pipelines.yml`, and the curated root scripts.
+   `commit-msg` hook, the chosen CI provider's pipeline file(s)
+   (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
+   `azure`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 
@@ -189,14 +191,26 @@ checkout that never gets committed. That's what the pipeline's `nx sync:check`
 step (below) surfaces early — if it fails, run `npx nx sync` locally and
 commit the result.
 
-## CI (Azure DevOps only, any agent OS)
+## CI (Azure Pipelines and/or GitHub Actions, any agent OS)
+
+`mnci2 new` asks which CI provider(s) to write a pipeline file for (`--ci`,
+default `azure`): `azure` writes `azure-pipelines.yml`, `github` writes
+`.github/workflows/ci.yml`, `both` writes both — pick `github` for a
+GitHub-hosted repo, or `both` while migrating between the two. Whichever
+provider(s), the pipeline does the **exact same thing**: both files are built
+from the same shared guard scripts (`overlay.ts`'s `PYTHON_INSTALL_GUARD`,
+`PACK_APPS_GUARD`, `releaseGuard`), so they can never drift on what CI
+actually runs — only the provider's own syntax differs.
 
 The pipeline contains **no bash and no PowerShell**: every step is a built-in
-Azure task or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
+task/action or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
 and `sh` execute identically, so it runs unchanged on Linux, macOS and Windows
-agents. The build agent is your choice at `mnci2 new` (`--agent`, default
-`ubuntu-latest`): a Microsoft-hosted image (`ubuntu-`/`windows-`/`macos-…`)
-becomes `pool.vmImage`, anything else a self-hosted `pool.name`.
+agents. The build agent/runner is your choice at `mnci2 new` (`--agent`,
+default `ubuntu-latest`): on Azure a Microsoft-hosted image
+(`ubuntu-`/`windows-`/`macos-…`) becomes `pool.vmImage`, anything else a
+self-hosted `pool.name`; on GitHub the same value is passed straight through
+as `runs-on:` (GitHub's own hosted runner labels already match the common
+Azure vmImage names, and a self-hosted label is just as valid there).
 
 Every run (PR and main) first does `nx sync:check` (fails fast and clearly if
 the workspace wasn't synced+committed locally — see above), then one
@@ -206,9 +220,11 @@ the workspace wasn't synced+committed locally — see above), then one
   `dist/drop/<type>-<name>.zip` (e.g. `node-function-app-api.zip`,
   `react-app-web.zip`); the whole `dist/drop` is published as the **`drop`**
   artifact.
-- **Tag the run per app** — one build tag per zip, **exactly** `<type>-<name>`
-  (derived from the zip filenames, so the tag can never drift from the
-  artifact). A classic release/CD pipeline keys its trigger off these.
+- **Tag the run per app** *(Azure only)* — one build tag per zip, **exactly**
+  `<type>-<name>` (derived from the zip filenames, so the tag can never drift
+  from the artifact). A classic Azure release/CD pipeline keys its trigger off
+  these; GitHub Actions has no equivalent mechanism, so the `drop` artifact
+  (one zip per app inside it) is the portable substitute there.
 - **Release — version, tag and publish** — one `npx nx release --yes` for both
   npm (`packages/*`) and Python (`python-packages/*`): version bump from
   conventional commits → `{projectName}@{version}` git tag pushed to `main`
@@ -220,23 +236,36 @@ the workspace wasn't synced+committed locally — see above), then one
   (`ruff`/`pytest`/`build`/`twine`) before any Python target runs, skipped
   cleanly on a workspace with no Python projects.
 
-**npm auth** is the base64 PAT from a **variable group** (`--variable-group`,
-default `Build`): the group exposes `$(PAT)`, mapped as `env` on the npm steps
-and read by the root `.npmrc`'s `_password` block — the PAT value never lands
-in a file. Mark `PAT` secret in Library. No `npmAuthenticate@0` task (it would
-overwrite the hand-set password). Two one-time grants are required (project
-admin): **Contribute** on the repo for the *Project Collection Build Service*
-account (tag push), and **publish** rights on the feed for the PAT's owner.
+**npm auth** is the base64 `PAT`, read the same way on both providers but from
+a different place: on Azure Pipelines, a **variable group**
+(`--variable-group`, default `Build`) exposes it as `$(PAT)`; on GitHub
+Actions it's a plain repository (or environment) **secret** named `PAT`, read
+as `${{ secrets.PAT }}` — GitHub has no "variable group" concept, so unlike
+Azure this needs no CLI-collected name, just a secret you create once in the
+repo settings. Either way it's mapped as `env` on the npm steps and read by
+the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
+No `npmAuthenticate@0` task (it would overwrite the hand-set password).
+
+On Azure, two one-time grants are required (project admin): **Contribute** on
+the repo for the *Project Collection Build Service* account (tag push), and
+**publish** rights on the feed for the PAT's owner. On GitHub, the workflow's
+`permissions: contents: write` is what lets its own checkout token push the
+release tag — no separate grant, but the job still needs that permission
+line (already generated) and, for a fork-based PR, GitHub disables
+write permissions by default (not a concern for pushes to `main` from the
+repo itself, which is the only case this pipeline ever releases from).
 
 **The one PAT, two different encodings — read this before wiring a third
-protocol.** The same `$(PAT)` variable is base64-encoded throughout — that's
-the raw value Azure Artifacts' "Connect to feed" instructions give you. npm's
-`.npmrc` `_password` field expects exactly that pre-encoded form, so it's used
-as-is. `twine`/pypi basic auth, by contrast, wants the **raw** token — so the
-Python publish step in `azurePipelinesYaml` explicitly *decodes* the same
-`$(PAT)` (`Buffer.from(process.env.PAT, 'base64').toString()`) before handing
-it to `TWINE_PASSWORD`. Both are correct for their protocol today, but it's an
-easy trap to get backwards: if you ever wire a third registry protocol, check
+protocol.** The same `PAT` value (`$(PAT)` on Azure, `secrets.PAT` on GitHub)
+is base64-encoded throughout — that's the raw value Azure Artifacts' "Connect
+to feed" instructions give you. npm's `.npmrc` `_password` field expects
+exactly that pre-encoded form, so it's used as-is. `twine`/pypi basic auth, by
+contrast, wants the **raw** token — so the shared `releaseGuard` fragment
+(`overlay.ts`, used by both `azurePipelinesYaml` and `githubActionsYaml`)
+explicitly *decodes* the same `PAT`
+(`Buffer.from(process.env.PAT, 'base64').toString()`) before handing it to
+`TWINE_PASSWORD`. Both are correct for their protocol today, but it's an easy
+trap to get backwards: if you ever wire a third registry protocol, check
 whether it wants the pre-encoded or the raw form before assuming either
 convention.
 

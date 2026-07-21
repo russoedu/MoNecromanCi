@@ -16,6 +16,20 @@ export type RegistryConfig
     | { kind: 'npm' }
 
 /**
+ * Which CI provider(s) {@link applyOverlay} writes a pipeline file for.
+ *
+ * @remarks
+ * `azure` (the long-standing default) writes only `azure-pipelines.yml`;
+ * `github` writes only `.github/workflows/ci.yml`; `both` writes both — the
+ * same three-way choice v1 already offers (`vars.ci` in
+ * `templates/monorepo.ts`), so a GitHub-hosted repo can pick the provider it
+ * actually runs on instead of carrying an unused Azure Pipelines file.
+ *
+ * @typeParam None - this type has no generic type parameters.
+ */
+export type CiProvider = 'azure' | 'github' | 'both'
+
+/**
  * The stack chosen at `mnci2 new` — asked up front, honoured by every `add`.
  *
  * @remarks
@@ -445,6 +459,67 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
 }
 
 /**
+ * The portable `node -e` one-liner that installs the fixed Python toolchain
+ * (`ruff`/`pytest`/`build`/`twine`) from `requirements-dev.txt`.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
+ * — one guard script, so the two providers can never drift on what "install
+ * Python deps" means. Skips cleanly on a workspace with no Python projects
+ * (no `requirements-dev.txt`, written by `add/python.ts` on the first
+ * Python `add`).
+ */
+const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"`
+
+/**
+ * The portable `node -e` one-liner that packs every app into
+ * `dist/drop/<type>-<name>.zip` via each app's own `package` target.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
+ * Skips cleanly when the workspace has no apps yet.
+ */
+const PACK_APPS_GUARD = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});if(fs.globSync('apps/*/project.json').length===0){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"`
+
+/**
+ * Builds the portable `node -e` one-liner that versions, tags and publishes
+ * both `packages/*` (npm) and `python-packages/*` (Python) via `nx release`.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
+ * — `pythonPublishEnv` is the only provider-specific fragment (both providers
+ * decode the same base64 `PAT` env var, so the fragment itself is identical
+ * too; only the caller decides whether to inject it). Skips cleanly when
+ * there is nothing to release (`nx release` hard-errors on an empty scope).
+ *
+ * @param pythonPublishEnv - A `node -e`-fragment that exports `TWINE_*` when
+ * there are Python packages and a configured feed, or `''` to export nothing.
+ * @returns The full `node -e` release one-liner.
+ * @throws Never - pure string building.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function releaseGuard (pythonPublishEnv: string): string {
+  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
+}
+
+/**
+ * Injected into {@link releaseGuard}: when there are Python packages and a
+ * configured Azure feed, export twine publish credentials (the raw PAT,
+ * decoded from the base64 value both providers read from a `PAT` env var).
+ *
+ * @param pythonPublishUrl - The twine upload URL for Python packages, or
+ * `undefined` to leave Python publishing unconfigured (public npm).
+ * @returns The `node -e` fragment, or `''` when there is no Python feed.
+ * @throws Never - pure string mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
+  return pythonPublishUrl
+    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+    : ''
+}
+
+/**
  * Renders the `pool:` block body for a chosen build agent.
  *
  * @remarks
@@ -520,11 +595,6 @@ export function poolBlock (agent: string): string {
  */
 export function azurePipelinesYaml (agent: string, variableGroup: string, pythonPublishUrl?: string): string {
   const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
-  // Injected into the release step's node -e: when there are Python packages and
-  // an Azure feed, export twine publish credentials (raw PAT decoded from base64).
-  const pythonPublishEnv = pythonPublishUrl
-    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
-    : ''
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
 # Generated by MoNecromanCI v2. Deliberately thin: Nx builds, 'nx release'
@@ -582,7 +652,7 @@ steps:
   # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
   # by 'mnci2 add' to requirements-dev.txt on the first Python project. Plain
   # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
-  - script: node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"
+  - script: ${PYTHON_INSTALL_GUARD}
     displayName: Install Python dependencies (ruff, pytest, build, twine)
 
   # Fails fast, with an unambiguous message, when a stale TypeScript project
@@ -607,7 +677,7 @@ steps:
 
   # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
   # target. Portable guard: skip cleanly when the workspace has no apps yet.
-  - script: node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});if(fs.globSync('apps/*/project.json').length===0){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"
+  - script: ${PACK_APPS_GUARD}
     displayName: Pack all apps (one zip per app -> dist/drop)
     condition: ${onMain}
 
@@ -630,11 +700,142 @@ steps:
   # nx release errors on an empty scope, so skip cleanly when there is nothing
   # to release. When there are Python packages and an Azure feed, twine
   # publish credentials are exported (raw PAT, decoded from the base64 variable).
-  - script: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
+  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
     displayName: Release — version, tag and publish (npm + Python)
     condition: ${onMain}
     env:
       PAT: $(PAT)
+`
+}
+
+/**
+ * Builds the generated workspace's whole CI as a GitHub Actions workflow —
+ * the GitHub-hosted equivalent of {@link azurePipelinesYaml}.
+ *
+ * @remarks
+ * Same pipeline, same shared guard scripts ({@link PYTHON_INSTALL_GUARD},
+ * {@link PACK_APPS_GUARD}, {@link releaseGuard}) — only the provider syntax
+ * differs, so the two YAML files can never drift on what CI actually does.
+ * Two steps from the Azure version are dropped, both for reasons already
+ * documented there:
+ * - **Attach HEAD to a branch**: `actions/checkout` (unlike Azure's
+ *   `checkout: self`) already leaves a push-triggered run on the real branch,
+ *   not a detached HEAD, so there is nothing to re-attach.
+ * - **Tag the run per app**: `##vso[build.addbuildtag]` is an Azure classic
+ *   Release-pipeline mechanism with no GitHub Actions equivalent; the `drop`
+ *   artifact (one zip per app inside it) is the portable substitute.
+ *
+ * Auth is a single repository (or environment) secret named `PAT` — GitHub
+ * has no "variable group" concept, so unlike the Azure version this needs no
+ * CLI-collected name, just a secret the user creates once in the repo
+ * settings, read here as `secrets.PAT`. `permissions: contents: write` is
+ * what lets the checkout's own token push the release tag back (no
+ * `persistCredentials` step to opt into — GitHub's checkout wires this up
+ * from the job's `permissions` automatically).
+ *
+ * @param agent - The build agent — reused as-is for `runs-on:` (GitHub's
+ * hosted runner labels, e.g. `ubuntu-latest`, already match the common Azure
+ * vmImage names; anything else is passed through as a self-hosted runner
+ * label).
+ * @param pythonPublishUrl - The twine upload URL for Python packages, or
+ * `undefined` to leave Python publishing unconfigured (public npm).
+ * @returns The full text of `.github/workflows/ci.yml`.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function githubActionsYaml (agent: string, pythonPublishUrl?: string): string {
+  const onMain = `github.event_name != 'pull_request' && github.ref_name == 'main'`
+  return `name: CI
+
+# Generated by MoNecromanCI v2. Deliberately thin: Nx builds, 'nx release'
+# versions from conventional commits and pushes ONLY a tag to main, and each
+# app is packed into dist/drop/<type>-<name>.zip by its own 'package' target.
+# The GitHub Actions equivalent of azure-pipelines.yml — see there for the
+# fuller rationale; both stay hand-kept in lockstep, there is no shared template.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  # Lets the release step push the version tag nx release creates back to main.
+  contents: write
+
+jobs:
+  ci:
+    runs-on: ${agent}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Version resolution needs the release tags.
+      - run: git fetch --all --prune --tags
+        name: Fetch branches and release tags
+
+      - run: git config user.name "github-actions[bot]" && git config user.email "github-actions[bot]@users.noreply.github.com"
+        name: Set the git identity used for release tags
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+        name: Install dependencies
+        env:
+          PAT: \${{ secrets.PAT }}
+
+      # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
+      # by 'mnci2 add' to requirements-dev.txt on the first Python project. Plain
+      # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
+      - run: ${PYTHON_INSTALL_GUARD}
+        name: Install Python dependencies (ruff, pytest, build, twine)
+
+      # Fails fast, with an unambiguous message, when a stale TypeScript project
+      # reference (or another sync generator's drift) was never synced+committed
+      # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
+      # CI still needs its own explicit, early check rather than surfacing this as
+      # a confusing failure buried inside the build step below.
+      - run: npx nx sync:check
+        name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
+
+      # One verify for every run (PR and main). \`npm run lint\` abstracts the chosen
+      # linter (eslint via nx, or oxlint), so the workflow needs no linter branch;
+      # Nx cache makes unchanged test/build projects instant.
+      - run: npm run lint
+        name: Lint
+      # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
+      # notably Python's ruff (every Python project owns a hand-authored \`lint\`
+      # target). For the eslint stack the JS lint runs twice, but Nx caches the
+      # repeat instantly.
+      - run: npx nx run-many -t lint,test,build
+        name: Lint, test and build everything
+
+      # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
+      # target. Portable guard: skip cleanly when the workspace has no apps yet.
+      - run: ${PACK_APPS_GUARD}
+        name: Pack all apps (one zip per app -> dist/drop)
+        if: \${{ ${onMain} }}
+
+      - uses: actions/upload-artifact@v4
+        if: \${{ ${onMain} }}
+        with:
+          name: drop
+          path: dist/drop
+          if-no-files-found: ignore
+
+      # Version + tag + publish, in one release, for npm (packages/*) AND Python
+      # (python-packages/*) — conventional commits, tag-only push. Portable guard:
+      # nx release errors on an empty scope, so skip cleanly when there is nothing
+      # to release. When there are Python packages and an Azure feed, twine
+      # publish credentials are exported (raw PAT, decoded from the base64 secret).
+      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
+        name: Release — version, tag and publish (npm + Python)
+        if: \${{ ${onMain} }}
+        env:
+          PAT: \${{ secrets.PAT }}
 `
 }
 
@@ -655,6 +856,8 @@ export interface OverlayOptions {
   agent:         string
   /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
   variableGroup: string
+  /** Which CI provider(s) to write a pipeline file for. */
+  ci:            CiProvider
   /** The stack (TS major, linter, test runner) chosen at `new`. */
   stack:         StackConfig
 }
@@ -666,12 +869,14 @@ export interface OverlayOptions {
  * This is the ONLY file-writing v2 does — everything else in the workspace is
  * the untouched output of Nx's own generators. Writes: the `nx.json` release
  * patch, `.npmrc`, `commitlint.config.mjs`, the husky `commit-msg` hook and
- * `azure-pipelines.yml`. Dependency installation (`husky`, `@commitlint/*`)
- * is the caller's job — it shells out to real `npm install` so versions
- * resolve at generation time instead of being pinned here.
+ * the chosen CI provider's pipeline file(s) — `azure-pipelines.yml` and/or
+ * `.github/workflows/ci.yml`, per `options.ci`. Dependency installation
+ * (`husky`, `@commitlint/*`) is the caller's job — it shells out to real
+ * `npm install` so versions resolve at generation time instead of being
+ * pinned here.
  *
  * @param workspaceRoot - Absolute path to the generated workspace.
- * @param options - The scope, registry, CI agent and variable group chosen.
+ * @param options - The scope, registry, CI agent/variable group and provider chosen.
  * @returns Nothing.
  * @throws Propagates any Node.js `fs` error raised while reading or writing.
  * @typeParam None - this function has no generic type parameters.
@@ -714,5 +919,13 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
     writeFileEnsured(join(workspaceRoot, 'oxlint.config.mts'), OXLINT_CONFIG)
     writeFileEnsured(join(workspaceRoot, 'oxfmt.config.mts'), OXFMT_CONFIG)
   }
-  writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml(options.agent, options.variableGroup, pythonPublishUrl(options.registry)))
+  // Either or both, per the chosen provider — a GitHub-hosted repo can skip
+  // the unused Azure file entirely instead of carrying dead CI config.
+  const publishUrl = pythonPublishUrl(options.registry)
+  if (options.ci === 'azure' || options.ci === 'both') {
+    writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml(options.agent, options.variableGroup, publishUrl))
+  }
+  if (options.ci === 'github' || options.ci === 'both') {
+    writeFileEnsured(join(workspaceRoot, '.github/workflows/ci.yml'), githubActionsYaml(options.agent, publishUrl))
+  }
 }

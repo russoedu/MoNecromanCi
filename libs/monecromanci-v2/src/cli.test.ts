@@ -140,6 +140,11 @@ describe('buildProgram', () => {
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' }))
   })
 
+  it('routes `new`\'s --ci flag to runNew', async () => {
+    await buildProgram().parseAsync(['node', 'mnci2', 'new', 'demo', '--yes', '--ci', 'github'])
+    expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
+  })
+
   it('runs the interactive wizard when invoked with no subcommand', async () => {
     await buildProgram().parseAsync(['node', 'mnci2'])
     expect(mockRunInteractive).toHaveBeenCalled()

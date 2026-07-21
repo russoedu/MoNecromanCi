@@ -1,5 +1,5 @@
 import { input, select } from '@inquirer/prompts'
-import type { RegistryConfig, StackConfig } from './overlay'
+import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
 
 /**
  * Prompts for a non-empty trimmed string with an optional default.
@@ -56,6 +56,31 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
     project:       await promptText('Azure DevOps project'),
     artifactsFeed: await promptText('Artifacts feed name'),
   }
+}
+
+/**
+ * Prompts for which CI provider(s) to write a pipeline file for.
+ *
+ * @remarks
+ * Azure Pipelines is listed first (and stays the `--yes` default) since it
+ * is the long-standing default; GitHub Actions and "both" let a
+ * GitHub-hosted workspace skip the unused Azure file, or carry both while
+ * migrating between the two.
+ *
+ * @param None - this function takes no parameters.
+ * @returns The chosen CI provider.
+ * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function promptCi (): Promise<CiProvider> {
+  return await select<CiProvider>({
+    message: 'CI provider',
+    choices: [
+      { name: 'Azure Pipelines', value: 'azure' },
+      { name: 'GitHub Actions', value: 'github' },
+      { name: 'Both', value: 'both' },
+    ],
+  })
 }
 
 /**

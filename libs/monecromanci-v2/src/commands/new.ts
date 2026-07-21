@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { runNpx, runShell } from '../nx'
-import { applyOverlay, DEFAULT_STACK, type RegistryConfig, type StackConfig } from '../overlay'
-import { promptRegistry, promptStack, promptText } from '../prompts'
+import { applyOverlay, DEFAULT_STACK, type CiProvider, type RegistryConfig, type StackConfig } from '../overlay'
+import { promptCi, promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
 
@@ -31,6 +31,8 @@ export interface NewOptions {
   agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
+  /** CI provider: `azure` | `github` | `both`. */
+  ci?:            CiProvider
   /** Linter (`eslint` or `oxlint`). */
   linter?:        StackConfig['linter']
   /** Unit-test runner (`jest` or `vitest`). */
@@ -64,6 +66,33 @@ async function resolveStack (options: NewOptions): Promise<StackConfig> {
     linter:     fromFlags.linter ?? prompted.linter,
     testRunner: fromFlags.testRunner ?? prompted.testRunner,
   }
+}
+
+/**
+ * Resolves the CI provider from a flag, `--yes`'s default, or a prompt.
+ *
+ * @remarks
+ * `azure` stays the `--yes`/flagless default — the long-standing behaviour —
+ * so an existing flagless `mnci2 new` keeps writing exactly the same file it
+ * always has. An explicit flag value is trusted as-is with no validation
+ * (matching `resolveRegistry`'s equally loose `--registry` handling): a
+ * typo just falls through to the flagless default instead of prompting.
+ *
+ * @param options - The CLI flags.
+ * @returns The resolved CI provider.
+ * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
+ * @typeParam None - this function has no generic type parameters.
+ */
+const CI_PROVIDERS: ReadonlySet<CiProvider> = new Set(['azure', 'github', 'both'])
+
+async function resolveCi (options: NewOptions): Promise<CiProvider> {
+  if (options.ci && CI_PROVIDERS.has(options.ci)) {
+    return options.ci
+  }
+  if (options.yes) {
+    return 'azure'
+  }
+  return await promptCi()
 }
 
 /**
@@ -115,8 +144,14 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   assertValidProjectName(workspaceName, 'Workspace name')
   const scope = options.scope ?? (options.yes ? `@${workspaceName}` : await promptText('npm scope for publishable packages', `@${workspaceName}`))
   const registry = await resolveRegistry(options)
-  const agent = options.agent ?? (options.yes ? 'ubuntu-latest' : await promptText('CI build agent (vmImage or self-hosted pool name)', 'ubuntu-latest'))
-  const variableGroup = options.variableGroup ?? (options.yes ? 'Build' : await promptText('Azure DevOps variable group holding the npm PAT', 'Build'))
+  const ci = await resolveCi(options)
+  const agent = options.agent ?? (options.yes ? 'ubuntu-latest' : await promptText('CI build agent/runner (vmImage, GitHub Actions runner label, or self-hosted pool name)', 'ubuntu-latest'))
+  // The variable group is an Azure Pipelines concept (GitHub reads a plain
+  // `PAT` repository secret instead, no CLI-collected name needed) — skipped
+  // when Azure is not one of the chosen providers.
+  const variableGroup = ci === 'github'
+    ? (options.variableGroup ?? 'Build')
+    : options.variableGroup ?? (options.yes ? 'Build' : await promptText('Azure DevOps variable group holding the npm PAT', 'Build'))
   const stack = await resolveStack(options)
 
   logger.step(`Creating Nx workspace '${workspaceName}' (preset: ts)`)
@@ -133,7 +168,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const workspaceRoot = join(process.cwd(), workspaceName)
 
   logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
-  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, stack })
+  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, ci, stack })
 
   // Install the commit toolchain (and, for the oxlint stack, oxc-standard —
   // which brings oxlint + oxfmt and the JavaScript Standard Style preset the
