@@ -177,6 +177,18 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * forms aren't interchangeable (verified empirically). `push: true` pushes
  * the tag (and only the tag — there is no commit to push).
  *
+ * `pushArgs: '--tags'` is required alongside `push: true`, not redundant with
+ * it: Nx's underlying `git push` always runs with `--follow-tags`, which only
+ * pushes a tag that is reachable from a commit newly included in that same
+ * push — under `commit: false` there is never a new commit, so `--follow-tags`
+ * alone silently pushes nothing and the tag is left local-only (verified
+ * empirically: the release step reports success and even the publish
+ * succeeds, since publishing never depends on the tag being on the remote,
+ * but the tag itself never reaches `origin`). `pushArgs` appends to (not
+ * replaces) Nx's own args, so `--tags` ends up alongside `--follow-tags` on
+ * the actual command line — which pushes every local tag unconditionally,
+ * regardless of `--follow-tags`'s narrower reachability rule.
+ *
  * Two directories are released: `packages/*` (publishable **npm** libraries)
  * and `python-packages/*` (publishable **Python** packages) — deliberately one
  * flat project list, not two named `release.groups`: Nx hard-errors
@@ -198,7 +210,7 @@ export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
   projects:             ['packages/*', 'python-packages/*'],
   releaseTag:           { pattern: '{projectName}@{version}' },
-  git:                  { commit: false, tag: true, push: true },
+  git:                  { commit: false, tag: true, push: true, pushArgs: '--tags' },
   version:              {
     conventionalCommits:            true,
     fallbackCurrentVersionResolver: 'disk',
