@@ -6,7 +6,7 @@
  * Runs the BUILT CLI against the real network: `new` (which runs the
  * latest create-nx-workspace and real npm installs), then `add` for one of
  * each kind, then real `nx run-many -t lint,test,build` and a real
- * `nx release version --dry-run` inside the generated repo. Every ENFORCED
+ * `nx release --dry-run` inside the generated repo. Every ENFORCED
  * failure exits non-zero — none of `add`'s generators shell out to an
  * external CLI that might be missing locally, so there is nothing left to
  * treat as merely PENDING.
@@ -81,7 +81,13 @@ enforce('workspace created with nx.json', existsSync(path.join(workspace, 'nx.js
 const nxJson = JSON.parse(readFileSync(path.join(workspace, 'nx.json'), 'utf8'))
 const release = nxJson.release ?? {}
 enforce('release: conventional commits + independent versioning', release.version?.conventionalCommits === true && release.projectsRelationship === 'independent')
-enforce('release: tag-only git (version.git commit: false, tag: true)', release.version?.git?.commit === false && release.version?.git?.tag === true)
+// Top-level release.git (not version.git) — required by the combined `nx
+// release` command this workspace's CI and release:preview actually run
+// (see overlay.ts's RELEASE_CONFIG remarks). push:false is deliberate too:
+// nx's own post-tag push only fires with a remote Release configured (never
+// true here), so the generated pipeline pushes tags itself as its own step.
+enforce('release: tag-only git (top-level git: commit false, tag true, push false)',
+  release.git?.commit === false && release.git?.tag === true && release.git?.push === false)
 enforce('release scoped to the publishable dirs (npm + python)', JSON.stringify(release.projects) === '["packages/*","python-packages/*"]')
 
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
@@ -106,7 +112,12 @@ enforce('pipeline packs apps to a drop and tags per app (type-name)',
   && pipelineYaml.includes('ArtifactName: drop')
   && pipelineYaml.includes('##vso[build.addbuildtag]')
   && pipelineYaml.includes(`path.basename(f,'.zip')`))
-enforce('pipeline authenticates npm via the PAT env, not npmAuthenticate', pipelineYaml.includes('PAT: $(PAT)') && !pipelineYaml.includes('npmAuthenticate'))
+// This workspace was generated with --registry npm, so auth is NODE_AUTH_TOKEN
+// sourced from an NPM_TOKEN variable, not PAT — the azurePipelinesYaml/
+// githubActionsYaml unit tests in overlay.test.ts cover the Azure Artifacts
+// (PAT) side of this same branch.
+enforce('pipeline authenticates npm via the NODE_AUTH_TOKEN env (NPM_TOKEN variable), not npmAuthenticate',
+  pipelineYaml.includes('NODE_AUTH_TOKEN: $(NPM_TOKEN)') && !pipelineYaml.includes('npmAuthenticate'))
 let pipelineParsed = null
 try {
   pipelineParsed = yaml.load(pipelineYaml)
@@ -140,8 +151,11 @@ enforce('.github/workflows/ci.yml written when --ci both', existsSync(workflowPa
 
 const workflowYaml = readFileSync(workflowPath, 'utf8')
 enforce('workflow stamps the CLI agent as runs-on', workflowYaml.includes('runs-on: ubuntu-latest'))
-enforce('workflow authenticates npm via a PAT repository secret, not a variable group',
-  workflowYaml.includes('secrets.PAT') && !workflowYaml.includes('npmAuthenticate') && !workflowYaml.includes('- group:'))
+// This workspace was generated with --registry npm, so auth is an NPM_TOKEN
+// repository secret, not PAT — overlay.test.ts's githubActionsYaml unit
+// tests cover the Azure Artifacts (PAT) side of this same branch.
+enforce('workflow authenticates npm via an NPM_TOKEN repository secret, not a variable group',
+  workflowYaml.includes('secrets.NPM_TOKEN') && !workflowYaml.includes('npmAuthenticate') && !workflowYaml.includes('- group:'))
 enforce('workflow does not attach HEAD to a branch (actions/checkout is never detached on push)',
   workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B'))
 enforce('workflow packs apps to a drop artifact (no Azure build-tag mechanism)',
@@ -403,9 +417,14 @@ run('git init -q -b main && git add -A', workspace)
 // them even if the preset's .gitignore ignores .env*).
 enforce('react .env.dev is tracked (not gitignored)', tryRun('git ls-files --error-unmatch apps/web/.env.dev', workspace))
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial workspace"', workspace)
+// The combined `nx release` command, not the bare `version` subcommand: this
+// workspace's release.git lives at the top level (RELEASE_CONFIG's remarks),
+// which the bare subcommand rejects outright ("may not be used with the
+// 'nx release version' subcommand") — exactly what CI's own release step and
+// the generated release:preview script both run, verified empirically.
 enforce(
-  'nx release version --dry-run computes versions from conventional commits',
-  tryRun('npx nx release version --dry-run --verbose', workspace),
+  'nx release --dry-run computes versions from conventional commits',
+  tryRun('npx nx release --dry-run --verbose', workspace),
   'see log above',
 )
 
@@ -631,7 +650,9 @@ enforce('python: combined wheel vendors pycore AND keeps the real external depen
 
 run('git init -q -b main && git add -A', altWorkspace)
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"', altWorkspace)
-const altReleaseDryRun = tryRunCapture('npx nx release version --dry-run --verbose', altWorkspace)
+// The combined command, same reasoning as the JS-side check above — the bare
+// `version` subcommand rejects this workspace's top-level release.git.
+const altReleaseDryRun = tryRunCapture('npx nx release --dry-run --verbose', altWorkspace)
 enforce('python: nx release versions the publishable python lib from conventional commits (@mnci/nx-python-pip\'s PythonVersionActions, no @nxlv/python)',
   altReleaseDryRun.ok && /shared[^\n]*new version/i.test(altReleaseDryRun.output) && altReleaseDryRun.output.includes('pyproject.toml'),
   altReleaseDryRun.output)
