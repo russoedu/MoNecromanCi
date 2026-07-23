@@ -73,12 +73,13 @@ describe('withReleaseConfig', () => {
       // Top-level (not version.git) — Nx rejects granular git config for the
       // combined `nx release` command, which is what CI and release:preview
       // both run (never the bare `nx release version` subcommand).
-      // pushArgs: '--tags' is required, not redundant, with push: true — Nx's
-      // git push always runs with --follow-tags, which (verified empirically)
-      // silently pushes nothing when there is no new commit for the tag to
-      // "follow" (exactly the commit: false case here); --tags forces every
-      // local tag to push regardless.
-      git:                  { commit: false, tag: true, push: true, pushArgs: '--tags' },
+      // push: false is deliberate — the combined `nx release` command's own
+      // final push only runs when a remote GitHub/GitLab Release is
+      // configured (never true here), and its one push that does run happens
+      // before the tag is even created (verified empirically against a real
+      // CI run). The generated pipeline pushes tags itself, explicitly, once
+      // tagging is guaranteed to have already happened.
+      git:                  { commit: false, tag: true, push: false },
       version:              {
         conventionalCommits:            true,
         fallbackCurrentVersionResolver: 'disk',

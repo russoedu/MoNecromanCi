@@ -172,20 +172,25 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * subcommand), and Nx hard-errors that combined command when git options are
  * granular (`version.git`/`changelog.git`) instead of top-level — the reverse
  * of the bare `version` subcommand's own requirement, which is why the two
- * forms aren't interchangeable (verified empirically). `push: true` pushes
- * the tag (and only the tag — there is no commit to push).
+ * forms aren't interchangeable (verified empirically).
  *
- * `pushArgs: '--tags'` is required alongside `push: true`, not redundant with
- * it: Nx's underlying `git push` always runs with `--follow-tags`, which only
- * pushes a tag that is reachable from a commit newly included in that same
- * push — under `commit: false` there is never a new commit, so `--follow-tags`
- * alone silently pushes nothing and the tag is left local-only (verified
- * empirically: the release step reports success and even the publish
- * succeeds, since publishing never depends on the tag being on the remote,
- * but the tag itself never reaches `origin`). `pushArgs` appends to (not
- * replaces) Nx's own args, so `--tags` ends up alongside `--follow-tags` on
- * the actual command line — which pushes every local tag unconditionally,
- * regardless of `--follow-tags`'s narrower reachability rule.
+ * `push: false` here is deliberate, not an oversight: the combined
+ * `nx release` command's own final push (`release.js`, after tagging) only
+ * runs when a remote GitHub/GitLab Release is being created
+ * (`shouldCreateWorkspaceRemoteRelease`), which this config never enables —
+ * so that push never fires. The *only* push Nx does run is an internal one
+ * buried inside the version step, which happens **before** the tag exists
+ * (tagging is deliberately suppressed there and done later, by `release.js`
+ * itself) — so even with `pushArgs: '--tags'` that earlier push has no new
+ * tag to push yet, and the tag is left local-only (verified empirically
+ * against a real CI run: the release step and publish both report success,
+ * "Pushing to git remote" logs *before* "Tagging commit with git", and the
+ * new tag never reaches `origin`, even though the version it names does
+ * reach npm — a silent, permanent mismatch that makes every subsequent
+ * release recompute and re-skip the same already-published version forever).
+ * Disabling Nx's own push entirely and pushing tags explicitly, once, after
+ * tagging is guaranteed to have happened (the CI step below), sidesteps this
+ * ordering bug rather than fighting it.
  *
  * Two directories are released: `packages/*` (publishable **npm** libraries)
  * and `python-packages/*` (publishable **Python** packages) — deliberately one
@@ -208,7 +213,7 @@ export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
   projects:             ['packages/*', 'python-packages/*'],
   releaseTag:           { pattern: '{projectName}@{version}' },
-  git:                  { commit: false, tag: true, push: true, pushArgs: '--tags' },
+  git:                  { commit: false, tag: true, push: false },
   version:              {
     conventionalCommits:            true,
     fallbackCurrentVersionResolver: 'disk',
@@ -746,6 +751,15 @@ steps:
     condition: ${onMain}
     env:
       ${npmAuthName}: ${npmAuthValue}
+
+  # nx release's own git push (release.git.push) is deliberately left off: it
+  # only runs when a remote GitHub/GitLab Release is configured, which this
+  # pipeline never does, so it would never push the tag the step above just
+  # created. Pushed explicitly, unconditionally (a no-op when nothing released)
+  # once tagging is guaranteed to have already happened.
+  - script: git push origin --tags
+    displayName: Push release tags (nx release's own push never runs without a remote Release configured)
+    condition: ${onMain}
 `
 }
 
@@ -881,6 +895,15 @@ jobs:
         if: \${{ ${onMain} }}
         env:
           ${npmAuthName}: ${npmAuthValue}
+
+      # nx release's own git push (release.git.push) is deliberately left off: it
+      # only runs when a remote GitHub/GitLab Release is configured, which this
+      # workflow never does, so it would never push the tag the step above just
+      # created. Pushed explicitly, unconditionally (a no-op when nothing released)
+      # once tagging is guaranteed to have already happened.
+      - run: git push origin --tags
+        name: Push release tags (nx release's own push never runs without a remote Release configured)
+        if: \${{ ${onMain} }}
 `
 }
 
