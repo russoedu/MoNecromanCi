@@ -197,6 +197,9 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain(`globSync('packages/*/package.json')`)
     // A guarded step installs the fixed pip toolchain before any Python target runs.
     expect(pipeline).toContain('python3 -m pip install -r requirements-dev.txt')
+    // A second guarded step editable-installs every Python project so
+    // cross-project imports (internal libs included) resolve at test time.
+    expect(pipeline).toContain('Install Python project dependencies (editable, workspace-wide)')
   })
 
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
@@ -227,6 +230,25 @@ describe('azurePipelinesYaml', () => {
 
     expect(syncCheckIndex).toBeGreaterThan(installIndex)
     expect(lintIndex).toBeGreaterThan(syncCheckIndex)
+  })
+
+  it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const toolchainIndex = pipeline.indexOf('Install Python dependencies (ruff, pytest, build, twine)')
+    const workspaceInstallIndex = pipeline.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+
+    expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
+    expect(syncCheckIndex).toBeGreaterThan(workspaceInstallIndex)
+    // One pip invocation covers every project kind: editable-installs apps,
+    // publishable libs and internal libs (all have a pyproject.toml), and
+    // installs function apps' requirements.txt (no pyproject.toml to editable-install).
+    expect(pipeline).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(pipeline).toContain(`globSync('libs/*/pyproject.toml')`)
+    expect(pipeline).toContain(`globSync('apps/*/requirements.txt')`)
+    expect(pipeline).toContain(`'-m','pip','install','--quiet'`)
   })
 
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
@@ -316,6 +338,7 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
     expect(workflow).toContain(`globSync('packages/*/package.json')`)
     expect(workflow).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(workflow).toContain('Install Python project dependencies (editable, workspace-wide)')
   })
 
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
@@ -343,6 +366,22 @@ describe('githubActionsYaml', () => {
     expect(lintIndex).toBeGreaterThan(syncCheckIndex)
   })
 
+  it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const toolchainIndex = workflow.indexOf('Install Python dependencies (ruff, pytest, build, twine)')
+    const workspaceInstallIndex = workflow.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const syncCheckIndex = workflow.indexOf('nx sync:check')
+
+    expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
+    expect(syncCheckIndex).toBeGreaterThan(workspaceInstallIndex)
+    expect(workflow).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(workflow).toContain(`globSync('libs/*/pyproject.toml')`)
+    expect(workflow).toContain(`globSync('apps/*/requirements.txt')`)
+    expect(workflow).toContain(`'-m','pip','install','--quiet'`)
+  })
+
   it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -364,6 +403,8 @@ describe('githubActionsYaml', () => {
 
     expect(github).toContain('python3 -m pip install -r requirements-dev.txt')
     expect(azure).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(github).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(azure).toContain(`globSync('apps/*/pyproject.toml')`)
     expect(github).toContain(`globSync('apps/*/project.json')`)
     expect(azure).toContain(`globSync('apps/*/project.json')`)
     expect(github).toContain(`Buffer.from(process.env.PAT,'base64')`)

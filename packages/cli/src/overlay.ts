@@ -490,6 +490,42 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
 const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"`
 
 /**
+ * The portable `node -e` one-liner that editable-installs every Python
+ * project into one shared environment, so cross-project imports resolve at
+ * lint/test/dev time — the pip-world counterpart of `npm install` hoisting
+ * every workspace package into one root `node_modules`.
+ *
+ * @remarks
+ * Pip has no native workspace protocol (no hoisting, no auto-symlinking of
+ * sibling packages), so this is hand-built rather than something pip does on
+ * its own: every project with a `pyproject.toml` (`apps/*`, `python-packages/*`,
+ * `libs/*` — apps, publishable libs, and internal libs alike) is
+ * `pip install -e`'d, and every Azure Function app (`requirements.txt`, no
+ * `pyproject.toml` — the shape `@mnci/nx-python-pip`'s `function-application`
+ * generator writes) gets `pip install -r`'d, all in **one** `pip install`
+ * invocation (not one per project) so the resolver sees every requirement
+ * together, same as one `npm install` at the root.
+ *
+ * This is deliberately broader than the `test` executor's own per-project
+ * `pip install -e .` (`@mnci/nx-python-pip`'s `installEditable` option,
+ * which only installs the project under test, not what it imports): an
+ * internal lib is normally only woven into a consumer at **build** time (the
+ * `build` executor's vendoring copy step — see `@mnci/nx-python-pip`'s
+ * README), so without this step a project that imports an internal lib
+ * cannot resolve that import at test/dev time, only at the final wheel. This
+ * step editable-installs the internal lib too, so the import resolves
+ * everywhere it is written, not just in the built artifact. It does not
+ * change what a published wheel contains — vendoring at build time is
+ * unaffected, since pip has no registry-time equivalent of installing an
+ * unpublished workspace-only package.
+ *
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
+ * Skips cleanly when the workspace has no Python projects. Runs after
+ * {@link PYTHON_INSTALL_GUARD} (the fixed dev toolchain), before `sync:check`.
+ */
+const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];process.exit(require('node:child_process').spawnSync('python3',args,{stdio:'inherit'}).status ?? 1)"`
+
+/**
  * The portable `node -e` one-liner that packs every app into
  * `dist/drop/<type>-<name>.zip` via each app's own `package` target.
  *
@@ -624,10 +660,13 @@ export function poolBlock (agent: string): string {
  * twine/pypi basic-auth needs (no second secret; Azure accepts any username).
  * For the public-npm registry that env is omitted, so a Python package there
  * is still versioned + tagged but its publish needs user-provided `TWINE_*`.
- * Before any Python target runs, a guarded step installs the fixed toolchain
+ * Before any Python target runs, one guarded step installs the fixed toolchain
  * (`ruff`/`pytest`/`build`/`twine`) from the workspace's `requirements-dev.txt`
- * — written by `add/python.ts` on the first Python `add` — so it is skipped
- * cleanly on a workspace with no Python projects.
+ * — written by `add/python.ts` on the first Python `add` — and a second
+ * editable-installs every Python project into that same environment (the
+ * pip-world counterpart of `npm install` hoisting every workspace package
+ * into one root `node_modules`); both are skipped cleanly on a workspace with
+ * no Python projects.
  *
  * @param agent - The build agent (vmImage or self-hosted pool name).
  * @param variableGroup - The Library variable group holding the base64 `PAT`.
@@ -701,6 +740,14 @@ steps:
   - script: ${PYTHON_INSTALL_GUARD}
     displayName: Install Python dependencies (ruff, pytest, build, twine)
 
+  # Editable-installs every Python project into one shared environment, the
+  # pip-world counterpart of 'npm install' hoisting every workspace package
+  # into one root node_modules — so a project that imports an internal lib
+  # (normally vendored only at build time) can resolve that import at
+  # lint/test time too. Portable guard skips cleanly on a workspace with none.
+  - script: ${PYTHON_WORKSPACE_INSTALL_GUARD}
+    displayName: Install Python project dependencies (editable, workspace-wide)
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -769,8 +816,9 @@ steps:
  *
  * @remarks
  * Same pipeline, same shared guard scripts ({@link PYTHON_INSTALL_GUARD},
- * {@link PACK_APPS_GUARD}, {@link releaseGuard}) — only the provider syntax
- * differs, so the two YAML files can never drift on what CI actually does.
+ * {@link PYTHON_WORKSPACE_INSTALL_GUARD}, {@link PACK_APPS_GUARD},
+ * {@link releaseGuard}) — only the provider syntax differs, so the two YAML
+ * files can never drift on what CI actually does.
  * Two steps from the Azure version are dropped, both for reasons already
  * documented there:
  * - **Attach HEAD to a branch**: `actions/checkout` (unlike Azure's
@@ -851,6 +899,14 @@ jobs:
       # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
       - run: ${PYTHON_INSTALL_GUARD}
         name: Install Python dependencies (ruff, pytest, build, twine)
+
+      # Editable-installs every Python project into one shared environment, the
+      # pip-world counterpart of 'npm install' hoisting every workspace package
+      # into one root node_modules — so a project that imports an internal lib
+      # (normally vendored only at build time) can resolve that import at
+      # lint/test time too. Portable guard skips cleanly on a workspace with none.
+      - run: ${PYTHON_WORKSPACE_INSTALL_GUARD}
+        name: Install Python project dependencies (editable, workspace-wide)
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed

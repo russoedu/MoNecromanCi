@@ -6,7 +6,7 @@
  * Runs the BUILT CLI against the real network: `new` (which runs the
  * latest create-nx-workspace and real npm installs), then `add` for one of
  * each kind, then real `nx run-many -t lint,test,build` and a real
- * `nx release version --dry-run` inside the generated repo. Every ENFORCED
+ * `nx release --dry-run` inside the generated repo. Every ENFORCED
  * failure exits non-zero — none of `add`'s generators shell out to an
  * external CLI that might be missing locally, so there is nothing left to
  * treat as merely PENDING.
@@ -81,7 +81,13 @@ enforce('workspace created with nx.json', existsSync(path.join(workspace, 'nx.js
 const nxJson = JSON.parse(readFileSync(path.join(workspace, 'nx.json'), 'utf8'))
 const release = nxJson.release ?? {}
 enforce('release: conventional commits + independent versioning', release.version?.conventionalCommits === true && release.projectsRelationship === 'independent')
-enforce('release: tag-only git (version.git commit: false, tag: true)', release.version?.git?.commit === false && release.version?.git?.tag === true)
+// Top-level release.git (not version.git) — required by the combined `nx
+// release` command this workspace's CI and release:preview actually run
+// (see overlay.ts's RELEASE_CONFIG remarks). push:false is deliberate too:
+// nx's own post-tag push only fires with a remote Release configured (never
+// true here), so the generated pipeline pushes tags itself as its own step.
+enforce('release: tag-only git (top-level git: commit false, tag true, push false)',
+  release.git?.commit === false && release.git?.tag === true && release.git?.push === false)
 enforce('release scoped to the publishable dirs (npm + python)', JSON.stringify(release.projects) === '["packages/*","python-packages/*"]')
 
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
@@ -106,7 +112,12 @@ enforce('pipeline packs apps to a drop and tags per app (type-name)',
   && pipelineYaml.includes('ArtifactName: drop')
   && pipelineYaml.includes('##vso[build.addbuildtag]')
   && pipelineYaml.includes(`path.basename(f,'.zip')`))
-enforce('pipeline authenticates npm via the PAT env, not npmAuthenticate', pipelineYaml.includes('PAT: $(PAT)') && !pipelineYaml.includes('npmAuthenticate'))
+// This workspace was generated with --registry npm, so auth is NODE_AUTH_TOKEN
+// sourced from an NPM_TOKEN variable, not PAT — the azurePipelinesYaml/
+// githubActionsYaml unit tests in overlay.test.ts cover the Azure Artifacts
+// (PAT) side of this same branch.
+enforce('pipeline authenticates npm via the NODE_AUTH_TOKEN env (NPM_TOKEN variable), not npmAuthenticate',
+  pipelineYaml.includes('NODE_AUTH_TOKEN: $(NPM_TOKEN)') && !pipelineYaml.includes('npmAuthenticate'))
 let pipelineParsed = null
 try {
   pipelineParsed = yaml.load(pipelineYaml)
@@ -140,8 +151,11 @@ enforce('.github/workflows/ci.yml written when --ci both', existsSync(workflowPa
 
 const workflowYaml = readFileSync(workflowPath, 'utf8')
 enforce('workflow stamps the CLI agent as runs-on', workflowYaml.includes('runs-on: ubuntu-latest'))
-enforce('workflow authenticates npm via a PAT repository secret, not a variable group',
-  workflowYaml.includes('secrets.PAT') && !workflowYaml.includes('npmAuthenticate') && !workflowYaml.includes('- group:'))
+// This workspace was generated with --registry npm, so auth is an NPM_TOKEN
+// repository secret, not PAT — overlay.test.ts's githubActionsYaml unit
+// tests cover the Azure Artifacts (PAT) side of this same branch.
+enforce('workflow authenticates npm via an NPM_TOKEN repository secret, not a variable group',
+  workflowYaml.includes('secrets.NPM_TOKEN') && !workflowYaml.includes('npmAuthenticate') && !workflowYaml.includes('- group:'))
 enforce('workflow does not attach HEAD to a branch (actions/checkout is never detached on push)',
   workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B'))
 enforce('workflow packs apps to a drop artifact (no Azure build-tag mechanism)',
@@ -403,9 +417,14 @@ run('git init -q -b main && git add -A', workspace)
 // them even if the preset's .gitignore ignores .env*).
 enforce('react .env.dev is tracked (not gitignored)', tryRun('git ls-files --error-unmatch apps/web/.env.dev', workspace))
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial workspace"', workspace)
+// The combined `nx release` command, not the bare `version` subcommand: this
+// workspace's release.git lives at the top level (RELEASE_CONFIG's remarks),
+// which the bare subcommand rejects outright ("may not be used with the
+// 'nx release version' subcommand") — exactly what CI's own release step and
+// the generated release:preview script both run, verified empirically.
 enforce(
-  'nx release version --dry-run computes versions from conventional commits',
-  tryRun('npx nx release version --dry-run --verbose', workspace),
+  'nx release --dry-run computes versions from conventional commits',
+  tryRun('npx nx release --dry-run --verbose', workspace),
   'see log above',
 )
 
@@ -520,14 +539,16 @@ writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8')
 // plugin's `library` generator) already exports a top-level `hello` symbol,
 // and a same-named submodule would shadow it as soon as either gets
 // imported (a real Python footgun, hit empirically) — `pyshared.__init__`'s
-// own generated hello() and its generated test stay untouched and green. No
-// local test file for this one: pycore is vendored only at build time (the
-// plugin's `build` executor), not dev-installed, so it is genuinely not
-// importable from a plain `pip install -e .` dev environment — the
-// wheel-content and clean-venv checks below are the (stronger) proof that
-// the vendored import actually resolves.
+// own generated hello() and its generated test stay untouched and green.
+// pycore is still vendored only at build time (the plugin's `build`
+// executor) — this file's import resolves at test/dev time because of the
+// workspace-wide editable install below, a separate, mnci-owned mechanism
+// (not the plugin's), so this DOES get its own local test file, proving the
+// import genuinely resolves before any wheel is ever built.
 writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/greeting.py'),
   'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n')
+writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/tests/test_greeting.py'),
+  'from pyshared.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting() == "Hello pyshared uses hello from pycore"\n')
 
 console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
 const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
@@ -541,9 +562,24 @@ writeFileSync(path.join(altWorkspace, 'apps/pysvc/pysvc/greeting.py'),
 writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
   'from pysvc.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting().startswith("Hello pysvc uses tomli ")\n')
 
+/* ---------------------------------------------------------------------------
+ * "Global Python packaging": the pip-world counterpart of `npm install`
+ * hoisting every workspace package into one root node_modules. Reproduces
+ * the exact CI guard (overlay.ts's PYTHON_WORKSPACE_INSTALL_GUARD) — one
+ * `pip install` editable-installing every project with a pyproject.toml
+ * (apps/python-packages/libs alike) plus `-r`-installing every function
+ * app's requirements.txt — against this real workspace, so pyshared's fresh
+ * test file above (importing the vendored-only-at-build pycore directly) has
+ * something to resolve against. Before this step existed, that import was
+ * only provable at build time (the wheel-content/clean-venv checks below);
+ * this proves it resolves at plain `pytest` time too.
+ * ------------------------------------------------------------------------- */
+console.log('\n▸ global Python install: editable-installing every Python project into one shared environment')
+run('python3 -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt', altWorkspace)
+
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included)',
+enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
 
 const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
@@ -614,7 +650,9 @@ enforce('python: combined wheel vendors pycore AND keeps the real external depen
 
 run('git init -q -b main && git add -A', altWorkspace)
 run('git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"', altWorkspace)
-const altReleaseDryRun = tryRunCapture('npx nx release version --dry-run --verbose', altWorkspace)
+// The combined command, same reasoning as the JS-side check above — the bare
+// `version` subcommand rejects this workspace's top-level release.git.
+const altReleaseDryRun = tryRunCapture('npx nx release --dry-run --verbose', altWorkspace)
 enforce('python: nx release versions the publishable python lib from conventional commits (@mnci/nx-python-pip\'s PythonVersionActions, no @nxlv/python)',
   altReleaseDryRun.ok && /shared[^\n]*new version/i.test(altReleaseDryRun.output) && altReleaseDryRun.output.includes('pyproject.toml'),
   altReleaseDryRun.output)
