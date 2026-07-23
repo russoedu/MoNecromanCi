@@ -520,14 +520,16 @@ writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8')
 // plugin's `library` generator) already exports a top-level `hello` symbol,
 // and a same-named submodule would shadow it as soon as either gets
 // imported (a real Python footgun, hit empirically) — `pyshared.__init__`'s
-// own generated hello() and its generated test stay untouched and green. No
-// local test file for this one: pycore is vendored only at build time (the
-// plugin's `build` executor), not dev-installed, so it is genuinely not
-// importable from a plain `pip install -e .` dev environment — the
-// wheel-content and clean-venv checks below are the (stronger) proof that
-// the vendored import actually resolves.
+// own generated hello() and its generated test stay untouched and green.
+// pycore is still vendored only at build time (the plugin's `build`
+// executor) — this file's import resolves at test/dev time because of the
+// workspace-wide editable install below, a separate, mnci-owned mechanism
+// (not the plugin's), so this DOES get its own local test file, proving the
+// import genuinely resolves before any wheel is ever built.
 writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/pyshared/greeting.py'),
   'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n')
+writeFileSync(path.join(altWorkspace, 'python-packages/pyshared/tests/test_greeting.py'),
+  'from pyshared.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting() == "Hello pyshared uses hello from pycore"\n')
 
 console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
 const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
@@ -541,9 +543,24 @@ writeFileSync(path.join(altWorkspace, 'apps/pysvc/pysvc/greeting.py'),
 writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
   'from pysvc.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting().startswith("Hello pysvc uses tomli ")\n')
 
+/* ---------------------------------------------------------------------------
+ * "Global Python packaging": the pip-world counterpart of `npm install`
+ * hoisting every workspace package into one root node_modules. Reproduces
+ * the exact CI guard (overlay.ts's PYTHON_WORKSPACE_INSTALL_GUARD) — one
+ * `pip install` editable-installing every project with a pyproject.toml
+ * (apps/python-packages/libs alike) plus `-r`-installing every function
+ * app's requirements.txt — against this real workspace, so pyshared's fresh
+ * test file above (importing the vendored-only-at-build pycore directly) has
+ * something to resolve against. Before this step existed, that import was
+ * only provable at build time (the wheel-content/clean-venv checks below);
+ * this proves it resolves at plain `pytest` time too.
+ * ------------------------------------------------------------------------- */
+console.log('\n▸ global Python install: editable-installing every Python project into one shared environment')
+run('python3 -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt', altWorkspace)
+
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
-enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included)',
+enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
 
 const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')

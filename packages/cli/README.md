@@ -318,8 +318,12 @@ than a surprise:
   workspace needs reproducible CI tool versions.
 - venv management is left to the user (same spirit as never managing
   `node_modules` beyond `npm install`): `mnci` neither creates nor activates
-  one. CI installs `requirements-dev.txt` straight into whatever `python3`
-  resolves to on the agent; locally, create your own with `python3 -m venv`.
+  one. CI installs `requirements-dev.txt`, then editable-installs every
+  Python project workspace-wide (see "Workspace-wide install" above),
+  straight into whatever `python3` resolves to on the agent; locally, create
+  your own venv with `python3 -m venv` and reproduce the same two installs by
+  hand (`pip install -r requirements-dev.txt`, then `pip install -e <dir>`
+  for each Python project).
 
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
@@ -447,6 +451,18 @@ is activated.
   where combining a vendored internal lib and a real external dependency on
   the same project silently dropped the external one from the wheel's
   metadata — both survive correctly.
+- **Workspace-wide install** (mnci's own CI step, not the plugin's) — pip has
+  no npm-workspaces-style hoisting, so mnci writes one: a guarded step
+  editable-installs every Python project (`apps/*`, `python-packages/*`,
+  `libs/*` — any with a `pyproject.toml`) into one shared environment in a
+  single `pip install` call, plus `-r`-installs every function app's
+  `requirements.txt`. This is the pip-world counterpart of `npm install`
+  hoisting every workspace package into one root `node_modules`, and it is
+  what lets a project that vendors an internal lib (see above) resolve that
+  import at **lint/test/dev time**, not only inside the final wheel — the
+  plugin's own `test` executor (`installEditable`) only editable-installs the
+  project under test, not what it imports. Skipped cleanly on a workspace
+  with no Python projects.
 - **Release** is unified with npm: `nx release` scopes both `packages/*` and
   `python-packages/*` in one flat project list (deliberately not two named
   `release.groups` — Nx hard-errors the whole release when an explicit group
@@ -468,6 +484,7 @@ is activated.
   user-provided `TWINE_*` — e.g. a PyPI token.)
 - **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
   target runs alongside the JS build even on the oxlint stack (whose
-  `npm run lint` only covers JS). A guarded pipeline step installs
-  `requirements-dev.txt` first, skipped cleanly when the workspace has no
-  Python projects.
+  `npm run lint` only covers JS). One guarded pipeline step installs
+  `requirements-dev.txt` first (the fixed toolchain), then a second installs
+  every Python project workspace-wide (the workspace-wide install above) —
+  both skipped cleanly when the workspace has no Python projects.

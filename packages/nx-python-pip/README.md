@@ -115,6 +115,12 @@ dependencies).
   wheel — not from a plain `pip install -e .` dev environment, since
   vendoring happens at `build` time only. A project whose pytest-covered
   code imports a vendored internal lib needs its own test-isolation
-  strategy; the `test` executor makes no attempt to solve this.
+  strategy; the `test` executor makes no attempt to solve this (it only
+  editable-installs the project under test, never what it imports). A
+  workspace can solve it at the workspace level instead, by
+  editable-installing every Python project (not just the one under test)
+  into one shared environment — the pip-world counterpart of `npm install`
+  hoisting every workspace package into one root `node_modules`. `@mnci/cli`
+  does exactly this as a guarded CI step; see its README.
 - venv management is left to the user — same spirit as never managing
   `node_modules` beyond `npm install`.
