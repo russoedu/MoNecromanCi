@@ -73,7 +73,7 @@ async function resolveStack (options: NewOptions): Promise<StackConfig> {
  *
  * @remarks
  * `azure` stays the `--yes`/flagless default — the long-standing behaviour —
- * so an existing flagless `mnci2 new` keeps writing exactly the same file it
+ * so an existing flagless `mnci new` keeps writing exactly the same file it
  * always has. An explicit flag value is trusted as-is with no validation
  * (matching `resolveRegistry`'s equally loose `--registry` handling): a
  * typo just falls through to the flagless default instead of prompting.
@@ -119,11 +119,11 @@ async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
 }
 
 /**
- * Creates a brand-new monorepo: Nx's own TS preset plus the v2 overlay.
+ * Creates a brand-new monorepo: Nx's own TS preset plus this CLI's overlay.
  *
  * @remarks
  * The heavy lifting is `create-nx-workspace --preset=ts` (npm workspaces +
- * TypeScript project references, no per-project `project.json`). v2 then
+ * TypeScript project references, no per-project `project.json`). This then
  * applies its one layer of opinion ({@link applyOverlay}) and installs the
  * conventional-commit toolchain (`husky` + `@commitlint/*`) for real, so the
  * versions resolve at generation time.
@@ -185,7 +185,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)
-  logger.info('  mnci2 add react-app web        # or: node-app, node-function-app, npm-lib, internal-lib,')
+  logger.info('  mnci add react-app web        # or: node-app, node-function-app, npm-lib, internal-lib,')
   logger.info('                                 #     python-app, python-function-app, python-lib, python-internal-lib')
   logger.info('  git add -A && git commit -m "feat: initial workspace"')
 }

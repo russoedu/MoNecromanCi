@@ -17,7 +17,7 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 beforeEach(() => {
-  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-add-python-'))
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-python-'))
   mockRunShell.mockImplementation(() => 0)
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
@@ -72,7 +72,7 @@ describe('runAdd python', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:function-application', 'api', '--directory=apps/api', '--no-interactive'], workspaceRoot)
 
-    // The deployable is source (not the wheel): mnci2's own package target zips
+    // The deployable is source (not the wheel): mnci's own package target zips
     // the files the plugin's generator would have written.
     const project = JSON.parse(readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')) as {
       targets: Record<string, { outputs?: string[], options: { command: string } }>
@@ -88,7 +88,7 @@ describe('runAdd python', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith(['g', '@mnci/nx-python-pip:library', 'shared', '--directory=python-packages/shared', '--no-interactive'], workspaceRoot)
     // The plugin's own generator wires nx-release-publish + versionActions —
-    // mnci2 does no post-generation file writing for this kind at all.
+    // mnci does no post-generation file writing for this kind at all.
     expect(() => readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')).toThrow()
   })
 

@@ -4,7 +4,7 @@ import spawn from 'cross-spawn'
  * Runs a command synchronously, inheriting stdio so its output streams live.
  *
  * @remarks
- * v2 shells out for everything — `create-nx-workspace`, `nx add`, `nx g` — so
+ * Shells out for everything — `create-nx-workspace`, `nx add`, `nx g` — so
  * the CLI stays version-decoupled from whatever Nx is current, and the plugin
  * generators' own interactive output reaches the user unmodified.
  *

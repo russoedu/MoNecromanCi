@@ -18,18 +18,17 @@ export type RegistryConfig
  * Which CI provider(s) {@link applyOverlay} writes a pipeline file for.
  *
  * @remarks
- * `azure` (the long-standing default) writes only `azure-pipelines.yml`;
- * `github` writes only `.github/workflows/ci.yml`; `both` writes both — the
- * same three-way choice v1 already offers (`vars.ci` in
- * `templates/monorepo.ts`), so a GitHub-hosted repo can pick the provider it
- * actually runs on instead of carrying an unused Azure Pipelines file.
+ * `azure` (the default) writes only `azure-pipelines.yml`; `github` writes
+ * only `.github/workflows/ci.yml`; `both` writes both — so a GitHub-hosted
+ * repo can pick the provider it actually runs on instead of carrying an
+ * unused Azure Pipelines file.
  *
  * @typeParam None - this type has no generic type parameters.
  */
 export type CiProvider = 'azure' | 'github' | 'both'
 
 /**
- * The stack chosen at `mnci2 new` — asked up front, honoured by every `add`.
+ * The stack chosen at `mnci new` — asked up front, honoured by every `add`.
  *
  * @remarks
  * TypeScript is not a knob: every workspace runs the **dual compiler**
@@ -84,8 +83,7 @@ export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
  * Returns the npm registry URL for a registry config.
  *
  * @remarks
- * Public npm needs no scoped registry, so it returns `undefined`. Ported
- * unchanged from v1 `engine/registry.ts`.
+ * Public npm needs no scoped registry, so it returns `undefined`.
  *
  * @param registry - The monorepo's resolved registry configuration.
  * @returns The registry URL, or `undefined` for the public npm registry.
@@ -159,8 +157,8 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  * The `release` block merged into a generated workspace's `nx.json`.
  *
  * @remarks
- * The tag-only model proven by v1's own pipeline: versions are computed from
- * conventional commits since each package's last release tag, the bump is
+ * The tag-only model: versions are computed from conventional commits since
+ * each package's last release tag, the bump is
  * **never committed** (`git.commit: false`) — only the tag is created and
  * pushed — so a protected `main` never rejects a release, and future runs
  * resolve versions from tag names, not from a committed `package.json`.
@@ -248,10 +246,10 @@ export const RELEASE_CONFIG = {
 export const SYNC_CONFIG = { applyChanges: true } as const
 
 /**
- * Returns a copy of an `nx.json` object with the v2 release block applied.
+ * Returns a copy of an `nx.json` object with the release block applied.
  *
  * @remarks
- * Pure read-modify-write on the object the Nx preset generated — v2 never
+ * Pure read-modify-write on the object the Nx preset generated — this never
  * templates whole config files, it only patches in the one opinion Nx has no
  * default for.
  *
@@ -279,7 +277,7 @@ export const COMMITLINT_CONFIG = `export default { extends: ['@commitlint/config
  *
  * @remarks
  * `--no` keeps npx from installing anything at commit time — commitlint is a
- * devDependency installed by `mnci2 new`.
+ * devDependency installed by `mnci new`.
  */
 export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
 `
@@ -340,12 +338,12 @@ export function rootScripts (stack: StackConfig): Record<string, string> {
  * The Nx `generators` defaults patched into `nx.json` from the chosen stack.
  *
  * @remarks
- * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci2 add`)
+ * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci add`)
  * pick up the workspace's chosen linter/runner automatically. oxlint is not an
  * Nx linter, so it maps to `linter: 'none'` — the workspace `oxlint.config.mts`
  * + the `oxlint` root script cover linting instead.
  *
- * `mnci2 add` itself does **not** read this back — see {@link mnci2Config} for
+ * `mnci add` itself does **not** read this back — see {@link mnciConfig} for
  * the dedicated, single-source-of-truth block it reads instead. The two used
  * to be conflated (`add` inferred the stack from one of these three identical
  * blocks), an implicit "all three stay in lockstep" invariant nothing enforced.
@@ -365,21 +363,21 @@ export function generatorDefaults (stack: StackConfig): Record<string, unknown> 
 }
 
 /**
- * The `mnci2` block patched into `nx.json` from the chosen stack.
+ * The `mnci` block patched into `nx.json` from the chosen stack.
  *
  * @remarks
- * The single source of truth `mnci2 add` reads back (`readWorkspaceStack` in
+ * The single source of truth `mnci add` reads back (`readWorkspaceStack` in
  * `add.ts`) — deliberately separate from {@link generatorDefaults}, which
  * serves Nx's own generator-default mechanism instead (a real, independent
  * feature: it makes a user's own direct `nx g` pick up the right defaults
  * too). One value, one place `add` trusts, with no invariant to keep in sync.
  *
  * @param stack - The chosen stack.
- * @returns The `mnci2` object for `nx.json`.
+ * @returns The `mnci` object for `nx.json`.
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function mnci2Config (stack: StackConfig): Record<string, unknown> {
+export function mnciConfig (stack: StackConfig): Record<string, unknown> {
   return { stack: { linter: stack.linter, testRunner: stack.testRunner } }
 }
 
@@ -639,7 +637,7 @@ export function azurePipelinesYaml (agent: string, variableGroup: string, python
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, (name) => `$(${name})`)
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
-# Generated by MoNecromanCI v2. Deliberately thin: Nx builds, 'nx release'
+# Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
 # versions from conventional commits and pushes ONLY a tag to main, and each
 # app is packed into dist/drop/<type>-<name>.zip by its own 'package' target.
 #
@@ -693,7 +691,7 @@ steps:
       ${npmAuthName}: ${npmAuthValue}
 
   # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
-  # by 'mnci2 add' to requirements-dev.txt on the first Python project. Plain
+  # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
   # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
   - script: ${PYTHON_INSTALL_GUARD}
     displayName: Install Python dependencies (ruff, pytest, build, twine)
@@ -794,7 +792,7 @@ export function githubActionsYaml (agent: string, pythonPublishUrl?: string, reg
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, (name) => `\${{ secrets.${name} }}`)
   return `name: CI
 
-# Generated by MoNecromanCI v2. Deliberately thin: Nx builds, 'nx release'
+# Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
 # versions from conventional commits and pushes ONLY a tag to main, and each
 # app is packed into dist/drop/<type>-<name>.zip by its own 'package' target.
 # The GitHub Actions equivalent of azure-pipelines.yml — see there for the
@@ -835,7 +833,7 @@ jobs:
           ${npmAuthName}: ${npmAuthValue}
 
       # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
-      # by 'mnci2 add' to requirements-dev.txt on the first Python project. Plain
+      # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
       # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
       - run: ${PYTHON_INSTALL_GUARD}
         name: Install Python dependencies (ruff, pytest, build, twine)
@@ -890,7 +888,7 @@ jobs:
  * Options for {@link applyOverlay}.
  *
  * @remarks
- * Collected by `mnci2 new`'s flags or prompts.
+ * Collected by `mnci new`'s flags or prompts.
  *
  * @typeParam None - this interface has no generic type parameters.
  */
@@ -910,12 +908,13 @@ export interface OverlayOptions {
 }
 
 /**
- * Applies MoNecromanCI v2's opinions on top of a freshly generated workspace.
+ * Applies MoNecromanCI's opinions on top of a freshly generated workspace.
  *
  * @remarks
- * This is the ONLY file-writing v2 does — everything else in the workspace is
- * the untouched output of Nx's own generators. Writes: the `nx.json` release
- * patch, `.npmrc`, `commitlint.config.mjs`, the husky `commit-msg` hook and
+ * This is the ONLY file-writing this CLI does — everything else in the
+ * workspace is the untouched output of Nx's own generators. Writes: the
+ * `nx.json` release patch, `.npmrc`, `commitlint.config.mjs`, the husky
+ * `commit-msg` hook and
  * the chosen CI provider's pipeline file(s) — `azure-pipelines.yml` and/or
  * `.github/workflows/ci.yml`, per `options.ci`. Dependency installation
  * (`husky`, `@commitlint/*`) is the caller's job — it shells out to real
@@ -933,13 +932,13 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // sync.applyChanges (so a stale TS project reference — e.g. from hand-adding
   // a cross-project import — is fixed automatically on the next build/
   // typecheck, not just flagged with a prompt). Both `nx release` and every
-  // later `nx g`/`mnci2 add` see the generator defaults.
+  // later `nx g`/`mnci add` see the generator defaults.
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
-  const mnci2 = { ...(nxJson.mnci2 as Record<string, unknown> | undefined), ...mnci2Config(options.stack) }
-  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci2 }))
+  const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options.stack) }
+  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,

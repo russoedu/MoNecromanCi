@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "MoNecromanCI CLI — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
   "bin": {
-    "mnci2": "./dist/cli.js"
+    "mnci": "./dist/cli.js"
   },
   "publishConfig": {
     "access": "public"

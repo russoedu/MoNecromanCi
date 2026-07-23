@@ -1,9 +1,9 @@
 /**
- * Standalone ts-jest config (same rationale as v1: the shared preset factory's
- * fake-timers setup would break tests that flush real setImmediate).
+ * Standalone ts-jest config: the shared preset factory's fake-timers setup
+ * would break tests that flush real setImmediate.
  */
 export default {
-  displayName:         'monecromanci-v2',
+  displayName:         'cli',
   testEnvironment:     'node',
   rootDir:             '.',
   roots:               ['<rootDir>/src'],

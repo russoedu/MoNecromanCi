@@ -126,27 +126,27 @@ afterEach(() => {
 
 describe('buildProgram', () => {
   it('routes `new` with its flags to runNew', async () => {
-    await buildProgram().parseAsync(['node', 'mnci2', 'new', 'demo', '--yes', '--registry', 'npm'])
+    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--registry', 'npm'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ yes: true, registry: 'npm' }))
   })
 
   it('routes `add` with kind, name and scope to runAdd', async () => {
-    await buildProgram().parseAsync(['node', 'mnci2', 'add', 'npm-lib', 'sdk', '--scope', '@acme'])
+    await buildProgram().parseAsync(['node', 'mnci', 'add', 'npm-lib', 'sdk', '--scope', '@acme'])
     expect(mockRunAdd).toHaveBeenCalledWith('npm-lib', 'sdk', expect.objectContaining({ scope: '@acme' }))
   })
 
   it('routes `new` stack flags (linter/test-runner) to runNew', async () => {
-    await buildProgram().parseAsync(['node', 'mnci2', 'new', 'demo', '--yes', '--linter', 'oxlint', '--test-runner', 'vitest'])
+    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--linter', 'oxlint', '--test-runner', 'vitest'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' }))
   })
 
   it('routes `new`\'s --ci flag to runNew', async () => {
-    await buildProgram().parseAsync(['node', 'mnci2', 'new', 'demo', '--yes', '--ci', 'github'])
+    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--ci', 'github'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })
 
   it('runs the interactive wizard when invoked with no subcommand', async () => {
-    await buildProgram().parseAsync(['node', 'mnci2'])
+    await buildProgram().parseAsync(['node', 'mnci'])
     expect(mockRunInteractive).toHaveBeenCalled()
     expect(mockRunNew).not.toHaveBeenCalled()
     expect(mockRunAdd).not.toHaveBeenCalled()
@@ -156,7 +156,7 @@ describe('buildProgram', () => {
 describe('main', () => {
   it('logs command failures and sets a non-zero exit code instead of throwing', async () => {
     mockRunNew.mockRejectedValue(new Error('boom'))
-    process.argv = ['node', 'mnci2', 'new', 'demo', '--yes']
+    process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
 
     await main()
 
@@ -166,7 +166,7 @@ describe('main', () => {
 
   it('stringifies non-Error failures', async () => {
     mockRunNew.mockRejectedValue('plain failure')
-    process.argv = ['node', 'mnci2', 'new', 'demo', '--yes']
+    process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
 
     await main()
 

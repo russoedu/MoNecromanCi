@@ -17,7 +17,7 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 beforeEach(() => {
-  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-add-react-app-'))
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-react-app-'))
   mockRunShell.mockImplementation(() => 0)
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
@@ -93,7 +93,7 @@ describe('runAdd react-app', () => {
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci2: { stack: { linter: 'eslint', testRunner: 'vitest' } } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci: { stack: { linter: 'eslint', testRunner: 'vitest' } } }))
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web' }))
 

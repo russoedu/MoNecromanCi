@@ -33,8 +33,8 @@ export function buildProgram (): Command {
   const program = new Command()
 
   program
-    .name('mnci2')
-    .description('MoNecromanCI v2 — a thin CLI over official Nx plugins')
+    .name('mnci')
+    .description('MoNecromanCI — a thin CLI over official Nx plugins')
     .version(readVersion(), '-v, --version', 'display the version')
 
   program
@@ -69,7 +69,7 @@ export function buildProgram (): Command {
       await runAdd(kind, name, options)
     })
 
-  // Bare `mnci2` (no subcommand) launches the guided wizard; commander runs
+  // Bare `mnci` (no subcommand) launches the guided wizard; commander runs
   // this default action only when no subcommand is given (-v/--help still win).
   program.action(async () => {
     await runInteractive()

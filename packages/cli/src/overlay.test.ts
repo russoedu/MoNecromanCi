@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnci2Config, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnciConfig, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -383,10 +383,10 @@ describe('generatorDefaults', () => {
   })
 })
 
-describe('mnci2Config', () => {
+describe('mnciConfig', () => {
   it('carries the stack through unchanged — the single source of truth `add` reads back', () => {
-    expect(mnci2Config({ linter: 'oxlint', testRunner: 'vitest' })).toEqual({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
-    expect(mnci2Config({ linter: 'eslint', testRunner: 'jest' })).toEqual({ stack: { linter: 'eslint', testRunner: 'jest' } })
+    expect(mnciConfig({ linter: 'oxlint', testRunner: 'vitest' })).toEqual({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
+    expect(mnciConfig({ linter: 'eslint', testRunner: 'jest' })).toEqual({ stack: { linter: 'eslint', testRunner: 'jest' } })
   })
 })
 
@@ -413,7 +413,7 @@ describe('applyOverlay', () => {
     applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack })
 
   beforeEach(() => {
-    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-overlay-'))
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-overlay-'))
     writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } }))
   })
@@ -485,11 +485,11 @@ describe('applyOverlay', () => {
     expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 
-  it('writes mnci2.stack — the single source of truth `add` reads back, not the generator defaults', () => {
+  it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
     overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
 
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci2: { stack: { linter: string, testRunner: string } } }
-    expect(nxJson.mnci2.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci: { stack: { linter: string, testRunner: string } } }
+    expect(nxJson.mnci.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
   })
 
   it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {

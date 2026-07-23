@@ -96,7 +96,7 @@
   "sync": {
     "applyChanges": true
   },
-  "mnci2": {
+  "mnci": {
     "stack": {
       "linter": "eslint",
       "testRunner": "jest"

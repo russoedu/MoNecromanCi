@@ -21,7 +21,7 @@ const mockPromptText = jest.mocked(promptText)
 let workspaceRoot: string
 
 beforeEach(() => {
-  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-add-'))
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-'))
   // clearMocks resets call history but not implementations, so restore the
   // default (every shell command succeeds) in case a prior test overrode it.
   mockRunShell.mockImplementation(() => 0)

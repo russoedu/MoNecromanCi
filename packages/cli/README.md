@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../../assets/logo.svg" alt="mnci" width="160">
+</p>
+
 # @mnci/cli
 
 > A **thin CLI over what Nx already ships**: an opinionated one-command Nx
@@ -23,21 +27,21 @@ first-party (or established community) Nx equivalent:
 ## Commands (deliberately just two)
 
 ```sh
-mnci2 new my-repo            # create a monorepo (prompts scope + registry)
-mnci2 new my-repo --yes --registry npm --scope @my
+mnci new my-repo            # create a monorepo (prompts scope + registry)
+mnci new my-repo --yes --registry npm --scope @my
 
 cd my-repo
-mnci2 add react-app web         # @nx/react (Vite + Jest)
-mnci2 add node-app svc          # @nx/node (plain Node app, esbuild)
-mnci2 add node-function-app api # @nx/node + an Azure Functions v4 overlay
-mnci2 add npm-lib sdk           # @nx/js publishable lib -> packages/
-mnci2 add internal-lib utils    # @nx/js private lib -> libs/
+mnci add react-app web         # @nx/react (Vite + Jest)
+mnci add node-app svc          # @nx/node (plain Node app, esbuild)
+mnci add node-function-app api # @nx/node + an Azure Functions v4 overlay
+mnci add npm-lib sdk           # @nx/js publishable lib -> packages/
+mnci add internal-lib utils    # @nx/js private lib -> libs/
 
 # Python (@mnci/nx-python-pip — pip + Ruff + pytest + PyPA build/twine, no uv)
-mnci2 add python-app svc            # app -> apps/ (wheel, zipped into the drop)
-mnci2 add python-function-app fn    # Azure Functions (Python v2) -> apps/
-mnci2 add python-lib shared         # publishable -> python-packages/ (twine upload)
-mnci2 add python-internal-lib core  # private shared lib -> libs/
+mnci add python-app svc            # app -> apps/ (wheel, zipped into the drop)
+mnci add python-function-app fn    # Azure Functions (Python v2) -> apps/
+mnci add python-lib shared         # publishable -> python-packages/ (twine upload)
+mnci add python-internal-lib core  # private shared lib -> libs/
 ```
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
@@ -72,8 +76,8 @@ each a single cross-platform command:
 
 ## Stack: two choices asked up front
 
-`mnci2 new` (run bare, or with flags) asks two questions — the linter and the
-test runner. Each is stored where every later `mnci2 add` honours it, so the
+`mnci new` (run bare, or with flags) asks two questions — the linter and the
+test runner. Each is stored where every later `mnci add` honours it, so the
 whole workspace stays one stack:
 
 | Question       | Options            | Default | Stored as / honoured via |
@@ -127,9 +131,9 @@ are the whole model. Publishable Python packages get their own
 with Python publishing.
 
 Every kind builds to its own Nx-default output location (`apps/<name>/dist`,
-`packages/<name>/dist`, ...) — v2 does no post-generation build-output
-rewiring for any kind. `mnci2 add` is pure delegation to the official
-generators; each one's own default is left exactly as-is.
+`packages/<name>/dist`, ...) — no post-generation build-output rewiring for
+any kind. `mnci add` is pure delegation to the official generators; each
+one's own default is left exactly as-is.
 
 ## Published packages CAN depend on internal libraries
 
@@ -167,10 +171,10 @@ or installed at deploy time (see "How Node apps work" below).
 
 Cross-project imports (`@scope/lib`) resolve through **TypeScript project
 references** under `--preset=ts`, and those references are maintained by
-`nx sync`, not by the generators. `mnci2 add` runs `nx sync` for you right
+`nx sync`, not by the generators. `mnci add` runs `nx sync` for you right
 after generation — but references also go stale **any time you hand-edit a
 file to add a new cross-project import** later (nothing about that is an
-`mnci2 add`, so that step can't catch it). For that case every generated
+`mnci add`, so that step can't catch it). For that case every generated
 workspace sets `sync.applyChanges: true` in `nx.json`: `--preset=ts` already
 registers the `@nx/js:typescript-sync` generator on the `build`/`typecheck`
 targets, so instead of just *prompting* ("Would you like to sync the
@@ -187,7 +191,7 @@ commit the result.
 
 ## CI (Azure Pipelines and/or GitHub Actions, any agent OS)
 
-`mnci2 new` asks which CI provider(s) to write a pipeline file for (`--ci`,
+`mnci new` asks which CI provider(s) to write a pipeline file for (`--ci`,
 default `azure`): `azure` writes `azure-pipelines.yml`, `github` writes
 `.github/workflows/ci.yml`, `both` writes both — pick `github` for a
 GitHub-hosted repo, or `both` while migrating between the two. Whichever
@@ -199,7 +203,7 @@ actually runs — only the provider's own syntax differs.
 The pipeline contains **no bash and no PowerShell**: every step is a built-in
 task/action or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
 and `sh` execute identically, so it runs unchanged on Linux, macOS and Windows
-agents. The build agent/runner is your choice at `mnci2 new` (`--agent`,
+agents. The build agent/runner is your choice at `mnci new` (`--agent`,
 default `ubuntu-latest`): on Azure a Microsoft-hosted image
 (`ubuntu-`/`windows-`/`macos-…`) becomes `pool.vmImage`, anything else a
 self-hosted `pool.name`; on GitHub the same value is passed straight through
@@ -265,7 +269,7 @@ convention.
 
 ## Dependency & risk notes
 
-Being upfront about what mnci2 leans on, so it's a conscious trade-off rather
+Being upfront about what mnci leans on, so it's a conscious trade-off rather
 than a surprise:
 
 - **One unofficial, small-team third-party Nx plugin carries real weight**:
@@ -296,7 +300,7 @@ than a surprise:
 
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
 - Azure Functions Core Tools is only needed for **local** `func start` — never
-  for `mnci2 add node-function-app`/`python-function-app` generation, since
+  for `mnci add node-function-app`/`python-function-app` generation, since
   neither shells out to the `func` CLI.
 - Function-app *deployment* (e.g. `AzureFunctionApp@2`) is not wired into the
   pipeline; the `node-function-app-<name>.zip`/`python-function-app-<name>.zip`
@@ -313,7 +317,7 @@ than a surprise:
   toolchain) is unpinned for the same reason — pin it by hand if the
   workspace needs reproducible CI tool versions.
 - venv management is left to the user (same spirit as never managing
-  `node_modules` beyond `npm install`): `mnci2` neither creates nor activates
+  `node_modules` beyond `npm install`): `mnci` neither creates nor activates
   one. CI installs `requirements-dev.txt` straight into whatever `python3`
   resolves to on the agent; locally, create your own with `python3 -m venv`.
 
@@ -336,9 +340,9 @@ Azure Functions v4 file overlay, the same split `python-app`/
   build and copied into `dist` at its own path; a real npm dependency stays a
   real `require`, resolved from `node_modules`.
 - `test`/`lint` = the generator's own targets (`--unitTestRunner`/`--linter`
-  passed straight through, same as every other kind) — unlike the old
-  function app, nothing needs hand-wiring here.
-- `package` (added by `mnci2 add`, not the generator) zips `apps/<name>/dist`
+  passed straight through, same as every other kind) — nothing needs
+  hand-wiring here.
+- `package` (added by `mnci add`, not the generator) zips `apps/<name>/dist`
   into `dist/drop/node-app-<name>.zip` (`node-app`) — for `node-function-app`
   it additionally zips in `host.json` and the repaired `package.json` into
   `dist/drop/node-function-app-<name>.zip`. No `node_modules` is bundled
@@ -404,7 +408,7 @@ wrappers — so `nx-release-publish`'s `dryRun` arrives as a genuine typed
 executor option (`nx release publish --dry-run` sets it automatically for
 every custom executor, no argv-parsing trick needed), and internal-lib
 vendoring resolves a dependency's location via the real Nx **project graph**,
-not a hard-coded `libs/<name>` path. `mnci2 add python-*` installs it like any
+not a hard-coded `libs/<name>` path. `mnci add python-*` installs it like any
 other npm devDependency (`npm install --save-dev @mnci/nx-python-pip` —
 no `nx.json` `plugins` registration needed, since its generators/executors
 are explicit, not inference-based) and writes exactly one file itself:
@@ -419,12 +423,12 @@ is activated.
 
 | Kind | Location | Build / deploy |
 | ---- | -------- | -------------- |
-| `python-app` | `apps/<name>` | `python -m build` wheel (the plugin's `build` executor), zipped by mnci2 into `dist/drop/python-app-<name>.zip` |
-| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); no `pyproject.toml`/wheel — the **source** is zipped by mnci2 into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
+| `python-app` | `apps/<name>` | `python -m build` wheel (the plugin's `build` executor), zipped by mnci into `dist/drop/python-app-<name>.zip` |
+| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); no `pyproject.toml`/wheel — the **source** is zipped by mnci into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
 | `python-lib` | `python-packages/<name>` | publishable wheel; the plugin's `publish` executor (`twine upload --skip-existing`) |
 | `python-internal-lib` | `libs/<name>` | private shared code, lint + test only — no build/package target of its own |
 
-- **Apps** get a `package` target — mnci2's own CI packaging convention, not
+- **Apps** get a `package` target — mnci's own CI packaging convention, not
   a generic plugin concern — merged into the plugin-written `project.json`
   after generation, fitting the existing CI unchanged: the pipeline's
   `apps/*` pack step tags them `python-app-<name>` / `python-function-app-
@@ -433,7 +437,7 @@ is activated.
   plain pip has no bundled-local-dependency feature, so a project that imports
   a workspace-internal Python library needs a hand-added `vendor` entry (under
   `[tool.mnci-python-pip]`) in its own `pyproject.toml` (the pip-world
-  counterpart of hand-wiring a `dependencies = [...]` entry — neither mnci2
+  counterpart of hand-wiring a `dependencies = [...]` entry — neither mnci
   nor the plugin wires cross-project Python dependencies automatically). The
   plugin's `build` executor reads that entry, resolves the named project's
   root via the **Nx project graph**, copies its module into a staged copy of

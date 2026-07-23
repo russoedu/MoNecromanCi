@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="mnci" width="280">
+</p>
+
 # MoNecromanCI
 
 An opinionated one-command Nx monorepo, with automatic commit-message-driven
@@ -5,14 +9,14 @@ versioning, built as a **thin CLI over what Nx already ships** — no
 hand-rolled templates, shared config packages, or custom CI engines.
 
 This repository is itself an Nx monorepo, built and managed by the CLI it
-ships — `mnci2 new`/`mnci2 add` scaffolded this workspace's own root and both
+ships — `mnci new`/`mnci add` scaffolded this workspace's own root and both
 of its packages.
 
 ## Packages
 
 | Package | What it is |
 | --- | --- |
-| [`@mnci/cli`](packages/cli) | The CLI itself — `mnci2 new` (scaffold a monorepo) and `mnci2 add` (delegate to the matching official/community Nx generator for React apps, Node apps, Azure Function apps, npm/Python libraries). |
+| [`@mnci/cli`](packages/cli) | The CLI itself — `mnci new` (scaffold a monorepo) and `mnci add` (delegate to the matching official/community Nx generator for React apps, Node apps, Azure Function apps, npm/Python libraries). |
 | [`@mnci/nx-python-pip`](packages/nx-python-pip) | An Nx plugin for pip-native Python projects (Ruff, pytest, PyPA `build`/`twine` — no uv, no Poetry) that `@mnci/cli`'s Python commands delegate to. Has no dependency on `@mnci/cli` itself; usable standalone in any Nx 21+ workspace. |
 
 See each package's own README for the full command/generator/executor
