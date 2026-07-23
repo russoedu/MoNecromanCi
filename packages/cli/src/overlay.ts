@@ -486,8 +486,19 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
  * Python deps" means. Skips cleanly on a workspace with no Python projects
  * (no `requirements-dev.txt`, written by `add/python.ts` on the first
  * Python `add`).
+ *
+ * Resolves `python` vs `python3` at run time via `process.platform`, not a
+ * hard-coded name: the standard python.org Windows installer registers only
+ * `python.exe`, so a build agent on a `windows-latest` (or self-hosted
+ * Windows) runner hard-fails immediately on a hard-coded `python3` with
+ * "'python3' is not recognized as an internal or external command" — every
+ * POSIX system (the assumed default) registers `python3`. Same resolution
+ * {@link PYTHON_WORKSPACE_INSTALL_GUARD} and every `@mnci/nx-python-pip`
+ * executor use (that package's own `pythonCommand` helper); this guard is a
+ * plain generated string, not TypeScript, so it inlines the identical check
+ * rather than importing it.
  */
-const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"`
+const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py+' -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"`
 
 /**
  * The portable `node -e` one-liner that editable-installs every Python
@@ -522,8 +533,10 @@ const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requir
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  * Skips cleanly when the workspace has no Python projects. Runs after
  * {@link PYTHON_INSTALL_GUARD} (the fixed dev toolchain), before `sync:check`.
+ * Resolves `python` vs `python3` at run time the same way
+ * {@link PYTHON_INSTALL_GUARD} does — see its remarks.
  */
-const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];process.exit(require('node:child_process').spawnSync('python3',args,{stdio:'inherit'}).status ?? 1)"`
+const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py,args,{stdio:'inherit'}).status ?? 1)"`
 
 /**
  * The portable `node -e` one-liner that packs every app into

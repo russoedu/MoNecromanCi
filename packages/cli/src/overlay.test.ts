@@ -196,7 +196,10 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
     expect(pipeline).toContain(`globSync('packages/*/package.json')`)
     // A guarded step installs the fixed pip toolchain before any Python target runs.
-    expect(pipeline).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(pipeline).toContain('-m pip install -r requirements-dev.txt')
+    // Resolves python vs python3 by platform, not hard-coded (Windows agents
+    // have no python3.exe).
+    expect(pipeline).toContain(`process.platform==='win32'?'python':'python3'`)
     // A second guarded step editable-installs every Python project so
     // cross-project imports (internal libs included) resolve at test time.
     expect(pipeline).toContain('Install Python project dependencies (editable, workspace-wide)')
@@ -337,7 +340,8 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain(`Buffer.from(process.env.PAT,'base64')`)
     expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
     expect(workflow).toContain(`globSync('packages/*/package.json')`)
-    expect(workflow).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(workflow).toContain('-m pip install -r requirements-dev.txt')
+    expect(workflow).toContain(`process.platform==='win32'?'python':'python3'`)
     expect(workflow).toContain('Install Python project dependencies (editable, workspace-wide)')
   })
 
@@ -401,8 +405,10 @@ describe('githubActionsYaml', () => {
     const azure = azurePipelinesYaml('ubuntu-latest', 'Build', 'https://example.invalid/pypi/upload/')
     const github = githubActionsYaml('ubuntu-latest', 'https://example.invalid/pypi/upload/')
 
-    expect(github).toContain('python3 -m pip install -r requirements-dev.txt')
-    expect(azure).toContain('python3 -m pip install -r requirements-dev.txt')
+    expect(github).toContain('-m pip install -r requirements-dev.txt')
+    expect(azure).toContain('-m pip install -r requirements-dev.txt')
+    expect(github).toContain(`process.platform==='win32'?'python':'python3'`)
+    expect(azure).toContain(`process.platform==='win32'?'python':'python3'`)
     expect(github).toContain(`globSync('apps/*/pyproject.toml')`)
     expect(azure).toContain(`globSync('apps/*/pyproject.toml')`)
     expect(github).toContain(`globSync('apps/*/project.json')`)

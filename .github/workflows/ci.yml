@@ -41,7 +41,7 @@ jobs:
       # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
       # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
       # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
-      - run: node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('python3 -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"
+      - run: node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py+' -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"
         name: Install Python dependencies (ruff, pytest, build, twine)
 
       # Editable-installs every Python project into one shared environment, the
@@ -49,7 +49,7 @@ jobs:
       # into one root node_modules — so a project that imports an internal lib
       # (normally vendored only at build time) can resolve that import at
       # lint/test time too. Portable guard skips cleanly on a workspace with none.
-      - run: node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];process.exit(require('node:child_process').spawnSync('python3',args,{stdio:'inherit'}).status ?? 1)"
+      - run: node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py,args,{stdio:'inherit'}).status ?? 1)"
         name: Install Python project dependencies (editable, workspace-wide)
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project

@@ -2,6 +2,7 @@ import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { projectRootFrom } from '../../internal/executorContext'
+import { pythonCommand } from '../../internal/pythonCommand'
 import type { TestExecutorSchema } from './schema.d'
 
 /**
@@ -28,12 +29,12 @@ export default async function testExecutor (options: TestExecutorSchema, context
   const cwd = join(context.root, projectRootFrom(context))
 
   if (options.installEditable !== false) {
-    const install = spawnSync('python3', ['-m', 'pip', 'install', '--quiet', '-e', '.'], { cwd, stdio: 'inherit' })
+    const install = spawnSync(pythonCommand(), ['-m', 'pip', 'install', '--quiet', '-e', '.'], { cwd, stdio: 'inherit' })
     if (install.status !== 0) {
       return { success: false }
     }
   }
 
-  const result = spawnSync('python3', ['-m', 'pytest'], { cwd, stdio: 'inherit' })
+  const result = spawnSync(pythonCommand(), ['-m', 'pytest'], { cwd, stdio: 'inherit' })
   return { success: result.status === 0 }
 }
