@@ -87,3 +87,12 @@ jobs:
         if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # nx release's own git push (release.git.push) is deliberately left off: it
+      # only runs when a remote GitHub/GitLab Release is configured, which this
+      # workflow never does, so it would never push the tag the step above just
+      # created. Pushed explicitly, unconditionally (a no-op when nothing released)
+      # once tagging is guaranteed to have already happened.
+      - run: git push origin --tags
+        name: Push release tags (nx release's own push never runs without a remote Release configured)
+        if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
