@@ -64,7 +64,7 @@ function enforce (label, ok, detail = '') {
   console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  — ${detail}`}`)
 }
 
-const temporary = mkdtempSync(path.join(tmpdir(), 'mnci2-e2e-'))
+const temporary = mkdtempSync(path.join(tmpdir(), 'mnci-e2e-'))
 const workspace = path.join(temporary, 'demo')
 
 process.on('exit', () => rmSync(temporary, { recursive: true, force: true }))
@@ -73,7 +73,7 @@ process.on('exit', () => rmSync(temporary, { recursive: true, force: true }))
  * new
  * ------------------------------------------------------------------------- */
 
-console.log(`\n▸ mnci2 new demo (in ${temporary})`)
+console.log(`\n▸ mnci new demo (in ${temporary})`)
 run(`node ${CLI} new demo --yes --registry npm --scope @demo`, temporary)
 
 enforce('workspace created with nx.json', existsSync(path.join(workspace, 'nx.json')))
@@ -131,7 +131,7 @@ enforce('dual compiler: the importable TypeScript API stays TS6 (Nx graph/Vite/e
  * ------------------------------------------------------------------------- */
 
 const workspaceGithub = path.join(temporary, 'demo-github')
-console.log(`\n▸ mnci2 new demo-github --ci both (in ${temporary})`)
+console.log(`\n▸ mnci new demo-github --ci both (in ${temporary})`)
 run(`node ${CLI} new demo-github --yes --registry npm --scope @demo --ci both`, temporary)
 
 enforce('azure-pipelines.yml still written when --ci both', existsSync(path.join(workspaceGithub, 'azure-pipelines.yml')))
@@ -160,10 +160,10 @@ enforce('.github/workflows/ci.yml is valid YAML (on + permissions + jobs.ci.step
  * add — one of each kind
  * ------------------------------------------------------------------------- */
 
-console.log('\n▸ mnci2 add npm-lib sdk')
+console.log('\n▸ mnci add npm-lib sdk')
 run(`node ${CLI} add npm-lib sdk`, workspace)
 
-console.log('\n▸ mnci2 add internal-lib utils')
+console.log('\n▸ mnci add internal-lib utils')
 run(`node ${CLI} add internal-lib utils`, workspace)
 
 /* ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.ts'), 'import ms fr
 writeFileSync(path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'), 'import { sdk } from \'./sdk.js\';\n\ndescribe(\'sdk\', () => {\n  it(\'uses the internal lib and the external dependency\', () => {\n    expect(sdk()).toEqual(\'sdk uses utils and 1m\');\n  });\n});\n')
 run('npx nx sync', workspace)
 
-console.log('\n▸ mnci2 add react-app web')
+console.log('\n▸ mnci add react-app web')
 run(`node ${CLI} add react-app web`, workspace)
 
 // A browser bundle inlines everything by default (same direction as a function
@@ -228,7 +228,7 @@ writeFileSync(path.join(workspace, 'apps/web/src/main.tsx'), [
   '',
 ].join('\n'))
 
-console.log('\n▸ mnci2 add node-app svc')
+console.log('\n▸ mnci add node-app svc')
 run(`node ${CLI} add node-app svc`, workspace)
 
 // @nx/node:application (--bundle=false) never inlines anything — every import
@@ -240,7 +240,7 @@ console.log('\n▸ wiring node app (svc) -> utils (private internal) + ms (real 
 writeFileSync(path.join(workspace, 'apps/svc/src/main.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nconsole.log(\'deps-check:\', utils(), ms(60000));\n')
 run('npx nx sync', workspace)
 
-console.log('\n▸ mnci2 add node-function-app api')
+console.log('\n▸ mnci add node-function-app api')
 run(`node ${CLI} add node-function-app api`, workspace)
 
 // The generator + overlay need no Azure Functions Core Tools at all (unlike
@@ -415,7 +415,7 @@ enforce(
  * ------------------------------------------------------------------------- */
 
 const altWorkspace = path.join(temporary, 'alt')
-console.log('\n▸ mnci2 new alt --linter oxlint --test-runner vitest')
+console.log('\n▸ mnci new alt --linter oxlint --test-runner vitest')
 run(`node ${CLI} new alt --yes --registry npm --scope @alt --linter oxlint --test-runner vitest`, temporary)
 
 const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
@@ -471,14 +471,14 @@ const packOutput = execSync(`npm pack --silent --pack-destination "${nxPythonPip
 const nxPythonPipTarball = path.join(nxPythonPipPackDirectory, packOutput.split('\n').at(-1))
 process.env.MNCI2_PYTHON_PIP_SPEC = nxPythonPipTarball
 
-console.log('\n▸ mnci2 add python-app / python-function-app / python-lib / python-internal-lib')
+console.log('\n▸ mnci add python-app / python-function-app / python-lib / python-internal-lib')
 run(`node ${CLI} add python-app pysvc`, altWorkspace)
 run(`node ${CLI} add python-function-app pyfunc`, altWorkspace)
 run(`node ${CLI} add python-lib pyshared`, altWorkspace)
 run(`node ${CLI} add python-internal-lib pycore`, altWorkspace)
 
 const altPythonManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
-enforce('python: no hand-rolled files — @mnci/nx-python-pip installed as a real devDependency, requirements-dev.txt the only file mnci2 itself writes',
+enforce('python: no hand-rolled files — @mnci/nx-python-pip installed as a real devDependency, requirements-dev.txt the only file mnci itself writes',
   Boolean(altPythonManifest.devDependencies?.['@mnci/nx-python-pip'])
   && existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-python-pip/generators.json'))
   && existsSync(path.join(altWorkspace, 'requirements-dev.txt'))
@@ -503,7 +503,7 @@ enforce('python: function app carries the Azure Functions v2 files, and has no p
  * The same private-internal-lib / real-external-dependency proof as the JS
  * side, adapted to pip's mechanism: a hand-added [tool.mnci-python-pip]
  * vendor = [...] entry (the pip-world counterpart of hand-wiring a
- * dependencies = [...] entry — mnci2 wires no cross-project Python
+ * dependencies = [...] entry — mnci wires no cross-project Python
  * dependency automatically, exactly like every other kind) makes the
  * plugin's build executor copy the internal lib's module — resolved via the
  * real Nx project graph, not a hard-coded libs/ path — straight into a

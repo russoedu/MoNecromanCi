@@ -5,8 +5,7 @@ import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
  * Prompts for a non-empty trimmed string with an optional default.
  *
  * @remarks
- * Wraps `@inquirer/prompts`'s `input`, enforcing a non-empty result. Ported
- * from v1 `util/prompts.ts`.
+ * Wraps `@inquirer/prompts`'s `input`, enforcing a non-empty result.
  *
  * @param message - The prompt message to display.
  * @param fallback - Optional default value pre-filled in the prompt.
@@ -87,7 +86,7 @@ export async function promptCi (): Promise<CiProvider> {
  * Prompts for the stack: linter and unit-test runner.
  *
  * @remarks
- * The knobs asked up front at `mnci2 new`. TypeScript is fixed (the
+ * The knobs asked up front at `mnci new`. TypeScript is fixed (the
  * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), so only the
  * linter and test runner are asked. Each is a binary choice — no "none" — with
  * the current opinionated default listed first.

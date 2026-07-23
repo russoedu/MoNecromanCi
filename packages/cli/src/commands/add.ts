@@ -14,11 +14,11 @@ import type { AddOptions, WorkspaceStack } from './add/shared'
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds v2 can add — deliberately just nine.
+ * The project kinds this CLI can add — deliberately just nine.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
- * v2 itself writes no project files (bar thin overlays). Layout convention
+ * this CLI itself writes no project files (bar thin overlays). Layout convention
  * drives release scoping: `apps/` (never released), `packages/` (publishable
  * npm, released by `nx release`), `libs/` (internal, never released),
  * `python-packages/` (publishable Python, published by `twine`).
@@ -64,10 +64,10 @@ export const PROJECT_KINDS: ProjectKind[] = [
  * A thin dispatcher — the actual generation logic for each kind lives in its
  * own module under `add/` (imported above), so this function only resolves
  * the shared inputs (kind, name, the workspace's stack) and routes to the
- * right one. Pure delegation throughout — v2 performs no post-generation file
- * rewriting beyond each kind's own thin overlay. The known gap (same as v1):
- * a *publishable* lib importing a *private internal* lib cannot be published
- * as-is; internal libs are for apps and other internal libs.
+ * right one. Pure delegation throughout — no post-generation file rewriting
+ * beyond each kind's own thin overlay. Known gap: a *publishable* lib
+ * importing a *private internal* lib cannot be published as-is; internal
+ * libs are for apps and other internal libs.
  *
  * @param kind - The project kind, prompted for when omitted.
  * @param name - The project name, prompted for when omitted.
@@ -82,7 +82,7 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     throw new Error('No nx.json found here. Run `add` from the workspace root.')
   }
 
-  // The stack chosen at `mnci2 new` lives in nx.json; every generator (and the
+  // The stack chosen at `mnci new` lives in nx.json; every generator (and the
   // hand-built function app) is wired to match it.
   const stack = readWorkspaceStack(workspaceRoot)
 
@@ -194,11 +194,11 @@ function syncProjectReferences (workspaceRoot: string): void {
 }
 
 /**
- * The workspace stack, read back from the `nx.json` `mnci2.stack` block `new` wrote.
+ * The workspace stack, read back from the `nx.json` `mnci.stack` block `new` wrote.
  *
  * @remarks
- * How a one-time `mnci2 new` choice reaches `add`: `mnci2.stack` (written by
- * `mnci2Config` in `overlay.ts`) is the single source of truth — a dedicated
+ * How a one-time `mnci new` choice reaches `add`: `mnci.stack` (written by
+ * `mnciConfig` in `overlay.ts`) is the single source of truth — a dedicated
  * block, not inferred from one of Nx's own (three, always-identical)
  * generator-default blocks, so there's no "stay in lockstep" invariant to
  * silently drift. `add` passes the result back to the `@nx/*`
@@ -214,8 +214,8 @@ function syncProjectReferences (workspaceRoot: string): void {
  * @typeParam None - this function has no generic type parameters.
  */
 function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
-  const nxJson = readJson<{ mnci2?: { stack?: { linter?: string, testRunner?: string } } }>(join(workspaceRoot, 'nx.json'))
-  const stack = nxJson.mnci2?.stack
+  const nxJson = readJson<{ mnci?: { stack?: { linter?: string, testRunner?: string } } }>(join(workspaceRoot, 'nx.json'))
+  const stack = nxJson.mnci?.stack
   return {
     linter:     stack?.linter === 'oxlint' ? 'none' : 'eslint',
     testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',

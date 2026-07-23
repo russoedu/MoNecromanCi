@@ -3,8 +3,7 @@
  *
  * @remarks
  * Each method prefixes `message` with a small glyph to distinguish severity
- * when scanning terminal output. Mirrors v1's logger so both CLIs feel the
- * same in a terminal.
+ * when scanning terminal output.
  */
 export const logger = {
   info (message: string): void {

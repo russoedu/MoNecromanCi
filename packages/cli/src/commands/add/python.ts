@@ -26,7 +26,7 @@ function ensurePython (workspaceRoot: string): void {
  * Reads `MNCI2_PYTHON_PIP_SPEC` so the e2e suite can point this at a local
  * tarball (`npm pack`'d from `libs/nx-python-pip` in this same monorepo)
  * instead of the published registry package — the real published spec is
- * the default for every real `mnci2 add python-*` call.
+ * the default for every real `mnci add python-*` call.
  */
 function pythonPipPluginSpec (): string {
   return process.env.MNCI2_PYTHON_PIP_SPEC ?? '@mnci/nx-python-pip'
@@ -66,7 +66,7 @@ function ensurePythonPipPlugin (workspaceRoot: string): void {
  * Ruff and pytest are the industry standard; `build` and `twine` are the
  * standard PyPA build/publish frontends that `@mnci/nx-python-pip`'s
  * executors shell out to. No lock file — plain pip has none, matching the
- * company's standard toolchain (no uv, no Poetry). mnci2 writes this file
+ * company's standard toolchain (no uv, no Poetry). mnci writes this file
  * (not the plugin): the plugin is a generic Nx plugin with no opinion on how
  * its own runtime dependencies get onto a machine.
  */
@@ -81,7 +81,7 @@ pytest
  *
  * @remarks
  * Lazy, like {@link ensureAdmZip}: written on the first Python `add` of any
- * kind, not unconditionally by `mnci2 new` — a pure-JS/TS workspace never
+ * kind, not unconditionally by `mnci new` — a pure-JS/TS workspace never
  * gains this file. Only written when absent, so a user's own edits (extra
  * dev tools) survive repeat `add` calls.
  *
@@ -119,7 +119,7 @@ function pythonModuleDirectory (name: string): string {
  *
  * @remarks
  * `@mnci/nx-python-pip`'s generators write a real `project.json` (not an
- * inference-only manifest), so the `package` (zip) target — mnci2's own CI
+ * inference-only manifest), so the `package` (zip) target — mnci's own CI
  * convention, not a generic plugin concern — is merged straight into it
  * after generation.
  *
@@ -193,12 +193,12 @@ function pythonFunctionAppPackageTarget (name: string, moduleDirectory: string):
 }
 
 /**
- * Adds a Python app: `@mnci/nx-python-pip:application` plus mnci2's own zip packaging.
+ * Adds a Python app: `@mnci/nx-python-pip:application` plus mnci's own zip packaging.
  *
  * @remarks
  * Pure delegation to the plugin generator, same shape as every other kind
  * (`react-app`, `node-app`, `npm-lib`) — the plugin owns `pyproject.toml` +
- * `project.json` (lint/test/build); mnci2 only layers its own CI packaging
+ * `project.json` (lint/test/build); mnci only layers its own CI packaging
  * convention on top, via {@link pythonAppPackageTarget}.
  *
  * @param workspaceRoot - Absolute path to the workspace.
@@ -218,11 +218,11 @@ export function addPythonApp (workspaceRoot: string, name: string): void {
 }
 
 /**
- * Adds a Python Azure Function: `@mnci/nx-python-pip:function-application` plus mnci2's own zip packaging.
+ * Adds a Python Azure Function: `@mnci/nx-python-pip:function-application` plus mnci's own zip packaging.
  *
  * @remarks
  * The plugin generator writes the Azure Functions v2 shape (`function_app.py`
- * + `host.json` + `requirements.txt` + a tested pure helper); mnci2 only adds
+ * + `host.json` + `requirements.txt` + a tested pure helper); mnci only adds
  * the `package` target zipping that source into the drop.
  *
  * @param workspaceRoot - Absolute path to the workspace.

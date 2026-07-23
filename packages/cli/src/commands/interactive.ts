@@ -8,7 +8,7 @@ import { runNew } from './new'
 type InteractiveAction = 'new' | 'add'
 
 /**
- * Runs the guided wizard shown when `mnci2` is invoked with no arguments.
+ * Runs the guided wizard shown when `mnci` is invoked with no arguments.
  *
  * @remarks
  * A thin dispatcher: it picks between the two commands, then hands off to the

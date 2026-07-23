@@ -21,7 +21,7 @@ const mockPromptText = jest.mocked(promptText)
 let workspaceRoot: string
 
 beforeEach(() => {
-  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci2-add-npm-lib-'))
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-npm-lib-'))
   mockRunShell.mockImplementation(() => 0)
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
@@ -95,7 +95,7 @@ describe('runAdd npm-lib', () => {
   })
 
   it('honors an oxlint workspace: --linter=none and no per-lib eslint config', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci2: { stack: { linter: 'oxlint', testRunner: 'jest' } } }))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci: { stack: { linter: 'oxlint', testRunner: 'jest' } } }))
 
     await runAdd('npm-lib', 'sdk', {})
 

@@ -11,7 +11,7 @@
  * Applied uniformly regardless of where the name came from (a CLI flag/
  * positional argument, or an interactive prompt) — `promptText`'s own
  * non-empty check only runs on the *prompted* path, so an explicitly empty
- * flag (`mnci2 add react-app ""`) previously slipped straight through, since
+ * flag (`mnci add react-app ""`) previously slipped straight through, since
  * `name ?? await promptText(...)` only substitutes on `null`/`undefined`, not
  * `''`. Calling this right after resolving the name closes that gap too — an
  * empty string fails the same charset check as any other invalid name.
