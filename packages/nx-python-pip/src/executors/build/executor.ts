@@ -4,6 +4,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { projectRootFrom } from '../../internal/executorContext'
+import { pythonCommand } from '../../internal/pythonCommand'
 import { pythonModuleDirectory } from '../../internal/pythonProject'
 import { addPackagesToWheelTarget, parseVendorEntries } from '../../internal/vendor'
 import type { BuildExecutorSchema } from './schema.d'
@@ -54,7 +55,7 @@ export default async function buildExecutor (_options: BuildExecutorSchema, cont
   const vendorNames = parseVendorEntries(pyprojectToml)
 
   if (vendorNames.length === 0) {
-    const result = spawnSync('python3', ['-m', 'build', '--outdir', outDirectory, absoluteProjectRoot], { stdio: 'inherit' })
+    const result = spawnSync(pythonCommand(), ['-m', 'build', '--outdir', outDirectory, absoluteProjectRoot], { stdio: 'inherit' })
     return { success: result.status === 0 }
   }
 
@@ -77,7 +78,7 @@ export default async function buildExecutor (_options: BuildExecutorSchema, cont
     const stagedPyprojectPath = join(stagingRoot, 'pyproject.toml')
     writeFileSync(stagedPyprojectPath, addPackagesToWheelTarget(readFileSync(stagedPyprojectPath, 'utf8'), moduleDirectories))
 
-    const result = spawnSync('python3', ['-m', 'build', '--outdir', outDirectory, stagingRoot], { stdio: 'inherit' })
+    const result = spawnSync(pythonCommand(), ['-m', 'build', '--outdir', outDirectory, stagingRoot], { stdio: 'inherit' })
     return { success: result.status === 0 }
   } finally {
     rmSync(stagingRoot, { recursive: true, force: true })

@@ -320,10 +320,11 @@ than a surprise:
   `node_modules` beyond `npm install`): `mnci` neither creates nor activates
   one. CI installs `requirements-dev.txt`, then editable-installs every
   Python project workspace-wide (see "Workspace-wide install" above),
-  straight into whatever `python3` resolves to on the agent; locally, create
-  your own venv with `python3 -m venv` and reproduce the same two installs by
-  hand (`pip install -r requirements-dev.txt`, then `pip install -e <dir>`
-  for each Python project).
+  straight into whatever `<python>` resolves to on the agent (`python3` on
+  POSIX, `python` on Windows — see above); locally, create your own venv
+  (`python3 -m venv` / `python -m venv` on Windows) and reproduce the same
+  two installs by hand (`pip install -r requirements-dev.txt`, then
+  `pip install -e <dir>` for each Python project).
 
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
@@ -417,13 +418,18 @@ other npm devDependency (`npm install --save-dev @mnci/nx-python-pip` —
 no `nx.json` `plugins` registration needed, since its generators/executors
 are explicit, not inference-based) and writes exactly one file itself:
 `requirements-dev.txt` at the workspace root (the fixed `ruff`/`pytest`/
-`build`/`twine` toolchain — install with `python3 -m pip install -r
+`build`/`twine` toolchain — install with `<python> -m pip install -r
 requirements-dev.txt`), since the plugin is a generic Nx plugin with no
 opinion on how its own runtime dependencies land on a machine. There is **no
 stack question** — Ruff (lint + format) and pytest are the standard, so they
-are always used, invoked as `python3 -m <tool>` everywhere (not a
+are always used, invoked as `<python> -m <tool>` everywhere (not a
 hard-coded venv path), so the exact same command works whether or not a venv
-is activated.
+is activated. `<python>` resolves to `python3` on POSIX or `python` on
+Windows (the standard python.org Windows installer registers no
+`python3.exe`) — every guard script in the generated pipeline and every
+`@mnci/nx-python-pip` executor makes this same platform check, never a
+hard-coded name, so a `windows-latest` (or self-hosted Windows) agent works
+identically to a Linux/macOS one.
 
 | Kind | Location | Build / deploy |
 | ---- | -------- | -------------- |

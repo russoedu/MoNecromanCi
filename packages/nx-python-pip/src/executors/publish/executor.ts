@@ -2,6 +2,7 @@ import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { projectRootFrom } from '../../internal/executorContext'
+import { pythonCommand } from '../../internal/pythonCommand'
 import type { PublishExecutorSchema } from './schema.d'
 
 /**
@@ -30,13 +31,13 @@ import type { PublishExecutorSchema } from './schema.d'
  */
 export default async function publishExecutor (options: PublishExecutorSchema, context: ExecutorContext): Promise<{ success: boolean }> {
   if (options.dryRun) {
-    console.log('[dry-run] would run: python3 -m twine upload --skip-existing dist/*')
+    console.log(`[dry-run] would run: ${pythonCommand()} -m twine upload --skip-existing dist/*`)
     return { success: true }
   }
 
   const cwd = join(context.root, projectRootFrom(context))
   // No shell: true needed for the dist/* glob — twine globs its own path
   // arguments internally, so this stays free of a shell-injection surface.
-  const result = spawnSync('python3', ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'], { cwd, stdio: 'inherit' })
+  const result = spawnSync(pythonCommand(), ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'], { cwd, stdio: 'inherit' })
   return { success: result.status === 0 }
 }

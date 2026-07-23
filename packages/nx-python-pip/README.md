@@ -26,10 +26,10 @@ are explicit (resolved via `generators.json`/`executors.json`, plain Node
 module lookup), not inference-based.
 
 You will also need the actual Python tools this plugin's executors shell out
-to: `python3 -m pip install build twine ruff pytest` (or pin them in your own
-`requirements-dev.txt` / `requirements-dev.in`). The plugin has no opinion on
-*how* those land on a machine — same way `@nx/js`'s executors assume `node`
-is already there.
+to: `python3 -m pip install build twine ruff pytest` (`python -m pip ...` on
+Windows — see below) — or pin them in your own `requirements-dev.txt` /
+`requirements-dev.in`. The plugin has no opinion on *how* those land on a
+machine — same way `@nx/js`'s executors assume `node` is already there.
 
 ## Generators
 
@@ -56,9 +56,13 @@ nx g @mnci/nx-python-pip:function-application my-function-app
 | `lint` | `python -m ruff check .` |
 | `publish` | `python -m twine upload --skip-existing dist/*`, reading `TWINE_USERNAME`/`TWINE_PASSWORD`/`TWINE_REPOSITORY_URL` from the environment |
 
-Every command is invoked as `python3 -m <tool>`, never a hard-coded venv
+Every command is invoked as `<python> -m <tool>`, never a hard-coded venv
 path, so the exact same command works whether or not you've activated a
-virtualenv — this plugin never creates or manages one itself.
+virtualenv — this plugin never creates or manages one itself. `<python>` is
+resolved per platform (`pythonCommand` in `src/internal/pythonCommand.ts`):
+`python3` on POSIX, `python` on Windows, since the standard python.org
+Windows installer registers only `python.exe` — a hard-coded `python3` fails
+outright there.
 
 `publish` accepts a real, typed `dryRun` option — `nx release publish
 --dry-run` sets it automatically on every `nx-release-publish` executor, so

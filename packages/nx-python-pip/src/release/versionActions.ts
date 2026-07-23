@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import type { ProjectGraph, Tree } from '@nx/devkit'
+import { pythonCommand } from '../internal/pythonCommand'
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- nx/release is CJS; no ESM entry to `import` from.
 const { VersionActions } = require('nx/release') as typeof import('nx/release')
 
@@ -74,7 +75,7 @@ export default class PythonVersionActions extends VersionActions {
   ): Promise<{ currentVersion: string | null, logText: string } | null> {
     const name = this.projectGraphNode.name
     try {
-      const output = execFileSync('python3', ['-m', 'pip', 'index', 'versions', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      const output = execFileSync(pythonCommand(), ['-m', 'pip', 'index', 'versions', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       const match = /Available versions:\s*([^\s,]+)/.exec(output)
       return { currentVersion: match ? match[1] : null, logText: 'from pip index versions' }
     } catch {
