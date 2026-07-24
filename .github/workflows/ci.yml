@@ -104,3 +104,34 @@ jobs:
       - run: git push origin --tags
         name: Push release tags (nx release's own push never runs without a remote Release configured)
         if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+
+  # Real, empirical proof that mnci works on Windows, not just a static code
+  # review: builds the CLI and runs the actual e2e suite (real `mnci new`/
+  # `add`, real npm/pip installs, real zip packaging) on a genuine
+  # windows-latest runner. Independent of the `ci` job above — never touches
+  # release/tags, so it carries zero risk to the release pipeline and can run
+  # in parallel. windows-latest has no python3.exe (only python.exe), so this
+  # is exactly the environment that would have caught the python3-hard-coded
+  # bug fixed in PR #55 before it shipped.
+  e2e-windows:
+    name: e2e (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+        name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - run: npx nx build @mnci/cli
+        name: Build @mnci/cli
+
+      - run: node packages/cli/e2e/cli.e2e.mjs
+        name: Run the real e2e suite (mnci new/add, real npm/pip installs and zip packaging)

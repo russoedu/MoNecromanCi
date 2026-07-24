@@ -102,15 +102,18 @@ jest.mock('commander', () => {
 
 jest.mock('./commands/add', () => ({ runAdd: jest.fn(), PROJECT_KINDS: [] }))
 jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
+jest.mock('./commands/upgrade', () => ({ runUpgrade: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
 
 import { buildProgram, main } from './cli'
 import { runAdd } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
+import { runUpgrade } from './commands/upgrade'
 
 const mockRunAdd = jest.mocked(runAdd)
 const mockRunNew = jest.mocked(runNew)
+const mockRunUpgrade = jest.mocked(runUpgrade)
 const mockRunInteractive = jest.mocked(runInteractive)
 
 let errorSpy: jest.SpyInstance
@@ -143,6 +146,12 @@ describe('buildProgram', () => {
   it('routes `new`\'s --ci flag to runNew', async () => {
     await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--ci', 'github'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
+  })
+
+  it('routes `upgrade` with its flags to runUpgrade, against the current working directory', async () => {
+    jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
+    await buildProgram().parseAsync(['node', 'mnci', 'upgrade', '--agent', 'windows-latest'])
+    expect(mockRunUpgrade).toHaveBeenCalledWith('/somewhere/demo', expect.objectContaining({ agent: 'windows-latest' }))
   })
 
   it('runs the interactive wizard when invoked with no subcommand', async () => {

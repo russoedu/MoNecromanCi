@@ -96,6 +96,13 @@
     "applyChanges": true
   },
   "mnci": {
+    "scope": "@mnci",
+    "registry": {
+      "kind": "npm"
+    },
+    "agent": "ubuntu-latest",
+    "variableGroup": "Build",
+    "ci": "github",
     "stack": {
       "linter": "eslint",
       "testRunner": "jest"

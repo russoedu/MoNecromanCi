@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnciConfig, npmrcContent, poolBlock, pythonPublishUrl, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnciConfig, npmrcContent, poolBlock, pythonPublishUrl, readMnciConfig, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -432,9 +432,49 @@ describe('generatorDefaults', () => {
 })
 
 describe('mnciConfig', () => {
-  it('carries the stack through unchanged — the single source of truth `add` reads back', () => {
-    expect(mnciConfig({ linter: 'oxlint', testRunner: 'vitest' })).toEqual({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
-    expect(mnciConfig({ linter: 'eslint', testRunner: 'jest' })).toEqual({ stack: { linter: 'eslint', testRunner: 'jest' } })
+  it('persists the full resolved overlay options — what `add` and `upgrade` each read back a slice of', () => {
+    const options = { scope: '@demo', registry: { kind: 'npm' } as const, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github' as const, stack: { linter: 'oxlint' as const, testRunner: 'vitest' as const } }
+    expect(mnciConfig(options)).toEqual({
+      scope:         '@demo',
+      registry:      { kind: 'npm' },
+      agent:         'ubuntu-latest',
+      variableGroup: 'Build',
+      ci:            'github',
+      stack:         { linter: 'oxlint', testRunner: 'vitest' },
+    })
+  })
+})
+
+describe('readMnciConfig', () => {
+  let workspaceRoot: string
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-read-config-'))
+  })
+
+  afterEach(() => {
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('reads back exactly what applyOverlay persisted', () => {
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } }))
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+
+    expect(readMnciConfig(workspaceRoot)).toEqual({
+      scope:         '@demo',
+      registry:      { kind: 'npm' },
+      agent:         'ubuntu-latest',
+      variableGroup: 'Build',
+      ci:            'github',
+      stack:         DEFAULT_STACK,
+    })
+  })
+
+  it('returns an empty object for a workspace with no mnci block at all (predates persistence)', () => {
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's' }))
+
+    expect(readMnciConfig(workspaceRoot)).toEqual({})
   })
 })
 
@@ -538,6 +578,20 @@ describe('applyOverlay', () => {
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci: { stack: { linter: string, testRunner: string } } }
     expect(nxJson.mnci.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
+  })
+
+  it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }, agent: 'windows-latest', variableGroup: 'CiSecrets', ci: 'both', stack: DEFAULT_STACK })
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci: Record<string, unknown> }
+    expect(nxJson.mnci).toEqual({
+      scope:         '@demo',
+      registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      agent:         'windows-latest',
+      variableGroup: 'CiSecrets',
+      ci:            'both',
+      stack:         DEFAULT_STACK,
+    })
   })
 
   it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {
