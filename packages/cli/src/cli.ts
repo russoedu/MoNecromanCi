@@ -4,6 +4,7 @@ import { Argument, Command } from 'commander'
 import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
+import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
 import { logger } from './util/logger'
 
 /** Reads the CLI version from the packaged package.json (next to dist/). */
@@ -20,9 +21,10 @@ function readVersion (): string {
  * Builds the commander program for the CLI.
  *
  * @remarks
- * Two commands only — `new` and `add`. Everything a generated repo needs
- * day-to-day (build/test/lint/release) is plain Nx, so the CLI deliberately
- * has no wrapper commands for those.
+ * Three commands: `new`, `add`, and `upgrade` (re-applies the overlay to an
+ * existing workspace — see `commands/upgrade.ts`). Everything a generated
+ * repo needs day-to-day (build/test/lint/release) is plain Nx, so the CLI
+ * deliberately has no wrapper commands for those.
  *
  * @param None - this function takes no parameters.
  * @returns The configured commander program.
@@ -54,6 +56,23 @@ export function buildProgram (): Command {
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
     .action(async (name: string | undefined, options: NewOptions) => {
       await runNew(name, options)
+    })
+
+  program
+    .command('upgrade')
+    .description('Re-apply the latest MoNecromanCI overlay to this workspace (release config, pipeline, npmrc, commitlint, husky hook, curated scripts)')
+    .option('--scope <scope>', 'npm scope for publishable packages (overrides the persisted value)')
+    .option('--registry <kind>', 'azure-artifacts | npm (overrides the persisted value)')
+    .option('--organization <name>', 'Azure DevOps organization')
+    .option('--project <name>', 'Azure DevOps project')
+    .option('--artifacts-feed <name>', 'Azure Artifacts feed')
+    .option('--agent <pool>', 'CI build agent (overrides the persisted value)')
+    .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
+    .option('--ci <provider>', 'CI provider: azure | github | both (overrides the persisted value)')
+    .option('--linter <linter>', 'linter: eslint | oxlint (overrides the persisted value)')
+    .option('--test-runner <runner>', 'unit-test runner: jest | vitest (overrides the persisted value)')
+    .action((options: UpgradeOptions) => {
+      runUpgrade(process.cwd(), options)
     })
 
   program

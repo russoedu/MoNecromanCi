@@ -368,22 +368,58 @@ export function generatorDefaults (stack: StackConfig): Record<string, unknown> 
 }
 
 /**
- * The `mnci` block patched into `nx.json` from the chosen stack.
+ * The `mnci` block patched into `nx.json` from the options a `new`/`upgrade`
+ * call resolved.
  *
  * @remarks
- * The single source of truth `mnci add` reads back (`readWorkspaceStack` in
- * `add.ts`) — deliberately separate from {@link generatorDefaults}, which
- * serves Nx's own generator-default mechanism instead (a real, independent
- * feature: it makes a user's own direct `nx g` pick up the right defaults
- * too). One value, one place `add` trusts, with no invariant to keep in sync.
+ * Two independent readers trust this one block: `mnci add`'s
+ * `readWorkspaceStack` (`add.ts`) reads only `.stack`, and `mnci upgrade`
+ * (`readMnciConfig`, below) reads the whole thing back as the defaults for
+ * everything an explicit flag does not override — the only reason `scope`/
+ * `registry`/`agent`/`variableGroup`/`ci` are persisted at all, since nothing
+ * else in a generated workspace records them. Deliberately separate from
+ * {@link generatorDefaults}, which serves Nx's own generator-default
+ * mechanism instead (a real, independent feature: it makes a user's own
+ * direct `nx g` pick up the right defaults too).
  *
- * @param stack - The chosen stack.
+ * @param options - The resolved overlay options (a `new`/`upgrade` call).
  * @returns The `mnci` object for `nx.json`.
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function mnciConfig (stack: StackConfig): Record<string, unknown> {
-  return { stack: { linter: stack.linter, testRunner: stack.testRunner } }
+export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
+  return {
+    scope:         options.scope,
+    registry:      options.registry,
+    agent:         options.agent,
+    variableGroup: options.variableGroup,
+    ci:            options.ci,
+    stack:         { linter: options.stack.linter, testRunner: options.stack.testRunner },
+  }
+}
+
+/**
+ * Reads back whatever a previous `new`/`upgrade` call persisted via
+ * {@link mnciConfig}.
+ *
+ * @remarks
+ * The read-side counterpart `mnci upgrade` (`commands/upgrade.ts`) uses to
+ * resolve options: an explicit flag wins, otherwise the persisted value here
+ * is the default, so a plain `mnci upgrade` with no flags re-applies the
+ * exact same overlay the workspace already has, just regenerated from
+ * today's `overlay.ts`. A workspace generated before this was persisted (or
+ * hand-edited to remove it) simply has fewer fields here — `upgrade` reports
+ * exactly which ones are missing rather than guessing.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Whatever subset of {@link OverlayOptions} is persisted in
+ * `nx.json`'s `mnci` block (empty object when there is none).
+ * @throws Propagates any Node.js `fs`/JSON error reading `nx.json`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function readMnciConfig (workspaceRoot: string): Partial<OverlayOptions> {
+  const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
+  return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
 
 /**
@@ -1029,7 +1065,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
-  const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options.stack) }
+  const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
   writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the

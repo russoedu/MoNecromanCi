@@ -24,7 +24,7 @@ first-party (or established community) Nx equivalent:
 | Hand-written Azure Function templates            | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
 | doctor/drift sync of tool-owned files             | Nothing to drift: this CLI owns 5 small files, Nx owns the rest |
 
-## Commands (deliberately just two)
+## Commands (deliberately just three)
 
 ```sh
 mnci new my-repo            # create a monorepo (prompts scope + registry)
@@ -42,6 +42,9 @@ mnci add python-app svc            # app -> apps/ (wheel, zipped into the drop)
 mnci add python-function-app fn    # Azure Functions (Python v2) -> apps/
 mnci add python-lib shared         # publishable -> python-packages/ (twine upload)
 mnci add python-internal-lib core  # private shared lib -> libs/
+
+mnci upgrade                  # re-apply the latest overlay (see below)
+mnci upgrade --agent windows-latest   # ...with an explicit override
 ```
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
@@ -73,6 +76,44 @@ each a single cross-platform command:
    `azure`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
+
+## `mnci upgrade`: re-applying the overlay to an existing workspace
+
+Every fix to `overlay.ts` — a release-config correction, a CI guard rewritten,
+a new Windows code path — only ever reached *future* `mnci new` calls until
+this existed; nothing let an already-generated workspace pick one up.
+`mnci upgrade`, run from the workspace root, closes that gap: it resolves the
+same options `new` would have and calls the exact same `applyOverlay` `new`
+itself calls — the one function that does every bit of `mnci`-owned file
+writing (`nx.json`'s `release`/`sync`/`generators`/`mnci` blocks, `.npmrc`,
+`commitlint.config.mjs`, `.husky/commit-msg`, the CI pipeline file(s), and the
+curated root `package.json` scripts). Nothing else in the workspace — app/lib
+source, `project.json` targets from `mnci add` — is ever touched.
+
+```sh
+mnci upgrade                          # re-apply from persisted config alone
+mnci upgrade --agent windows-latest   # override one field; the override is
+                                       # persisted too, so the next upgrade
+                                       # remembers it
+```
+
+Where the options come from: `mnci new` now persists the full set it resolved
+(`scope`, `registry`, `agent`, `variableGroup`, `ci`, the stack) into
+`nx.json`'s `mnci` block — previously only the stack was kept. `upgrade`
+reads that block back; an explicit flag on the `upgrade` command line always
+wins over the persisted value. A workspace generated before this was
+persisted (or hand-edited to remove a field) gets a clear, specific error
+naming the one flag needed (`No npm scope found in nx.json's persisted
+config. Pass --scope explicitly.`) rather than a prompt or a guess.
+
+There is deliberately no diff preview or confirmation prompt built in:
+`applyOverlay` is a plain, deterministic file-writer (same content in, same
+content out, every time), and virtually every generated workspace is already
+a git repo — **review the result with `git diff` before committing**, the
+same way you'd review any other regenerated file. This does mean `upgrade`
+will overwrite hand customizations to any of the files it owns (e.g. an extra
+CI job appended by hand to the pipeline file) — `git diff` is exactly how
+you'd notice and re-apply those on top.
 
 ## Stack: two choices asked up front
 

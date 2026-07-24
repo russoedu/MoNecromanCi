@@ -26,6 +26,28 @@ const yaml = createRequire(import.meta.url)('js-yaml')
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const CLI = path.resolve(SCRIPT_DIR, '..', 'dist', 'cli.js')
 
+/**
+ * Mirrors `@mnci/nx-python-pip`'s own `pythonCommand()`: `python3` on POSIX,
+ * `python` on Windows (the standard python.org Windows installer registers
+ * no `python3.exe`). The e2e's own direct Python invocations (installing
+ * `requirements-dev.txt`, creating clean venvs) need the same resolution the
+ * production guard scripts and executors use, or they hard-fail on a
+ * `windows-latest` runner for a harness reason, not a real one.
+ */
+const PYTHON = process.platform === 'win32' ? 'python' : 'python3'
+
+/**
+ * Resolves an executable inside a virtualenv, cross-platform: POSIX venvs
+ * put executables in `bin/`; Windows puts them in `Scripts/` with a `.exe`
+ * suffix, and never creates a `python3.exe` (only `python.exe`) — so `name`
+ * should be the extension-less, `3`-less base name (`'pip'`, `'python'`).
+ */
+function venvExecutable (venvPath, name) {
+  return process.platform === 'win32'
+    ? path.join(venvPath, 'Scripts', `${name}.exe`)
+    : path.join(venvPath, 'bin', name)
+}
+
 /** Runs a command inheriting stdio, throwing on non-zero exit. */
 function run (command, cwd) {
   console.log(`\n$ ${command}   (cwd: ${cwd})`)
@@ -429,6 +451,32 @@ enforce(
 )
 
 /* ---------------------------------------------------------------------------
+ * `mnci upgrade` resolves for real: re-applies the overlay from the
+ * persisted `mnci` nx.json block alone (no flags), restoring a hand-drifted
+ * file back to exactly what `overlay.ts` generates today — the whole point
+ * of the command, closing the gap where every overlay fix up to now only
+ * ever reached *future* `mnci new` calls, never an already-generated
+ * workspace. Then proves an explicit flag overrides the persisted value,
+ * in both the regenerated file and the re-persisted nx.json (so the next
+ * `upgrade` remembers the override too).
+ * ------------------------------------------------------------------------- */
+
+const pipelineBeforeUpgrade = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
+writeFileSync(path.join(workspace, 'azure-pipelines.yml'), `${pipelineBeforeUpgrade}\n# stale hand edit, simulating drift since 'mnci new'\n`)
+enforce('mnci upgrade runs successfully with no flags, from the persisted config alone',
+  tryRun(`node ${CLI} upgrade`, workspace), 'see log above')
+enforce('mnci upgrade restores the drifted pipeline file back to today\'s generated content',
+  readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8') === pipelineBeforeUpgrade)
+
+const upgradeWithAgentOverrideOk = tryRun(`node ${CLI} upgrade --agent windows-latest`, workspace)
+const nxJsonAfterAgentOverride = JSON.parse(readFileSync(path.join(workspace, 'nx.json'), 'utf8'))
+enforce('mnci upgrade --agent overrides the persisted agent, in both the pipeline and nx.json',
+  upgradeWithAgentOverrideOk
+  && readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8').includes('vmImage: windows-latest')
+  && nxJsonAfterAgentOverride.mnci.agent === 'windows-latest')
+run(`node ${CLI} upgrade --agent ubuntu-latest`, workspace)
+
+/* ---------------------------------------------------------------------------
  * Alternate stack: TS6 + oxlint + vitest, exercised end-to-end so the non-default
  * choices are proven on the real toolchain (not just in unit tests).
  * ------------------------------------------------------------------------- */
@@ -502,7 +550,7 @@ enforce('python: no hand-rolled files — @mnci/nx-python-pip installed as a rea
   && existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-python-pip/generators.json'))
   && existsSync(path.join(altWorkspace, 'requirements-dev.txt'))
   && !existsSync(path.join(altWorkspace, 'tools/python-build.js')))
-run('python3 -m pip install --quiet -r requirements-dev.txt', altWorkspace)
+run(`${PYTHON} -m pip install --quiet -r requirements-dev.txt`, altWorkspace)
 
 const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
 const pysharedProject = existsSync(pysharedProjectPath) ? JSON.parse(readFileSync(pysharedProjectPath, 'utf8')) : {}
@@ -575,7 +623,7 @@ writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
  * this proves it resolves at plain `pytest` time too.
  * ------------------------------------------------------------------------- */
 console.log('\n▸ global Python install: editable-installing every Python project into one shared environment')
-run('python3 -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt', altWorkspace)
+run(`${PYTHON} -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt`, altWorkspace)
 
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
@@ -592,9 +640,9 @@ enforce('python: publishable lib wheel vendors the private internal lib (pycore)
 // workspace/editable install in play) and run it — mirrors the sdk's "runs
 // standalone under node" check.
 const pysharedVenv = path.join(temporary, 'py-venv-pyshared')
-run(`python3 -m venv ${pysharedVenv}`, altWorkspace)
-run(`${pysharedVenv}/bin/pip install --quiet ${pysharedWheelPath}`, altWorkspace)
-const pysharedVenvRun = tryRunCapture(`${pysharedVenv}/bin/python3 -c "from pyshared.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
+run(`${PYTHON} -m venv "${pysharedVenv}"`, altWorkspace)
+run(`"${venvExecutable(pysharedVenv, 'pip')}" install --quiet "${pysharedWheelPath}"`, altWorkspace)
+const pysharedVenvRun = tryRunCapture(`"${venvExecutable(pysharedVenv, 'python')}" -c "from pyshared.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
 enforce('python: publishable lib installs into a clean venv and runs correctly (private lib resolves with no extra install)',
   pysharedVenvRun.ok && pysharedVenvRun.output.includes('Hello pyshared uses hello from pycore'),
   pysharedVenvRun.output)
@@ -618,9 +666,9 @@ const pysvcMetadata = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath).
 enforce('python: app wheel declares the real external dependency (tomli) — not silently dropped',
   /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcMetadata))
 const pysvcVenv = path.join(temporary, 'py-venv-pysvc')
-run(`python3 -m venv ${pysvcVenv}`, altWorkspace)
-run(`${pysvcVenv}/bin/pip install --quiet ${pysvcWheelPath}`, altWorkspace)
-const pysvcVenvRun = tryRunCapture(`${pysvcVenv}/bin/python3 -c "from pysvc.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
+run(`${PYTHON} -m venv "${pysvcVenv}"`, altWorkspace)
+run(`"${venvExecutable(pysvcVenv, 'pip')}" install --quiet "${pysvcWheelPath}"`, altWorkspace)
+const pysvcVenvRun = tryRunCapture(`"${venvExecutable(pysvcVenv, 'python')}" -c "from pysvc.greeting import build_greeting; print(build_greeting())"`, altWorkspace)
 enforce('python: app installs into a clean venv and runs correctly, resolving the real external dependency from PyPI',
   pysvcVenvRun.ok && pysvcVenvRun.output.includes('Hello pysvc uses tomli '),
   pysvcVenvRun.output)
@@ -661,7 +709,7 @@ enforce('python: nx release versions the publishable python lib from conventiona
 // needed, unlike the plain nx:run-commands version this plugin replaced.
 const altReleasePublishDryRun = tryRunCapture('npx nx release publish --dry-run --verbose', altWorkspace)
 enforce('python: nx release publish --dry-run previews the twine upload via the plugin\'s typed dryRun executor option',
-  altReleasePublishDryRun.ok && altReleasePublishDryRun.output.includes('[dry-run] would run: python3 -m twine upload'),
+  altReleasePublishDryRun.ok && altReleasePublishDryRun.output.includes(`[dry-run] would run: ${PYTHON} -m twine upload`),
   altReleasePublishDryRun.output)
 
 /* ---------------------------------------------------------------------------
