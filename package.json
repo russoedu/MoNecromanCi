@@ -66,6 +66,26 @@
     "packages/*"
   ],
   "dependencies": {},
+  "overrides": {
+    "nx": {
+      "axios": "^1.18.1",
+      "brace-expansion": "^5.0.8"
+    },
+    "@verdaccio/config": {
+      "js-yaml": "^4.3.0"
+    },
+    "@verdaccio/middleware": {
+      "express": "^4.22.2"
+    },
+    "verdaccio-audit": {
+      "express": "^4.22.2"
+    },
+    "@cypress/request": {
+      "qs": "^6.15.3",
+      "uuid": "^11.1.1"
+    },
+    "esbuild": "^0.28.1"
+  },
   "nx": {
     "includedScripts": [],
     "targets": {
