@@ -78,7 +78,7 @@ jobs:
         name: Pack all apps (one zip per app -> dist/drop)
         if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
         with:
           name: drop
