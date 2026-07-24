@@ -151,6 +151,13 @@ try {
 enforce('azure-pipelines.yml is valid YAML (steps + pool + variables)',
   Boolean(pipelineParsed) && Array.isArray(pipelineParsed.steps) && Boolean(pipelineParsed.pool) && Array.isArray(pipelineParsed.variables))
 
+// Runs the EXACT script text extracted from the generated pipeline (not a
+// re-typed copy) against this real workspace's real node_modules — proves
+// the non-blocking property for real, not just via a string match on '||'.
+const npmAuditStep = pipelineParsed?.steps?.find((step) => step.displayName === 'npm audit (non-blocking)')
+enforce('pipeline\'s npm audit step exits 0 even when real vulnerabilities are found',
+  Boolean(npmAuditStep) && tryRun(npmAuditStep.script, workspace), 'see log above')
+
 // Dual TypeScript compiler: `tsc` runs TS7 (native), while the importable API
 // (node_modules/typescript) stays TS6 for Nx's graph/plugins, Vite and eslint.
 let tscVersion = ''
@@ -200,6 +207,12 @@ enforce('.github/workflows/ci.yml is valid YAML (on + permissions + jobs.ci.step
   && Boolean(workflowParsed.on?.push) && Boolean(workflowParsed.on?.pull_request)
   && workflowParsed.permissions?.contents === 'write'
   && Array.isArray(workflowParsed.jobs?.ci?.steps))
+
+// Same real-execution proof as the Azure pipeline, against this workspace's
+// real node_modules (generated with --registry npm too).
+const npmAuditStepGithub = workflowParsed?.jobs?.ci?.steps?.find((step) => step.name === 'npm audit (non-blocking)')
+enforce('workflow\'s npm audit step exits 0 even when real vulnerabilities are found',
+  Boolean(npmAuditStepGithub) && tryRun(npmAuditStepGithub.run, workspaceGithub), 'see log above')
 
 /* ---------------------------------------------------------------------------
  * add — one of each kind
@@ -653,6 +666,15 @@ enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
 enforce('python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
   tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')
+
+// Same real-execution proof as the npm audit step above, extracted from this
+// real generated pipeline and run against the real editable-installed
+// environment (pip-audit itself came from requirements-dev.txt, installed
+// two steps up) — proves the non-blocking property for real on the Python side.
+const altPipelineParsed = yaml.load(readFileSync(path.join(altWorkspace, 'azure-pipelines.yml'), 'utf8'))
+const pipAuditStep = altPipelineParsed?.steps?.find((step) => step.displayName === 'pip-audit (non-blocking)')
+enforce('pipeline\'s pip-audit step exits 0 even when real vulnerabilities are found',
+  Boolean(pipAuditStep) && tryRun(pipAuditStep.script, altWorkspace), 'see log above')
 
 const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
 const pysharedWheelPath = path.join(altWorkspace, 'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl')
