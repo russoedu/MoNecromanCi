@@ -238,7 +238,7 @@ describe('azurePipelinesYaml', () => {
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    const toolchainIndex = pipeline.indexOf('Install Python dependencies (ruff, pytest, build, twine)')
+    const toolchainIndex = pipeline.indexOf('Install Python dependencies (ruff, pytest, build, twine, pip-audit)')
     const workspaceInstallIndex = pipeline.indexOf('Install Python project dependencies (editable, workspace-wide)')
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
 
@@ -252,6 +252,24 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain(`globSync('libs/*/pyproject.toml')`)
     expect(pipeline).toContain(`globSync('apps/*/requirements.txt')`)
     expect(pipeline).toContain(`'-m','pip','install','--quiet'`)
+  })
+
+  it('runs npm audit right after npm ci, and pip-audit right after the workspace-wide Python install, both non-blocking', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const npmInstallIndex = pipeline.indexOf('npm ci')
+    const npmAuditIndex = pipeline.indexOf('npm audit --audit-level=high')
+    const pythonWorkspaceInstallIndex = pipeline.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const pipAuditIndex = pipeline.indexOf(`'-m','pip_audit'`)
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+
+    expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
+    expect(pipAuditIndex).toBeGreaterThan(pythonWorkspaceInstallIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pipAuditIndex)
+    // Non-blocking: neither step's failure can fail the pipeline.
+    expect(pipeline).toContain('npm audit --audit-level=high || echo')
+    expect(pipeline).toContain('displayName: npm audit (non-blocking)')
+    expect(pipeline).toContain('displayName: pip-audit (non-blocking)')
   })
 
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
@@ -373,7 +391,7 @@ describe('githubActionsYaml', () => {
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
-    const toolchainIndex = workflow.indexOf('Install Python dependencies (ruff, pytest, build, twine)')
+    const toolchainIndex = workflow.indexOf('Install Python dependencies (ruff, pytest, build, twine, pip-audit)')
     const workspaceInstallIndex = workflow.indexOf('Install Python project dependencies (editable, workspace-wide)')
     const syncCheckIndex = workflow.indexOf('nx sync:check')
 
@@ -384,6 +402,23 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain(`globSync('libs/*/pyproject.toml')`)
     expect(workflow).toContain(`globSync('apps/*/requirements.txt')`)
     expect(workflow).toContain(`'-m','pip','install','--quiet'`)
+  })
+
+  it('runs npm audit right after npm ci, and pip-audit right after the workspace-wide Python install, both non-blocking', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const npmInstallIndex = workflow.indexOf('npm ci')
+    const npmAuditIndex = workflow.indexOf('npm audit --audit-level=high')
+    const pythonWorkspaceInstallIndex = workflow.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const pipAuditIndex = workflow.indexOf(`'-m','pip_audit'`)
+    const syncCheckIndex = workflow.indexOf('nx sync:check')
+
+    expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
+    expect(pipAuditIndex).toBeGreaterThan(pythonWorkspaceInstallIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pipAuditIndex)
+    expect(workflow).toContain('npm audit --audit-level=high || echo')
+    expect(workflow).toContain('name: npm audit (non-blocking)')
+    expect(workflow).toContain('name: pip-audit (non-blocking)')
   })
 
   it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {

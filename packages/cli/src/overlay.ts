@@ -575,6 +575,59 @@ const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requir
 const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py,args,{stdio:'inherit'}).status ?? 1)"`
 
 /**
+ * The portable `node -e` one-liner that runs `pip-audit` against the shared
+ * Python environment, non-blocking (warn-only).
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
+ * Runs after {@link PYTHON_WORKSPACE_INSTALL_GUARD}, so the environment it
+ * scans already has every project's real dependencies installed (not just
+ * the fixed toolchain) — a bare `pip-audit` with no arguments audits
+ * whatever is currently installed, which by this point in the pipeline is
+ * the workspace's actual dependency set. Skips cleanly when the workspace
+ * has no Python projects (same `requirements-dev.txt` check every other
+ * Python guard here uses).
+ *
+ * **Deliberately non-blocking**: `pip-audit`'s own exit code is discarded
+ * (`process.exit(0)` always) rather than failing the build — the sibling
+ * `npm audit` step ({@link NPM_AUDIT_STEP}) makes the identical choice, and
+ * for the identical reason: an upstream-only advisory with no
+ * user-actionable fix (a transitive dependency of a pinned tool, not
+ * patchable by editing this workspace's own manifest) would otherwise turn
+ * every build red for a problem nobody here can fix. See
+ * {@link NPM_AUDIT_STEP}'s remarks for the concrete example this reasoning
+ * is drawn from.
+ */
+const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"`
+
+/**
+ * The `npm audit` step run right after `npm ci`, non-blocking (warn-only).
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
+ * — a single-line shell command, not a `node -e` guard, since it needs no
+ * existence check (`package-lock.json` always exists). `||` is a standard
+ * conditional-execution operator in both `cmd.exe` and POSIX `sh` (verified
+ * empirically elsewhere in this file, e.g. `git init -q -b main && git add -A`
+ * in the real e2e suite), so this one line runs unchanged on every agent OS.
+ *
+ * **Deliberately non-blocking.** Verified empirically (a real `npm audit` on
+ * this monorepo's own dependency tree) that every flagged vulnerability
+ * traced back to `nx`'s and `verdaccio`'s own bundled transitive
+ * dependencies, both already at their latest published release — nothing an
+ * edit to *this* workspace's manifest could fix, only a future upstream
+ * release. A hard-failing audit step would have turned CI red for a problem
+ * with no user-actionable fix, for as long as upstream took to patch it. The
+ * real, current fix for a genuinely actionable finding (targeted
+ * `package.json` `overrides` on just the vulnerable transitive package, not
+ * a blanket `--force`) is exactly what this monorepo's own `fix(deps)`
+ * commit did — a manual, reviewed response, not something CI should attempt
+ * automatically. So this step's job is visibility (a clearly labelled
+ * section in every CI log), not enforcement.
+ */
+const NPM_AUDIT_STEP = 'npm audit --audit-level=high || echo npm audit found vulnerabilities, see log above - non-blocking, run npm audit locally to inspect'
+
+/**
  * The portable `node -e` one-liner that packs every app into
  * `dist/drop/<type>-<name>.zip` via each app's own `package` target.
  *
@@ -783,11 +836,18 @@ steps:
     env:
       ${npmAuthName}: ${npmAuthValue}
 
-  # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
-  # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
-  # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
+  # Non-blocking: surfaces known-vulnerable dependencies in every CI log
+  # without failing the build over an upstream-only advisory nobody here can
+  # fix (see NPM_AUDIT_STEP's remarks in overlay.ts for why).
+  - script: ${NPM_AUDIT_STEP}
+    displayName: npm audit (non-blocking)
+
+  # Installs the fixed Python toolchain (ruff, pytest, build, twine, pip-audit)
+  # — written by 'mnci add' to requirements-dev.txt on the first Python
+  # project. Plain pip, no uv/Poetry: portable guard skips cleanly on a
+  # workspace with none.
   - script: ${PYTHON_INSTALL_GUARD}
-    displayName: Install Python dependencies (ruff, pytest, build, twine)
+    displayName: Install Python dependencies (ruff, pytest, build, twine, pip-audit)
 
   # Editable-installs every Python project into one shared environment, the
   # pip-world counterpart of 'npm install' hoisting every workspace package
@@ -796,6 +856,12 @@ steps:
   # lint/test time too. Portable guard skips cleanly on a workspace with none.
   - script: ${PYTHON_WORKSPACE_INSTALL_GUARD}
     displayName: Install Python project dependencies (editable, workspace-wide)
+
+  # Non-blocking, same reasoning as the npm audit step above. Runs after the
+  # workspace-wide install so it scans the workspace's actual dependency set,
+  # not just the fixed toolchain.
+  - script: ${PIP_AUDIT_GUARD}
+    displayName: pip-audit (non-blocking)
 
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
@@ -865,9 +931,10 @@ steps:
  *
  * @remarks
  * Same pipeline, same shared guard scripts ({@link PYTHON_INSTALL_GUARD},
- * {@link PYTHON_WORKSPACE_INSTALL_GUARD}, {@link PACK_APPS_GUARD},
- * {@link releaseGuard}) — only the provider syntax differs, so the two YAML
- * files can never drift on what CI actually does.
+ * {@link PYTHON_WORKSPACE_INSTALL_GUARD}, {@link PIP_AUDIT_GUARD},
+ * {@link NPM_AUDIT_STEP}, {@link PACK_APPS_GUARD}, {@link releaseGuard}) —
+ * only the provider syntax differs, so the two YAML files can never drift on
+ * what CI actually does.
  * Two steps from the Azure version are dropped, both for reasons already
  * documented there:
  * - **Attach HEAD to a branch**: `actions/checkout` (unlike Azure's
@@ -943,11 +1010,18 @@ jobs:
         env:
           ${npmAuthName}: ${npmAuthValue}
 
-      # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
-      # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
-      # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
+      # Non-blocking: surfaces known-vulnerable dependencies in every CI log
+      # without failing the build over an upstream-only advisory nobody here
+      # can fix (see NPM_AUDIT_STEP's remarks in overlay.ts for why).
+      - run: ${NPM_AUDIT_STEP}
+        name: npm audit (non-blocking)
+
+      # Installs the fixed Python toolchain (ruff, pytest, build, twine,
+      # pip-audit) — written by 'mnci add' to requirements-dev.txt on the
+      # first Python project. Plain pip, no uv/Poetry: portable guard skips
+      # cleanly on a workspace with none.
       - run: ${PYTHON_INSTALL_GUARD}
-        name: Install Python dependencies (ruff, pytest, build, twine)
+        name: Install Python dependencies (ruff, pytest, build, twine, pip-audit)
 
       # Editable-installs every Python project into one shared environment, the
       # pip-world counterpart of 'npm install' hoisting every workspace package
@@ -956,6 +1030,12 @@ jobs:
       # lint/test time too. Portable guard skips cleanly on a workspace with none.
       - run: ${PYTHON_WORKSPACE_INSTALL_GUARD}
         name: Install Python project dependencies (editable, workspace-wide)
+
+      # Non-blocking, same reasoning as the npm audit step above. Runs after
+      # the workspace-wide install so it scans the workspace's actual
+      # dependency set, not just the fixed toolchain.
+      - run: ${PIP_AUDIT_GUARD}
+        name: pip-audit (non-blocking)
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed

@@ -65,7 +65,9 @@ function ensurePythonPipPlugin (workspaceRoot: string): void {
  * @remarks
  * Ruff and pytest are the industry standard; `build` and `twine` are the
  * standard PyPA build/publish frontends that `@mnci/nx-python-pip`'s
- * executors shell out to. No lock file — plain pip has none, matching the
+ * executors shell out to; `pip-audit` is the PyPA vulnerability scanner the
+ * generated CI's audit step (`overlay.ts`'s `PIP_AUDIT_GUARD`) runs against
+ * the shared environment. No lock file — plain pip has none, matching the
  * company's standard toolchain (no uv, no Poetry). mnci writes this file
  * (not the plugin): the plugin is a generic Nx plugin with no opinion on how
  * its own runtime dependencies get onto a machine.
@@ -74,6 +76,7 @@ export const PYTHON_REQUIREMENTS_DEV = `build
 twine
 ruff
 pytest
+pip-audit
 `
 
 /**
