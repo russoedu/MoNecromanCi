@@ -73,7 +73,8 @@ each a single cross-platform command:
    accidental public publishes impossible), `commitlint.config.mjs`, a husky
    `commit-msg` hook, the chosen CI provider's pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
-   `azure`), and the curated root scripts.
+   `azure`; `github`/`both` also gets `.github/dependabot.yml` — weekly
+   dependency-update PRs), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 
@@ -307,6 +308,21 @@ explicitly *decodes* the same `PAT`
 trap to get backwards: if you ever wire a third registry protocol, check
 whether it wants the pre-encoded or the raw form before assuming either
 convention.
+
+### Dependency updates (`.github/dependabot.yml`, `github`/`both` only)
+
+A `github`/`both` workspace also gets `.github/dependabot.yml`: weekly update
+PRs for `npm` (the root lockfile — covers every `packages/*` project),
+`github-actions` (the generated workflow's own actions), and `pip` via
+**glob** `directories` (`/apps/*`, `/python-packages/*`, `/libs/*`) rather
+than one entry per project — Python projects don't exist yet at `mnci new`
+time (`add python-*` writes them later), and a glob matching nothing yet is
+not an error, so it starts covering Python dependencies automatically the
+moment the first one is added, no `mnci upgrade` needed. Dependabot is
+GitHub-native (no app/extension install, unlike Renovate), so it's written
+only for `github`/`both` — an `azure`-only workspace gets no
+`.github/dependabot.yml`, matching every other GitHub-only file this CLI
+writes.
 
 ## Dependency & risk notes
 

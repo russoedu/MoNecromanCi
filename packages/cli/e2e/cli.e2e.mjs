@@ -201,6 +201,19 @@ enforce('.github/workflows/ci.yml is valid YAML (on + permissions + jobs.ci.step
   && workflowParsed.permissions?.contents === 'write'
   && Array.isArray(workflowParsed.jobs?.ci?.steps))
 
+enforce('.github/dependabot.yml written alongside the workflow (never for azure-only workspaces)',
+  existsSync(path.join(workspaceGithub, '.github/dependabot.yml'))
+  && !existsSync(path.join(workspace, '.github/dependabot.yml')))
+const dependabotYaml = readFileSync(path.join(workspaceGithub, '.github/dependabot.yml'), 'utf8')
+let dependabotParsed = null
+try {
+  dependabotParsed = yaml.load(dependabotYaml)
+} catch { /* leaves dependabotParsed null → the check below fails with the parse error surfaced above */ }
+enforce('.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip ecosystems',
+  Boolean(dependabotParsed)
+  && dependabotParsed.updates?.map((update) => update['package-ecosystem']).join(',') === 'npm,github-actions,pip'
+  && Array.isArray(dependabotParsed.updates?.[2]?.directories))
+
 /* ---------------------------------------------------------------------------
  * add — one of each kind
  * ------------------------------------------------------------------------- */
