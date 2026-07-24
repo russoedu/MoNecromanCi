@@ -214,6 +214,19 @@ const npmAuditStepGithub = workflowParsed?.jobs?.ci?.steps?.find((step) => step.
 enforce('workflow\'s npm audit step exits 0 even when real vulnerabilities are found',
   Boolean(npmAuditStepGithub) && tryRun(npmAuditStepGithub.run, workspaceGithub), 'see log above')
 
+enforce('.github/dependabot.yml written alongside the workflow (never for azure-only workspaces)',
+  existsSync(path.join(workspaceGithub, '.github/dependabot.yml'))
+  && !existsSync(path.join(workspace, '.github/dependabot.yml')))
+const dependabotYaml = readFileSync(path.join(workspaceGithub, '.github/dependabot.yml'), 'utf8')
+let dependabotParsed = null
+try {
+  dependabotParsed = yaml.load(dependabotYaml)
+} catch { /* leaves dependabotParsed null → the check below fails with the parse error surfaced above */ }
+enforce('.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip ecosystems',
+  Boolean(dependabotParsed)
+  && dependabotParsed.updates?.map((update) => update['package-ecosystem']).join(',') === 'npm,github-actions,pip'
+  && Array.isArray(dependabotParsed.updates?.[2]?.directories))
+
 /* ---------------------------------------------------------------------------
  * add — one of each kind
  * ------------------------------------------------------------------------- */
