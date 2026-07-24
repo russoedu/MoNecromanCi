@@ -251,9 +251,24 @@ self-hosted `pool.name`; on GitHub the same value is passed straight through
 as `runs-on:` (GitHub's own hosted runner labels already match the common
 Azure vmImage names, and a self-hosted label is just as valid there).
 
-Every run (PR and main) first does `nx sync:check` (fails fast and clearly if
-the workspace wasn't synced+committed locally — see above), then one
-`nx run-many -t lint,test,build`. Pushes to `main` then:
+Every run (PR and main) installs dependencies, then runs `npm audit`
+(non-blocking) and, once the Python toolchain is installed, `pip-audit`
+(also non-blocking) — visibility, not enforcement: verified empirically that
+a real `npm audit` on this monorepo's own tree flagged nothing but
+already-latest upstream packages (`nx`, `verdaccio`) bundling their own not-
+yet-patched transitive dependencies, nothing an edit to *this* workspace's
+manifest could fix. A hard-failing audit step would turn CI red for a
+problem with no user-actionable fix, for as long as upstream took to patch
+it — so both steps always exit 0 regardless of findings, surfacing results
+as a clearly labelled section in every CI log instead. The actionable
+response to a real finding (a targeted `overrides` entry on just the
+vulnerable transitive package) is exactly what this monorepo's own
+`fix(deps)` commit did — a manual, reviewed response, not something CI
+attempts automatically.
+
+Then `nx sync:check` (fails fast and clearly if the workspace wasn't
+synced+committed locally — see above), then one `nx run-many -t
+lint,test,build`. Pushes to `main` then:
 
 - **Pack all apps** — each app's `package` target zips its build output into
   `dist/drop/<type>-<name>.zip` (e.g. `node-function-app-api.zip`,
@@ -272,8 +287,8 @@ the workspace wasn't synced+committed locally — see above), then one
   `requirements-dev.txt`, no uv, no Poetry). Reuses the base64 `PAT`, decoded to
   the raw token twine needs for the Python publish. Skipped cleanly when there
   is nothing to release. A guarded step installs the fixed Python toolchain
-  (`ruff`/`pytest`/`build`/`twine`) before any Python target runs, skipped
-  cleanly on a workspace with no Python projects.
+  (`ruff`/`pytest`/`build`/`twine`/`pip-audit`) before any Python target runs,
+  skipped cleanly on a workspace with no Python projects.
 
 **npm auth** is the base64 `PAT`, read the same way on both providers but from
 a different place: on Azure Pipelines, a **variable group**
@@ -354,9 +369,9 @@ than a surprise:
   standard this migration was for. A published wheel's `Requires-Dist` mirrors
   whatever specifier the `pyproject.toml` declares (e.g. `tomli>=2.0.0`)
   verbatim, not a resolved/pinned version the way `uv.lock` would have
-  produced. `requirements-dev.txt` (the fixed `ruff`/`pytest`/`build`/`twine`
-  toolchain) is unpinned for the same reason — pin it by hand if the
-  workspace needs reproducible CI tool versions.
+  produced. `requirements-dev.txt` (the fixed `ruff`/`pytest`/`build`/`twine`/
+  `pip-audit` toolchain) is unpinned for the same reason — pin it by hand if
+  the workspace needs reproducible CI tool versions.
 - venv management is left to the user (same spirit as never managing
   `node_modules` beyond `npm install`): `mnci` neither creates nor activates
   one. CI installs `requirements-dev.txt`, then editable-installs every
@@ -459,8 +474,9 @@ other npm devDependency (`npm install --save-dev @mnci/nx-python-pip` —
 no `nx.json` `plugins` registration needed, since its generators/executors
 are explicit, not inference-based) and writes exactly one file itself:
 `requirements-dev.txt` at the workspace root (the fixed `ruff`/`pytest`/
-`build`/`twine` toolchain — install with `<python> -m pip install -r
-requirements-dev.txt`), since the plugin is a generic Nx plugin with no
+`build`/`twine`/`pip-audit` toolchain — install with `<python> -m pip
+install -r requirements-dev.txt`), since the plugin is a generic Nx plugin
+with no
 opinion on how its own runtime dependencies land on a machine. There is **no
 stack question** — Ruff (lint + format) and pytest are the standard, so they
 are always used, invoked as `<python> -m <tool>` everywhere (not a
