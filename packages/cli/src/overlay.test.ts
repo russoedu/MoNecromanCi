@@ -559,6 +559,30 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, '.github/workflows/ci.yml'))).toBe(true)
   })
 
+  it('never writes .github/dependabot.yml when ci: "azure" (the default) — Dependabot is GitHub-native', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+
+    expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(false)
+  })
+
+  it('writes .github/dependabot.yml alongside the workflow for ci: "github"', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+
+    const dependabot = readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+    const parsed = yaml.load(dependabot) as { updates: Array<{ 'package-ecosystem': string, directory?: string, directories?: string[] }> }
+    expect(parsed.updates.map((update) => update['package-ecosystem'])).toEqual(['npm', 'github-actions', 'pip'])
+    // pip covers wherever a Python project might later land (add python-*),
+    // via directories that currently match nothing — not an error for Dependabot.
+    expect(parsed.updates.find((update) => update['package-ecosystem'] === 'pip')?.directories)
+      .toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
+  })
+
+  it('writes .github/dependabot.yml for ci: "both" too', () => {
+    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+
+    expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(true)
+  })
+
   it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
     applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
