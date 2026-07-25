@@ -322,21 +322,29 @@ export const ROOT_SCRIPTS = {
  * typed `.mts` config, and the whole stack is committed to typed configs.
  * ESLint workspaces keep Nx's own formatting story, so they get no `format`.
  *
+ * Every stack also gets `python:install`, chaining the same two guards CI runs
+ * ({@link PYTHON_INSTALL_GUARD} then {@link PYTHON_WORKSPACE_INSTALL_GUARD}) —
+ * the fixed dev toolchain (ruff/pytest/build/twine) plus an editable install of
+ * every workspace Python project, so a fresh clone's `pip install` step is one
+ * command instead of "read the CI pipeline to find the right invocation". Both
+ * guards already no-op cleanly on a workspace with no Python projects, so it is
+ * safe to stamp unconditionally rather than gating on whether one exists yet.
+ *
  * @param stack - The chosen stack.
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
 export function rootScripts (stack: StackConfig): Record<string, string> {
-  if (stack.linter === 'oxlint') {
-    return {
-      ...ROOT_SCRIPTS,
-      lint:           'oxlint',
-      format:         'oxfmt -c oxfmt.config.mts .',
-      'format:check': 'oxfmt -c oxfmt.config.mts --check .',
-    }
-  }
-  return { ...ROOT_SCRIPTS }
+  const scripts = stack.linter === 'oxlint'
+    ? {
+        ...ROOT_SCRIPTS,
+        lint:           'oxlint',
+        format:         'oxfmt -c oxfmt.config.mts .',
+        'format:check': 'oxfmt -c oxfmt.config.mts --check .',
+      }
+    : { ...ROOT_SCRIPTS }
+  return { ...scripts, 'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}` }
 }
 
 /**

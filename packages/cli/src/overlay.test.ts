@@ -527,6 +527,27 @@ describe('rootScripts', () => {
     expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
     expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
   })
+
+  it('adds python:install chaining the same two guards CI runs (for local-dev convenience)', () => {
+    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+
+    // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
+    expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
+    // ... then the workspace-wide editable install of every Python project.
+    expect(scripts['python:install']).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(scripts['python:install']).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(scripts['python:install']).toContain(`globSync('libs/*/pyproject.toml')`)
+    // Chained (not parallel), toolchain install first.
+    const toolchainIndex = scripts['python:install'].indexOf('-m pip install -r requirements-dev.txt')
+    const workspaceIndex = scripts['python:install'].indexOf(`globSync('apps/*/pyproject.toml')`)
+    expect(toolchainIndex).toBeGreaterThan(-1)
+    expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
+  })
+
+  it('stamps python:install regardless of linter (both guards already no-op on a workspace with no Python projects)', () => {
+    expect(rootScripts({ linter: 'eslint', testRunner: 'jest' })['python:install']).toBeDefined()
+    expect(rootScripts({ linter: 'oxlint', testRunner: 'vitest' })['python:install']).toBeDefined()
+  })
 })
 
 describe('applyOverlay', () => {
@@ -716,7 +737,8 @@ describe('applyOverlay', () => {
     applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
-    expect(manifest.scripts).toEqual({
+    const { 'python:install': pythonInstall, ...rest } = manifest.scripts
+    expect(rest).toEqual({
       build:             'nx run-many -t build',
       lint:              'nx run-many -t lint',
       test:              'nx run-many -t test',
@@ -725,6 +747,10 @@ describe('applyOverlay', () => {
       'release:preview': 'nx release --dry-run',
       prepare:           'husky',
     })
+    // The local-dev counterpart of the CI Python-install guards — see the
+    // dedicated `python:install` describe block below for the full assertions.
+    expect(pythonInstall).toContain('-m pip install -r requirements-dev.txt')
+    expect(pythonInstall).toContain(`globSync('apps/*/pyproject.toml')`)
   })
 
   it('keeps any scripts the preset generated that the curated set does not own', () => {

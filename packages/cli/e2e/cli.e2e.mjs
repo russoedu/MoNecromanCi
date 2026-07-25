@@ -129,6 +129,14 @@ enforce('curated root scripts stamped (build/affected/prepare)',
   rootManifest.scripts?.build === 'nx run-many -t build'
   && rootManifest.scripts?.affected === 'nx affected -t lint,test,build'
   && rootManifest.scripts?.prepare === 'husky')
+// Real-execution proof, on a workspace with zero Python projects, that
+// `python:install` no-ops cleanly rather than erroring on a missing
+// requirements-dev.txt/pyproject.toml — the counterpart of the alt
+// workspace's real-install proof further down (item 10).
+const pythonInstallSkipRun = tryRunCapture('npm run python:install', workspace)
+enforce('python:install no-ops cleanly on a workspace with no Python projects yet',
+  pythonInstallSkipRun.ok && pythonInstallSkipRun.output.includes('No Python projects - skipping.'),
+  pythonInstallSkipRun.output)
 
 const pipelineYaml = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
 enforce('pipeline is cross-platform: no multi-line shell blocks, no bash-isms', !pipelineYaml.includes('script: |') && !pipelineYaml.includes('shopt'))
@@ -690,6 +698,19 @@ writeFileSync(path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
  * ------------------------------------------------------------------------- */
 console.log('\n▸ global Python install: editable-installing every Python project into one shared environment')
 run(`${PYTHON} -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt`, altWorkspace)
+
+// Real-execution proof for the root `python:install` npm script (item 10):
+// the exact generated script text — chaining the fixed-toolchain guard and
+// the workspace-wide editable-install guard with `&&` — run for real against
+// this same workspace, not just asserted as a string. Confirms the `&&`
+// composition is valid shell on this OS and idempotent against the manual
+// install just above (both guards no-op/skip nothing here since Python
+// projects already exist).
+const altRootManifestForPythonInstall = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+enforce('root manifest declares a python:install script chaining both CI Python-install guards',
+  Boolean(altRootManifestForPythonInstall.scripts?.['python:install']))
+enforce('npm run python:install succeeds for real (toolchain + workspace editable install, chained)',
+  tryRun('npm run python:install', altWorkspace), 'see log above')
 
 enforce('python: ruff lint runs green across the python projects',
   tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace), 'see log above')

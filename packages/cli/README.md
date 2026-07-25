@@ -59,6 +59,7 @@ each a single cross-platform command:
 | `npm run affected`    | `nx affected -t lint,test,build` (vs `main`) |
 | `npm run graph`       | `nx graph`                      |
 | `npm run release:preview` | `nx release --dry-run`      |
+| `npm run python:install` | fixed Python toolchain (ruff/pytest/build/twine) + editable-install every Python project — the same two guards CI runs, for local dev |
 | `prepare`             | `husky` (commit-msg lint hook)  |
 
 ## What `new` actually does
@@ -395,9 +396,10 @@ than a surprise:
   Python project workspace-wide (see "Workspace-wide install" above),
   straight into whatever `<python>` resolves to on the agent (`python3` on
   POSIX, `python` on Windows — see above); locally, create your own venv
-  (`python3 -m venv` / `python -m venv` on Windows) and reproduce the same
-  two installs by hand (`pip install -r requirements-dev.txt`, then
-  `pip install -e <dir>` for each Python project).
+  (`python3 -m venv` / `python -m venv` on Windows) and run
+  `npm run python:install` to reproduce the same two installs — the root
+  script chains the identical two guards CI runs (see the scripts table
+  above).
 
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
