@@ -332,19 +332,66 @@ package-lock.json
 `
 
 /**
- * The VS Code extensions.json written into generated workspaces.
+ * VS Code workspace file template for generated monorepos.
  *
  * @remarks
- * Recommends ESLint and Prettier extensions for consistent code quality and formatting.
- * These are not auto-installed; VS Code prompts when opening the workspace.
+ * Creates a single .code-workspace file that configures the entire monorepo:
+ * folder structure, recommended extensions (ESLint, Prettier), and workspace settings.
+ * Users open this file in VS Code (`File > Open Workspace from File`).
+ *
+ * @param workspaceName - The workspace name.
+ * @returns The JSON string for a .code-workspace file.
+ * @throws Never - performs pure string formatting with no I/O.
+ * @typeParam None - this function has no generic type parameters.
  */
-export const VSCODE_EXTENSIONS = `{
-  "recommendations": [
-    "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode"
-  ]
+export function vscodeWorkspace(workspaceName: string): string {
+  return JSON.stringify(
+    {
+      folders: [
+        { path: '.', name: workspaceName },
+        { path: 'packages/cli', name: '@mnci/cli' },
+        { path: 'packages/nx-python-pip', name: '@mnci/nx-python-pip' },
+        { path: 'libs/monecromanci-v2', name: '@mnci/monecromanci' },
+      ],
+      settings: {
+        'eslint.validate': [
+          'javascript',
+          'javascriptreact',
+          'typescript',
+          'typescriptreact',
+          'json',
+          'jsonc',
+          'markdown',
+          'yaml',
+        ],
+        'editor.codeActionsOnSave': {
+          'source.fixAll.eslint': 'explicit',
+        },
+        'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        'editor.formatOnSave': true,
+        '[json]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+        '[jsonc]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+        '[yaml]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+      },
+      extensions: {
+        recommendations: [
+          'dbaeumer.vscode-eslint',
+          'esbenp.prettier-vscode',
+          'nrwl.angular-console',
+          'firsttris.vscode-jest-runner',
+        ],
+      },
+    },
+    null,
+    2
+  )
 }
-`
 
 /**
  * The curated npm scripts stamped into a generated workspace's root manifest.
@@ -1160,6 +1207,8 @@ updates:
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface OverlayOptions {
+  /** The monorepo workspace name. */
+  workspaceName: string
   /** The npm scope for publishable packages (e.g. `@demo`). */
   scope: string
   /** Where publishable packages are released to. */
@@ -1242,8 +1291,8 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // following JavaScript Standard Style (no semicolons, 2-space indents, single quotes).
   writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
-  // Recommend ESLint and Prettier extensions in VS Code.
-  writeFileEnsured(join(workspaceRoot, '.vscode/extensions.json'), VSCODE_EXTENSIONS)
+  // VS Code workspace file with folder structure, extensions, and settings.
+  writeFileEnsured(join(workspaceRoot, `${options.workspaceName}.code-workspace`), vscodeWorkspace(options.workspaceName))
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)

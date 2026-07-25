@@ -164,7 +164,7 @@ export async function runAdd(
           `libs/${resolvedName}`,
           '--bundler=tsc',
           `--unitTestRunner=${stack.testRunner}`,
-          `--linter=${stack.linter}`,
+          '--linter=eslint',
           '--no-interactive',
         ],
         workspaceRoot

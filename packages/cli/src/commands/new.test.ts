@@ -57,6 +57,7 @@ describe('runNew', () => {
       '/somewhere'
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(join('/somewhere', 'demo'), {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -205,6 +206,7 @@ describe('runNew', () => {
     })
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), {
+      workspaceName: 'demo',
       scope: '@acme',
       registry: {
         kind: 'azure-artifacts',

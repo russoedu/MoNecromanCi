@@ -216,8 +216,8 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
 
   const workspaceRoot = join(process.cwd(), workspaceName)
 
-  logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
-  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, ci, stack })
+  logger.step('Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)')
+  applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
 
   // Install the commit toolchain (ESLint and Prettier are set up by the Nx
   // generators on first `add`). One install.

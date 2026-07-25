@@ -41,8 +41,6 @@ export interface UpgradeOptions {
   variableGroup?: string
   /** CI provider: `azure` | `github` | `both`. */
   ci?: CiProvider
-  /** Linter (`eslint` or `oxlint`). */
-  linter?: StackConfig['linter']
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
 }
@@ -126,15 +124,14 @@ function resolveOverlayOptions(
   // Azure-only concept; a github-only workspace never needed one, so a
   // missing persisted value is not an error the way scope/ci/agent are.
   const variableGroup = options.variableGroup ?? persisted.variableGroup ?? 'Build'
-  const linter = options.linter ?? persisted.stack?.linter
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
-  if (!linter || !testRunner) {
+  if (!testRunner) {
     throw new Error(
-      "No stack (linter/test runner) found in nx.json's persisted config. Pass --linter and --test-runner explicitly."
+      "No testRunner found in nx.json's persisted config. Pass --test-runner explicitly."
     )
   }
 
-  return { scope, registry, agent, variableGroup, ci, stack: { linter, testRunner } }
+  return { scope, registry, agent, variableGroup, ci, stack: { testRunner } }
 }
 
 /**
