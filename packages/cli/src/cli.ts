@@ -86,6 +86,7 @@ export function buildProgram (): Command {
     .description('Add a project by delegating to the matching Nx plugin generator')
     .option('--scope <scope>', 'npm scope for a publishable lib (defaults to @<workspace name>)')
     .option('--framework <framework>', 'node-app only: express | fastify | koa | nest | none (default: none)')
+    .option('--lib <name>', 'python-vendor only: the internal Python library (libs/<name>) to vendor into <name>')
     .action(async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
       await runAdd(kind, name, options)
     })

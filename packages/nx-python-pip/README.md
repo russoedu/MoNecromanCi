@@ -85,8 +85,11 @@ project graph** (not a hard-coded path), copies its module directory into a
 staged copy of the project being built, patches the staged
 `pyproject.toml`'s `[tool.hatch.build.targets.wheel] packages` list to
 include it, and builds from there. No cross-project dependency is ever wired
-automatically — you always add this entry by hand, mirroring how you'd wire
-any other cross-project dependency.
+automatically by this plugin — the entry above is always a hand-edit as far
+as it's concerned. If you're using `@mnci/cli`, `mnci add python-vendor
+<consumer> --lib my-shared-lib` writes exactly that edit for you
+(idempotently); this package itself stays that CLI-agnostic — reading the
+entry, not writing it.
 
 Verified empirically that vendoring an internal lib and declaring a real
 external PyPI dependency on the *same* project works correctly together —

@@ -44,6 +44,7 @@ mnci add python-app svc            # app -> apps/ (wheel, zipped into the drop)
 mnci add python-function-app fn    # Azure Functions (Python v2) -> apps/
 mnci add python-lib shared         # publishable -> python-packages/ (twine upload)
 mnci add python-internal-lib core  # private shared lib -> libs/
+mnci add python-vendor shared --lib core  # wire core's module into shared's built wheel
 
 mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
@@ -561,18 +562,21 @@ identically to a Linux/macOS one.
   <name>` just like the TS apps.
 - **Internal-lib vendoring** replaces `@nxlv/python`'s `bundleLocalDependencies`:
   plain pip has no bundled-local-dependency feature, so a project that imports
-  a workspace-internal Python library needs a hand-added `vendor` entry (under
+  a workspace-internal Python library needs a `vendor` entry (under
   `[tool.mnci-python-pip]`) in its own `pyproject.toml` (the pip-world
-  counterpart of hand-wiring a `dependencies = [...]` entry — neither mnci
-  nor the plugin wires cross-project Python dependencies automatically). The
-  plugin's `build` executor reads that entry, resolves the named project's
-  root via the **Nx project graph**, copies its module into a staged copy of
-  the consuming project, and builds from there — so the resulting wheel
-  contains the vendored module as a real top-level package. Verified
-  empirically that this does **not** reproduce the old `@nxlv/python` bug
-  where combining a vendored internal lib and a real external dependency on
-  the same project silently dropped the external one from the wheel's
-  metadata — both survive correctly.
+  counterpart of a `dependencies = [...]` entry — neither mnci nor the plugin
+  wires cross-project Python dependencies automatically). `mnci add
+  python-vendor <consumer> --lib <name>` automates writing that entry —
+  idempotent (safe to run twice), and works on any consumer with a
+  `pyproject.toml` (app, publishable lib, or another internal lib), not just
+  apps. The plugin's `build` executor reads the entry, resolves the named
+  project's root via the **Nx project graph**, copies its module into a
+  staged copy of the consuming project, and builds from there — so the
+  resulting wheel contains the vendored module as a real top-level package.
+  Verified empirically that this does **not** reproduce the old
+  `@nxlv/python` bug where combining a vendored internal lib and a real
+  external dependency on the same project silently dropped the external one
+  from the wheel's metadata — both survive correctly.
 - **Workspace-wide install** (mnci's own CI step, not the plugin's) — pip has
   no npm-workspaces-style hoisting, so mnci writes one: a guarded step
   editable-installs every Python project (`apps/*`, `python-packages/*`,
