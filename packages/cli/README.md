@@ -78,7 +78,10 @@ each a single cross-platform command:
    `commit-msg` hook, the chosen CI provider's pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
    `azure`; `github`/`both` also gets `.github/dependabot.yml` — weekly
-   dependency-update PRs), and the curated root scripts.
+   dependency-update PRs), a `<workspace-name>.code-workspace` file (VS Code
+   workspace configuration with folder structure, ESLint/Prettier settings, and
+   recommended extensions — open it in VS Code via `File > Open Workspace from
+   File`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 
@@ -120,16 +123,23 @@ will overwrite hand customizations to any of the files it owns (e.g. an extra
 CI job appended by hand to the pipeline file) — `git diff` is exactly how
 you'd notice and re-apply those on top.
 
-## Stack: two choices asked up front
+## Stack: one choice asked up front
 
-`mnci new` (run bare, or with flags) asks two questions — the linter and the
-test runner. Each is stored where every later `mnci add` honours it, so the
-whole workspace stays one stack:
+`mnci new` (run bare, or with flags) asks one question — the test runner. It is
+stored where every later `mnci add` honours it, so the whole workspace stays one
+stack:
 
-| Question        | Options              | Default  | Stored as / honoured via                                                                                                                                                                                                          |
-| --------------- | -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--linter`      | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` + `oxfmt.config.mts` (both from the [oxc-standard](https://github.com/JohnDeved/ox-standard) preset) + the `oxlint` / `oxfmt` root scripts |
-| `--test-runner` | `jest` \| `vitest`   | `jest`   | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too                                                                                                                                          |
+| Question        | Options            | Default | Stored as / honoured via                                                        |
+| --------------- | ------------------ | ------- | ------------------------------------------------------------------------------- |
+| `--test-runner` | `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
+
+**Linting and formatting are unified across the workspace**: every project uses
+**ESLint + Prettier** with the JavaScript Standard Style configuration (no
+semicolons, single quotes, 2-space indents). ESLint is a per-project Nx target
+handling code quality (correctness only), while Prettier handles all formatting.
+Both are automatically configured; `npm run lint` checks code quality, `npm run
+format` (write) and `npm run format:check` (CI-safe) handle formatting. The CI
+runs lint/test/build only — formatting is left as a local/pre-commit step.
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
 [Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
@@ -141,24 +151,6 @@ analysing config through the TS 6 API — no target rewiring, frozen per repo by
 the lockfile. (A plain `typescript@7` install would break Nx, since TS 7 ships
 no programmatic API yet; the two aliases are what make it work.)
 
-- **Linter**: ESLint is a per-project Nx target; oxlint is a single
-  workspace-wide binary. Either way `npm run lint` (and the CI) is
-  linter-agnostic, so nothing downstream branches. Under oxlint a publishable
-  package's private-lib import needs no dependency-check override (that rule is
-  ESLint-only), so none is written.
-  - The oxlint stack installs **[oxc-standard](https://github.com/JohnDeved/ox-standard)**
-    (which brings `oxlint` + `oxfmt`) and generates two `.mts` configs that use
-    its **JavaScript Standard Style** preset: `oxlint.config.mts` _extends_
-    `oxc-standard`'s rule set (unicorn + React + react-perf + TypeScript + oxc),
-    and `oxfmt.config.mts` mirrors its formatting (no semicolons, single quotes,
-    2-space, `es5` trailing commas, avoid arrow parens). That gives the full
-    Standard experience — **linting _and_ formatting** — since oxlint (a linter)
-    does not enforce layout.
-  - Formatting is `npm run format` (write) and `npm run format:check` (CI-safe,
-    no writes). Nx generators emit semicolon/double-quote code, so run
-    `npm run format` once after scaffolding to normalise a new workspace to
-    Standard Style. (CI stays lint/test/build only — formatting is left as a
-    local/pre-commit step so the pipeline needs no linter-specific branch.)
 - **Test runner**: passed straight to the `@nx/*` generators; the function app
   gets a matching `jest.config.mjs` (+ ts-jest) or `vitest.config.ts`.
 
@@ -372,22 +364,17 @@ fix-ci`) — `mnci` does not automate that step.
 Being upfront about what mnci leans on, so it's a conscious trade-off rather
 than a surprise:
 
-- **One unofficial, small-team third-party Nx plugin carries real weight**:
-  [`oxc-standard`](https://github.com/JohnDeved/ox-standard) (the oxlint/oxfmt
-  StandardJS preset) — not `@nx`-scoped/officially maintained. Neither Azure
-  Function generation nor any Python kind pulls in a _third-party_ Nx plugin:
-  Node apps use the **official** `@nx/node:application` plus a small
-  hand-written Azure Functions v4 file overlay (see "How Node apps work"
-  below), and Python uses **`@mnci/nx-python-pip`** — a real Nx plugin this
-  project built and maintains itself (`libs/nx-python-pip` in this same
-  monorepo), after `@nxlv/python` (the previous Python plugin) turned out to
-  require `uv`, which the company standardizing on this tool does not use,
-  and no maintained alternative supports pip. That trades third-party risk
-  for a different, real one: **this project now owns a second package's
-  maintenance surface** (generators, executors, its own release cycle) —
-  worth being explicit about, since it did not exist before this migration.
-  If `oxc-standard` stalls or breaks compatibility with a future Nx major,
-  that surface needs a real maintenance response, not just a version bump.
+- **One Nx plugin this project builds and maintains** carries the most weight:
+  **`@mnci/nx-python-pip`** — a real Nx plugin built into this monorepo itself
+  (`packages/nx-python-pip`), created because no maintained, Nx-23-compatible
+  Python plugin supports pip (the previous Python plugin, `@nxlv/python`,
+  requires `uv`, which the company standardizing on this tool does not use, and
+  no maintained alternative supports pip). This trades third-party risk for a
+  different, real one: **this project now owns a second package's maintenance
+  surface** (generators, executors, its own release cycle) — worth being
+  explicit about, since it did not exist before. Unlike official `@nx/*`
+  plugins, if this one needs fixes or updates, this project owns those directly.
+  That's the cost of having no maintained pip-native Nx plugin in the ecosystem.
 - **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
   TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
   `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
@@ -609,8 +596,7 @@ release version --dry-run`), which wins over the workspace's default
   Python package is still versioned + tagged, but publishing it needs
   user-provided `TWINE_*` — e.g. a PyPI token.)
 - **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
-  target runs alongside the JS build even on the oxlint stack (whose
-  `npm run lint` only covers JS). One guarded pipeline step installs
+  target runs alongside the JS ESLint build. One guarded pipeline step installs
   `requirements-dev.txt` first (the fixed toolchain), then a second installs
   every Python project workspace-wide (the workspace-wide install above) —
   both skipped cleanly when the workspace has no Python projects.
