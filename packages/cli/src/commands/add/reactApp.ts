@@ -164,7 +164,7 @@ export function addReactApp(workspaceRoot: string, name: string, stack: Workspac
       `apps/${name}`,
       '--bundler=vite',
       `--unitTestRunner=${stack.testRunner}`,
-      `--linter=${stack.linter}`,
+      '--linter=eslint',
       '--style=css',
       '--e2eTestRunner=none',
       '--no-interactive',

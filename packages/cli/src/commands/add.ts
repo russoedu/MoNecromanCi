@@ -266,12 +266,11 @@ function syncProjectReferences(workspaceRoot: string): void {
  * @typeParam None - this function has no generic type parameters.
  */
 function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
-  const nxJson = readJson<{ mnci?: { stack?: { linter?: string; testRunner?: string } } }>(
+  const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string } } }>(
     join(workspaceRoot, 'nx.json')
   )
   const stack = nxJson.mnci?.stack
   return {
-    linter: stack?.linter === 'oxlint' ? 'none' : 'eslint',
     testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
 }

@@ -1,7 +1,7 @@
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
-  DEFAULT_STACK: { linter: 'eslint', testRunner: 'jest' },
+  DEFAULT_STACK: { testRunner: 'jest' },
 }))
 jest.mock('../prompts', () => ({
   promptCi: jest.fn(),
@@ -27,7 +27,7 @@ const mockPromptStack = jest.mocked(promptStack)
 const mockPromptText = jest.mocked(promptText)
 
 /** The `--yes` / flagless stack the overlay mock exposes as DEFAULT_STACK. */
-const DEFAULT_STACK = { linter: 'eslint', testRunner: 'jest' } as const
+const DEFAULT_STACK = { testRunner: 'jest' } as const
 
 beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue('/somewhere')
@@ -180,25 +180,18 @@ describe('runNew', () => {
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['husky'], workspaceRoot)
   })
 
-  it('installs oxc-standard (oxlint + oxfmt preset) alongside the commit toolchain when oxlint is chosen', async () => {
-    await runNew('demo', { yes: true, linter: 'oxlint', testRunner: 'vitest' })
+  it('installs the commit toolchain (ESLint and Prettier are set up by Nx generators)', async () => {
+    await runNew('demo', { yes: true, testRunner: 'vitest' })
 
     const workspaceRoot = join('/somewhere', 'demo')
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
-      [
-        'install',
-        '--save-dev',
-        'oxc-standard',
-        'husky',
-        '@commitlint/cli',
-        '@commitlint/config-conventional',
-      ],
+      ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
       workspaceRoot
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } })
     )
   })
 
@@ -238,7 +231,7 @@ describe('runNew', () => {
       .mockResolvedValueOnce('Build') // variable group
     mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
     mockPromptCi.mockResolvedValue('azure')
-    mockPromptStack.mockResolvedValue({ linter: 'oxlint', testRunner: 'vitest' })
+    mockPromptStack.mockResolvedValue({ testRunner: 'vitest' })
 
     await runNew(undefined, {})
 
@@ -256,7 +249,7 @@ describe('runNew', () => {
     expect(mockPromptStack).toHaveBeenCalled()
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { linter: 'oxlint', testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } })
     )
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })

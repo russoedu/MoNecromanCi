@@ -95,7 +95,7 @@ describe('runUpgrade', () => {
       JSON.stringify({
         $schema: 's',
         namedInputs: {},
-        mnci: { stack: { linter: 'eslint', testRunner: 'jest' } },
+        mnci: { stack: { testRunner: 'jest' } },
       })
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source' }))
@@ -112,7 +112,7 @@ describe('runUpgrade', () => {
         mnci: {
           scope: '@demo',
           registry: { kind: 'npm' },
-          stack: { linter: 'eslint', testRunner: 'jest' },
+          stack: { testRunner: 'jest' },
         },
       })
     )

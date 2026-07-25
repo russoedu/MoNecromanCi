@@ -517,21 +517,13 @@ describe('githubActionsYaml', () => {
 })
 
 describe('generatorDefaults', () => {
-  it('maps eslint straight through', () => {
-    const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<
+  it('always uses eslint and carries the testRunner', () => {
+    const defaults = generatorDefaults({ testRunner: 'jest' }) as Record<
       string,
       { linter: string; unitTestRunner: string }
     >
     expect(defaults['@nx/js:library']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
     expect(defaults['@nx/react:application']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
-  })
-
-  it('maps oxlint to linter:none (oxlint is not an Nx linter) and carries the runner', () => {
-    const defaults = generatorDefaults({ linter: 'oxlint', testRunner: 'vitest' }) as Record<
-      string,
-      { linter: string; unitTestRunner: string }
-    >
-    expect(defaults['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 })
 
@@ -543,7 +535,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github' as const,
-      stack: { linter: 'oxlint' as const, testRunner: 'vitest' as const },
+      stack: { testRunner: 'vitest' as const },
     }
     expect(mnciConfig(options)).toEqual({
       scope: '@demo',
@@ -551,7 +543,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: { linter: 'oxlint', testRunner: 'vitest' },
+      stack: { testRunner: 'vitest' },
     })
   })
 })
@@ -600,22 +592,15 @@ describe('readMnciConfig', () => {
 })
 
 describe('rootScripts', () => {
-  it('keeps nx lint (and no formatter) for eslint', () => {
-    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+  it('uses nx lint and prettier format scripts', () => {
+    const scripts = rootScripts({ testRunner: 'jest' })
     expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBeUndefined()
-    expect(scripts['format:check']).toBeUndefined()
-  })
-
-  it('swaps to oxlint and adds the oxfmt format scripts for oxlint', () => {
-    const scripts = rootScripts({ linter: 'oxlint', testRunner: 'jest' })
-    expect(scripts.lint).toBe('oxlint')
-    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
-    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
+    expect(scripts.format).toBe('prettier --write .')
+    expect(scripts['format:check']).toBe('prettier --check .')
   })
 
   it('adds python:install chaining the same two guards CI runs (for local-dev convenience)', () => {
-    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+    const scripts = rootScripts({ testRunner: 'jest' })
 
     // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
     expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
@@ -632,9 +617,9 @@ describe('rootScripts', () => {
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
   })
 
-  it('stamps python:install regardless of linter (both guards already no-op on a workspace with no Python projects)', () => {
-    expect(rootScripts({ linter: 'eslint', testRunner: 'jest' })['python:install']).toBeDefined()
-    expect(rootScripts({ linter: 'oxlint', testRunner: 'vitest' })['python:install']).toBeDefined()
+  it('stamps python:install in all stacks (both guards already no-op on a workspace with no Python projects)', () => {
+    expect(rootScripts({ testRunner: 'jest' })['python:install']).toBeDefined()
+    expect(rootScripts({ testRunner: 'vitest' })['python:install']).toBeDefined()
   })
 })
 
@@ -824,24 +809,24 @@ describe('applyOverlay', () => {
   })
 
   it("writes the stack as nx.json generator defaults (for a user's own direct `nx g`)", () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       generators: Record<string, { linter: string; unitTestRunner: string }>
     }
     expect(nxJson.generators['@nx/js:library']).toEqual({
-      linter: 'none',
+      linter: 'eslint',
       unitTestRunner: 'vitest',
     })
   })
 
   it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
-      mnci: { stack: { linter: string; testRunner: string } }
+      mnci: { stack: { testRunner: string } }
     }
-    expect(nxJson.mnci.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
+    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
   })
 
   it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
@@ -877,42 +862,25 @@ describe('applyOverlay', () => {
     })
   })
 
-  it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'jest' })
-    const oxlintConfig = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
-    // A typed config extending the oxc-standard StandardJS preset (not JSON).
-    expect(oxlintConfig).toContain(`import { defineConfig } from 'oxlint'`)
-    expect(oxlintConfig).toContain(
-      `import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }`
-    )
-    expect(oxlintConfig).toContain('extends: [standard]')
-    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
-    // The formatter counterpart, mirroring oxc-standard's .oxfmtrc.json.
-    const oxfmtConfig = readFileSync(join(workspaceRoot, 'oxfmt.config.mts'), 'utf8')
-    expect(oxfmtConfig).toContain(`import { defineConfig } from 'oxfmt'`)
-    expect(oxfmtConfig).toContain('semi: false')
-    expect(oxfmtConfig).toContain('singleQuote: true')
-    const scripts = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        scripts: Record<string, string>
-      }
-    ).scripts
-    expect(scripts.lint).toBe('oxlint')
-    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
-    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
-  })
-
-  it('does not write oxlint/oxfmt configs when eslint is chosen', () => {
+  it('writes Prettier config and VS Code extensions when eslint is used', () => {
     overlayWith(DEFAULT_STACK)
-    expect(existsSync(join(workspaceRoot, 'oxlint.config.mts'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, 'oxfmt.config.mts'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.prettierignore'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.vscode/extensions.json'))).toBe(true)
     const scripts = (
       JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
         scripts: Record<string, string>
       }
     ).scripts
     expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBeUndefined()
+    expect(scripts.format).toBe('prettier --write .')
+    expect(scripts['format:check']).toBe('prettier --check .')
+    // Check VS Code extensions
+    const extensions = JSON.parse(
+      readFileSync(join(workspaceRoot, '.vscode/extensions.json'), 'utf8')
+    ) as { recommendations: string[] }
+    expect(extensions.recommendations).toContain('dbaeumer.vscode-eslint')
+    expect(extensions.recommendations).toContain('esbenp.prettier-vscode')
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {

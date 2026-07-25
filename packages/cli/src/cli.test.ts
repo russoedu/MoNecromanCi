@@ -189,21 +189,19 @@ describe('buildProgram', () => {
     )
   })
 
-  it('routes `new` stack flags (linter/test-runner) to runNew', async () => {
+  it('routes `new` test-runner flag to runNew', async () => {
     await buildProgram().parseAsync([
       'node',
       'mnci',
       'new',
       'demo',
       '--yes',
-      '--linter',
-      'oxlint',
       '--test-runner',
       'vitest',
     ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
-      expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' })
+      expect.objectContaining({ testRunner: 'vitest' })
     )
   })
 

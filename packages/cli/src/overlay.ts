@@ -34,16 +34,13 @@ export type CiProvider = 'azure' | 'github' | 'both'
  * TypeScript is not a knob: every workspace runs the **dual compiler**
  * ({@link TS_COMPILER_DEPENDENCIES}) — TypeScript 6 for the programmatic API
  * (Nx's graph/plugins, Vite, typescript-eslint, the editor) and TypeScript 7's
- * native `tsc` for the `typecheck`/`build` tasks. So the two real knobs are the
- * linter and the unit-test runner, persisted as Nx **generator defaults** in
- * `nx.json` (the oxlint case also writes a workspace `oxlint.config.mts` and
- * points the root `lint` script at `oxlint`).
+ * native `tsc` for the `typecheck`/`build` tasks. The only stack knob is the
+ * unit-test runner, persisted as Nx **generator defaults** in `nx.json`.
+ * Linting is ESLint + Prettier (always).
  *
  * @typeParam None - this type has no generic type parameters.
  */
 export interface StackConfig {
-  /** Linter: Nx-native `eslint`, or workspace-wide `oxlint`. */
-  linter: 'eslint' | 'oxlint'
   /** Unit-test runner (both Nx-native for the plugin kinds). */
   testRunner: 'jest' | 'vitest'
 }
@@ -52,17 +49,18 @@ export interface StackConfig {
  * The `--yes` / flagless defaults — the current opinionated stack.
  *
  * @remarks
- * ESLint and Jest: the combination existing generated repos (and the e2e
- * suite) already assume, so defaulting to it keeps behaviour unchanged when
- * the stack is not chosen explicitly.
+ * Jest: the test runner existing generated repos (and the e2e suite)
+ * already assume, so defaulting to it keeps behaviour unchanged when
+ * the stack is not chosen explicitly. Linting is always ESLint + Prettier.
  */
-export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
+export const DEFAULT_STACK: StackConfig = { testRunner: 'jest' }
 
 /**
- * Prettier version pinned into ESLint workspaces.
+ * Prettier version pinned into all workspaces.
  *
  * @remarks
- * Oxlint workspaces use oxfmt (bundled with oxc-standard) instead.
+ * Prettier handles code formatting following JavaScript Standard Style
+ * in all generated workspaces.
  */
 export const PRETTIER_VERSION = '^3.8.1'
 
@@ -334,6 +332,21 @@ package-lock.json
 `
 
 /**
+ * The VS Code extensions.json written into generated workspaces.
+ *
+ * @remarks
+ * Recommends ESLint and Prettier extensions for consistent code quality and formatting.
+ * These are not auto-installed; VS Code prompts when opening the workspace.
+ */
+export const VSCODE_EXTENSIONS = `{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ]
+}
+`
+
+/**
  * The curated npm scripts stamped into a generated workspace's root manifest.
  *
  * @remarks
@@ -353,20 +366,12 @@ export const ROOT_SCRIPTS = {
 } as const
 
 /**
- * The curated scripts with `lint` bound to the chosen linter.
+ * The curated scripts with formatting via Prettier and linting via ESLint.
  *
  * @remarks
- * ESLint is a per-project Nx target (`nx run-many -t lint`); oxlint is a single
- * workspace-wide binary, so its `lint` is just `oxlint`. Everything downstream
- * (the CI pipeline) calls `npm run lint`, so it never needs to know which
- * linter was chosen.
- *
- * The oxlint stack also gets the oxc-standard formatter as `format` (write) and
- * `format:check` (CI-safe, no writes) — the JavaScript Standard Style *layout*
- * half that oxlint (a linter) does not enforce. The `-c oxfmt.config.mts` flag
- * is explicit because oxfmt (0.48) auto-discovers `.oxfmtrc.json` but not the
- * typed `.mts` config, and the whole stack is committed to typed configs.
- * ESLint workspaces keep Nx's own formatting story, so they get no `format`.
+ * ESLint is a per-project Nx target (`nx run-many -t lint`) following code-quality
+ * and correctness rules. Prettier handles all formatting (`npm run format` writes;
+ * `npm run format:check` verifies without writing), following JavaScript Standard Style.
  *
  * Every stack also gets `python:install`, chaining the same two guards CI runs
  * ({@link PYTHON_INSTALL_GUARD} then {@link PYTHON_WORKSPACE_INSTALL_GUARD}) —
@@ -376,27 +381,14 @@ export const ROOT_SCRIPTS = {
  * guards already no-op cleanly on a workspace with no Python projects, so it is
  * safe to stamp unconditionally rather than gating on whether one exists yet.
  *
- * @param stack - The chosen stack.
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
- * @typeParam None - this function has no generic type parameters.
  */
-export function rootScripts(stack: StackConfig): Record<string, string> {
-  const scripts =
-    stack.linter === 'oxlint'
-      ? {
-          ...ROOT_SCRIPTS,
-          lint: 'oxlint',
-          format: 'oxfmt -c oxfmt.config.mts .',
-          'format:check': 'oxfmt -c oxfmt.config.mts --check .',
-        }
-      : {
-          ...ROOT_SCRIPTS,
-          format: 'prettier --write .',
-          'format:check': 'prettier --check .',
-        }
+export function rootScripts(): Record<string, string> {
   return {
-    ...scripts,
+    ...ROOT_SCRIPTS,
+    format: 'prettier --write .',
+    'format:check': 'prettier --check .',
     'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`,
   }
 }
@@ -406,9 +398,8 @@ export function rootScripts(stack: StackConfig): Record<string, string> {
  *
  * @remarks
  * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci add`)
- * pick up the workspace's chosen linter/runner automatically. oxlint is not an
- * Nx linter, so it maps to `linter: 'none'` — the workspace `oxlint.config.mts`
- * + the `oxlint` root script cover linting instead.
+ * pick up the workspace's chosen test runner automatically. Linting is always
+ * ESLint (code quality/correctness rules only) + Prettier (formatting).
  *
  * `mnci add` itself does **not** read this back — see {@link mnciConfig} for
  * the dedicated, single-source-of-truth block it reads instead. The two used
@@ -422,7 +413,7 @@ export function rootScripts(stack: StackConfig): Record<string, string> {
  */
 export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
   const shared = {
-    linter: stack.linter === 'oxlint' ? 'none' : 'eslint',
+    linter: 'eslint',
     unitTestRunner: stack.testRunner,
   }
   return {
@@ -459,7 +450,7 @@ export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
     agent: options.agent,
     variableGroup: options.variableGroup,
     ci: options.ci,
-    stack: { linter: options.stack.linter, testRunner: options.stack.testRunner },
+    stack: { testRunner: options.stack.testRunner },
   }
 }
 
@@ -486,73 +477,6 @@ export function readMnciConfig(workspaceRoot: string): Partial<OverlayOptions> {
   const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
   return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
-
-/**
- * The `oxlint.config.mts` written when oxlint is the chosen linter.
- *
- * @remarks
- * A typed config (`defineConfig` from `oxlint`, auto-detected — needs Node ≥22)
- * rather than JSON. Instead of hand-listing plugins and rules it **extends the
- * [oxc-standard](https://github.com/JohnDeved/ox-standard) preset** — the real
- * JavaScript Standard Style rule set for the oxc toolchain (unicorn + React +
- * react-perf + TypeScript + oxc, `correctness: error`, `suspicious: warn`,
- * `style: off`). A `.mts` config's `extends` must hold **config objects, not
- * paths** (unlike `.oxlintrc.json`, which cannot import from a package), so the
- * preset is imported as JSON and passed in — the pattern oxlint documents for
- * extending a shared package's config.
- *
- * The one local override keeps a freshly generated workspace green: Nx scaffolds
- * with the modern JSX transform, so React need not be in scope and the preset's
- * `react/react-in-jsx-scope` correctness rule is turned off. Add further project
- * overrides in the same `rules` block.
- *
- * Its formatting counterpart is {@link OXFMT_CONFIG} (Standard Style layout).
- */
-export const OXLINT_CONFIG = `import { defineConfig } from 'oxlint'
-import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }
-
-// Generated by MoNecromanCI. JavaScript Standard Style linting via the
-// oxc-standard preset (unicorn + React + react-perf + TypeScript + oxc).
-// Add project-specific rule overrides in the \`rules\` block below.
-export default defineConfig({
-  extends: [standard],
-  rules: {
-    // The modern JSX transform (Nx's default) needs no React import in scope.
-    'react/react-in-jsx-scope': 'off',
-  },
-})
-`
-
-/**
- * The `oxfmt.config.mts` written alongside {@link OXLINT_CONFIG} for oxlint.
- *
- * @remarks
- * oxfmt is the oxc toolchain's formatter — the *layout* half oxlint (a linter)
- * does not enforce. These options mirror oxc-standard's own `.oxfmtrc.json` so
- * formatting and linting agree on JavaScript Standard Style: no semicolons,
- * single quotes, 2-space indent, `es5` trailing commas, and parens omitted on
- * single-argument arrows. (oxfmt has no `extends`, so the preset's values are
- * inlined — exactly how oxc-standard itself scaffolds them.)
- *
- * `npm run format` writes; `npm run format:check` verifies without writing
- * ({@link rootScripts}) — both pass `-c oxfmt.config.mts` since oxfmt (0.48)
- * auto-discovers only `.oxfmtrc.json`, not the typed config. Nx generators emit
- * semicolon/double-quote code, so a new workspace is normalised on the first
- * `npm run format`.
- */
-export const OXFMT_CONFIG = `import { defineConfig } from 'oxfmt'
-
-// Generated by MoNecromanCI. JavaScript Standard Style formatting, matching the
-// oxc-standard lint preset: no semicolons, single quotes, 2-space indent.
-export default defineConfig({
-  singleQuote: true,
-  semi: false,
-  printWidth: 100,
-  tabWidth: 2,
-  trailingComma: 'es5',
-  arrowParens: 'avoid',
-})
-`
 
 /**
  * The Python package registry's `twine upload` URL for a registry config.
@@ -1297,15 +1221,12 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts(options.stack),
+    ...rootScripts(),
   }
   const devDeps = {
     ...(manifest.devDependencies as Record<string, string> | undefined),
     ...TS_COMPILER_DEPENDENCIES,
-  }
-  // ESLint workspaces need Prettier for formatting (oxlint workspaces use oxfmt instead).
-  if (options.stack.linter === 'eslint') {
-    devDeps.prettier = PRETTIER_VERSION
+    prettier: PRETTIER_VERSION,
   }
   writeFileEnsured(
     manifestPath,
@@ -1317,17 +1238,12 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
-  // oxlint is workspace-wide: one config, no per-project Nx lint target. It
-  // ships with oxfmt (both from the oxc-standard preset) for the Standard Style
-  // formatting half — `npm run format` / `npm run format:check`.
-  if (options.stack.linter === 'oxlint') {
-    writeFileEnsured(join(workspaceRoot, 'oxlint.config.mts'), OXLINT_CONFIG)
-    writeFileEnsured(join(workspaceRoot, 'oxfmt.config.mts'), OXFMT_CONFIG)
-  } else {
-    // ESLint workspaces use Prettier for formatting, following JS Standard Style.
-    writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
-    writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
-  }
+  // ESLint handles code quality and correctness rules. Prettier handles formatting
+  // following JavaScript Standard Style (no semicolons, 2-space indents, single quotes).
+  writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
+  writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
+  // Recommend ESLint and Prettier extensions in VS Code.
+  writeFileEnsured(join(workspaceRoot, '.vscode/extensions.json'), VSCODE_EXTENSIONS)
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)

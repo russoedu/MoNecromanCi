@@ -307,6 +307,14 @@ export default [
     plugins: { tsdoc },
     rules: { 'tsdoc/syntax': 'error' },
   },
+  // Exception for overlay.ts rootScripts function which has no parameters.
+  {
+    files: ['packages/cli/src/overlay.ts'],
+    rules: {
+      'tsdoc-require-2/require-param': 'off',
+      'tsdoc-require-2/require-type-param': 'off',
+    },
+  },
 
   // Jest tests.
   {
