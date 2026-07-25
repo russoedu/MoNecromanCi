@@ -110,17 +110,9 @@ describe('runAdd npm-lib', () => {
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
   })
 
-  it('honors an oxlint workspace: --linter=none and no per-lib eslint config', async () => {
-    writeFileSync(
-      join(workspaceRoot, 'nx.json'),
-      JSON.stringify({ mnci: { stack: { linter: 'oxlint', testRunner: 'jest' } } })
-    )
-
+  it('always writes an eslint config with dependency-check overrides for npm-lib', async () => {
     await runAdd('npm-lib', 'sdk', {})
 
-    const generatorCall = mockRunNx.mock.calls.find(call => call[0][0] === 'g')
-    expect(generatorCall?.[0]).toContain('--linter=none')
-    // The dependency-check override is ESLint-specific, so oxlint writes none.
-    expect(existsSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'))).toBe(true)
   })
 })

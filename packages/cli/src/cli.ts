@@ -1,23 +1,10 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { Argument, Command } from 'commander'
 import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
 import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
 import { logger } from './util/logger'
-
-/** Reads the CLI version from the packaged package.json (next to dist/). */
-function readVersion(): string {
-  try {
-    const package_ = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
-      version?: string
-    }
-    return package_.version ?? '0.0.0'
-  } catch {
-    return '0.0.0'
-  }
-}
+import { checkForUpdate, readCliVersion } from './util/versionChecker'
 
 /**
  * Builds the commander program for the CLI.
@@ -28,18 +15,18 @@ function readVersion(): string {
  * repo needs day-to-day (build/test/lint/release) is plain Nx, so the CLI
  * deliberately has no wrapper commands for those.
  *
- * @param None - this function takes no parameters.
+ * @param cliVersion - The current CLI version (from package.json).
  * @returns The configured commander program.
  * @throws Never - wiring only; execution errors surface when commands run.
  * @typeParam None - this function has no generic type parameters.
  */
-export function buildProgram(): Command {
+export function buildProgram(cliVersion: string): Command {
   const program = new Command()
 
   program
     .name('mnci')
     .description('MoNecromanCI — a thin CLI over official Nx plugins')
-    .version(readVersion(), '-v, --version', 'display the version')
+    .version(cliVersion, '-v, --version', 'display the version')
 
   program
     .command('new')
@@ -57,7 +44,6 @@ export function buildProgram(): Command {
     )
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both')
-    .option('--linter <linter>', 'linter: eslint | oxlint')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
     .option('--nx-cloud', 'connect the workspace to Nx Cloud (remote caching + CI insights)')
     .action(async (name: string | undefined, options: NewOptions) => {
@@ -77,7 +63,6 @@ export function buildProgram(): Command {
     .option('--agent <pool>', 'CI build agent (overrides the persisted value)')
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both (overrides the persisted value)')
-    .option('--linter <linter>', 'linter: eslint | oxlint (overrides the persisted value)')
     .option(
       '--test-runner <runner>',
       'unit-test runner: jest | vitest (overrides the persisted value)'
@@ -123,6 +108,12 @@ export function buildProgram(): Command {
  *
  * @remarks
  * Exported so tests can drive the program without spawning a process.
+ * Runs a non-blocking version check in the background (fire-and-forget), and
+ * prints a `mnci vX.Y.Z` banner for interactive use — gated on stdout being a
+ * TTY (like {@link checkForUpdate}) so CI/piped invocations see nothing extra,
+ * and skipped when `-v`/`--version` was passed explicitly since commander
+ * already prints the bare version for that case; a banner above it would just
+ * be a redundant duplicate.
  *
  * @param None - this function takes no parameters.
  * @returns A promise that resolves when the invoked command completes.
@@ -131,7 +122,19 @@ export function buildProgram(): Command {
  */
 export async function main(): Promise<void> {
   try {
-    await buildProgram().parseAsync(process.argv)
+    const cliVersion = readCliVersion(__dirname)
+    const program = buildProgram(cliVersion)
+
+    // Check for updates in the background (non-blocking).
+    checkForUpdate(cliVersion)
+
+    const arguments_ = new Set(process.argv.slice(2))
+    const requestedVersionFlag = arguments_.has('-v') || arguments_.has('--version')
+    if (process.stdout.isTTY && !requestedVersionFlag) {
+      logger.info(`mnci v${cliVersion}`)
+    }
+
+    await program.parseAsync(process.argv)
   } catch (error) {
     logger.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1

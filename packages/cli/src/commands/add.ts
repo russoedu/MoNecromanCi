@@ -5,6 +5,7 @@ import { promptText } from '../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
+import { addGoApp, addGoFunctionApp, addGoInternalLib, addGoLib } from './add/go'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
 import { addNpmLib } from './add/npmLib'
 import {
@@ -20,7 +21,7 @@ import type { AddOptions, WorkspaceStack } from './add/shared'
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just ten.
+ * The project kinds this CLI can add — deliberately just fourteen.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -45,6 +46,21 @@ export type { AddOptions } from './add/shared'
  * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
  * (internal-lib is small enough to stay inline below).
  *
+ * The Go kinds use **`@nx-go/nx-go`** — an established third-party plugin,
+ * validated empirically against a real Nx 23.1.0 workspace (it declares
+ * `@nx/devkit ">= 20 < 23"` as a plain dependency, so npm nests its own
+ * devkit copy and everything still works). Go follows the same
+ * root-manifest model as TS and Python: `add/go.ts` bootstraps a **single
+ * root `go.mod`** on the first Go add (via the plugin's `init` +
+ * `convert-to-one-mod`), so every Go project shares one module and a library
+ * is imported as `<module>/libs/<name>` — no per-project manifests, no
+ * `replace` directives. Because that single-module layout has no per-project
+ * `go.mod`, the plugin's inference produces no targets, so mnci writes
+ * build/test/lint explicitly (as it does for most kinds anyway). Lint is
+ * `golangci-lint` — the executor's own default is plain `go fmt`, which only
+ * reformats. Go needs no publish-time dependency injection at all: `go build`
+ * links statically.
+ *
  * `python-vendor` is the one kind that generates nothing: plain pip has no
  * bundled-local-dependency feature, so wiring an internal Python library
  * into a consumer's built wheel is a hand-edit of the consumer's
@@ -65,6 +81,10 @@ export type ProjectKind =
   | 'python-lib'
   | 'python-internal-lib'
   | 'python-vendor'
+  | 'go-app'
+  | 'go-function-app'
+  | 'go-lib'
+  | 'go-internal-lib'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -84,6 +104,10 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'python-lib',
   'python-internal-lib',
   'python-vendor',
+  'go-app',
+  'go-function-app',
+  'go-lib',
+  'go-internal-lib',
 ]
 
 /**
@@ -164,7 +188,7 @@ export async function runAdd(
           `libs/${resolvedName}`,
           '--bundler=tsc',
           `--unitTestRunner=${stack.testRunner}`,
-          `--linter=${stack.linter}`,
+          '--linter=eslint',
           '--no-interactive',
         ],
         workspaceRoot
@@ -186,6 +210,22 @@ export async function runAdd(
     }
     case 'python-internal-lib': {
       addPythonInternalLib(workspaceRoot, resolvedName)
+      break
+    }
+    case 'go-app': {
+      addGoApp(workspaceRoot, resolvedName)
+      break
+    }
+    case 'go-function-app': {
+      addGoFunctionApp(workspaceRoot, resolvedName)
+      break
+    }
+    case 'go-lib': {
+      addGoLib(workspaceRoot, resolvedName)
+      break
+    }
+    case 'go-internal-lib': {
+      addGoInternalLib(workspaceRoot, resolvedName)
       break
     }
     case 'python-vendor': {
@@ -266,12 +306,11 @@ function syncProjectReferences(workspaceRoot: string): void {
  * @typeParam None - this function has no generic type parameters.
  */
 function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
-  const nxJson = readJson<{ mnci?: { stack?: { linter?: string; testRunner?: string } } }>(
+  const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string } } }>(
     join(workspaceRoot, 'nx.json')
   )
   const stack = nxJson.mnci?.stack
   return {
-    linter: stack?.linter === 'oxlint' ? 'none' : 'eslint',
     testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
 }
