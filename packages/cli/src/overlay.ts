@@ -10,9 +10,9 @@ import { markExecutable, readJson, toJson, writeFileEnsured } from './util/fsx'
  *
  * @typeParam None - this type has no generic type parameters.
  */
-export type RegistryConfig
-  = | { kind: 'azure-artifacts', organization: string, project: string, artifactsFeed: string }
-    | { kind: 'npm' }
+export type RegistryConfig =
+  | { kind: 'azure-artifacts'; organization: string; project: string; artifactsFeed: string }
+  | { kind: 'npm' }
 
 /**
  * Which CI provider(s) {@link applyOverlay} writes a pipeline file for.
@@ -43,7 +43,7 @@ export type CiProvider = 'azure' | 'github' | 'both'
  */
 export interface StackConfig {
   /** Linter: Nx-native `eslint`, or workspace-wide `oxlint`. */
-  linter:     'eslint' | 'oxlint'
+  linter: 'eslint' | 'oxlint'
   /** Unit-test runner (both Nx-native for the plugin kinds). */
   testRunner: 'jest' | 'vitest'
 }
@@ -57,6 +57,14 @@ export interface StackConfig {
  * the stack is not chosen explicitly.
  */
 export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
+
+/**
+ * Prettier version pinned into ESLint workspaces.
+ *
+ * @remarks
+ * Oxlint workspaces use oxfmt (bundled with oxc-standard) instead.
+ */
+export const PRETTIER_VERSION = '^3.8.1'
 
 /**
  * The dual TypeScript compiler stamped into every workspace's `devDependencies`.
@@ -76,7 +84,7 @@ export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest'
  */
 export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
   '@typescript/native': 'npm:typescript@^7.0.2',
-  typescript:           'npm:@typescript/typescript6@^6.0.2',
+  typescript: 'npm:@typescript/typescript6@^6.0.2',
 }
 
 /**
@@ -90,7 +98,7 @@ export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function registryUrl (registry: RegistryConfig): string | undefined {
+export function registryUrl(registry: RegistryConfig): string | undefined {
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/npm/registry/`
   }
@@ -121,7 +129,7 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function npmrcContent (registry: RegistryConfig, scope: string): string {
+export function npmrcContent(registry: RegistryConfig, scope: string): string {
   const scopeName = scope.replace(/^@/, '')
   const lines = [
     'registry=https://registry.npmjs.org/',
@@ -143,7 +151,7 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
       `//${registryHost}:email=npm@example.com`,
       `//${feedHost}:username=${registry.organization}`,
       `//${feedHost}:_password=\${PAT}`,
-      `//${feedHost}:email=npm@example.com`,
+      `//${feedHost}:email=npm@example.com`
     )
   } else {
     lines.push(`//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}`)
@@ -211,11 +219,11 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
  */
 export const RELEASE_CONFIG = {
   projectsRelationship: 'independent',
-  projects:             ['packages/*', 'python-packages/*'],
-  releaseTag:           { pattern: '{projectName}@{version}' },
-  git:                  { commit: false, tag: true, push: false },
-  version:              {
-    conventionalCommits:            true,
+  projects: ['packages/*', 'python-packages/*'],
+  releaseTag: { pattern: '{projectName}@{version}' },
+  git: { commit: false, tag: true, push: false },
+  version: {
+    conventionalCommits: true,
     fallbackCurrentVersionResolver: 'disk',
     // Build only what is being released. Without this, @nx/js:lib's generator
     // defaults the pre-version command to building EVERY project, so a broken
@@ -223,7 +231,7 @@ export const RELEASE_CONFIG = {
     // Set here at `new` time it wins: the generator only fills this in when
     // absent (it spreads the existing release.version over its default). Both
     // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
-    preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
+    preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
   },
   changelog: { workspaceChangelog: false },
 } as const
@@ -263,7 +271,7 @@ export const SYNC_CONFIG = { applyChanges: true } as const
  * @throws Never - performs a pure object merge with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withReleaseConfig (nxJson: Record<string, unknown>): Record<string, unknown> {
+export function withReleaseConfig(nxJson: Record<string, unknown>): Record<string, unknown> {
   return { ...nxJson, defaultBase: 'main', release: RELEASE_CONFIG }
 }
 
@@ -288,6 +296,44 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
 `
 
 /**
+ * The Prettier config written into generated workspaces.
+ *
+ * @remarks
+ * Follows JavaScript Standard Style (no semicolons, 2-space indents, single quotes,
+ * trailing commas in multiline). Formatting via Prettier, linting via ESLint.
+ */
+export const PRETTIER_CONFIG = `{
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "arrowParens": "avoid",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false
+}
+`
+
+/**
+ * The .prettierignore written into generated workspaces.
+ *
+ * @remarks
+ * Patterns to exclude from Prettier formatting, matching root locations.
+ */
+export const PRETTIER_IGNORE = `node_modules
+dist
+dist-dev
+dist-uat
+dist-prod
+coverage
+.next
+out
+.nx
+tmp
+package-lock.json
+*.lock
+`
+
+/**
  * The curated npm scripts stamped into a generated workspace's root manifest.
  *
  * @remarks
@@ -297,13 +343,13 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * would do on CI without touching anything.
  */
 export const ROOT_SCRIPTS = {
-  build:             'nx run-many -t build',
-  lint:              'nx run-many -t lint',
-  test:              'nx run-many -t test',
-  affected:          'nx affected -t lint,test,build',
-  graph:             'nx graph',
+  build: 'nx run-many -t build',
+  lint: 'nx run-many -t lint',
+  test: 'nx run-many -t test',
+  affected: 'nx affected -t lint,test,build',
+  graph: 'nx graph',
   'release:preview': 'nx release --dry-run',
-  prepare:           'husky',
+  prepare: 'husky',
 } as const
 
 /**
@@ -335,16 +381,24 @@ export const ROOT_SCRIPTS = {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function rootScripts (stack: StackConfig): Record<string, string> {
-  const scripts = stack.linter === 'oxlint'
-    ? {
-        ...ROOT_SCRIPTS,
-        lint:           'oxlint',
-        format:         'oxfmt -c oxfmt.config.mts .',
-        'format:check': 'oxfmt -c oxfmt.config.mts --check .',
-      }
-    : { ...ROOT_SCRIPTS }
-  return { ...scripts, 'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}` }
+export function rootScripts(stack: StackConfig): Record<string, string> {
+  const scripts =
+    stack.linter === 'oxlint'
+      ? {
+          ...ROOT_SCRIPTS,
+          lint: 'oxlint',
+          format: 'oxfmt -c oxfmt.config.mts .',
+          'format:check': 'oxfmt -c oxfmt.config.mts --check .',
+        }
+      : {
+          ...ROOT_SCRIPTS,
+          format: 'prettier --write .',
+          'format:check': 'prettier --check .',
+        }
+  return {
+    ...scripts,
+    'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`,
+  }
 }
 
 /**
@@ -366,12 +420,15 @@ export function rootScripts (stack: StackConfig): Record<string, string> {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generatorDefaults (stack: StackConfig): Record<string, unknown> {
-  const shared = { linter: stack.linter === 'oxlint' ? 'none' : 'eslint', unitTestRunner: stack.testRunner }
+export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
+  const shared = {
+    linter: stack.linter === 'oxlint' ? 'none' : 'eslint',
+    unitTestRunner: stack.testRunner,
+  }
   return {
     '@nx/react:application': shared,
-    '@nx/react:library':     shared,
-    '@nx/js:library':        shared,
+    '@nx/react:library': shared,
+    '@nx/js:library': shared,
   }
 }
 
@@ -395,14 +452,14 @@ export function generatorDefaults (stack: StackConfig): Record<string, unknown> 
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
+export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
   return {
-    scope:         options.scope,
-    registry:      options.registry,
-    agent:         options.agent,
+    scope: options.scope,
+    registry: options.registry,
+    agent: options.agent,
     variableGroup: options.variableGroup,
-    ci:            options.ci,
-    stack:         { linter: options.stack.linter, testRunner: options.stack.testRunner },
+    ci: options.ci,
+    stack: { linter: options.stack.linter, testRunner: options.stack.testRunner },
   }
 }
 
@@ -425,7 +482,7 @@ export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
  * @throws Propagates any Node.js `fs`/JSON error reading `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function readMnciConfig (workspaceRoot: string): Partial<OverlayOptions> {
+export function readMnciConfig(workspaceRoot: string): Partial<OverlayOptions> {
   const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
   return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
@@ -513,7 +570,7 @@ export default defineConfig({
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonPublishUrl (registry: RegistryConfig): string | undefined {
+export function pythonPublishUrl(registry: RegistryConfig): string | undefined {
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/pypi/upload/`
   }
@@ -633,7 +690,8 @@ const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirement
  * automatically. So this step's job is visibility (a clearly labelled
  * section in every CI log), not enforcement.
  */
-const NPM_AUDIT_STEP = 'npm audit --audit-level=high || echo npm audit found vulnerabilities, see log above - non-blocking, run npm audit locally to inspect'
+const NPM_AUDIT_STEP =
+  'npm audit --audit-level=high || echo npm audit found vulnerabilities, see log above - non-blocking, run npm audit locally to inspect'
 
 /**
  * The portable `node -e` one-liner that packs every app into
@@ -662,7 +720,7 @@ const PACK_APPS_GUARD = `node -e "const fs=require('node:fs');fs.mkdirSync('dist
  * @throws Never - pure string building.
  * @typeParam None - this function has no generic type parameters.
  */
-function releaseGuard (pythonPublishEnv: string): string {
+function releaseGuard(pythonPublishEnv: string): string {
   return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
@@ -677,7 +735,7 @@ function releaseGuard (pythonPublishEnv: string): string {
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
+function pythonPublishEnvFragment(pythonPublishUrl?: string): string {
   return pythonPublishUrl
     ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
     : ''
@@ -703,7 +761,10 @@ function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function npmAuthEnvVariable (registryKind: RegistryConfig['kind'], variableReference: (name: string) => string): [string, string] {
+function npmAuthEnvVariable(
+  registryKind: RegistryConfig['kind'],
+  variableReference: (name: string) => string
+): [string, string] {
   return registryKind === 'npm'
     ? ['NODE_AUTH_TOKEN', variableReference('NPM_TOKEN')]
     : ['PAT', variableReference('PAT')]
@@ -723,7 +784,7 @@ function npmAuthEnvVariable (registryKind: RegistryConfig['kind'], variableRefer
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function poolBlock (agent: string): string {
+export function poolBlock(agent: string): string {
   return /^(ubuntu|windows|macos)-/i.test(agent) ? `  vmImage: ${agent}` : `  name: ${agent}`
 }
 
@@ -786,9 +847,14 @@ export function poolBlock (agent: string): string {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function azurePipelinesYaml (agent: string, variableGroup: string, pythonPublishUrl?: string, registryKind: RegistryConfig['kind'] = 'azure-artifacts'): string {
+export function azurePipelinesYaml(
+  agent: string,
+  variableGroup: string,
+  pythonPublishUrl?: string,
+  registryKind: RegistryConfig['kind'] = 'azure-artifacts'
+): string {
   const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
-  const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, (name) => `$(${name})`)
+  const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, name => `$(${name})`)
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
 # Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
@@ -973,9 +1039,16 @@ steps:
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function githubActionsYaml (agent: string, pythonPublishUrl?: string, registryKind: RegistryConfig['kind'] = 'azure-artifacts'): string {
+export function githubActionsYaml(
+  agent: string,
+  pythonPublishUrl?: string,
+  registryKind: RegistryConfig['kind'] = 'azure-artifacts'
+): string {
   const onMain = `github.event_name != 'pull_request' && github.ref_name == 'main'`
-  const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, (name) => `\${{ secrets.${name} }}`)
+  const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(
+    registryKind,
+    name => `\${{ secrets.${name} }}`
+  )
   return `name: CI
 
 # Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
@@ -1164,17 +1237,17 @@ updates:
  */
 export interface OverlayOptions {
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope:         string
+  scope: string
   /** Where publishable packages are released to. */
-  registry:      RegistryConfig
+  registry: RegistryConfig
   /** The CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
-  agent:         string
+  agent: string
   /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
   variableGroup: string
   /** Which CI provider(s) to write a pipeline file for. */
-  ci:            CiProvider
+  ci: CiProvider
   /** The stack (TS major, linter, test runner) chosen at `new`. */
-  stack:         StackConfig
+  stack: StackConfig
 }
 
 /**
@@ -1197,7 +1270,7 @@ export interface OverlayOptions {
  * @throws Propagates any Node.js `fs` error raised while reading or writing.
  * @typeParam None - this function has no generic type parameters.
  */
-export function applyOverlay (workspaceRoot: string, options: OverlayOptions): void {
+export function applyOverlay(workspaceRoot: string, options: OverlayOptions): void {
   // Patch nx.json with the release opinion, the stack generator defaults, and
   // sync.applyChanges (so a stale TS project reference — e.g. from hand-adding
   // a cross-project import — is fixed automatically on the next build/
@@ -1205,7 +1278,10 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // later `nx g`/`mnci add` see the generator defaults.
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
-  const generators = { ...(nxJson.generators as Record<string, unknown> | undefined), ...generatorDefaults(options.stack) }
+  const generators = {
+    ...(nxJson.generators as Record<string, unknown> | undefined),
+    ...generatorDefaults(options.stack),
+  }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
   writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci }))
@@ -1219,9 +1295,22 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // materialises them.
   const manifestPath = join(workspaceRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
-  const scripts = { ...(manifest.scripts as Record<string, string> | undefined), ...rootScripts(options.stack) }
-  const devDependencies = { ...(manifest.devDependencies as Record<string, string> | undefined), ...TS_COMPILER_DEPENDENCIES }
-  writeFileEnsured(manifestPath, toJson({ ...manifest, name: `${options.scope}/source`, scripts, devDependencies }))
+  const scripts = {
+    ...(manifest.scripts as Record<string, string> | undefined),
+    ...rootScripts(options.stack),
+  }
+  const devDeps = {
+    ...(manifest.devDependencies as Record<string, string> | undefined),
+    ...TS_COMPILER_DEPENDENCIES,
+  }
+  // ESLint workspaces need Prettier for formatting (oxlint workspaces use oxfmt instead).
+  if (options.stack.linter === 'eslint') {
+    devDeps.prettier = PRETTIER_VERSION
+  }
+  writeFileEnsured(
+    manifestPath,
+    toJson({ ...manifest, name: `${options.scope}/source`, scripts, devDependencies: devDeps })
+  )
 
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
   writeFileEnsured(join(workspaceRoot, 'commitlint.config.mjs'), COMMITLINT_CONFIG)
@@ -1234,15 +1323,25 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   if (options.stack.linter === 'oxlint') {
     writeFileEnsured(join(workspaceRoot, 'oxlint.config.mts'), OXLINT_CONFIG)
     writeFileEnsured(join(workspaceRoot, 'oxfmt.config.mts'), OXFMT_CONFIG)
+  } else {
+    // ESLint workspaces use Prettier for formatting, following JS Standard Style.
+    writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
+    writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   }
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)
   if (options.ci === 'azure' || options.ci === 'both') {
-    writeFileEnsured(join(workspaceRoot, 'azure-pipelines.yml'), azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind))
+    writeFileEnsured(
+      join(workspaceRoot, 'azure-pipelines.yml'),
+      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind)
+    )
   }
   if (options.ci === 'github' || options.ci === 'both') {
-    writeFileEnsured(join(workspaceRoot, '.github/workflows/ci.yml'), githubActionsYaml(options.agent, publishUrl, options.registry.kind))
+    writeFileEnsured(
+      join(workspaceRoot, '.github/workflows/ci.yml'),
+      githubActionsYaml(options.agent, publishUrl, options.registry.kind)
+    )
     writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), DEPENDABOT_CONFIG)
   }
 }

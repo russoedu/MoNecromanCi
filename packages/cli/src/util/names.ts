@@ -24,8 +24,10 @@
  * `[a-z0-9-]`, or doesn't start with a lowercase letter.
  * @typeParam None - this function has no generic type parameters.
  */
-export function assertValidProjectName (name: string, label: string): void {
+export function assertValidProjectName(name: string, label: string): void {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) {
-    throw new Error(`${label} '${name}' is invalid — use lowercase letters, digits and hyphens, starting with a letter (e.g. 'my-project').`)
+    throw new Error(
+      `${label} '${name}' is invalid — use lowercase letters, digits and hyphens, starting with a letter (e.g. 'my-project').`
+    )
   }
 }

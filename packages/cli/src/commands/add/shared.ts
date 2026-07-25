@@ -33,11 +33,11 @@ export type NodeFramework = 'express' | 'fastify' | 'koa' | 'nest' | 'none'
  */
 export interface AddOptions {
   /** npm scope for a publishable lib's import path (defaults to `@<workspace name>`). */
-  scope?:     string
+  scope?: string
   /** `node-app` only: the HTTP framework `@nx/node:application` scaffolds (defaults to `none`, a bare Node app). */
   framework?: NodeFramework
   /** `python-vendor` only: the internal Python library (under `libs/`) to vendor into `name`. */
-  lib?:       string
+  lib?: string
 }
 
 /**
@@ -51,7 +51,7 @@ export interface AddOptions {
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface WorkspaceStack {
-  linter:     'eslint' | 'none'
+  linter: 'eslint' | 'none'
   testRunner: 'jest' | 'vitest'
 }
 
@@ -67,8 +67,11 @@ export interface WorkspaceStack {
  * @throws Propagates any `fs`/JSON error reading the root manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function hasPlugin (workspaceRoot: string, packageName: string): boolean {
-  const manifest = readJson<{ dependencies?: Record<string, string>, devDependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
+export function hasPlugin(workspaceRoot: string, packageName: string): boolean {
+  const manifest = readJson<{
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+  }>(join(workspaceRoot, 'package.json'))
   const installed = { ...manifest.dependencies, ...manifest.devDependencies }
   return Object.hasOwn(installed, packageName)
 }
@@ -87,12 +90,18 @@ export function hasPlugin (workspaceRoot: string, packageName: string): boolean 
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function ensureAdmZip (workspaceRoot: string): void {
+export function ensureAdmZip(workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, 'adm-zip')) {
     return
   }
   logger.step('Installing the app packager (adm-zip)')
-  if (runShell('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
+  if (
+    runShell(
+      'npm',
+      ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
+      workspaceRoot
+    ) !== 0
+  ) {
     throw new Error('npm install of adm-zip failed')
   }
 }
@@ -110,7 +119,7 @@ export function ensureAdmZip (workspaceRoot: string): void {
  * @throws Propagates any `fs`/JSON error reading the root manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function defaultScope (workspaceRoot: string): string {
+export function defaultScope(workspaceRoot: string): string {
   const { name } = readJson<{ name: string }>(join(workspaceRoot, 'package.json'))
   const base = (name.startsWith('@') ? name.slice(1) : name).split('/', 1)[0]
   return `@${base}`
@@ -134,11 +143,14 @@ export function defaultScope (workspaceRoot: string): string {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNxTargets (manifestPath: string, newTargets: Record<string, unknown>): void {
+export function addNxTargets(manifestPath: string, newTargets: Record<string, unknown>): void {
   // The generator always writes this manifest first (runAdd throws otherwise);
   // defaulting to {} only guards the pathological missing-file case.
   const manifest = fileExists(manifestPath) ? readJson<Record<string, unknown>>(manifestPath) : {}
   const nx = (manifest.nx as Record<string, unknown> | undefined) ?? {}
   const targets = (nx.targets as Record<string, unknown> | undefined) ?? {}
-  writeFileEnsured(manifestPath, toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } }))
+  writeFileEnsured(
+    manifestPath,
+    toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } })
+  )
 }

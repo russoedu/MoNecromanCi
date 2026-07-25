@@ -5,6 +5,8 @@
   "scripts": {
     "build": "nx run-many -t build",
     "lint": "nx run-many -t lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "nx run-many -t test",
     "affected": "nx affected -t lint,test,build",
     "graph": "nx graph",

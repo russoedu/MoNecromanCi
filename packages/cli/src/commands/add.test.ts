@@ -1,5 +1,5 @@
 jest.mock('../nx', () => ({
-  runNx:    jest.fn(),
+  runNx: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
@@ -28,7 +28,10 @@ beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
-  writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+  )
 })
 
 afterEach(() => {
@@ -62,7 +65,9 @@ describe('runAdd', () => {
 
   it('keeps a successful add green even when nx sync fails (the project is already generated)', async () => {
     // Last call in the flow is nx sync; make only it fail.
-    mockRunShell.mockImplementation((command: string, arguments_: string[]) => (command === 'npx' && arguments_[0] === 'nx' && arguments_[1] === 'sync' ? 1 : 0))
+    mockRunShell.mockImplementation((command: string, arguments_: string[]) =>
+      command === 'npx' && arguments_[0] === 'nx' && arguments_[1] === 'sync' ? 1 : 0
+    )
 
     await expect(runAdd('react-app', 'web', {})).resolves.toBeUndefined()
   })
@@ -70,18 +75,28 @@ describe('runAdd', () => {
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {
     // The generator is mocked, so pre-create the manifest it would have written.
     mkdirSync(join(workspaceRoot, 'libs/utils'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'libs/utils/package.json'), JSON.stringify({ name: '@demo/utils' }))
+    writeFileSync(
+      join(workspaceRoot, 'libs/utils/package.json'),
+      JSON.stringify({ name: '@demo/utils' })
+    )
 
     await runAdd('internal-lib', 'utils', {})
 
-    expect(mockRunNx).toHaveBeenCalledWith([
-      'g', '@nx/js:lib', 'libs/utils',
-      '--bundler=tsc',
-      '--unitTestRunner=jest',
-      '--linter=eslint',
-      '--no-interactive',
-    ], workspaceRoot)
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'libs/utils/package.json'), 'utf8')) as { private: boolean }
+    expect(mockRunNx).toHaveBeenCalledWith(
+      [
+        'g',
+        '@nx/js:lib',
+        'libs/utils',
+        '--bundler=tsc',
+        '--unitTestRunner=jest',
+        '--linter=eslint',
+        '--no-interactive',
+      ],
+      workspaceRoot
+    )
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'libs/utils/package.json'), 'utf8')
+    ) as { private: boolean }
     expect(manifest.private).toBe(true)
   })
 
@@ -100,19 +115,23 @@ describe('runAdd', () => {
     // The CLI itself already rejects a bad kind before runAdd runs (commander
     // Argument#choices() in cli.ts); this proves runAdd's own switch has no
     // silent fallthrough for any other caller that bypasses that layer.
-    await expect(runAdd('bogus-kind' as ProjectKind, 'thing', {})).rejects.toThrow('Unknown project kind \'bogus-kind\'')
+    await expect(runAdd('bogus-kind' as ProjectKind, 'thing', {})).rejects.toThrow(
+      "Unknown project kind 'bogus-kind'"
+    )
     expect(mockRunNx).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid project name before any install or generator call', async () => {
-    await expect(runAdd('react-app', 'Not Valid!', {})).rejects.toThrow('Project name \'Not Valid!\' is invalid')
+    await expect(runAdd('react-app', 'Not Valid!', {})).rejects.toThrow(
+      "Project name 'Not Valid!' is invalid"
+    )
 
     expect(mockRunNx).not.toHaveBeenCalled()
     expect(mockRunShell).not.toHaveBeenCalled()
   })
 
   it('rejects an explicitly empty project name (bypasses promptText, since `??` only substitutes on undefined)', async () => {
-    await expect(runAdd('react-app', '', {})).rejects.toThrow('Project name \'\' is invalid')
+    await expect(runAdd('react-app', '', {})).rejects.toThrow("Project name '' is invalid")
 
     expect(mockRunNx).not.toHaveBeenCalled()
   })

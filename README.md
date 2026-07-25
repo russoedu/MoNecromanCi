@@ -14,9 +14,9 @@ of its packages.
 
 ## Packages
 
-| Package | What it is |
-| --- | --- |
-| [`@mnci/cli`](packages/cli) | The CLI itself — `mnci new` (scaffold a monorepo) and `mnci add` (delegate to the matching official/community Nx generator for React apps, Node apps, Azure Function apps, npm/Python libraries). |
+| Package                                         | What it is                                                                                                                                                                                                                              |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`@mnci/cli`](packages/cli)                     | The CLI itself — `mnci new` (scaffold a monorepo) and `mnci add` (delegate to the matching official/community Nx generator for React apps, Node apps, Azure Function apps, npm/Python libraries).                                       |
 | [`@mnci/nx-python-pip`](packages/nx-python-pip) | An Nx plugin for pip-native Python projects (Ruff, pytest, PyPA `build`/`twine` — no uv, no Poetry) that `@mnci/cli`'s Python commands delegate to. Has no dependency on `@mnci/cli` itself; usable standalone in any Nx 21+ workspace. |
 
 See each package's own README for the full command/generator/executor

@@ -39,7 +39,9 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Error when the manifest exists but has no `version = "..."` line.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromSourceManifest (tree: Tree): Promise<{ currentVersion: string, manifestPath: string } | null> {
+  async readCurrentVersionFromSourceManifest(
+    tree: Tree
+  ): Promise<{ currentVersion: string; manifestPath: string } | null> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pyproject.toml')
     const content = tree.read(manifestPath, 'utf8')
     if (content === null) {
@@ -69,13 +71,16 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - a lookup failure yields `null`, not a throw.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromRegistry (
+  async readCurrentVersionFromRegistry(
     _tree: Tree,
-    _currentVersionResolverMetadata: Record<string, unknown> | undefined,
-  ): Promise<{ currentVersion: string | null, logText: string } | null> {
+    _currentVersionResolverMetadata: Record<string, unknown> | undefined
+  ): Promise<{ currentVersion: string | null; logText: string } | null> {
     const name = this.projectGraphNode.name
     try {
-      const output = execFileSync(pythonCommand(), ['-m', 'pip', 'index', 'versions', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      const output = execFileSync(pythonCommand(), ['-m', 'pip', 'index', 'versions', name], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
       const match = /Available versions:\s*([^\s,]+)/.exec(output)
       return { currentVersion: match ? match[1] : null, logText: 'from pip index versions' }
     } catch {
@@ -99,11 +104,11 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionOfDependency (
+  async readCurrentVersionOfDependency(
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependencyProjectName: string,
-  ): Promise<{ currentVersion: string | null, dependencyCollection: string | null }> {
+    _dependencyProjectName: string
+  ): Promise<{ currentVersion: string | null; dependencyCollection: string | null }> {
     return { currentVersion: null, dependencyCollection: null }
   }
 
@@ -117,10 +122,13 @@ export default class PythonVersionActions extends VersionActions {
    * (would already have thrown in `readCurrentVersionFromSourceManifest`).
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectVersion (tree: Tree, newVersion: string): Promise<string[]> {
+  async updateProjectVersion(tree: Tree, newVersion: string): Promise<string[]> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pyproject.toml')
     const content = tree.read(manifestPath, 'utf8') ?? ''
-    tree.write(manifestPath, content.replace(VERSION_LINE, () => `version = "${newVersion}"`))
+    tree.write(
+      manifestPath,
+      content.replace(VERSION_LINE, () => `version = "${newVersion}"`)
+    )
     return [`Updated ${manifestPath} to version ${newVersion}`]
   }
 
@@ -138,10 +146,10 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectDependencies (
+  async updateProjectDependencies(
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependenciesToUpdate: Record<string, string>,
+    _dependenciesToUpdate: Record<string, string>
   ): Promise<string[]> {
     return []
   }

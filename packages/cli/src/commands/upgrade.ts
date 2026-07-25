@@ -1,5 +1,12 @@
 import { join } from 'node:path'
-import { applyOverlay, readMnciConfig, type CiProvider, type OverlayOptions, type RegistryConfig, type StackConfig } from '../overlay'
+import {
+  applyOverlay,
+  readMnciConfig,
+  type CiProvider,
+  type OverlayOptions,
+  type RegistryConfig,
+  type StackConfig,
+} from '../overlay'
 import { fileExists } from '../util/fsx'
 import { logger } from '../util/logger'
 
@@ -19,25 +26,25 @@ import { logger } from '../util/logger'
  */
 export interface UpgradeOptions {
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope?:         string
+  scope?: string
   /** Registry kind: `azure-artifacts` or `npm`. */
-  registry?:      RegistryConfig['kind']
+  registry?: RegistryConfig['kind']
   /** Azure DevOps organization (azure-artifacts only). */
-  organization?:  string
+  organization?: string
   /** Azure DevOps project (azure-artifacts only). */
-  project?:       string
+  project?: string
   /** Azure Artifacts feed name (azure-artifacts only). */
   artifactsFeed?: string
   /** CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
-  agent?:         string
+  agent?: string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
   /** CI provider: `azure` | `github` | `both`. */
-  ci?:            CiProvider
+  ci?: CiProvider
   /** Linter (`eslint` or `oxlint`). */
-  linter?:        StackConfig['linter']
+  linter?: StackConfig['linter']
   /** Unit-test runner (`jest` or `vitest`). */
-  testRunner?:    StackConfig['testRunner']
+  testRunner?: StackConfig['testRunner']
 }
 
 /**
@@ -56,14 +63,19 @@ export interface UpgradeOptions {
  * be resolved from either flags or the persisted config.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveRegistry (options: UpgradeOptions, persisted: RegistryConfig | undefined): RegistryConfig {
+function resolveRegistry(
+  options: UpgradeOptions,
+  persisted: RegistryConfig | undefined
+): RegistryConfig {
   if (options.registry === 'azure-artifacts' || (options.organization && options.artifactsFeed)) {
     const persistedAzure = persisted?.kind === 'azure-artifacts' ? persisted : undefined
     const organization = options.organization ?? persistedAzure?.organization
     const project = options.project ?? persistedAzure?.project
     const artifactsFeed = options.artifactsFeed ?? persistedAzure?.artifactsFeed
     if (!organization || !project || !artifactsFeed) {
-      throw new Error('Azure Artifacts registry needs --organization, --project and --artifacts-feed (none found in nx.json\'s persisted config either).')
+      throw new Error(
+        "Azure Artifacts registry needs --organization, --project and --artifacts-feed (none found in nx.json's persisted config either)."
+      )
     }
     return { kind: 'azure-artifacts', organization, project, artifactsFeed }
   }
@@ -73,7 +85,9 @@ function resolveRegistry (options: UpgradeOptions, persisted: RegistryConfig | u
   if (persisted) {
     return persisted
   }
-  throw new Error('No registry found in nx.json\'s persisted config. Pass --registry npm or --registry azure-artifacts (with --organization/--project/--artifacts-feed).')
+  throw new Error(
+    "No registry found in nx.json's persisted config. Pass --registry npm or --registry azure-artifacts (with --organization/--project/--artifacts-feed)."
+  )
 }
 
 /**
@@ -88,19 +102,26 @@ function resolveRegistry (options: UpgradeOptions, persisted: RegistryConfig | u
  * the persisted config, naming the flag needed to supply it.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveOverlayOptions (options: UpgradeOptions, persisted: Partial<OverlayOptions>): OverlayOptions {
+function resolveOverlayOptions(
+  options: UpgradeOptions,
+  persisted: Partial<OverlayOptions>
+): OverlayOptions {
   const scope = options.scope ?? persisted.scope
   if (!scope) {
-    throw new Error('No npm scope found in nx.json\'s persisted config. Pass --scope explicitly.')
+    throw new Error("No npm scope found in nx.json's persisted config. Pass --scope explicitly.")
   }
   const registry = resolveRegistry(options, persisted.registry)
   const ci = options.ci ?? persisted.ci
   if (!ci) {
-    throw new Error('No CI provider found in nx.json\'s persisted config. Pass --ci azure|github|both explicitly.')
+    throw new Error(
+      "No CI provider found in nx.json's persisted config. Pass --ci azure|github|both explicitly."
+    )
   }
   const agent = options.agent ?? persisted.agent
   if (!agent) {
-    throw new Error('No CI build agent found in nx.json\'s persisted config. Pass --agent explicitly.')
+    throw new Error(
+      "No CI build agent found in nx.json's persisted config. Pass --agent explicitly."
+    )
   }
   // Azure-only concept; a github-only workspace never needed one, so a
   // missing persisted value is not an error the way scope/ci/agent are.
@@ -108,7 +129,9 @@ function resolveOverlayOptions (options: UpgradeOptions, persisted: Partial<Over
   const linter = options.linter ?? persisted.stack?.linter
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
   if (!linter || !testRunner) {
-    throw new Error('No stack (linter/test runner) found in nx.json\'s persisted config. Pass --linter and --test-runner explicitly.')
+    throw new Error(
+      "No stack (linter/test runner) found in nx.json's persisted config. Pass --linter and --test-runner explicitly."
+    )
   }
 
   return { scope, registry, agent, variableGroup, ci, stack: { linter, testRunner } }
@@ -143,14 +166,18 @@ function resolveOverlayOptions (options: UpgradeOptions, persisted: Partial<Over
  * config.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): void {
+export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void {
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
-    throw new Error(`No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`)
+    throw new Error(
+      `No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`
+    )
   }
   const persisted = readMnciConfig(workspaceRoot)
   const resolved = resolveOverlayOptions(options, persisted)
 
-  logger.step('Re-applying the MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
+  logger.step(
+    'Re-applying the MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)'
+  )
   applyOverlay(workspaceRoot, resolved)
 
   logger.success('Done. Review the changes with `git diff` before committing.')

@@ -2,12 +2,33 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
-import { applyOverlay, azurePipelinesYaml, DEFAULT_STACK, generatorDefaults, githubActionsYaml, mnciConfig, npmrcContent, poolBlock, pythonPublishUrl, readMnciConfig, registryUrl, rootScripts, type StackConfig, withReleaseConfig } from './overlay'
+import {
+  applyOverlay,
+  azurePipelinesYaml,
+  DEFAULT_STACK,
+  generatorDefaults,
+  githubActionsYaml,
+  mnciConfig,
+  npmrcContent,
+  poolBlock,
+  pythonPublishUrl,
+  readMnciConfig,
+  registryUrl,
+  rootScripts,
+  type StackConfig,
+  withReleaseConfig,
+} from './overlay'
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
-    expect(registryUrl({ kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }))
-      .toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/')
+    expect(
+      registryUrl({
+        kind: 'azure-artifacts',
+        organization: 'org',
+        project: 'proj',
+        artifactsFeed: 'feed',
+      })
+    ).toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/')
   })
 
   it('returns undefined for public npm', () => {
@@ -17,8 +38,14 @@ describe('registryUrl', () => {
 
 describe('pythonPublishUrl', () => {
   it('derives the pypi upload URL from the same Azure Artifacts feed (multi-protocol)', () => {
-    expect(pythonPublishUrl({ kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }))
-      .toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/')
+    expect(
+      pythonPublishUrl({
+        kind: 'azure-artifacts',
+        organization: 'org',
+        project: 'proj',
+        artifactsFeed: 'feed',
+      })
+    ).toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/')
   })
 
   it('returns undefined for public npm (no PyPI publish wired in this cut)', () => {
@@ -28,15 +55,26 @@ describe('pythonPublishUrl', () => {
 
 describe('npmrcContent', () => {
   it('routes the scope to the Azure feed and authenticates with the base64 PAT block', () => {
-    const npmrc = npmrcContent({ kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }, '@demo')
-    expect(npmrc).toContain('@demo:registry=https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/')
+    const npmrc = npmrcContent(
+      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+      '@demo'
+    )
+    expect(npmrc).toContain(
+      '@demo:registry=https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
+    )
     // Base64 PAT via _password (expanded at runtime from ${PAT}), for both the
     // install (/npm/registry/) and publish (feed root) paths — never a raw token.
-    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
-    expect(npmrc).toContain('//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:_password=${PAT}')
-    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
-    expect(npmrc).toContain('//pkgs.dev.azure.com/org/proj/_packaging/feed/:_password=${PAT}')
-    expect(npmrc).toContain('//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:username=org')
+    expect(npmrc).toContain(
+      // eslint-disable-next-line no-template-curly-in-string
+      '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:_password=${PAT}'
+    )
+    expect(npmrc).toContain(
+      // eslint-disable-next-line no-template-curly-in-string
+      '//pkgs.dev.azure.com/org/proj/_packaging/feed/:_password=${PAT}'
+    )
+    expect(npmrc).toContain(
+      '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:username=org'
+    )
     expect(npmrc).not.toContain('_authToken')
   })
 
@@ -54,7 +92,10 @@ describe('npmrcContent', () => {
 
 describe('withReleaseConfig', () => {
   it('patches release and defaultBase while preserving what the preset generated', () => {
-    const patched = withReleaseConfig({ $schema: './node_modules/nx/schemas/nx-schema.json', namedInputs: { default: [] } })
+    const patched = withReleaseConfig({
+      $schema: './node_modules/nx/schemas/nx-schema.json',
+      namedInputs: { default: [] },
+    })
 
     expect(patched.$schema).toBe('./node_modules/nx/schemas/nx-schema.json')
     expect(patched.namedInputs).toEqual({ default: [] })
@@ -67,8 +108,8 @@ describe('withReleaseConfig', () => {
       // would hit immediately. Each project's own versionActions (npm's
       // default, or the hand-written PythonVersionActions stamped onto every
       // python-lib by add/python.ts) wins over this shared config anyway.
-      projects:             ['packages/*', 'python-packages/*'],
-      releaseTag:           { pattern: '{projectName}@{version}' },
+      projects: ['packages/*', 'python-packages/*'],
+      releaseTag: { pattern: '{projectName}@{version}' },
       // Tag-only model: nothing is ever committed to main; the tag is pushed.
       // Top-level (not version.git) — Nx rejects granular git config for the
       // combined `nx release` command, which is what CI and release:preview
@@ -79,13 +120,13 @@ describe('withReleaseConfig', () => {
       // before the tag is even created (verified empirically against a real
       // CI run). The generated pipeline pushes tags itself, explicitly, once
       // tagging is guaranteed to have already happened.
-      git:                  { commit: false, tag: true, push: false },
-      version:              {
-        conventionalCommits:            true,
+      git: { commit: false, tag: true, push: false },
+      version: {
+        conventionalCommits: true,
         fallbackCurrentVersionResolver: 'disk',
         // Releasing packages must not require building apps; both globs listed
         // (nx run-many no-ops on an empty one).
-        preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
+        preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
       },
       changelog: { workspaceChangelog: false },
     })
@@ -101,7 +142,9 @@ describe('poolBlock', () => {
 
   it('maps anything else to a self-hosted pool name', () => {
     expect(poolBlock('MyLinuxPool')).toBe('  name: MyLinuxPool')
-    expect(poolBlock('AzurePipelineManagedPool-Windows')).toBe('  name: AzurePipelineManagedPool-Windows')
+    expect(poolBlock('AzurePipelineManagedPool-Windows')).toBe(
+      '  name: AzurePipelineManagedPool-Windows'
+    )
   })
 })
 
@@ -115,7 +158,11 @@ describe('azurePipelinesYaml', () => {
 
   it('is valid YAML for both hosted and self-hosted agents', () => {
     for (const agent of ['ubuntu-latest', 'MyPool']) {
-      const document_ = yaml.load(azurePipelinesYaml(agent, 'Build')) as { steps?: unknown, pool?: unknown, variables?: unknown }
+      const document_ = yaml.load(azurePipelinesYaml(agent, 'Build')) as {
+        steps?: unknown
+        pool?: unknown
+        variables?: unknown
+      }
       expect(Array.isArray(document_.steps)).toBe(true)
       expect(document_.pool).toBeTruthy()
       expect(Array.isArray(document_.variables)).toBe(true)
@@ -146,8 +193,8 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('PAT: $(PAT)')
     expect(pipeline).not.toContain('npmAuthenticate')
     expect(pipeline).not.toContain('NODE_AUTH_TOKEN')
-    expect(pipeline).toContain('ne(variables[\'Build.Reason\'], \'PullRequest\')')
-    expect(pipeline).toContain('eq(variables[\'Build.SourceBranchName\'], \'main\')')
+    expect(pipeline).toContain("ne(variables['Build.Reason'], 'PullRequest')")
+    expect(pipeline).toContain("eq(variables['Build.SourceBranchName'], 'main')")
   })
 
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN variable), not PAT, for the public npm registry', () => {
@@ -238,8 +285,12 @@ describe('azurePipelinesYaml', () => {
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    const toolchainIndex = pipeline.indexOf('Install Python dependencies (ruff, pytest, build, twine, pip-audit)')
-    const workspaceInstallIndex = pipeline.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const toolchainIndex = pipeline.indexOf(
+      'Install Python dependencies (ruff, pytest, build, twine, pip-audit)'
+    )
+    const workspaceInstallIndex = pipeline.indexOf(
+      'Install Python project dependencies (editable, workspace-wide)'
+    )
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
 
     expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
@@ -259,7 +310,9 @@ describe('azurePipelinesYaml', () => {
 
     const npmInstallIndex = pipeline.indexOf('npm ci')
     const npmAuditIndex = pipeline.indexOf('npm audit --audit-level=high')
-    const pythonWorkspaceInstallIndex = pipeline.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const pythonWorkspaceInstallIndex = pipeline.indexOf(
+      'Install Python project dependencies (editable, workspace-wide)'
+    )
     const pipAuditIndex = pipeline.indexOf(`'-m','pip_audit'`)
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
 
@@ -307,9 +360,9 @@ describe('githubActionsYaml', () => {
 
   it('is valid YAML with the expected top-level shape', () => {
     const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
-      on?:          { push?: unknown, pull_request?: unknown }
+      on?: { push?: unknown; pull_request?: unknown }
       permissions?: { contents?: string }
-      jobs?:        { ci?: { steps?: unknown[] } }
+      jobs?: { ci?: { steps?: unknown[] } }
     }
     expect(document_.on?.push).toBeTruthy()
     expect(document_.on?.pull_request).toBeTruthy()
@@ -391,8 +444,12 @@ describe('githubActionsYaml', () => {
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
-    const toolchainIndex = workflow.indexOf('Install Python dependencies (ruff, pytest, build, twine, pip-audit)')
-    const workspaceInstallIndex = workflow.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const toolchainIndex = workflow.indexOf(
+      'Install Python dependencies (ruff, pytest, build, twine, pip-audit)'
+    )
+    const workspaceInstallIndex = workflow.indexOf(
+      'Install Python project dependencies (editable, workspace-wide)'
+    )
     const syncCheckIndex = workflow.indexOf('nx sync:check')
 
     expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
@@ -409,7 +466,9 @@ describe('githubActionsYaml', () => {
 
     const npmInstallIndex = workflow.indexOf('npm ci')
     const npmAuditIndex = workflow.indexOf('npm audit --audit-level=high')
-    const pythonWorkspaceInstallIndex = workflow.indexOf('Install Python project dependencies (editable, workspace-wide)')
+    const pythonWorkspaceInstallIndex = workflow.indexOf(
+      'Install Python project dependencies (editable, workspace-wide)'
+    )
     const pipAuditIndex = workflow.indexOf(`'-m','pip_audit'`)
     const syncCheckIndex = workflow.indexOf('nx sync:check')
 
@@ -437,7 +496,11 @@ describe('githubActionsYaml', () => {
   })
 
   it('runs the same guard scripts as azure-pipelines.yml (both providers can never drift)', () => {
-    const azure = azurePipelinesYaml('ubuntu-latest', 'Build', 'https://example.invalid/pypi/upload/')
+    const azure = azurePipelinesYaml(
+      'ubuntu-latest',
+      'Build',
+      'https://example.invalid/pypi/upload/'
+    )
     const github = githubActionsYaml('ubuntu-latest', 'https://example.invalid/pypi/upload/')
 
     expect(github).toContain('-m pip install -r requirements-dev.txt')
@@ -455,27 +518,40 @@ describe('githubActionsYaml', () => {
 
 describe('generatorDefaults', () => {
   it('maps eslint straight through', () => {
-    const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<string, { linter: string, unitTestRunner: string }>
+    const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<
+      string,
+      { linter: string; unitTestRunner: string }
+    >
     expect(defaults['@nx/js:library']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
     expect(defaults['@nx/react:application']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
   })
 
   it('maps oxlint to linter:none (oxlint is not an Nx linter) and carries the runner', () => {
-    const defaults = generatorDefaults({ linter: 'oxlint', testRunner: 'vitest' }) as Record<string, { linter: string, unitTestRunner: string }>
+    const defaults = generatorDefaults({ linter: 'oxlint', testRunner: 'vitest' }) as Record<
+      string,
+      { linter: string; unitTestRunner: string }
+    >
     expect(defaults['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 })
 
 describe('mnciConfig', () => {
   it('persists the full resolved overlay options — what `add` and `upgrade` each read back a slice of', () => {
-    const options = { scope: '@demo', registry: { kind: 'npm' } as const, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github' as const, stack: { linter: 'oxlint' as const, testRunner: 'vitest' as const } }
-    expect(mnciConfig(options)).toEqual({
-      scope:         '@demo',
-      registry:      { kind: 'npm' },
-      agent:         'ubuntu-latest',
+    const options = {
+      scope: '@demo',
+      registry: { kind: 'npm' } as const,
+      agent: 'ubuntu-latest',
       variableGroup: 'Build',
-      ci:            'github',
-      stack:         { linter: 'oxlint', testRunner: 'vitest' },
+      ci: 'github' as const,
+      stack: { linter: 'oxlint' as const, testRunner: 'vitest' as const },
+    }
+    expect(mnciConfig(options)).toEqual({
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github',
+      stack: { linter: 'oxlint', testRunner: 'vitest' },
     })
   })
 })
@@ -493,16 +569,26 @@ describe('readMnciConfig', () => {
 
   it('reads back exactly what applyOverlay persisted', () => {
     writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } }))
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } })
+    )
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github',
+      stack: DEFAULT_STACK,
+    })
 
     expect(readMnciConfig(workspaceRoot)).toEqual({
-      scope:         '@demo',
-      registry:      { kind: 'npm' },
-      agent:         'ubuntu-latest',
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
       variableGroup: 'Build',
-      ci:            'github',
-      stack:         DEFAULT_STACK,
+      ci: 'github',
+      stack: DEFAULT_STACK,
     })
   })
 
@@ -538,7 +624,9 @@ describe('rootScripts', () => {
     expect(scripts['python:install']).toContain(`globSync('python-packages/*/pyproject.toml')`)
     expect(scripts['python:install']).toContain(`globSync('libs/*/pyproject.toml')`)
     // Chained (not parallel), toolchain install first.
-    const toolchainIndex = scripts['python:install'].indexOf('-m pip install -r requirements-dev.txt')
+    const toolchainIndex = scripts['python:install'].indexOf(
+      '-m pip install -r requirements-dev.txt'
+    )
     const workspaceIndex = scripts['python:install'].indexOf(`globSync('apps/*/pyproject.toml')`)
     expect(toolchainIndex).toBeGreaterThan(-1)
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
@@ -554,12 +642,22 @@ describe('applyOverlay', () => {
   let workspaceRoot: string
 
   const overlayWith = (stack: StackConfig): void =>
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack,
+    })
 
   beforeEach(() => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-overlay-'))
     writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } }))
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } })
+    )
   })
 
   afterEach(() => {
@@ -567,29 +665,57 @@ describe('applyOverlay', () => {
   })
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as Record<string, unknown>
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >
     expect(nxJson.$schema).toBe('s')
     expect(nxJson.release).toBeDefined()
 
     expect(existsSync(join(workspaceRoot, '.npmrc'))).toBe(true)
-    expect(readFileSync(join(workspaceRoot, 'commitlint.config.mjs'), 'utf8')).toContain('@commitlint/config-conventional')
-    expect(readFileSync(join(workspaceRoot, '.husky/commit-msg'), 'utf8')).toContain('commitlint --edit')
+    expect(readFileSync(join(workspaceRoot, 'commitlint.config.mjs'), 'utf8')).toContain(
+      '@commitlint/config-conventional'
+    )
+    expect(readFileSync(join(workspaceRoot, '.husky/commit-msg'), 'utf8')).toContain(
+      'commitlint --edit'
+    )
     const pipeline = readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')
     expect(pipeline).toContain('  vmImage: ubuntu-latest')
     expect(pipeline).toContain('- group: Build')
   })
 
   it('writes only azure-pipelines.yml when ci: "azure" (the default)', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
     expect(existsSync(join(workspaceRoot, '.github/workflows/ci.yml'))).toBe(false)
   })
 
   it('writes only .github/workflows/ci.yml when ci: "github"', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github',
+      stack: DEFAULT_STACK,
+    })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(false)
     const workflow = readFileSync(join(workspaceRoot, '.github/workflows/ci.yml'), 'utf8')
@@ -601,7 +727,14 @@ describe('applyOverlay', () => {
   })
 
   it('threads the registry kind through to azure-pipelines.yml too, when both providers are chosen for a public npm registry', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'both',
+      stack: DEFAULT_STACK,
+    })
 
     const pipeline = readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')
     expect(pipeline).toContain('NODE_AUTH_TOKEN: $(NPM_TOKEN)')
@@ -609,68 +742,138 @@ describe('applyOverlay', () => {
   })
 
   it('writes both pipeline files when ci: "both"', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'both',
+      stack: DEFAULT_STACK,
+    })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
     expect(existsSync(join(workspaceRoot, '.github/workflows/ci.yml'))).toBe(true)
   })
 
   it('never writes .github/dependabot.yml when ci: "azure" (the default) — Dependabot is GitHub-native', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
     expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(false)
   })
 
   it('writes .github/dependabot.yml alongside the workflow for ci: "github"', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'github', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github',
+      stack: DEFAULT_STACK,
+    })
 
     const dependabot = readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
-    const parsed = yaml.load(dependabot) as { updates: Array<{ 'package-ecosystem': string, directory?: string, directories?: string[] }> }
-    expect(parsed.updates.map((update) => update['package-ecosystem'])).toEqual(['npm', 'github-actions', 'pip'])
+    const parsed = yaml.load(dependabot) as {
+      updates: Array<{ 'package-ecosystem': string; directory?: string; directories?: string[] }>
+    }
+    expect(parsed.updates.map(update => update['package-ecosystem'])).toEqual([
+      'npm',
+      'github-actions',
+      'pip',
+    ])
     // pip covers wherever a Python project might later land (add python-*),
     // via directories that currently match nothing — not an error for Dependabot.
-    expect(parsed.updates.find((update) => update['package-ecosystem'] === 'pip')?.directories)
-      .toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
+    expect(
+      parsed.updates.find(update => update['package-ecosystem'] === 'pip')?.directories
+    ).toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
   })
 
   it('writes .github/dependabot.yml for ci: "both" too', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'both', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'both',
+      stack: DEFAULT_STACK,
+    })
 
     expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(true)
   })
 
   it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { sync?: { applyChanges?: boolean } }
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      sync?: { applyChanges?: boolean }
+    }
     expect(nxJson.sync?.applyChanges).toBe(true)
   })
 
-  it('writes the stack as nx.json generator defaults (for a user\'s own direct `nx g`)', () => {
+  it("writes the stack as nx.json generator defaults (for a user's own direct `nx g`)", () => {
     overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
 
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { generators: Record<string, { linter: string, unitTestRunner: string }> }
-    expect(nxJson.generators['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      generators: Record<string, { linter: string; unitTestRunner: string }>
+    }
+    expect(nxJson.generators['@nx/js:library']).toEqual({
+      linter: 'none',
+      unitTestRunner: 'vitest',
+    })
   })
 
   it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
     overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
 
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci: { stack: { linter: string, testRunner: string } } }
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      mnci: { stack: { linter: string; testRunner: string } }
+    }
     expect(nxJson.mnci.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
   })
 
   it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' }, agent: 'windows-latest', variableGroup: 'CiSecrets', ci: 'both', stack: DEFAULT_STACK })
-
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as { mnci: Record<string, unknown> }
-    expect(nxJson.mnci).toEqual({
-      scope:         '@demo',
-      registry:      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
-      agent:         'windows-latest',
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: {
+        kind: 'azure-artifacts',
+        organization: 'org',
+        project: 'proj',
+        artifactsFeed: 'feed',
+      },
+      agent: 'windows-latest',
       variableGroup: 'CiSecrets',
-      ci:            'both',
-      stack:         DEFAULT_STACK,
+      ci: 'both',
+      stack: DEFAULT_STACK,
+    })
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      mnci: Record<string, unknown>
+    }
+    expect(nxJson.mnci).toEqual({
+      scope: '@demo',
+      registry: {
+        kind: 'azure-artifacts',
+        organization: 'org',
+        project: 'proj',
+        artifactsFeed: 'feed',
+      },
+      agent: 'windows-latest',
+      variableGroup: 'CiSecrets',
+      ci: 'both',
+      stack: DEFAULT_STACK,
     })
   })
 
@@ -679,7 +882,9 @@ describe('applyOverlay', () => {
     const oxlintConfig = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
     // A typed config extending the oxc-standard StandardJS preset (not JSON).
     expect(oxlintConfig).toContain(`import { defineConfig } from 'oxlint'`)
-    expect(oxlintConfig).toContain(`import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }`)
+    expect(oxlintConfig).toContain(
+      `import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }`
+    )
     expect(oxlintConfig).toContain('extends: [standard]')
     expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
     // The formatter counterpart, mirroring oxc-standard's .oxfmtrc.json.
@@ -687,7 +892,11 @@ describe('applyOverlay', () => {
     expect(oxfmtConfig).toContain(`import { defineConfig } from 'oxfmt'`)
     expect(oxfmtConfig).toContain('semi: false')
     expect(oxfmtConfig).toContain('singleQuote: true')
-    const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+    const scripts = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        scripts: Record<string, string>
+      }
+    ).scripts
     expect(scripts.lint).toBe('oxlint')
     expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
     expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
@@ -697,24 +906,45 @@ describe('applyOverlay', () => {
     overlayWith(DEFAULT_STACK)
     expect(existsSync(join(workspaceRoot, 'oxlint.config.mts'))).toBe(false)
     expect(existsSync(join(workspaceRoot, 'oxfmt.config.mts'))).toBe(false)
-    const scripts = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+    const scripts = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        scripts: Record<string, string>
+      }
+    ).scripts
     expect(scripts.lint).toBe('nx run-many -t lint')
     expect(scripts.format).toBeUndefined()
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
     const mode = statSync(join(workspaceRoot, '.husky/commit-msg')).mode
     expect(mode & 0o111).not.toBe(0)
   })
 
   it('stamps the dual TypeScript compiler into devDependencies (TS6 API + TS7 tsc)', () => {
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', devDependencies: { typescript: '~6.0.3', nx: '23.0.0' } }))
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({
+        name: '@org/source',
+        devDependencies: { typescript: '~6.0.3', nx: '23.0.0' },
+      })
+    )
 
     overlayWith(DEFAULT_STACK)
 
-    const devDependencies = (JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { devDependencies: Record<string, string> }).devDependencies
+    const devDependencies = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
     // typescript is aliased to the TS6 package (API intact; its bin is tsc6, not tsc)…
     expect(devDependencies.typescript).toBe('npm:@typescript/typescript6@^6.0.2')
     // …and @typescript/native provides the TS7 `tsc`.
@@ -724,9 +954,18 @@ describe('applyOverlay', () => {
   })
 
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as Record<string, unknown>
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'package.json'), 'utf8')
+    ) as Record<string, unknown>
     expect(manifest.name).toBe('@demo/source')
     expect(manifest.private).toBe(true)
     // Existing devDeps preserved (the dual TS compiler is added on top).
@@ -734,18 +973,27 @@ describe('applyOverlay', () => {
   })
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
     const { 'python:install': pythonInstall, ...rest } = manifest.scripts
     expect(rest).toEqual({
-      build:             'nx run-many -t build',
-      lint:              'nx run-many -t lint',
-      test:              'nx run-many -t test',
-      affected:          'nx affected -t lint,test,build',
-      graph:             'nx graph',
+      build: 'nx run-many -t build',
+      lint: 'nx run-many -t lint',
+      test: 'nx run-many -t test',
+      affected: 'nx affected -t lint,test,build',
+      graph: 'nx graph',
       'release:preview': 'nx release --dry-run',
-      prepare:           'husky',
+      prepare: 'husky',
     })
     // The local-dev counterpart of the CI Python-install guards — see the
     // dedicated `python:install` describe block below for the full assertions.
@@ -754,11 +1002,23 @@ describe('applyOverlay', () => {
   })
 
   it('keeps any scripts the preset generated that the curated set does not own', () => {
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source', scripts: { postinstall: 'echo hi' } }))
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: '@org/source', scripts: { postinstall: 'echo hi' } })
+    )
 
-    applyOverlay(workspaceRoot, { scope: '@demo', registry: { kind: 'npm' }, agent: 'ubuntu-latest', variableGroup: 'Build', ci: 'azure', stack: DEFAULT_STACK })
+    applyOverlay(workspaceRoot, {
+      scope: '@demo',
+      registry: { kind: 'npm' },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'azure',
+      stack: DEFAULT_STACK,
+    })
 
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
     expect(manifest.scripts.postinstall).toBe('echo hi')
     expect(manifest.scripts.build).toBe('nx run-many -t build')
   })

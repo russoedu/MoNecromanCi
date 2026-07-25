@@ -18,7 +18,7 @@ import { addNxTargets, ensureAdmZip, hasPlugin, type WorkspaceStack } from './sh
  * @throws Error when the underlying `nx add` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensurePlugin (workspaceRoot: string, packageName: string): void {
+function ensurePlugin(workspaceRoot: string, packageName: string): void {
   if (hasPlugin(workspaceRoot, packageName)) {
     return
   }
@@ -49,7 +49,7 @@ export const REACT_ENVIRONMENTS = ['dev', 'uat', 'prod'] as const
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function reactEnvironmentFile (environment: string): string {
+export function reactEnvironmentFile(environment: string): string {
   return `# Vite compiles VITE_-prefixed vars into the '${environment}' bundle at build time.
 # They ship to the browser, so keep only PUBLIC config here — never secrets.
 VITE_ENVIRONMENT=${environment}
@@ -77,25 +77,33 @@ VITE_API_URL=https://api.${environment}.example.com
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function reactAppTargets (name: string): Record<string, unknown> {
+export function reactAppTargets(name: string): Record<string, unknown> {
   const targets: Record<string, unknown> = {}
   for (const environment of REACT_ENVIRONMENTS) {
     targets[`build-${environment}`] = {
       executor: 'nx:run-commands',
       // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
-      outputs:  [`{workspaceRoot}/apps/${name}/dist-${environment}`],
-      options:  { command: `vite build --mode ${environment} --outDir dist-${environment}`, cwd: `apps/${name}` },
+      outputs: [`{workspaceRoot}/apps/${name}/dist-${environment}`],
+      options: {
+        command: `vite build --mode ${environment} --outDir dist-${environment}`,
+        cwd: `apps/${name}`,
+      },
     }
   }
-  const zipStatements = REACT_ENVIRONMENTS
-    .map((environment) => `z=new A();z.addLocalFolder('apps/${name}/dist-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`)
-    .join(';')
+  const zipStatements = REACT_ENVIRONMENTS.map(
+    environment =>
+      `z=new A();z.addLocalFolder('apps/${name}/dist-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`
+  ).join(';')
   targets.package = {
-    executor:  'nx:run-commands',
-    dependsOn: REACT_ENVIRONMENTS.map((environment) => `build-${environment}`),
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} tokens, not JS interpolation
-    outputs:   REACT_ENVIRONMENTS.map((environment) => `{workspaceRoot}/dist/drop/react-app-${name}-${environment}.zip`),
-    options:   { command: `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');let z;${zipStatements}"` },
+    executor: 'nx:run-commands',
+    dependsOn: REACT_ENVIRONMENTS.map(environment => `build-${environment}`),
+    outputs: REACT_ENVIRONMENTS.map(
+      // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation
+      environment => `{workspaceRoot}/dist/drop/react-app-${name}-${environment}.zip`
+    ),
+    options: {
+      command: `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');let z;${zipStatements}"`,
+    },
   }
   return targets
 }
@@ -115,17 +123,18 @@ export function reactAppTargets (name: string): Record<string, unknown> {
  * @throws Propagates any `fs` error reading or writing `.gitignore`.
  * @typeParam None - this function has no generic type parameters.
  */
-function allowEnvFiles (workspaceRoot: string): void {
+function allowEnvFiles(workspaceRoot: string): void {
   const gitignorePath = join(workspaceRoot, '.gitignore')
   if (!fileExists(gitignorePath)) {
     return
   }
-  const marker = '# MoNecromanCI: keep the committed per-environment Vite config (public VITE_ values)'
+  const marker =
+    '# MoNecromanCI: keep the committed per-environment Vite config (public VITE_ values)'
   const current = readFileSync(gitignorePath, 'utf8')
   if (current.includes(marker)) {
     return
   }
-  const allow = REACT_ENVIRONMENTS.map((environment) => `!apps/*/.env.${environment}`).join('\n')
+  const allow = REACT_ENVIRONMENTS.map(environment => `!apps/*/.env.${environment}`).join('\n')
   writeFileEnsured(gitignorePath, `${current.replace(/\n*$/, '\n')}\n${marker}\n${allow}\n`)
 }
 
@@ -146,17 +155,22 @@ function allowEnvFiles (workspaceRoot: string): void {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addReactApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
+export function addReactApp(workspaceRoot: string, name: string, stack: WorkspaceStack): void {
   ensurePlugin(workspaceRoot, '@nx/react')
-  runNx([
-    'g', '@nx/react:app', `apps/${name}`,
-    '--bundler=vite',
-    `--unitTestRunner=${stack.testRunner}`,
-    `--linter=${stack.linter}`,
-    '--style=css',
-    '--e2eTestRunner=none',
-    '--no-interactive',
-  ], workspaceRoot)
+  runNx(
+    [
+      'g',
+      '@nx/react:app',
+      `apps/${name}`,
+      '--bundler=vite',
+      `--unitTestRunner=${stack.testRunner}`,
+      `--linter=${stack.linter}`,
+      '--style=css',
+      '--e2eTestRunner=none',
+      '--no-interactive',
+    ],
+    workspaceRoot
+  )
   ensureAdmZip(workspaceRoot)
   const reactAppRoot = join(workspaceRoot, 'apps', name)
   for (const environment of REACT_ENVIRONMENTS) {

@@ -2,7 +2,8 @@ import { addPackagesToWheelTarget, parseVendorEntries } from './vendor'
 
 describe('parseVendorEntries', () => {
   it('extracts project names from a [tool.mnci-python-pip] vendor table', () => {
-    const pyproject = '[project]\nname = "pyshared"\n\n[tool.mnci-python-pip]\nvendor = ["pycore", "other-lib"]\n'
+    const pyproject =
+      '[project]\nname = "pyshared"\n\n[tool.mnci-python-pip]\nvendor = ["pycore", "other-lib"]\n'
     expect(parseVendorEntries(pyproject)).toEqual(['pycore', 'other-lib'])
   })
 
@@ -24,7 +25,9 @@ describe('addPackagesToWheelTarget', () => {
 
   it('de-duplicates when a module is already present', () => {
     const pyproject = 'packages = ["pyshared", "pycore"]\n'
-    expect(addPackagesToWheelTarget(pyproject, ['pycore'])).toContain('packages = ["pyshared", "pycore"]')
+    expect(addPackagesToWheelTarget(pyproject, ['pycore'])).toContain(
+      'packages = ["pyshared", "pycore"]'
+    )
   })
 
   it('leaves the content unchanged when no packages list is found', () => {

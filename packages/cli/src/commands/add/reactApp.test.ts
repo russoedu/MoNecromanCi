@@ -1,5 +1,5 @@
 jest.mock('../../nx', () => ({
-  runNx:    jest.fn(),
+  runNx: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
@@ -22,7 +22,10 @@ beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
-  writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+  )
 })
 
 afterEach(() => {
@@ -35,19 +38,28 @@ describe('runAdd react-app', () => {
     await runAdd('react-app', 'web', {})
 
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['add', '@nx/react'], workspaceRoot)
-    expect(mockRunNx).toHaveBeenNthCalledWith(2, [
-      'g', '@nx/react:app', 'apps/web',
-      '--bundler=vite',
-      '--unitTestRunner=jest',
-      '--linter=eslint',
-      '--style=css',
-      '--e2eTestRunner=none',
-      '--no-interactive',
-    ], workspaceRoot)
+    expect(mockRunNx).toHaveBeenNthCalledWith(
+      2,
+      [
+        'g',
+        '@nx/react:app',
+        'apps/web',
+        '--bundler=vite',
+        '--unitTestRunner=jest',
+        '--linter=eslint',
+        '--style=css',
+        '--e2eTestRunner=none',
+        '--no-interactive',
+      ],
+      workspaceRoot
+    )
   })
 
   it('skips the plugin install when it is already a devDependency', async () => {
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'demo', devDependencies: { '@nx/react': '^23.0.0' } }))
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: 'demo', devDependencies: { '@nx/react': '^23.0.0' } })
+    )
 
     await runAdd('react-app', 'web', {})
 
@@ -58,27 +70,57 @@ describe('runAdd react-app', () => {
   it('builds a react app per environment (dev/uat/prod), each into its own drop zip', async () => {
     // The generator is mocked, so pre-create the manifest it would have written.
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true }))
+    writeFileSync(
+      join(workspaceRoot, 'apps/web/package.json'),
+      JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true })
+    )
 
     await runAdd('react-app', 'web', {})
 
     // adm-zip is the packager the target runs.
-    expect(mockRunShell).toHaveBeenCalledWith('npm', ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'], workspaceRoot)
+    expect(mockRunShell).toHaveBeenCalledWith(
+      'npm',
+      ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
+      workspaceRoot
+    )
 
     // A .env.<env> is scaffolded per environment (public VITE_ config).
     for (const environment of ['dev', 'uat', 'prod']) {
-      expect(readFileSync(join(workspaceRoot, `apps/web/.env.${environment}`), 'utf8')).toContain(`VITE_ENVIRONMENT=${environment}`)
+      expect(readFileSync(join(workspaceRoot, `apps/web/.env.${environment}`), 'utf8')).toContain(
+        `VITE_ENVIRONMENT=${environment}`
+      )
     }
 
     // React apps are inference-only (no project.json): targets are attached via
     // the manifest's `nx` field, preserving the existing manifest.
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')) as { name: string, nx: { targets: Record<string, { executor: string, dependsOn?: string[], outputs: string[], options: { command: string, cwd?: string } }> } }
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')
+    ) as {
+      name: string
+      nx: {
+        targets: Record<
+          string,
+          {
+            executor: string
+            dependsOn?: string[]
+            outputs: string[]
+            options: { command: string; cwd?: string }
+          }
+        >
+      }
+    }
     expect(manifest.name).toBe('@demo/web')
     const targets = manifest.nx.targets
 
     // One build target per environment: vite build --mode <env> --outDir dist-<env>.
     for (const environment of ['dev', 'uat', 'prod']) {
-      expect(targets[`build-${environment}`]).toMatchObject({ executor: 'nx:run-commands', options: { command: `vite build --mode ${environment} --outDir dist-${environment}`, cwd: 'apps/web' } })
+      expect(targets[`build-${environment}`]).toMatchObject({
+        executor: 'nx:run-commands',
+        options: {
+          command: `vite build --mode ${environment} --outDir dist-${environment}`,
+          cwd: 'apps/web',
+        },
+      })
     }
 
     // The package target depends on the three env builds and emits one zip per
@@ -93,13 +135,19 @@ describe('runAdd react-app', () => {
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci: { stack: { linter: 'eslint', testRunner: 'vitest' } } }))
+    writeFileSync(
+      join(workspaceRoot, 'nx.json'),
+      JSON.stringify({ mnci: { stack: { linter: 'eslint', testRunner: 'vitest' } } })
+    )
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
-    writeFileSync(join(workspaceRoot, 'apps/web/package.json'), JSON.stringify({ name: '@demo/web' }))
+    writeFileSync(
+      join(workspaceRoot, 'apps/web/package.json'),
+      JSON.stringify({ name: '@demo/web' })
+    )
 
     await runAdd('react-app', 'web', {})
 
-    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nx/react:app')
+    const generatorCall = mockRunNx.mock.calls.find(call => call[0][1] === '@nx/react:app')
     expect(generatorCall?.[0]).toContain('--unitTestRunner=vitest')
   })
 })

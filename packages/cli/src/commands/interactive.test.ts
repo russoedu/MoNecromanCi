@@ -44,13 +44,17 @@ describe('runInteractive', () => {
 
     mockFileExists.mockReturnValue(true)
     await runInteractive()
-    const insideChoices = (mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }).choices
-    expect(insideChoices.map((choice) => choice.value)).toEqual(['add', 'new'])
+    const insideChoices = (
+      mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
+    ).choices
+    expect(insideChoices.map(choice => choice.value)).toEqual(['add', 'new'])
 
     mockSelect.mockClear()
     mockFileExists.mockReturnValue(false)
     await runInteractive()
-    const outsideChoices = (mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }).choices
-    expect(outsideChoices.map((choice) => choice.value)).toEqual(['new', 'add'])
+    const outsideChoices = (
+      mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
+    ).choices
+    expect(outsideChoices.map(choice => choice.value)).toEqual(['new', 'add'])
   })
 })

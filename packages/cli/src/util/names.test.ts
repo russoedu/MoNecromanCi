@@ -7,8 +7,8 @@ describe('assertValidProjectName', () => {
     }
   })
 
-  it('rejects an empty name — the gap where an explicit empty flag bypassed promptText\'s own check', () => {
-    expect(() => assertValidProjectName('', 'Project name')).toThrow('Project name \'\' is invalid')
+  it("rejects an empty name — the gap where an explicit empty flag bypassed promptText's own check", () => {
+    expect(() => assertValidProjectName('', 'Project name')).toThrow("Project name '' is invalid")
   })
 
   it('rejects a name starting with a digit (would be an invalid Python module identifier)', () => {
@@ -32,6 +32,8 @@ describe('assertValidProjectName', () => {
   })
 
   it('includes the offending label and value in the error message', () => {
-    expect(() => assertValidProjectName('Bad Name', 'Workspace name')).toThrow('Workspace name \'Bad Name\' is invalid')
+    expect(() => assertValidProjectName('Bad Name', 'Workspace name')).toThrow(
+      "Workspace name 'Bad Name' is invalid"
+    )
   })
 })

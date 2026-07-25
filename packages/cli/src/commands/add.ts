@@ -7,7 +7,13 @@ import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
 import { addNpmLib } from './add/npmLib'
-import { addPythonApp, addPythonFunctionApp, addPythonInternalLib, addPythonLib, addPythonVendor } from './add/python'
+import {
+  addPythonApp,
+  addPythonFunctionApp,
+  addPythonInternalLib,
+  addPythonLib,
+  addPythonVendor,
+} from './add/python'
 import { addReactApp } from './add/reactApp'
 import type { AddOptions, WorkspaceStack } from './add/shared'
 
@@ -48,9 +54,17 @@ export type { AddOptions } from './add/shared'
  *
  * @typeParam None - this type has no generic type parameters.
  */
-export type ProjectKind
-  = | 'react-app' | 'node-app' | 'node-function-app' | 'npm-lib' | 'internal-lib'
-    | 'python-app' | 'python-function-app' | 'python-lib' | 'python-internal-lib' | 'python-vendor'
+export type ProjectKind =
+  | 'react-app'
+  | 'node-app'
+  | 'node-function-app'
+  | 'npm-lib'
+  | 'internal-lib'
+  | 'python-app'
+  | 'python-function-app'
+  | 'python-lib'
+  | 'python-internal-lib'
+  | 'python-vendor'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -60,8 +74,16 @@ export type ProjectKind
  * kinds first, then the Python family.
  */
 export const PROJECT_KINDS: ProjectKind[] = [
-  'react-app', 'node-app', 'node-function-app', 'npm-lib', 'internal-lib',
-  'python-app', 'python-function-app', 'python-lib', 'python-internal-lib', 'python-vendor',
+  'react-app',
+  'node-app',
+  'node-function-app',
+  'npm-lib',
+  'internal-lib',
+  'python-app',
+  'python-function-app',
+  'python-lib',
+  'python-internal-lib',
+  'python-vendor',
 ]
 
 /**
@@ -83,7 +105,11 @@ export const PROJECT_KINDS: ProjectKind[] = [
  * @throws Error when run outside a workspace root or a generator fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runAdd (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions): Promise<void> {
+export async function runAdd(
+  kind: ProjectKind | undefined,
+  name: string | undefined,
+  options: AddOptions
+): Promise<void> {
   const workspaceRoot = process.cwd()
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
     throw new Error('No nx.json found here. Run `add` from the workspace root.')
@@ -97,11 +123,13 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
   // fill in every configuration — including the npm-lib scope (below) that the
   // flag path defaults silently.
   const kindProvided = kind !== undefined
-  const resolvedKind = kind ?? await select<ProjectKind>({
-    message: 'What kind of project?',
-    choices: PROJECT_KINDS.map((value) => ({ name: value, value })),
-  })
-  const resolvedName = name ?? await promptText('Project name')
+  const resolvedKind =
+    kind ??
+    (await select<ProjectKind>({
+      message: 'What kind of project?',
+      choices: PROJECT_KINDS.map(value => ({ name: value, value })),
+    }))
+  const resolvedName = name ?? (await promptText('Project name'))
   // Fails fast, before any install or generator call: the name becomes a
   // directory, an argv token and (for Python kinds) a module identifier — and
   // an explicitly empty `name` argument bypasses promptText's own non-empty
@@ -129,13 +157,18 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       // tsc (not none): the default @nx/enforce-module-boundaries rule forbids
       // buildable libraries (every npm-lib) from importing non-buildable ones,
       // so internal libs must be buildable — just never published (private).
-      runNx([
-        'g', '@nx/js:lib', `libs/${resolvedName}`,
-        '--bundler=tsc',
-        `--unitTestRunner=${stack.testRunner}`,
-        `--linter=${stack.linter}`,
-        '--no-interactive',
-      ], workspaceRoot)
+      runNx(
+        [
+          'g',
+          '@nx/js:lib',
+          `libs/${resolvedName}`,
+          '--bundler=tsc',
+          `--unitTestRunner=${stack.testRunner}`,
+          `--linter=${stack.linter}`,
+          '--no-interactive',
+        ],
+        workspaceRoot
+      )
       markPrivate(join(workspaceRoot, 'libs', resolvedName, 'package.json'))
       break
     }
@@ -171,7 +204,9 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       // Argument#choices()); this is the last line of defense for any other
       // caller of runAdd (e.g. a future programmatic use).
       const exhaustive: never = resolvedKind
-      throw new Error(`Unknown project kind '${exhaustive as string}'. Expected one of: ${PROJECT_KINDS.join(', ')}.`)
+      throw new Error(
+        `Unknown project kind '${exhaustive as string}'. Expected one of: ${PROJECT_KINDS.join(', ')}.`
+      )
     }
   }
 
@@ -201,10 +236,12 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
  * @throws Never - a non-zero `nx sync` is reported as a warning, not thrown.
  * @typeParam None - this function has no generic type parameters.
  */
-function syncProjectReferences (workspaceRoot: string): void {
+function syncProjectReferences(workspaceRoot: string): void {
   logger.step('Syncing TypeScript project references (nx sync)')
   if (runShell('npx', ['nx', 'sync'], workspaceRoot) !== 0) {
-    logger.warn('nx sync did not complete — run `npx nx sync` yourself so cross-project imports resolve in your editor.')
+    logger.warn(
+      'nx sync did not complete — run `npx nx sync` yourself so cross-project imports resolve in your editor.'
+    )
   }
 }
 
@@ -228,11 +265,13 @@ function syncProjectReferences (workspaceRoot: string): void {
  * @throws Propagates any `fs`/JSON error reading `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
-  const nxJson = readJson<{ mnci?: { stack?: { linter?: string, testRunner?: string } } }>(join(workspaceRoot, 'nx.json'))
+function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
+  const nxJson = readJson<{ mnci?: { stack?: { linter?: string; testRunner?: string } } }>(
+    join(workspaceRoot, 'nx.json')
+  )
   const stack = nxJson.mnci?.stack
   return {
-    linter:     stack?.linter === 'oxlint' ? 'none' : 'eslint',
+    linter: stack?.linter === 'oxlint' ? 'none' : 'eslint',
     testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
 }
@@ -249,7 +288,7 @@ function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-function markPrivate (manifestPath: string): void {
+function markPrivate(manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
 }

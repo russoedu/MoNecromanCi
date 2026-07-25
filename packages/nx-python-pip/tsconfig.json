@@ -16,10 +16,5 @@
     "esModuleInterop": true,
     "isolatedModules": true
   },
-  "exclude": [
-    "./coverage/**",
-    "./dist/**",
-    "./doc/**",
-    "./node_modules/**"
-  ]
+  "exclude": ["./coverage/**", "./dist/**", "./doc/**", "./node_modules/**"]
 }

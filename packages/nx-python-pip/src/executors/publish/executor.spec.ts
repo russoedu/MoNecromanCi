@@ -6,14 +6,14 @@ jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
 
 const mockSpawnSync = jest.mocked(spawnSync)
 
-function context (): ExecutorContext {
+function context(): ExecutorContext {
   return {
-    root:                   '/workspace',
-    projectName:            'shared',
-    cwd:                    '/workspace',
-    isVerbose:              false,
+    root: '/workspace',
+    projectName: 'shared',
+    cwd: '/workspace',
+    isVerbose: false,
     projectsConfigurations: {
-      version:  2,
+      version: 2,
       projects: { shared: { root: 'python-packages/shared' } },
     },
   } as unknown as ExecutorContext
@@ -29,8 +29,9 @@ describe('publishExecutor', () => {
 
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenCalledWith(
-      'python3', ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'],
-      { cwd: '/workspace/python-packages/shared', stdio: 'inherit' },
+      'python3',
+      ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'],
+      { cwd: '/workspace/python-packages/shared', stdio: 'inherit' }
     )
   })
 

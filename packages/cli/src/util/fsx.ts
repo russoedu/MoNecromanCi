@@ -14,7 +14,7 @@ import { dirname } from 'node:path'
  * parse error raised by the underlying read.
  * @typeParam T - The expected shape of the parsed JSON.
  */
-export function readJson<T> (path: string): T {
+export function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T
 }
 
@@ -30,7 +30,7 @@ export function readJson<T> (path: string): T {
  * @throws Propagates any `JSON.stringify` error (e.g. circular references).
  * @typeParam None - this function has no generic type parameters.
  */
-export function toJson (value: unknown): string {
+export function toJson(value: unknown): string {
   return `${JSON.stringify(value, undefined, 2)}\n`
 }
 
@@ -47,7 +47,7 @@ export function toJson (value: unknown): string {
  * @throws Propagates any Node.js `fs` error (e.g. permission denied).
  * @typeParam None - this function has no generic type parameters.
  */
-export function writeFileEnsured (path: string, content: string): void {
+export function writeFileEnsured(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content)
 }
@@ -63,7 +63,7 @@ export function writeFileEnsured (path: string, content: string): void {
  * @throws Propagates any Node.js `fs` error (e.g. file not found).
  * @typeParam None - this function has no generic type parameters.
  */
-export function markExecutable (path: string): void {
+export function markExecutable(path: string): void {
   chmodSync(path, 0o755)
 }
 
@@ -78,6 +78,6 @@ export function markExecutable (path: string): void {
  * @throws Never - `existsSync` swallows errors.
  * @typeParam None - this function has no generic type parameters.
  */
-export function fileExists (path: string): boolean {
+export function fileExists(path: string): boolean {
   return existsSync(path)
 }

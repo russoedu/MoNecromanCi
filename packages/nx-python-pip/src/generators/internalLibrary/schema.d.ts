@@ -5,7 +5,7 @@
  */
 export interface InternalLibraryGeneratorSchema {
   /** The project name. */
-  name:       string
+  name: string
   /** Workspace-relative directory (defaults to `libs/<name>`). */
   directory?: string
 }

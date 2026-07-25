@@ -1,5 +1,10 @@
 import { addProjectConfiguration, formatFiles, type Tree } from '@nx/devkit'
-import { pythonModuleDirectory, pythonPyprojectToml, pythonSampleModule, pythonSampleTest } from '../../internal/pythonProject'
+import {
+  pythonModuleDirectory,
+  pythonPyprojectToml,
+  pythonSampleModule,
+  pythonSampleTest,
+} from '../../internal/pythonProject'
 import type { InternalLibraryGeneratorSchema } from './schema.d'
 
 /**
@@ -18,15 +23,18 @@ import type { InternalLibraryGeneratorSchema } from './schema.d'
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function internalLibraryGenerator (tree: Tree, options: InternalLibraryGeneratorSchema): Promise<void> {
+export default async function internalLibraryGenerator(
+  tree: Tree,
+  options: InternalLibraryGeneratorSchema
+): Promise<void> {
   const root = options.directory ?? `libs/${options.name}`
   const moduleDirectory = pythonModuleDirectory(options.name)
 
   addProjectConfiguration(tree, options.name, {
     root,
     projectType: 'library',
-    sourceRoot:  root,
-    targets:     {
+    sourceRoot: root,
+    targets: {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
       test: { executor: '@mnci/nx-python-pip:test', options: {} },
     },

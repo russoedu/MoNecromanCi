@@ -26,15 +26,18 @@ import type { FunctionAppGeneratorSchema } from './schema.d'
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function functionAppGenerator (tree: Tree, options: FunctionAppGeneratorSchema): Promise<void> {
+export default async function functionAppGenerator(
+  tree: Tree,
+  options: FunctionAppGeneratorSchema
+): Promise<void> {
   const root = options.directory ?? `apps/${options.name}`
   const moduleDirectory = pythonModuleDirectory(options.name)
 
   addProjectConfiguration(tree, options.name, {
     root,
     projectType: 'application',
-    sourceRoot:  root,
-    targets:     {
+    sourceRoot: root,
+    targets: {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
       test: { executor: '@mnci/nx-python-pip:test', options: { installEditable: false } },
     },

@@ -25,11 +25,17 @@ import type { TestExecutorSchema } from './schema.d'
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function testExecutor (options: TestExecutorSchema, context: ExecutorContext): Promise<{ success: boolean }> {
+export default async function testExecutor(
+  options: TestExecutorSchema,
+  context: ExecutorContext
+): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
 
   if (options.installEditable !== false) {
-    const install = spawnSync(pythonCommand(), ['-m', 'pip', 'install', '--quiet', '-e', '.'], { cwd, stdio: 'inherit' })
+    const install = spawnSync(pythonCommand(), ['-m', 'pip', 'install', '--quiet', '-e', '.'], {
+      cwd,
+      stdio: 'inherit',
+    })
     if (install.status !== 0) {
       return { success: false }
     }

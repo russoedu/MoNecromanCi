@@ -6,14 +6,14 @@ jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
 
 const mockSpawnSync = jest.mocked(spawnSync)
 
-function context (): ExecutorContext {
+function context(): ExecutorContext {
   return {
-    root:                   '/workspace',
-    projectName:            'svc',
-    cwd:                    '/workspace',
-    isVerbose:              false,
+    root: '/workspace',
+    projectName: 'svc',
+    cwd: '/workspace',
+    isVerbose: false,
     projectsConfigurations: {
-      version:  2,
+      version: 2,
       projects: { svc: { root: 'apps/svc' } },
     },
   } as unknown as ExecutorContext
@@ -28,8 +28,16 @@ describe('testExecutor', () => {
     const result = await testExecutor({}, context())
 
     expect(result).toEqual({ success: true })
-    expect(mockSpawnSync).toHaveBeenNthCalledWith(1, 'python3', ['-m', 'pip', 'install', '--quiet', '-e', '.'], { cwd: '/workspace/apps/svc', stdio: 'inherit' })
-    expect(mockSpawnSync).toHaveBeenNthCalledWith(2, 'python3', ['-m', 'pytest'], { cwd: '/workspace/apps/svc', stdio: 'inherit' })
+    expect(mockSpawnSync).toHaveBeenNthCalledWith(
+      1,
+      'python3',
+      ['-m', 'pip', 'install', '--quiet', '-e', '.'],
+      { cwd: '/workspace/apps/svc', stdio: 'inherit' }
+    )
+    expect(mockSpawnSync).toHaveBeenNthCalledWith(2, 'python3', ['-m', 'pytest'], {
+      cwd: '/workspace/apps/svc',
+      stdio: 'inherit',
+    })
   })
 
   it('skips the editable install when installEditable is false (function apps, no pyproject.toml)', async () => {
@@ -38,7 +46,10 @@ describe('testExecutor', () => {
     await testExecutor({ installEditable: false }, context())
 
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
-    expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'pytest'], { cwd: '/workspace/apps/svc', stdio: 'inherit' })
+    expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'pytest'], {
+      cwd: '/workspace/apps/svc',
+      stdio: 'inherit',
+    })
   })
 
   it('fails fast when the editable install fails, without running pytest', async () => {

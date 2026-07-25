@@ -1,10 +1,7 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": [
-      "{projectRoot}/**/*",
-      "sharedGlobals"
-    ],
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
     "production": [
       "default",
       "!{projectRoot}/.eslintrc.json",
@@ -57,10 +54,7 @@
   "defaultBase": "main",
   "release": {
     "projectsRelationship": "independent",
-    "projects": [
-      "packages/*",
-      "python-packages/*"
-    ],
+    "projects": ["packages/*", "python-packages/*"],
     "releaseTag": {
       "pattern": "{projectName}@{version}"
     },
@@ -110,9 +104,7 @@
   },
   "targetDefaults": {
     "test": {
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     }
   }
 }

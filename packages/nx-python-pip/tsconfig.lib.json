@@ -10,11 +10,5 @@
     "removeComments": false
   },
   "include": ["./src/**/*.ts"],
-  "exclude": [
-    "./coverage/**",
-    "./dist/**",
-    "./doc/**",
-    "./node_modules/**",
-    "./src/**/*.spec.ts"
-  ]
+  "exclude": ["./coverage/**", "./dist/**", "./doc/**", "./node_modules/**", "./src/**/*.spec.ts"]
 }

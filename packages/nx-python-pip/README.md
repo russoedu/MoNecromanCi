@@ -28,17 +28,17 @@ module lookup), not inference-based.
 You will also need the actual Python tools this plugin's executors shell out
 to: `python3 -m pip install build twine ruff pytest` (`python -m pip ...` on
 Windows — see below) — or pin them in your own `requirements-dev.txt` /
-`requirements-dev.in`. The plugin has no opinion on *how* those land on a
+`requirements-dev.in`. The plugin has no opinion on _how_ those land on a
 machine — same way `@nx/js`'s executors assume `node` is already there.
 
 ## Generators
 
-| Generator | Location default | Writes |
-| --- | --- | --- |
-| `application` | `apps/<name>` | `pyproject.toml` (hatchling) + `project.json` (`lint`/`test`/`build`) + a sample module and pytest |
-| `library` | `libs/<name>` | Same as `application`, plus `nx-release-publish` (twine) and a project-level `release.version.versionActions` override |
-| `internal-library` | `libs/<name>` | `lint`/`test` only — no `build`/publish; meant to be **vendored** into a consumer's wheel, not built or released on its own |
-| `function-application` | `apps/<name>` | Azure Functions **v2** programming model (`function_app.py` + `host.json` + `requirements.txt` + a tested pure helper) — no `pyproject.toml`/build target, since the deployable is source, not a wheel |
+| Generator              | Location default | Writes                                                                                                                                                                                                 |
+| ---------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `application`          | `apps/<name>`    | `pyproject.toml` (hatchling) + `project.json` (`lint`/`test`/`build`) + a sample module and pytest                                                                                                     |
+| `library`              | `libs/<name>`    | Same as `application`, plus `nx-release-publish` (twine) and a project-level `release.version.versionActions` override                                                                                 |
+| `internal-library`     | `libs/<name>`    | `lint`/`test` only — no `build`/publish; meant to be **vendored** into a consumer's wheel, not built or released on its own                                                                            |
+| `function-application` | `apps/<name>`    | Azure Functions **v2** programming model (`function_app.py` + `host.json` + `requirements.txt` + a tested pure helper) — no `pyproject.toml`/build target, since the deployable is source, not a wheel |
 
 ```sh
 nx g @mnci/nx-python-pip:application my-app
@@ -49,11 +49,11 @@ nx g @mnci/nx-python-pip:function-application my-function-app
 
 ## Executors
 
-| Executor | Runs |
-| --- | --- |
-| `build` | `python -m build` — vendoring-aware (see below) |
-| `test` | `python -m pip install -e .` (unless `installEditable: false`) then `python -m pytest` |
-| `lint` | `python -m ruff check .` |
+| Executor  | Runs                                                                                                                                   |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`   | `python -m build` — vendoring-aware (see below)                                                                                        |
+| `test`    | `python -m pip install -e .` (unless `installEditable: false`) then `python -m pytest`                                                 |
+| `lint`    | `python -m ruff check .`                                                                                                               |
 | `publish` | `python -m twine upload --skip-existing dist/*`, reading `TWINE_USERNAME`/`TWINE_PASSWORD`/`TWINE_REPOSITORY_URL` from the environment |
 
 Every command is invoked as `<python> -m <tool>`, never a hard-coded venv
@@ -92,7 +92,7 @@ as it's concerned. If you're using `@mnci/cli`, `mnci add python-vendor
 entry, not writing it.
 
 Verified empirically that vendoring an internal lib and declaring a real
-external PyPI dependency on the *same* project works correctly together —
+external PyPI dependency on the _same_ project works correctly together —
 the combination that silently dropped the external dependency's metadata
 under `@nxlv/python`'s `bundleLocalDependencies` does not reproduce here.
 

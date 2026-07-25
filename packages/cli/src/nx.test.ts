@@ -9,7 +9,10 @@ describe('runShell', () => {
   it('passes command and args as a real argv array (no shell line), inherits stdio, returns the exit status', () => {
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
     expect(runShell('npx', ['nx', 'graph'], '/repo')).toBe(0)
-    expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'graph'], { stdio: 'inherit', cwd: '/repo' })
+    expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'graph'], {
+      stdio: 'inherit',
+      cwd: '/repo',
+    })
   })
 
   it('maps a null status (signal kill / spawn failure) to 1', () => {
@@ -25,7 +28,11 @@ describe('runShell', () => {
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
     const dangerous = 'x; touch pwned #'
     runShell('npx', ['nx', 'g', '@nx/react:app', `apps/${dangerous}`], '/repo')
-    expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'g', '@nx/react:app', `apps/${dangerous}`], { stdio: 'inherit', cwd: '/repo' })
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'npx',
+      ['nx', 'g', '@nx/react:app', `apps/${dangerous}`],
+      { stdio: 'inherit', cwd: '/repo' }
+    )
   })
 })
 
@@ -33,7 +40,11 @@ describe('runNx', () => {
   it('prefixes npx nx and passes the workspace cwd', () => {
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
     runNx(['g', '@nx/react:app', 'apps/web'], '/workspace')
-    expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'g', '@nx/react:app', 'apps/web'], expect.objectContaining({ cwd: '/workspace' }))
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'npx',
+      ['nx', 'g', '@nx/react:app', 'apps/web'],
+      expect.objectContaining({ cwd: '/workspace' })
+    )
   })
 
   it('throws with the failing command when nx exits non-zero', () => {
@@ -46,7 +57,11 @@ describe('runNpx', () => {
   it('runs bare npx (for create-nx-workspace, outside any workspace)', () => {
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
     runNpx(['create-nx-workspace@latest', 'demo'], '/tmp')
-    expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['create-nx-workspace@latest', 'demo'], expect.objectContaining({ cwd: '/tmp' }))
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'npx',
+      ['create-nx-workspace@latest', 'demo'],
+      expect.objectContaining({ cwd: '/tmp' })
+    )
   })
 
   it('throws when the process exits non-zero', () => {

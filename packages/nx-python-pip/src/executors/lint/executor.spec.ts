@@ -6,14 +6,14 @@ jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
 
 const mockSpawnSync = jest.mocked(spawnSync)
 
-function context (): ExecutorContext {
+function context(): ExecutorContext {
   return {
-    root:                   '/workspace',
-    projectName:            'svc',
-    cwd:                    '/workspace',
-    isVerbose:              false,
+    root: '/workspace',
+    projectName: 'svc',
+    cwd: '/workspace',
+    isVerbose: false,
     projectsConfigurations: {
-      version:  2,
+      version: 2,
       projects: { svc: { root: 'apps/svc' } },
     },
   } as unknown as ExecutorContext
@@ -28,7 +28,10 @@ describe('lintExecutor', () => {
     const result = await lintExecutor({}, context())
 
     expect(result).toEqual({ success: true })
-    expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'ruff', 'check', '.'], { cwd: '/workspace/apps/svc', stdio: 'inherit' })
+    expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'ruff', 'check', '.'], {
+      cwd: '/workspace/apps/svc',
+      stdio: 'inherit',
+    })
   })
 
   it('reports failure when ruff exits non-zero', async () => {

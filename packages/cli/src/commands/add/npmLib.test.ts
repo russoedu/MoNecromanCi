@@ -1,5 +1,5 @@
 jest.mock('../../nx', () => ({
-  runNx:    jest.fn(),
+  runNx: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
@@ -26,11 +26,17 @@ beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
-  writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+  )
   // The generator is mocked, so pre-create the manifest it would have written
   // (every test here adds a lib named 'sdk') — addNpmLib patches it in place.
   mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
-  writeFileSync(join(workspaceRoot, 'packages/sdk/package.json'), JSON.stringify({ name: '@demo/sdk' }))
+  writeFileSync(
+    join(workspaceRoot, 'packages/sdk/package.json'),
+    JSON.stringify({ name: '@demo/sdk' })
+  )
 })
 
 afterEach(() => {
@@ -42,21 +48,28 @@ describe('runAdd npm-lib', () => {
   it('generates a publishable lib under packages/ as a rollup bundle (inlines internal libs)', async () => {
     await runAdd('npm-lib', 'sdk', {})
 
-    expect(mockRunNx).toHaveBeenCalledWith([
-      'g', '@nx/js:lib', 'packages/sdk',
-      '--publishable',
-      '--importPath=@demo/sdk',
-      '--bundler=rollup',
-      '--unitTestRunner=jest',
-      '--linter=eslint',
-      '--no-interactive',
-    ], workspaceRoot)
+    expect(mockRunNx).toHaveBeenCalledWith(
+      [
+        'g',
+        '@nx/js:lib',
+        'packages/sdk',
+        '--publishable',
+        '--importPath=@demo/sdk',
+        '--bundler=rollup',
+        '--unitTestRunner=jest',
+        '--linter=eslint',
+        '--no-interactive',
+      ],
+      workspaceRoot
+    )
   })
 
   it('marks the manifest publicly publishable (npm treats a new scoped package as private otherwise)', async () => {
     await runAdd('npm-lib', 'sdk', {})
 
-    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')) as { publishConfig: { access: string } }
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { publishConfig: { access: string } }
     expect(manifest.publishConfig).toEqual({ access: 'public' })
   })
 
@@ -83,23 +96,29 @@ describe('runAdd npm-lib', () => {
 
     // Scope is prompted with the workspace's own scope (from @demo/source) as default.
     expect(mockPromptText).toHaveBeenCalledWith('npm scope for the published package', '@demo')
-    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][0] === 'g')
+    const generatorCall = mockRunNx.mock.calls.find(call => call[0][0] === 'g')
     expect(generatorCall?.[0]).toContain('--importPath=@acme/sdk')
   })
 
   it('does not prompt for scope on the flag path (kind passed) — defaults it silently', async () => {
     await runAdd('npm-lib', 'sdk', {})
 
-    expect(mockPromptText).not.toHaveBeenCalledWith('npm scope for the published package', expect.anything())
+    expect(mockPromptText).not.toHaveBeenCalledWith(
+      'npm scope for the published package',
+      expect.anything()
+    )
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
   })
 
   it('honors an oxlint workspace: --linter=none and no per-lib eslint config', async () => {
-    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ mnci: { stack: { linter: 'oxlint', testRunner: 'jest' } } }))
+    writeFileSync(
+      join(workspaceRoot, 'nx.json'),
+      JSON.stringify({ mnci: { stack: { linter: 'oxlint', testRunner: 'jest' } } })
+    )
 
     await runAdd('npm-lib', 'sdk', {})
 
-    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][0] === 'g')
+    const generatorCall = mockRunNx.mock.calls.find(call => call[0][0] === 'g')
     expect(generatorCall?.[0]).toContain('--linter=none')
     // The dependency-check override is ESLint-specific, so oxlint writes none.
     expect(existsSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'))).toBe(false)

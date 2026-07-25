@@ -14,7 +14,10 @@ describe('internalLibraryGenerator', () => {
 
     const project = readProjectConfiguration(tree, 'core')
     expect(project.root).toBe('libs/core')
-    expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual(['lint', 'test'])
+    expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'lint',
+      'test',
+    ])
     expect(project.release).toBeUndefined()
 
     expect(tree.read('libs/core/pyproject.toml', 'utf8')).toContain('name = "core"')

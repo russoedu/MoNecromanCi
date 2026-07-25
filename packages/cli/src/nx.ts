@@ -27,7 +27,7 @@ import spawn from 'cross-spawn'
  * @throws Never - spawn failures surface through the returned status, not a throw.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runShell (command: string, arguments_: string[], cwd: string): number {
+export function runShell(command: string, arguments_: string[], cwd: string): number {
   const result = spawn.sync(command, arguments_, { stdio: 'inherit', cwd })
   return result.status ?? 1
 }
@@ -45,7 +45,7 @@ export function runShell (command: string, arguments_: string[], cwd: string): n
  * @throws Error when the Nx process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNx (arguments_: string[], cwd: string): void {
+export function runNx(arguments_: string[], cwd: string): void {
   const status = runShell('npx', ['nx', ...arguments_], cwd)
   if (status !== 0) {
     throw new Error(`nx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -65,7 +65,7 @@ export function runNx (arguments_: string[], cwd: string): void {
  * @throws Error when the process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNpx (arguments_: string[], cwd: string): void {
+export function runNpx(arguments_: string[], cwd: string): void {
   const status = runShell('npx', arguments_, cwd)
   if (status !== 0) {
     throw new Error(`npx ${arguments_.join(' ')} failed with exit code ${status}`)

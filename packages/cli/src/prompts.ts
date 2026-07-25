@@ -14,10 +14,10 @@ import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
  * stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptText (message: string, fallback?: string): Promise<string> {
+export async function promptText(message: string, fallback?: string): Promise<string> {
   const value = await input({
     message,
-    default:  fallback,
+    default: fallback,
     validate: (value: string) => value.trim().length > 0 || 'A value is required',
   })
   return value.trim()
@@ -36,7 +36,7 @@ export async function promptText (message: string, fallback?: string): Promise<s
  * not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptRegistry (fallbackOrganization?: string): Promise<RegistryConfig> {
+export async function promptRegistry(fallbackOrganization?: string): Promise<RegistryConfig> {
   const kind = await select<RegistryConfig['kind']>({
     message: 'Package registry for publishable libraries',
     choices: [
@@ -51,8 +51,8 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
 
   return {
     kind,
-    organization:  await promptText('Azure DevOps organization', fallbackOrganization),
-    project:       await promptText('Azure DevOps project'),
+    organization: await promptText('Azure DevOps organization', fallbackOrganization),
+    project: await promptText('Azure DevOps project'),
     artifactsFeed: await promptText('Artifacts feed name'),
   }
 }
@@ -71,7 +71,7 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptCi (): Promise<CiProvider> {
+export async function promptCi(): Promise<CiProvider> {
   return await select<CiProvider>({
     message: 'CI provider',
     choices: [
@@ -109,7 +109,7 @@ export async function promptCi (): Promise<CiProvider> {
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptNxCloud (): Promise<boolean> {
+export async function promptNxCloud(): Promise<boolean> {
   return await confirm({
     message: 'Connect this workspace to Nx Cloud (remote caching + CI insights)?',
     default: false,
@@ -130,7 +130,7 @@ export async function promptNxCloud (): Promise<boolean> {
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptStack (): Promise<StackConfig> {
+export async function promptStack(): Promise<StackConfig> {
   const linter = await select<StackConfig['linter']>({
     message: 'Linter',
     choices: [

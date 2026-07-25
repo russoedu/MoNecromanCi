@@ -20,7 +20,10 @@ import type { LintExecutorSchema } from './schema.d'
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function lintExecutor (_options: LintExecutorSchema, context: ExecutorContext): Promise<{ success: boolean }> {
+export default async function lintExecutor(
+  _options: LintExecutorSchema,
+  context: ExecutorContext
+): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
   const result = spawnSync(pythonCommand(), ['-m', 'ruff', 'check', '.'], { cwd, stdio: 'inherit' })
   return { success: result.status === 0 }

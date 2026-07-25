@@ -7,10 +7,10 @@ import { execFileSync } from 'node:child_process'
 // class exposing just what PythonVersionActions extends/uses.
 jest.mock('nx/release', () => ({
   VersionActions: class {
-    releaseGroup:          unknown
-    projectGraphNode:      unknown
+    releaseGroup: unknown
+    projectGraphNode: unknown
     finalConfigForProject: unknown
-    constructor (releaseGroup: unknown, projectGraphNode: unknown, finalConfigForProject: unknown) {
+    constructor(releaseGroup: unknown, projectGraphNode: unknown, finalConfigForProject: unknown) {
       this.releaseGroup = releaseGroup
       this.projectGraphNode = projectGraphNode
       this.finalConfigForProject = finalConfigForProject
@@ -24,14 +24,16 @@ import PythonVersionActions from './versionActions'
 const mockExecFileSync = jest.mocked(execFileSync)
 
 /** A minimal in-memory stand-in for Nx's Tree, just what these tests touch. */
-function fakeTree (files: Record<string, string>) {
+function fakeTree(files: Record<string, string>) {
   return {
-    read:  (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
-    write: (path: string, content: string) => { files[path] = content },
+    read: (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
+    write: (path: string, content: string) => {
+      files[path] = content
+    },
   } as unknown as import('@nx/devkit').Tree
 }
 
-function instance (): PythonVersionActions {
+function instance(): PythonVersionActions {
   const releaseGroup = {} as never
   const projectGraphNode = { name: 'pyshared', data: { root: 'python-packages/pyshared' } } as never
   const finalConfigForProject = {} as never
@@ -44,9 +46,15 @@ describe('PythonVersionActions', () => {
 
   describe('readCurrentVersionFromSourceManifest', () => {
     it('reads the version from pyproject.toml', async () => {
-      const files = { 'python-packages/pyshared/pyproject.toml': '[project]\nname = "pyshared"\nversion = "1.2.3"\n' }
+      const files = {
+        'python-packages/pyshared/pyproject.toml':
+          '[project]\nname = "pyshared"\nversion = "1.2.3"\n',
+      }
       const result = await instance().readCurrentVersionFromSourceManifest(fakeTree(files))
-      expect(result).toEqual({ currentVersion: '1.2.3', manifestPath: 'python-packages/pyshared/pyproject.toml' })
+      expect(result).toEqual({
+        currentVersion: '1.2.3',
+        manifestPath: 'python-packages/pyshared/pyproject.toml',
+      })
     })
 
     it('returns null when the manifest does not exist', async () => {
@@ -55,13 +63,18 @@ describe('PythonVersionActions', () => {
 
     it('throws when the manifest has no version line', async () => {
       const files = { 'python-packages/pyshared/pyproject.toml': '[project]\nname = "pyshared"\n' }
-      await expect(instance().readCurrentVersionFromSourceManifest(fakeTree(files))).rejects.toThrow('Could not find a "version = ..." line')
+      await expect(
+        instance().readCurrentVersionFromSourceManifest(fakeTree(files))
+      ).rejects.toThrow('Could not find a "version = ..." line')
     })
   })
 
   describe('updateProjectVersion', () => {
     it('writes the new version into pyproject.toml, preserving the rest', async () => {
-      const files = { 'python-packages/pyshared/pyproject.toml': '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n' }
+      const files = {
+        'python-packages/pyshared/pyproject.toml':
+          '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n',
+      }
       const tree = fakeTree(files)
       const messages = await instance().updateProjectVersion(tree, '1.1.0')
       expect(files['python-packages/pyshared/pyproject.toml']).toContain('version = "1.1.0"')
@@ -95,10 +108,16 @@ describe('PythonVersionActions', () => {
 
   describe('readCurrentVersionOfDependency + updateProjectDependencies', () => {
     it('are no-ops — internal-lib dependencies are vendored, not registry references', async () => {
-      const dependency = await instance().readCurrentVersionOfDependency(fakeTree({}), {} as never, 'pycore')
+      const dependency = await instance().readCurrentVersionOfDependency(
+        fakeTree({}),
+        {} as never,
+        'pycore'
+      )
       expect(dependency).toEqual({ currentVersion: null, dependencyCollection: null })
 
-      const updates = await instance().updateProjectDependencies(fakeTree({}), {} as never, { pycore: '1.0.0' })
+      const updates = await instance().updateProjectDependencies(fakeTree({}), {} as never, {
+        pycore: '1.0.0',
+      })
       expect(updates).toEqual([])
     })
   })

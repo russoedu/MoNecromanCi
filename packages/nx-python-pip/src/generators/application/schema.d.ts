@@ -5,7 +5,7 @@
  */
 export interface AppGeneratorSchema {
   /** The project name. */
-  name:       string
+  name: string
   /** Workspace-relative directory (defaults to `apps/<name>`). */
   directory?: string
 }

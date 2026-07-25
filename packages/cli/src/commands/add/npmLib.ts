@@ -82,24 +82,40 @@ export default [
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function addNpmLib (workspaceRoot: string, name: string, options: AddOptions, kindProvided: boolean, stack: WorkspaceStack): Promise<void> {
-  const scope = options.scope ?? (kindProvided
-    ? defaultScope(workspaceRoot)
-    : await promptText('npm scope for the published package', defaultScope(workspaceRoot)))
-  runNx([
-    'g', '@nx/js:lib', `packages/${name}`,
-    '--publishable',
-    `--importPath=${scope}/${name}`,
-    '--bundler=rollup',
-    `--unitTestRunner=${stack.testRunner}`,
-    `--linter=${stack.linter}`,
-    '--no-interactive',
-  ], workspaceRoot)
+export async function addNpmLib(
+  workspaceRoot: string,
+  name: string,
+  options: AddOptions,
+  kindProvided: boolean,
+  stack: WorkspaceStack
+): Promise<void> {
+  const scope =
+    options.scope ??
+    (kindProvided
+      ? defaultScope(workspaceRoot)
+      : await promptText('npm scope for the published package', defaultScope(workspaceRoot)))
+  runNx(
+    [
+      'g',
+      '@nx/js:lib',
+      `packages/${name}`,
+      '--publishable',
+      `--importPath=${scope}/${name}`,
+      '--bundler=rollup',
+      `--unitTestRunner=${stack.testRunner}`,
+      `--linter=${stack.linter}`,
+      '--no-interactive',
+    ],
+    workspaceRoot
+  )
   markPublic(join(workspaceRoot, 'packages', name, 'package.json'))
   // The dependency-check override is an ESLint config; oxlint has no such
   // rule, so it only applies when ESLint is the chosen linter.
   if (stack.linter === 'eslint') {
-    writeFileEnsured(join(workspaceRoot, 'packages', name, 'eslint.config.mjs'), NPM_LIB_ESLINT_CONFIG)
+    writeFileEnsured(
+      join(workspaceRoot, 'packages', name, 'eslint.config.mjs'),
+      NPM_LIB_ESLINT_CONFIG
+    )
   }
 }
 
@@ -120,7 +136,7 @@ export async function addNpmLib (workspaceRoot: string, name: string, options: A
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-function markPublic (manifestPath: string): void {
+function markPublic(manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, publishConfig: { access: 'public' } }))
 }

@@ -2,7 +2,13 @@ import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { addNxTargets, ensureAdmZip, hasPlugin, type NodeFramework, type WorkspaceStack } from './shared'
+import {
+  addNxTargets,
+  ensureAdmZip,
+  hasPlugin,
+  type NodeFramework,
+  type WorkspaceStack,
+} from './shared'
 
 /**
  * Ensures an Nx plugin is installed in the workspace, installing it on first use.
@@ -18,7 +24,7 @@ import { addNxTargets, ensureAdmZip, hasPlugin, type NodeFramework, type Workspa
  * @throws Error when the underlying `nx add` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensurePlugin (workspaceRoot: string, packageName: string): void {
+function ensurePlugin(workspaceRoot: string, packageName: string): void {
   if (hasPlugin(workspaceRoot, packageName)) {
     return
   }
@@ -53,17 +59,27 @@ function ensurePlugin (workspaceRoot: string, packageName: string): void {
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function runNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack, framework: NodeFramework): void {
+function runNodeApp(
+  workspaceRoot: string,
+  name: string,
+  stack: WorkspaceStack,
+  framework: NodeFramework
+): void {
   ensurePlugin(workspaceRoot, '@nx/node')
-  runNx([
-    'g', '@nx/node:application', `apps/${name}`,
-    '--bundler=esbuild',
-    `--unitTestRunner=${stack.testRunner}`,
-    `--linter=${stack.linter}`,
-    '--e2eTestRunner=none',
-    `--framework=${framework}`,
-    '--no-interactive',
-  ], workspaceRoot)
+  runNx(
+    [
+      'g',
+      '@nx/node:application',
+      `apps/${name}`,
+      '--bundler=esbuild',
+      `--unitTestRunner=${stack.testRunner}`,
+      `--linter=${stack.linter}`,
+      '--e2eTestRunner=none',
+      `--framework=${framework}`,
+      '--no-interactive',
+    ],
+    workspaceRoot
+  )
 }
 
 /**
@@ -82,15 +98,15 @@ function runNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack,
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function nodeAppPackageTarget (name: string): Record<string, unknown> {
+function nodeAppPackageTarget(name: string): Record<string, unknown> {
   const zip = `dist/drop/node-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
   return {
-    executor:  'nx:run-commands',
+    executor: 'nx:run-commands',
     dependsOn: ['build'],
     // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
-    outputs:   [`{workspaceRoot}/${zip}`],
-    options:   { command },
+    outputs: [`{workspaceRoot}/${zip}`],
+    options: { command },
   }
 }
 
@@ -112,10 +128,17 @@ function nodeAppPackageTarget (name: string): Record<string, unknown> {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack, framework: NodeFramework = 'none'): void {
+export function addNodeApp(
+  workspaceRoot: string,
+  name: string,
+  stack: WorkspaceStack,
+  framework: NodeFramework = 'none'
+): void {
   runNodeApp(workspaceRoot, name, stack, framework)
   ensureAdmZip(workspaceRoot)
-  addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), { package: nodeAppPackageTarget(name) })
+  addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
+    package: nodeAppPackageTarget(name),
+  })
 }
 
 /**
@@ -134,12 +157,14 @@ export function addNodeApp (workspaceRoot: string, name: string, stack: Workspac
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureAzureFunctionsPackage (workspaceRoot: string): void {
+function ensureAzureFunctionsPackage(workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, '@azure/functions')) {
     return
   }
   logger.step('Installing @azure/functions')
-  if (runShell('npm', ['install', '@azure/functions', '--no-audit', '--no-fund'], workspaceRoot) !== 0) {
+  if (
+    runShell('npm', ['install', '@azure/functions', '--no-audit', '--no-fund'], workspaceRoot) !== 0
+  ) {
     throw new Error('npm install of @azure/functions failed')
   }
 }
@@ -258,16 +283,21 @@ describe('buildGreeting', () => {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-function repairNodeFunctionAppManifest (nodeFunctionAppRoot: string, workspaceRoot: string): void {
+function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoot: string): void {
   const manifestPath = join(nodeFunctionAppRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
-  const azureFunctionsVersion = readJson<{ version: string }>(join(workspaceRoot, 'node_modules/@azure/functions/package.json')).version
+  const azureFunctionsVersion = readJson<{ version: string }>(
+    join(workspaceRoot, 'node_modules/@azure/functions/package.json')
+  ).version
   const dependencies = (manifest.dependencies as Record<string, string> | undefined) ?? {}
-  writeFileEnsured(manifestPath, toJson({
-    ...manifest,
-    main:         'main.js',
-    dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` },
-  }))
+  writeFileEnsured(
+    manifestPath,
+    toJson({
+      ...manifest,
+      main: 'main.js',
+      dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` },
+    })
+  )
 }
 
 /**
@@ -287,16 +317,16 @@ function repairNodeFunctionAppManifest (nodeFunctionAppRoot: string, workspaceRo
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
+function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
   const zip = `dist/drop/node-function-app-${name}.zip`
   const root = `apps/${name}`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('${root}/dist');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/package.json');z.writeZip('${zip}')"`
   return {
-    executor:  'nx:run-commands',
+    executor: 'nx:run-commands',
     dependsOn: ['build'],
     // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
-    outputs:   [`{workspaceRoot}/${zip}`],
-    options:   { command },
+    outputs: [`{workspaceRoot}/${zip}`],
+    options: { command },
   }
 }
 
@@ -323,16 +353,28 @@ function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNodeFunctionApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
+export function addNodeFunctionApp(
+  workspaceRoot: string,
+  name: string,
+  stack: WorkspaceStack
+): void {
   runNodeApp(workspaceRoot, name, stack, 'none')
   ensureAzureFunctionsPackage(workspaceRoot)
   const nodeFunctionAppRoot = join(workspaceRoot, 'apps', name)
   writeFileEnsured(join(nodeFunctionAppRoot, 'src/main.ts'), NODE_FUNCTION_APP_MAIN)
   writeFileEnsured(join(nodeFunctionAppRoot, 'src/functions/hello.ts'), NODE_FUNCTION_APP_HELLO)
-  writeFileEnsured(join(nodeFunctionAppRoot, 'src/functions/greeting.ts'), NODE_FUNCTION_APP_GREETING)
-  writeFileEnsured(join(nodeFunctionAppRoot, 'src/functions/greeting.spec.ts'), NODE_FUNCTION_APP_GREETING_SPEC)
+  writeFileEnsured(
+    join(nodeFunctionAppRoot, 'src/functions/greeting.ts'),
+    NODE_FUNCTION_APP_GREETING
+  )
+  writeFileEnsured(
+    join(nodeFunctionAppRoot, 'src/functions/greeting.spec.ts'),
+    NODE_FUNCTION_APP_GREETING_SPEC
+  )
   writeFileEnsured(join(nodeFunctionAppRoot, 'host.json'), NODE_FUNCTION_APP_HOST_JSON)
   repairNodeFunctionAppManifest(nodeFunctionAppRoot, workspaceRoot)
   ensureAdmZip(workspaceRoot)
-  addNxTargets(join(nodeFunctionAppRoot, 'package.json'), { package: nodeFunctionAppPackageTarget(name) })
+  addNxTargets(join(nodeFunctionAppRoot, 'package.json'), {
+    package: nodeFunctionAppPackageTarget(name),
+  })
 }

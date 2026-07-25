@@ -12,13 +12,17 @@ describe('promptText', () => {
     mockInput.mockResolvedValue('  Ada  ')
     const value = await promptText('Name', 'fallback')
     expect(value).toBe('Ada')
-    expect(mockInput).toHaveBeenCalledWith(expect.objectContaining({ message: 'Name', default: 'fallback' }))
+    expect(mockInput).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Name', default: 'fallback' })
+    )
   })
 
   it('validates that a trimmed answer is required', async () => {
     mockInput.mockResolvedValue('value')
     await promptText('Name')
-    const { validate } = mockInput.mock.calls[0][0] as { validate: (value: string) => boolean | string }
+    const { validate } = mockInput.mock.calls[0][0] as {
+      validate: (value: string) => boolean | string
+    }
     expect(validate(' '.repeat(3))).toBe('A value is required')
     expect(validate('  ok  ')).toBe(true)
   })
@@ -33,15 +37,20 @@ describe('promptRegistry', () => {
 
   it('collects the three Azure Artifacts coordinates', async () => {
     mockSelect.mockResolvedValue('azure-artifacts')
-    mockInput.mockResolvedValueOnce('org').mockResolvedValueOnce('proj').mockResolvedValueOnce('feed')
+    mockInput
+      .mockResolvedValueOnce('org')
+      .mockResolvedValueOnce('proj')
+      .mockResolvedValueOnce('feed')
 
     expect(await promptRegistry('default-org')).toEqual({
-      kind:          'azure-artifacts',
-      organization:  'org',
-      project:       'proj',
+      kind: 'azure-artifacts',
+      organization: 'org',
+      project: 'proj',
       artifactsFeed: 'feed',
     })
-    expect(mockInput).toHaveBeenCalledWith(expect.objectContaining({ message: 'Azure DevOps organization', default: 'default-org' }))
+    expect(mockInput).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Azure DevOps organization', default: 'default-org' })
+    )
   })
 })
 
@@ -49,8 +58,10 @@ describe('promptCi', () => {
   it('offers Azure Pipelines, GitHub Actions and both, in that order', async () => {
     mockSelect.mockResolvedValue('github')
     expect(await promptCi()).toBe('github')
-    const { choices } = mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
-    expect(choices.map((choice) => choice.value)).toEqual(['azure', 'github', 'both'])
+    const { choices } = mockSelect.mock.calls[0][0] as unknown as {
+      choices: Array<{ value: string }>
+    }
+    expect(choices.map(choice => choice.value)).toEqual(['azure', 'github', 'both'])
   })
 })
 

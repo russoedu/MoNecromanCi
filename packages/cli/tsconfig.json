@@ -7,9 +7,7 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "es2024",
-    "lib": [
-      "es2024"
-    ],
+    "lib": ["es2024"],
     "noEmit": true,
     "emitDeclarationOnly": true,
     "sourceMap": true,
@@ -20,9 +18,5 @@
     "importHelpers": true,
     "isolatedModules": true
   },
-  "exclude": [
-    "./coverage/**",
-    "./dist/**",
-    "./node_modules/**"
-  ]
+  "exclude": ["./coverage/**", "./dist/**", "./node_modules/**"]
 }

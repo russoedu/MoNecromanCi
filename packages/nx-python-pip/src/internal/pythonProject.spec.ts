@@ -1,4 +1,9 @@
-import { pythonModuleDirectory, pythonPyprojectToml, pythonSampleModule, pythonSampleTest } from './pythonProject'
+import {
+  pythonModuleDirectory,
+  pythonPyprojectToml,
+  pythonSampleModule,
+  pythonSampleTest,
+} from './pythonProject'
 
 describe('pythonModuleDirectory', () => {
   it('replaces hyphens with underscores', () => {

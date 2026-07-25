@@ -23,7 +23,7 @@ import type { BuildExecutorSchema } from './schema.d'
  * source directory), not a confusing internal error.
  * @typeParam None - this function has no generic type parameters.
  */
-function vendoredProjectRoot (name: string, context: ExecutorContext): string | undefined {
+function vendoredProjectRoot(name: string, context: ExecutorContext): string | undefined {
   return context.projectsConfigurations?.projects[name]?.root
 }
 
@@ -46,7 +46,10 @@ function vendoredProjectRoot (name: string, context: ExecutorContext): string | 
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function buildExecutor (_options: BuildExecutorSchema, context: ExecutorContext): Promise<{ success: boolean }> {
+export default async function buildExecutor(
+  _options: BuildExecutorSchema,
+  context: ExecutorContext
+): Promise<{ success: boolean }> {
   const projectRoot = projectRootFrom(context)
   const absoluteProjectRoot = join(context.root, projectRoot)
   const outDirectory = join(absoluteProjectRoot, 'dist')
@@ -55,7 +58,11 @@ export default async function buildExecutor (_options: BuildExecutorSchema, cont
   const vendorNames = parseVendorEntries(pyprojectToml)
 
   if (vendorNames.length === 0) {
-    const result = spawnSync(pythonCommand(), ['-m', 'build', '--outdir', outDirectory, absoluteProjectRoot], { stdio: 'inherit' })
+    const result = spawnSync(
+      pythonCommand(),
+      ['-m', 'build', '--outdir', outDirectory, absoluteProjectRoot],
+      { stdio: 'inherit' }
+    )
     return { success: result.status === 0 }
   }
 
@@ -67,18 +74,31 @@ export default async function buildExecutor (_options: BuildExecutorSchema, cont
     for (const name of vendorNames) {
       const vendoredRoot = vendoredProjectRoot(name, context)
       if (!vendoredRoot) {
-        console.error(`nx-python-pip build: vendored project "${name}" is not registered in this workspace.`)
+        console.error(
+          `nx-python-pip build: vendored project "${name}" is not registered in this workspace.`
+        )
         return { success: false }
       }
       const moduleDirectory = pythonModuleDirectory(name)
-      cpSync(join(context.root, vendoredRoot, moduleDirectory), join(stagingRoot, moduleDirectory), { recursive: true })
+      cpSync(
+        join(context.root, vendoredRoot, moduleDirectory),
+        join(stagingRoot, moduleDirectory),
+        { recursive: true }
+      )
       moduleDirectories.push(moduleDirectory)
     }
 
     const stagedPyprojectPath = join(stagingRoot, 'pyproject.toml')
-    writeFileSync(stagedPyprojectPath, addPackagesToWheelTarget(readFileSync(stagedPyprojectPath, 'utf8'), moduleDirectories))
+    writeFileSync(
+      stagedPyprojectPath,
+      addPackagesToWheelTarget(readFileSync(stagedPyprojectPath, 'utf8'), moduleDirectories)
+    )
 
-    const result = spawnSync(pythonCommand(), ['-m', 'build', '--outdir', outDirectory, stagingRoot], { stdio: 'inherit' })
+    const result = spawnSync(
+      pythonCommand(),
+      ['-m', 'build', '--outdir', outDirectory, stagingRoot],
+      { stdio: 'inherit' }
+    )
     return { success: result.status === 0 }
   } finally {
     rmSync(stagingRoot, { recursive: true, force: true })

@@ -15,14 +15,14 @@ config package, a custom CI engine, a dependency-injection step for published
 packages, a doctor/drift-sync system to keep it all consistent — already has a
 first-party (or established community) Nx equivalent:
 
-| Hand-rolled elsewhere                            | This CLI uses instead                                        |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| Template engine + per-project config files       | `create-nx-workspace --preset=ts` + `nx g` plugin generators |
-| A shared toolchain package for configs           | The configs the Nx generators emit (one root ESLint/tsconfig) |
-| A custom multi-step CI engine                    | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline) |
-| A dist-package dependency injector               | `nx release` updates dependent versions natively             |
-| Hand-written Azure Function templates            | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
-| doctor/drift sync of tool-owned files             | Nothing to drift: this CLI owns 5 small files, Nx owns the rest |
+| Hand-rolled elsewhere                      | This CLI uses instead                                                       |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| Template engine + per-project config files | `create-nx-workspace --preset=ts` + `nx g` plugin generators                |
+| A shared toolchain package for configs     | The configs the Nx generators emit (one root ESLint/tsconfig)               |
+| A custom multi-step CI engine              | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline)         |
+| A dist-package dependency injector         | `nx release` updates dependent versions natively                            |
+| Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
+| doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest             |
 
 ## Commands (deliberately just three)
 
@@ -53,16 +53,16 @@ mnci upgrade --agent windows-latest   # ...with an explicit override
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
 each a single cross-platform command:
 
-| Script                | Runs                            |
-| --------------------- | ------------------------------- |
-| `npm run build`       | `nx run-many -t build`          |
-| `npm run lint`        | `nx run-many -t lint`           |
-| `npm run test`        | `nx run-many -t test`           |
-| `npm run affected`    | `nx affected -t lint,test,build` (vs `main`) |
-| `npm run graph`       | `nx graph`                      |
-| `npm run release:preview` | `nx release --dry-run`      |
-| `npm run python:install` | fixed Python toolchain (ruff/pytest/build/twine) + editable-install every Python project — the same two guards CI runs, for local dev |
-| `prepare`             | `husky` (commit-msg lint hook)  |
+| Script                    | Runs                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run build`           | `nx run-many -t build`                                                                                                                |
+| `npm run lint`            | `nx run-many -t lint`                                                                                                                 |
+| `npm run test`            | `nx run-many -t test`                                                                                                                 |
+| `npm run affected`        | `nx affected -t lint,test,build` (vs `main`)                                                                                          |
+| `npm run graph`           | `nx graph`                                                                                                                            |
+| `npm run release:preview` | `nx release --dry-run`                                                                                                                |
+| `npm run python:install`  | fixed Python toolchain (ruff/pytest/build/twine) + editable-install every Python project — the same two guards CI runs, for local dev |
+| `prepare`                 | `husky` (commit-msg lint hook)                                                                                                        |
 
 ## What `new` actually does
 
@@ -85,7 +85,7 @@ each a single cross-platform command:
 ## `mnci upgrade`: re-applying the overlay to an existing workspace
 
 Every fix to `overlay.ts` — a release-config correction, a CI guard rewritten,
-a new Windows code path — only ever reached *future* `mnci new` calls until
+a new Windows code path — only ever reached _future_ `mnci new` calls until
 this existed; nothing let an already-generated workspace pick one up.
 `mnci upgrade`, run from the workspace root, closes that gap: it resolves the
 same options `new` would have and calls the exact same `applyOverlay` `new`
@@ -126,10 +126,10 @@ you'd notice and re-apply those on top.
 test runner. Each is stored where every later `mnci add` honours it, so the
 whole workspace stays one stack:
 
-| Question       | Options            | Default | Stored as / honoured via |
-| -------------- | ------------------ | ------- | ------------------------ |
-| `--linter`     | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` + `oxfmt.config.mts` (both from the [oxc-standard](https://github.com/JohnDeved/ox-standard) preset) + the `oxlint` / `oxfmt` root scripts |
-| `--test-runner`| `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
+| Question        | Options              | Default  | Stored as / honoured via                                                                                                                                                                                                          |
+| --------------- | -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--linter`      | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` + `oxfmt.config.mts` (both from the [oxc-standard](https://github.com/JohnDeved/ox-standard) preset) + the `oxlint` / `oxfmt` root scripts |
+| `--test-runner` | `jest` \| `vitest`   | `jest`   | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too                                                                                                                                          |
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
 [Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
@@ -148,11 +148,11 @@ no programmatic API yet; the two aliases are what make it work.)
   ESLint-only), so none is written.
   - The oxlint stack installs **[oxc-standard](https://github.com/JohnDeved/ox-standard)**
     (which brings `oxlint` + `oxfmt`) and generates two `.mts` configs that use
-    its **JavaScript Standard Style** preset: `oxlint.config.mts` *extends*
+    its **JavaScript Standard Style** preset: `oxlint.config.mts` _extends_
     `oxc-standard`'s rule set (unicorn + React + react-perf + TypeScript + oxc),
     and `oxfmt.config.mts` mirrors its formatting (no semicolons, single quotes,
     2-space, `es5` trailing commas, avoid arrow parens). That gives the full
-    Standard experience — **linting *and* formatting** — since oxlint (a linter)
+    Standard experience — **linting _and_ formatting** — since oxlint (a linter)
     does not enforce layout.
   - Formatting is `npm run format` (write) and `npm run format:check` (CI-safe,
     no writes). Nx generators emit semicolon/double-quote code, so run
@@ -164,12 +164,12 @@ no programmatic API yet; the two aliases are what make it work.)
 
 ## Layout convention = release scoping
 
-| Directory          | Contents                                          | Released?                    |
-| ------------------ | ------------------------------------------------- | ---------------------------- |
-| `apps/`            | React / Node / Python apps (plain or Azure Functions) | Never (packed into the drop) |
-| `packages/`        | Publishable npm libraries (rollup-bundled)        | Yes — `nx release`, per-package tags |
-| `python-packages/` | Publishable Python packages (hatchling wheels)    | Yes — `twine upload` (Azure Artifacts) |
-| `libs/`            | Internal libraries (TS or Python), never published | Never                        |
+| Directory          | Contents                                              | Released?                              |
+| ------------------ | ----------------------------------------------------- | -------------------------------------- |
+| `apps/`            | React / Node / Python apps (plain or Azure Functions) | Never (packed into the drop)           |
+| `packages/`        | Publishable npm libraries (rollup-bundled)            | Yes — `nx release`, per-package tags   |
+| `python-packages/` | Publishable Python packages (hatchling wheels)        | Yes — `twine upload` (Azure Artifacts) |
+| `libs/`            | Internal libraries (TS or Python), never published    | Never                                  |
 
 No custom tags, no stamp file — the directory (and, for npm, the `private` flag)
 are the whole model. Publishable Python packages get their own
@@ -223,13 +223,13 @@ file to add a new cross-project import** later (nothing about that is an
 `mnci add`, so that step can't catch it). For that case every generated
 workspace sets `sync.applyChanges: true` in `nx.json`: `--preset=ts` already
 registers the `@nx/js:typescript-sync` generator on the `build`/`typecheck`
-targets, so instead of just *prompting* ("Would you like to sync the
+targets, so instead of just _prompting_ ("Would you like to sync the
 identified changes?") on your next `nx build`/`typecheck`/`affected`, Nx fixes
 the references **automatically** — no prompt, no manual `npx nx sync`. A
 brand-new package may still need one VSCode window reload to be picked up by
 the TypeScript server.
 
-`applyChanges` only affects *interactive* runs, by design: CI always runs sync
+`applyChanges` only affects _interactive_ runs, by design: CI always runs sync
 generators in dry-run mode and fails instead of silently patching an ephemeral
 checkout that never gets committed. That's what the pipeline's `nx sync:check`
 step (below) surfaces early — if it fails, run `npx nx sync` locally and
@@ -261,7 +261,7 @@ Every run (PR and main) installs dependencies, then runs `npm audit`
 (also non-blocking) — visibility, not enforcement: verified empirically that
 a real `npm audit` on this monorepo's own tree flagged nothing but
 already-latest upstream packages (`nx`, `verdaccio`) bundling their own not-
-yet-patched transitive dependencies, nothing an edit to *this* workspace's
+yet-patched transitive dependencies, nothing an edit to _this_ workspace's
 manifest could fix. A hard-failing audit step would turn CI red for a
 problem with no user-actionable fix, for as long as upstream took to patch
 it — so both steps always exit 0 regardless of findings, surfacing results
@@ -279,7 +279,7 @@ lint,test,build`. Pushes to `main` then:
   `dist/drop/<type>-<name>.zip` (e.g. `node-function-app-api.zip`,
   `react-app-web.zip`); the whole `dist/drop` is published as the **`drop`**
   artifact.
-- **Tag the run per app** *(Azure only)* — one build tag per zip, **exactly**
+- **Tag the run per app** _(Azure only)_ — one build tag per zip, **exactly**
   `<type>-<name>` (derived from the zip filenames, so the tag can never drift
   from the artifact). A classic Azure release/CD pipeline keys its trigger off
   these; GitHub Actions has no equivalent mechanism, so the `drop` artifact
@@ -306,7 +306,7 @@ the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
 No `npmAuthenticate@0` task (it would overwrite the hand-set password).
 
 On Azure, two one-time grants are required (project admin): **Contribute** on
-the repo for the *Project Collection Build Service* account (tag push), and
+the repo for the _Project Collection Build Service_ account (tag push), and
 **publish** rights on the feed for the PAT's owner. On GitHub, the workflow's
 `permissions: contents: write` is what lets its own checkout token push the
 release tag — no separate grant, but the job still needs that permission
@@ -321,7 +321,7 @@ to feed" instructions give you. npm's `.npmrc` `_password` field expects
 exactly that pre-encoded form, so it's used as-is. `twine`/pypi basic auth, by
 contrast, wants the **raw** token — so the shared `releaseGuard` fragment
 (`overlay.ts`, used by both `azurePipelinesYaml` and `githubActionsYaml`)
-explicitly *decodes* the same `PAT`
+explicitly _decodes_ the same `PAT`
 (`Buffer.from(process.env.PAT, 'base64').toString()`) before handing it to
 `TWINE_PASSWORD`. Both are correct for their protocol today, but it's an easy
 trap to get backwards: if you ever wire a third registry protocol, check
@@ -356,7 +356,7 @@ hosting provider?" even with `--no-interactive` set, and exits without
 creating the workspace at all when stdin isn't a TTY — a real
 `create-nx-workspace` inconsistency, not something `mnci` can configure
 around. The named-provider value sidesteps it and completes non-interactively
-every time. The only visible effect of *which* named value is chosen is a
+every time. The only visible effect of _which_ named value is chosen is a
 throwaway CI workflow file `create-nx-workspace` writes as a side effect of
 Cloud setup — this CLI's own overlay unconditionally overwrites whatever
 lands at that path immediately after, so the pipeline you actually get is
@@ -375,7 +375,7 @@ than a surprise:
 - **One unofficial, small-team third-party Nx plugin carries real weight**:
   [`oxc-standard`](https://github.com/JohnDeved/ox-standard) (the oxlint/oxfmt
   StandardJS preset) — not `@nx`-scoped/officially maintained. Neither Azure
-  Function generation nor any Python kind pulls in a *third-party* Nx plugin:
+  Function generation nor any Python kind pulls in a _third-party_ Nx plugin:
   Node apps use the **official** `@nx/node:application` plus a small
   hand-written Azure Functions v4 file overlay (see "How Node apps work"
   below), and Python uses **`@mnci/nx-python-pip`** — a real Nx plugin this
@@ -402,7 +402,7 @@ than a surprise:
 - Azure Functions Core Tools is only needed for **local** `func start` — never
   for `mnci add node-function-app`/`python-function-app` generation, since
   neither shells out to the `func` CLI.
-- Function-app *deployment* (e.g. `AzureFunctionApp@2`) is not wired into the
+- Function-app _deployment_ (e.g. `AzureFunctionApp@2`) is not wired into the
   pipeline; the `node-function-app-<name>.zip`/`python-function-app-<name>.zip`
   inside the published `drop` artifact is the deploy input. Deploying it means
   Azure's Oryx build installing real dependencies (`npm install`/`pip install`)
@@ -548,25 +548,25 @@ Windows (the standard python.org Windows installer registers no
 hard-coded name, so a `windows-latest` (or self-hosted Windows) agent works
 identically to a Linux/macOS one.
 
-| Kind | Location | Build / deploy |
-| ---- | -------- | -------------- |
-| `python-app` | `apps/<name>` | `python -m build` wheel (the plugin's `build` executor), zipped by mnci into `dist/drop/python-app-<name>.zip` |
-| `python-function-app` | `apps/<name>` | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); no `pyproject.toml`/wheel — the **source** is zipped by mnci into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
-| `python-lib` | `python-packages/<name>` | publishable wheel; the plugin's `publish` executor (`twine upload --skip-existing`) |
-| `python-internal-lib` | `libs/<name>` | private shared code, lint + test only — no build/package target of its own |
+| Kind                  | Location                 | Build / deploy                                                                                                                                                                                                                 |
+| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `python-app`          | `apps/<name>`            | `python -m build` wheel (the plugin's `build` executor), zipped by mnci into `dist/drop/python-app-<name>.zip`                                                                                                                 |
+| `python-function-app` | `apps/<name>`            | Azure Functions **v2** (`function_app.py` + `host.json` + `requirements.txt`); no `pyproject.toml`/wheel — the **source** is zipped by mnci into `dist/drop/python-function-app-<name>.zip` (no `func` CLI needed to generate) |
+| `python-lib`          | `python-packages/<name>` | publishable wheel; the plugin's `publish` executor (`twine upload --skip-existing`)                                                                                                                                            |
+| `python-internal-lib` | `libs/<name>`            | private shared code, lint + test only — no build/package target of its own                                                                                                                                                     |
 
 - **Apps** get a `package` target — mnci's own CI packaging convention, not
   a generic plugin concern — merged into the plugin-written `project.json`
   after generation, fitting the existing CI unchanged: the pipeline's
   `apps/*` pack step tags them `python-app-<name>` / `python-function-app-
-  <name>` just like the TS apps.
+<name>` just like the TS apps.
 - **Internal-lib vendoring** replaces `@nxlv/python`'s `bundleLocalDependencies`:
   plain pip has no bundled-local-dependency feature, so a project that imports
   a workspace-internal Python library needs a `vendor` entry (under
   `[tool.mnci-python-pip]`) in its own `pyproject.toml` (the pip-world
   counterpart of a `dependencies = [...]` entry — neither mnci nor the plugin
   wires cross-project Python dependencies automatically). `mnci add
-  python-vendor <consumer> --lib <name>` automates writing that entry —
+python-vendor <consumer> --lib <name>` automates writing that entry —
   idempotent (safe to run twice), and works on any consumer with a
   `pyproject.toml` (app, publishable lib, or another internal lib), not just
   apps. The plugin's `build` executor reads the entry, resolves the named
@@ -600,7 +600,7 @@ identically to a Linux/macOS one.
   `release.version.versionActions` override pointing at
   `@mnci/nx-python-pip/release/version-actions` (a `VersionActions`
   implementation — six methods, verified empirically against a real `nx
-  release version --dry-run`), which wins over the workspace's default
+release version --dry-run`), which wins over the workspace's default
   (npm's) `versionActions` for that one project. **Publishing** reuses the
   registry: an Azure Artifacts feed is **multi-protocol**, so the same
   org/project/feed serves Python — the release step exports `TWINE_*` (URL +

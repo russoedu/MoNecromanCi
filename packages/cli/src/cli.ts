@@ -8,9 +8,11 @@ import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
 import { logger } from './util/logger'
 
 /** Reads the CLI version from the packaged package.json (next to dist/). */
-function readVersion (): string {
+function readVersion(): string {
   try {
-    const package_ = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string }
+    const package_ = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+      version?: string
+    }
     return package_.version ?? '0.0.0'
   } catch {
     return '0.0.0'
@@ -31,7 +33,7 @@ function readVersion (): string {
  * @throws Never - wiring only; execution errors surface when commands run.
  * @typeParam None - this function has no generic type parameters.
  */
-export function buildProgram (): Command {
+export function buildProgram(): Command {
   const program = new Command()
 
   program
@@ -49,7 +51,10 @@ export function buildProgram (): Command {
     .option('--organization <name>', 'Azure DevOps organization')
     .option('--project <name>', 'Azure DevOps project')
     .option('--artifacts-feed <name>', 'Azure Artifacts feed')
-    .option('--agent <pool>', 'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name')
+    .option(
+      '--agent <pool>',
+      'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name'
+    )
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--linter <linter>', 'linter: eslint | oxlint')
@@ -61,7 +66,9 @@ export function buildProgram (): Command {
 
   program
     .command('upgrade')
-    .description('Re-apply the latest MoNecromanCI overlay to this workspace (release config, pipeline, npmrc, commitlint, husky hook, curated scripts)')
+    .description(
+      'Re-apply the latest MoNecromanCI overlay to this workspace (release config, pipeline, npmrc, commitlint, husky hook, curated scripts)'
+    )
     .option('--scope <scope>', 'npm scope for publishable packages (overrides the persisted value)')
     .option('--registry <kind>', 'azure-artifacts | npm (overrides the persisted value)')
     .option('--organization <name>', 'Azure DevOps organization')
@@ -71,7 +78,10 @@ export function buildProgram (): Command {
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both (overrides the persisted value)')
     .option('--linter <linter>', 'linter: eslint | oxlint (overrides the persisted value)')
-    .option('--test-runner <runner>', 'unit-test runner: jest | vitest (overrides the persisted value)')
+    .option(
+      '--test-runner <runner>',
+      'unit-test runner: jest | vitest (overrides the persisted value)'
+    )
     .action((options: UpgradeOptions) => {
       runUpgrade(process.cwd(), options)
     })
@@ -85,11 +95,19 @@ export function buildProgram (): Command {
     .argument('[name]', 'project name')
     .description('Add a project by delegating to the matching Nx plugin generator')
     .option('--scope <scope>', 'npm scope for a publishable lib (defaults to @<workspace name>)')
-    .option('--framework <framework>', 'node-app only: express | fastify | koa | nest | none (default: none)')
-    .option('--lib <name>', 'python-vendor only: the internal Python library (libs/<name>) to vendor into <name>')
-    .action(async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
-      await runAdd(kind, name, options)
-    })
+    .option(
+      '--framework <framework>',
+      'node-app only: express | fastify | koa | nest | none (default: none)'
+    )
+    .option(
+      '--lib <name>',
+      'python-vendor only: the internal Python library (libs/<name>) to vendor into <name>'
+    )
+    .action(
+      async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
+        await runAdd(kind, name, options)
+      }
+    )
 
   // Bare `mnci` (no subcommand) launches the guided wizard; commander runs
   // this default action only when no subcommand is given (-v/--help still win).
@@ -111,7 +129,7 @@ export function buildProgram (): Command {
  * @throws Never - failures are logged and turned into a non-zero exit code.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function main (): Promise<void> {
+export async function main(): Promise<void> {
   try {
     await buildProgram().parseAsync(process.argv)
   } catch (error) {

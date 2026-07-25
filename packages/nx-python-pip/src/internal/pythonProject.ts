@@ -9,7 +9,7 @@
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonModuleDirectory (name: string): string {
+export function pythonModuleDirectory(name: string): string {
   return name.replaceAll('-', '_')
 }
 
@@ -30,7 +30,7 @@ export function pythonModuleDirectory (name: string): string {
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonPyprojectToml (name: string, moduleDirectory: string): string {
+export function pythonPyprojectToml(name: string, moduleDirectory: string): string {
   return `[project]
 name = "${name}"
 version = "1.0.0"
@@ -62,7 +62,7 @@ testpaths = ["tests"]
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonSampleModule (moduleDirectory: string): string {
+export function pythonSampleModule(moduleDirectory: string): string {
   return `def hello() -> str:
     return "hello from ${moduleDirectory}"
 `
@@ -80,7 +80,7 @@ export function pythonSampleModule (moduleDirectory: string): string {
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonSampleTest (moduleDirectory: string): string {
+export function pythonSampleTest(moduleDirectory: string): string {
   return `from ${moduleDirectory} import hello
 
 

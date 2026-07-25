@@ -21,14 +21,14 @@
  * @throws Never - a missing/malformed table simply yields an empty array.
  * @typeParam None - this function has no generic type parameters.
  */
-export function parseVendorEntries (pyprojectToml: string): string[] {
+export function parseVendorEntries(pyprojectToml: string): string[] {
   const match = /^\s*vendor\s*=\s*\[([^\]]*)\]/m.exec(pyprojectToml)
   if (!match) {
     return []
   }
   return match[1]
     .split(',')
-    .map((entry) => entry.trim().replaceAll(/^["']|["']$/g, ''))
+    .map(entry => entry.trim().replaceAll(/^["']|["']$/g, ''))
     .filter(Boolean)
 }
 
@@ -48,13 +48,19 @@ export function parseVendorEntries (pyprojectToml: string): string[] {
  * @throws Never - when no `packages` list is found, the content is returned unchanged.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPackagesToWheelTarget (pyprojectToml: string, moduleDirectories: string[]): string {
-  return pyprojectToml.replace(/^(\s*packages\s*=\s*)\[([^\]]*)\]/m, (_match, prefix: string, existing: string) => {
-    const names = existing
-      .split(',')
-      .map((entry) => entry.trim().replaceAll(/^["']|["']$/g, ''))
-      .filter(Boolean)
-    const merged = [...new Set([...names, ...moduleDirectories])]
-    return `${prefix}[${merged.map((name) => `"${name}"`).join(', ')}]`
-  })
+export function addPackagesToWheelTarget(
+  pyprojectToml: string,
+  moduleDirectories: string[]
+): string {
+  return pyprojectToml.replace(
+    /^(\s*packages\s*=\s*)\[([^\]]*)\]/m,
+    (_match, prefix: string, existing: string) => {
+      const names = existing
+        .split(',')
+        .map(entry => entry.trim().replaceAll(/^["']|["']$/g, ''))
+        .filter(Boolean)
+      const merged = [...new Set([...names, ...moduleDirectories])]
+      return `${prefix}[${merged.map(name => `"${name}"`).join(', ')}]`
+    }
+  )
 }
