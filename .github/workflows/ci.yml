@@ -9,6 +9,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   # Lets the release step push the version tag nx release creates back to main.
@@ -113,8 +114,16 @@ jobs:
   # in parallel. windows-latest has no python3.exe (only python.exe), so this
   # is exactly the environment that would have caught the python3-hard-coded
   # bug fixed in PR #55 before it shipped.
+  #
+  # Manual-trigger only ("Run workflow" in the Actions UI, or
+  # fire_trigger/CronCreate): the real e2e suite runs ~25-30 minutes on
+  # windows-latest for every push/PR, which is slow and burns CI minutes for
+  # a check that only needs to run when Windows-sensitive code (the
+  # cross-platform guard scripts, path handling, `python`/`python3`
+  # resolution) actually changes — not on every commit.
   e2e-windows:
     name: e2e (windows-latest)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
