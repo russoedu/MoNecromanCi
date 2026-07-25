@@ -46,6 +46,12 @@ mnci add python-lib shared         # publishable -> python-packages/ (twine uplo
 mnci add python-internal-lib core  # private shared lib -> libs/
 mnci add python-vendor shared --lib core  # wire core's module into shared's built wheel
 
+# Go (@nx-go/nx-go — one root go.mod, golangci-lint + go test)
+mnci add go-app api            # executable -> apps/ (binary, zipped into the drop)
+mnci add go-function-app fn    # serverless handler -> apps/
+mnci add go-lib core           # publishable (by git tag) -> packages/
+mnci add go-internal-lib util  # private shared package -> libs/
+
 mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
 ```
@@ -81,7 +87,7 @@ each a single cross-platform command:
    dependency-update PRs), a `<workspace-name>.code-workspace` file (VS Code
    workspace configuration with folder structure, ESLint/Prettier settings, and
    recommended extensions — open it in VS Code via `File > Open Workspace from
-   File`), and the curated root scripts.
+File`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 
@@ -129,8 +135,8 @@ you'd notice and re-apply those on top.
 stored where every later `mnci add` honours it, so the whole workspace stays one
 stack:
 
-| Question        | Options            | Default | Stored as / honoured via                                                        |
-| --------------- | ------------------ | ------- | ------------------------------------------------------------------------------- |
+| Question        | Options            | Default | Stored as / honoured via                                                                 |
+| --------------- | ------------------ | ------- | ---------------------------------------------------------------------------------------- |
 | `--test-runner` | `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
 **Linting and formatting are unified across the workspace**: every project uses
@@ -600,3 +606,64 @@ release version --dry-run`), which wins over the workspace's default
   `requirements-dev.txt` first (the fixed toolchain), then a second installs
   every Python project workspace-wide (the workspace-wide install above) —
   both skipped cleanly when the workspace has no Python projects.
+
+## Go (`@nx-go/nx-go` — one root `go.mod`, golangci-lint + `go test`)
+
+Requires **Go 1.21+** on the machine and on the build agent; `mnci add go-*`
+fails fast with an install link when `go` is not on the `PATH`. The generated
+pipeline installs `golangci-lint` itself (see below).
+
+| Kind              | Location          | Build / deploy                                                                                                                                                                                                |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `go-app`          | `apps/<name>`     | `go build` binary into `dist/apps/<name>/`, zipped by mnci into `dist/drop/go-app-<name>.zip`                                                                                                                 |
+| `go-function-app` | `apps/<name>`     | same build; zipped into `dist/drop/go-function-app-<name>.zip`. The handler body is yours to write — AWS Lambda, Google Cloud Functions and Azure each want a different signature, and mnci does not pick one |
+| `go-lib`          | `packages/<name>` | publishable **by git tag** — see below; lint + test targets only                                                                                                                                              |
+| `go-internal-lib` | `libs/<name>`     | private shared code, lint + test only — a non-`main` package produces no binary                                                                                                                               |
+
+- **One root `go.mod`**, matching how TS uses one root `package.json` and
+  Python one root `requirements-dev.txt`. `add/go.ts` bootstraps it on the
+  first Go `add` by running the plugin's `init` then `convert-to-one-mod`
+  generators, in that order — `convert-to-one-mod` refuses once `go.work`
+  lists any module, so it has to happen before the first Go project exists.
+  Every Go project then shares that module and imports its siblings as
+  `<module>/libs/<name>`, with no per-project manifests and no `replace`
+  directives.
+- **The `go.work` multi-module layout was rejected deliberately.** Besides
+  splitting dependencies across per-project manifests, it is brittle: a
+  single stale `use` entry — a project directory removed by hand — makes
+  `go list -m -json` fail, and that breaks the **entire** Nx project graph,
+  not just the Go projects. Verified empirically.
+- **Targets are written explicitly** rather than inferred. `@nx-go/nx-go`
+  supplies `build`/`test`/`lint` by inference, but keys that inference on a
+  per-project `go.mod` — which single-module mode does not have, so nothing
+  is inferred. mnci writes them into `project.json` instead, as it already
+  does for most kinds.
+- **Lint is `golangci-lint`, pinned deliberately.** The plugin's `lint`
+  executor defaults to `go fmt`, which only reformats — a green lint step
+  with that default would mean nothing. The generated target passes
+  `linter: golangci-lint`, and `mnci add` warns (without failing) when the
+  binary is missing locally, since CI installs its own.
+- **Publishing a `go-lib` is a git tag, not a registry upload.** The whole
+  repository is one module, so consumers depend on a library by import path
+  at a repo-level version tag — `go get <module>/packages/<name>@v1.2.3`.
+  That tag is the one `nx release` already creates, so no
+  `nx-release-publish` target is written: there is nothing to push. The only
+  real difference between `go-lib` and `go-internal-lib` is intent, recorded
+  in the `type:go-lib` tag and the `packages/` location.
+- **No publish-time dependency injection**, unlike Python's vendoring: `go
+build` links statically, so the binary in the drop already contains
+  everything it needs.
+- **Build output is a directory**, `dist/apps/<name>/`, with the binary
+  inside it. The executor's own default writes a bare file at
+  `dist/apps/<name>`, which cannot be declared as an Nx `outputs` entry —
+  Nx scans each declared output to cache it, and scanning a file fails with
+  `ENOTDIR`. Building one level deeper keeps the root-`dist` convention and
+  makes the target cacheable.
+- **CI** runs Go through the same `nx run-many -t lint,test,build` as
+  everything else. Two guarded steps precede it: `go mod download` (so a
+  network failure reads as a dependency failure rather than a confusing
+  build error), and a `golangci-lint` install via `go install` — no package
+  manager, no sudo, same command on every agent OS — whose `GOPATH/bin` is
+  then added to `PATH` for later steps. All three skip cleanly when the
+  workspace has no root `go.mod`, and the linter install also skips when the
+  agent already provides it.

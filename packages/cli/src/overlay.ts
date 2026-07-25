@@ -637,6 +637,84 @@ const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),pat
 const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"`
 
 /**
+ * The portable `node -e` one-liner that downloads the workspace's Go module
+ * dependencies.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml},
+ * and gated on the workspace-root `go.mod` that `add/go.ts` writes on the
+ * first `mnci add go-*` — so a workspace with no Go projects skips cleanly,
+ * exactly like the Python guards skip on a missing `requirements-dev.txt`.
+ *
+ * One root `go.mod` is the whole story here: mnci generates Go projects into
+ * a single module (see `add/go.ts`), so there is no per-project manifest to
+ * walk and no `go.work` to keep in step — a plain `go mod download` at the
+ * root fetches everything every Go project needs.
+ *
+ * Strictly speaking this step is optional, since `go build` and `go test`
+ * both fetch on demand. It is here so a network failure surfaces as an
+ * obvious "download dependencies" failure rather than as a confusing error
+ * inside the build, matching what the Python install steps do.
+ */
+const GO_MODULE_DOWNLOAD_GUARD = `node -e "if(!require('node:fs').existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('go',['mod','download'],{stdio:'inherit'}).status ?? 1)"`
+
+/**
+ * The portable `node -e` one-liner that installs `golangci-lint` when the
+ * workspace has Go projects and the agent does not already provide it.
+ *
+ * @remarks
+ * Needed because mnci's generated Go `lint` target pins
+ * `linter: golangci-lint` — `@nx-go/nx-go`'s own default is `go fmt`, which
+ * only reformats and would make a green lint step meaningless. Hosted agents
+ * ship Go but not golangci-lint, so CI has to supply it.
+ *
+ * Installs via `go install`, which needs no package manager, no sudo and no
+ * platform switch — the same binary lands on Linux, macOS and Windows
+ * agents. `go install` places it in `GOBIN` (or `GOPATH/bin`), so that
+ * directory is appended to `PATH` for subsequent steps through each
+ * provider's own mechanism (see the call sites).
+ *
+ * Skips when `golangci-lint` is already resolvable, so a self-hosted agent
+ * that pre-installs it pays nothing.
+ */
+const GOLANGCI_LINT_INSTALL_GUARD = `node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}if(cp.spawnSync('golangci-lint',['--version'],{stdio:'ignore'}).status===0){console.log('golangci-lint already installed - skipping.');process.exit(0)}process.exit(cp.spawnSync('go',['install','github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest'],{stdio:'inherit'}).status ?? 1)"`
+
+/**
+ * The shared prelude that resolves `GOPATH/bin` — where
+ * {@link GOLANGCI_LINT_INSTALL_GUARD}'s `go install` puts the linter.
+ *
+ * @remarks
+ * Not a step on its own: {@link GO_TOOL_PATH_AZURE} and
+ * {@link GO_TOOL_PATH_GITHUB} each append the one line that publishes the
+ * directory to the rest of the job, because the two providers use entirely
+ * different mechanisms for that (a logging command vs a file). Everything up
+ * to that point — the skip-when-no-Go check and reading `go env GOPATH` —
+ * is identical, so it lives here once.
+ */
+const GO_TOOL_PATH_PRELUDE = `const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}const r=cp.spawnSync('go',['env','GOPATH'],{encoding:'utf8'});if(r.status!==0){console.log('Could not resolve GOPATH - skipping.');process.exit(0)}const bin=require('node:path').join(r.stdout.trim(),'bin');`
+
+/**
+ * Azure Pipelines: publishes `GOPATH/bin` to later steps in the job.
+ *
+ * @remarks
+ * Uses the `task.prependpath` logging command — Azure's supported way for a
+ * step to alter `PATH` for the steps that follow it. Skips cleanly when the
+ * workspace has no Go projects, so this is inert in a JS-only repo.
+ */
+const GO_TOOL_PATH_AZURE = `node -e "${GO_TOOL_PATH_PRELUDE}console.log('##vso[task.prependpath]'+bin)"`
+
+/**
+ * GitHub Actions: publishes `GOPATH/bin` to later steps in the job.
+ *
+ * @remarks
+ * Appends to the file named by `GITHUB_PATH`, the documented equivalent of
+ * Azure's `prependpath` logging command. Skips cleanly both when the
+ * workspace has no Go projects and when `GITHUB_PATH` is unset (i.e. when
+ * the same script is run outside Actions).
+ */
+const GO_TOOL_PATH_GITHUB = `node -e "${GO_TOOL_PATH_PRELUDE}if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+${String.raw`'\n'`})"`
+
+/**
  * The `npm audit` step run right after `npm ci`, non-blocking (warn-only).
  *
  * @remarks
@@ -908,6 +986,22 @@ steps:
   - script: ${PIP_AUDIT_GUARD}
     displayName: pip-audit (non-blocking)
 
+  # Go, if the workspace has any: hosted agents ship the toolchain, so only
+  # the module cache and the linter need seeding. Both guards skip cleanly on
+  # a workspace with no root go.mod.
+  - script: ${GO_MODULE_DOWNLOAD_GUARD}
+    displayName: Download Go module dependencies
+
+  # golangci-lint is what the generated Go lint target actually runs (the
+  # plugin's own default is 'go fmt', which only reformats). 'go install'
+  # drops it in GOPATH/bin, which is not on PATH by default on a hosted
+  # agent — so prepend it for every later step in the job.
+  - script: ${GOLANGCI_LINT_INSTALL_GUARD}
+    displayName: Install golangci-lint
+
+  - script: ${GO_TOOL_PATH_AZURE}
+    displayName: Add Go tool bin to PATH
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -1088,6 +1182,22 @@ jobs:
       # dependency set, not just the fixed toolchain.
       - run: ${PIP_AUDIT_GUARD}
         name: pip-audit (non-blocking)
+
+      # Go, if the workspace has any: hosted runners ship the toolchain, so
+      # only the module cache and the linter need seeding. Both guards skip
+      # cleanly on a workspace with no root go.mod.
+      - run: ${GO_MODULE_DOWNLOAD_GUARD}
+        name: Download Go module dependencies
+
+      # golangci-lint is what the generated Go lint target actually runs (the
+      # plugin's own default is 'go fmt', which only reformats). 'go install'
+      # drops it in GOPATH/bin, which is not on PATH by default on a hosted
+      # runner — so publish it for every later step in the job.
+      - run: ${GOLANGCI_LINT_INSTALL_GUARD}
+        name: Install golangci-lint
+
+      - run: ${GO_TOOL_PATH_GITHUB}
+        name: Add Go tool bin to PATH
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
@@ -1292,7 +1402,10 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   // VS Code workspace file with folder structure, extensions, and settings.
-  writeFileEnsured(join(workspaceRoot, `${options.workspaceName}.code-workspace`), vscodeWorkspace(options.workspaceName))
+  writeFileEnsured(
+    join(workspaceRoot, `${options.workspaceName}.code-workspace`),
+    vscodeWorkspace(options.workspaceName)
+  )
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)

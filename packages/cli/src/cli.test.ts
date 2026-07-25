@@ -145,7 +145,15 @@ afterEach(() => {
 
 describe('buildProgram', () => {
   it('routes `new` with its flags to runNew', async () => {
-    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--registry', 'npm'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'new',
+      'demo',
+      '--yes',
+      '--registry',
+      'npm',
+    ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
       expect.objectContaining({ yes: true, registry: 'npm' })
@@ -153,7 +161,15 @@ describe('buildProgram', () => {
   })
 
   it('routes `add` with kind, name and scope to runAdd', async () => {
-    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'add', 'npm-lib', 'sdk', '--scope', '@acme'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'add',
+      'npm-lib',
+      'sdk',
+      '--scope',
+      '@acme',
+    ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'npm-lib',
       'sdk',
@@ -212,7 +228,15 @@ describe('buildProgram', () => {
   })
 
   it("routes `new`'s --ci flag to runNew", async () => {
-    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--ci', 'github'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'new',
+      'demo',
+      '--yes',
+      '--ci',
+      'github',
+    ])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })
 

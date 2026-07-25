@@ -210,7 +210,9 @@ describe('runAdd go', () => {
       ],
       workspaceRoot
     )
-    expect(Object.keys(readProjectJson('libs/util').targets).toSorted((a, b) => a.localeCompare(b))).toEqual(['lint', 'test'])
+    expect(
+      Object.keys(readProjectJson('libs/util').targets).toSorted((a, b) => a.localeCompare(b))
+    ).toEqual(['lint', 'test'])
   })
 
   it('honours MNCI_NX_GO_SPEC so e2e can redirect the plugin install', async () => {
