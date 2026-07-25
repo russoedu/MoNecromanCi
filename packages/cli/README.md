@@ -29,6 +29,7 @@ first-party (or established community) Nx equivalent:
 ```sh
 mnci new my-repo            # create a monorepo (prompts scope + registry)
 mnci new my-repo --yes --registry npm --scope @my
+mnci new my-repo --yes --registry npm --scope @my --nx-cloud  # opt in to Nx Cloud
 
 cd my-repo
 mnci add react-app web         # @nx/react (Vite + Jest)
@@ -339,6 +340,30 @@ GitHub-native (no app/extension install, unlike Renovate), so it's written
 only for `github`/`both` — an `azure`-only workspace gets no
 `.github/dependabot.yml`, matching every other GitHub-only file this CLI
 writes.
+
+### Nx Cloud (`--nx-cloud`, opt-in)
+
+`mnci new` never connects to Nx Cloud unless asked — `--nx-cloud` (or
+answering "yes" to the interactive prompt) opts in; the flagless/`--yes`
+default stays fully disconnected, exactly as before this existed. When
+opted in, `mnci` passes `create-nx-workspace` a **named** `--nxCloud`
+provider value derived from the chosen `--ci` (`azure`→`azure`,
+`github`/`both`→`github`) — never the bare `--nxCloud=yes`. Verified
+empirically: bare `yes` prompts "Will you be using GitHub as your git
+hosting provider?" even with `--no-interactive` set, and exits without
+creating the workspace at all when stdin isn't a TTY — a real
+`create-nx-workspace` inconsistency, not something `mnci` can configure
+around. The named-provider value sidesteps it and completes non-interactively
+every time. The only visible effect of *which* named value is chosen is a
+throwaway CI workflow file `create-nx-workspace` writes as a side effect of
+Cloud setup — this CLI's own overlay unconditionally overwrites whatever
+lands at that path immediately after, so the pipeline you actually get is
+always the same one described above, Nx Cloud or not.
+
+Connecting still requires finishing setup in a browser: `create-nx-workspace`
+prints a `https://cloud.nx.app/connect/…` URL to complete linking the
+workspace to an Nx Cloud account (remote caching, CI insights, `nx
+fix-ci`) — `mnci` does not automate that step.
 
 ## Dependency & risk notes
 

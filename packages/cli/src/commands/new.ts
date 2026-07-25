@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { runNpx, runShell } from '../nx'
 import { applyOverlay, DEFAULT_STACK, type CiProvider, type RegistryConfig, type StackConfig } from '../overlay'
-import { promptCi, promptRegistry, promptStack, promptText } from '../prompts'
+import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
 
@@ -37,6 +37,37 @@ export interface NewOptions {
   linter?:        StackConfig['linter']
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?:    StackConfig['testRunner']
+  /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
+  nxCloud?:       boolean
+}
+
+/**
+ * Maps the chosen CI provider to the `create-nx-workspace --nxCloud` value
+ * used when opting in.
+ *
+ * @remarks
+ * Deliberately never `--nxCloud=yes` (the provider-agnostic value): verified
+ * empirically that it prompts "Will you be using GitHub as your git hosting
+ * provider?" even with `--useGitHub` and `--no-interactive` both set, and
+ * exits without creating the workspace at all when stdin is not a TTY — a
+ * real upstream inconsistency in `create-nx-workspace`, not something this
+ * CLI can configure around. A named provider (`github`/`azure`/…) sidesteps
+ * that prompt entirely and completes non-interactively every time.
+ *
+ * The provider value only controls the throwaway CI workflow file
+ * `create-nx-workspace` writes as a side effect of Cloud setup — this CLI's
+ * own {@link applyOverlay} unconditionally overwrites whatever lands at that
+ * same path right after, so the specific value has no visible effect beyond
+ * avoiding the hang. `both` has no Nx equivalent, so it maps to `github`
+ * (arbitrary but harmless, for the same reason).
+ *
+ * @param ci - The chosen CI provider.
+ * @returns The `--nxCloud` value to pass when Nx Cloud is opted into.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nxCloudProviderValue (ci: CiProvider): 'github' | 'azure' {
+  return ci === 'azure' ? 'azure' : 'github'
 }
 
 /**
@@ -153,6 +184,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
     ? (options.variableGroup ?? 'Build')
     : options.variableGroup ?? (options.yes ? 'Build' : await promptText('Azure DevOps variable group holding the npm PAT', 'Build'))
   const stack = await resolveStack(options)
+  const nxCloud = options.nxCloud ?? (options.yes ? false : await promptNxCloud())
 
   logger.step(`Creating Nx workspace '${workspaceName}' (preset: ts)`)
   runNpx([
@@ -161,7 +193,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
     workspaceName,
     '--preset=ts',
     '--pm=npm',
-    '--nxCloud=skip',
+    nxCloud ? `--nxCloud=${nxCloudProviderValue(ci)}` : '--nxCloud=skip',
     '--no-interactive',
   ], process.cwd())
 
