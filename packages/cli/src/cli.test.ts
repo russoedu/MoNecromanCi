@@ -138,6 +138,11 @@ describe('buildProgram', () => {
     expect(mockRunAdd).toHaveBeenCalledWith('npm-lib', 'sdk', expect.objectContaining({ scope: '@acme' }))
   })
 
+  it('routes `add node-app`\'s --framework flag to runAdd', async () => {
+    await buildProgram().parseAsync(['node', 'mnci', 'add', 'node-app', 'api', '--framework', 'fastify'])
+    expect(mockRunAdd).toHaveBeenCalledWith('node-app', 'api', expect.objectContaining({ framework: 'fastify' }))
+  })
+
   it('routes `new` stack flags (linter/test-runner) to runNew', async () => {
     await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--linter', 'oxlint', '--test-runner', 'vitest'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' }))

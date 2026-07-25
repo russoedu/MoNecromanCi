@@ -33,6 +33,7 @@ mnci new my-repo --yes --registry npm --scope @my
 cd my-repo
 mnci add react-app web         # @nx/react (Vite + Jest)
 mnci add node-app svc          # @nx/node (plain Node app, esbuild)
+mnci add node-app api --framework express  # ...or fastify | koa | nest
 mnci add node-function-app api # @nx/node + an Azure Functions v4 overlay
 mnci add npm-lib sdk           # @nx/js publishable lib -> packages/
 mnci add internal-lib utils    # @nx/js private lib -> libs/
@@ -401,11 +402,26 @@ than a surprise:
 ## How Node apps work (plain `@nx/node:application`, no Azure Functions plugin)
 
 `node-app` and `node-function-app` are both the **official**
-`@nx/node:application` generator (`--bundler=esbuild --framework=none`) — no
-third-party Azure Functions plugin, and no post-generation build-output
-rewiring. `node-function-app` is exactly that generator plus a hand-written
-Azure Functions v4 file overlay, the same split `python-app`/
-`python-function-app` already use:
+`@nx/node:application` generator (`--bundler=esbuild`) — no third-party Azure
+Functions plugin, and no post-generation build-output rewiring.
+`node-function-app` is exactly that generator plus a hand-written Azure
+Functions v4 file overlay, the same split `python-app`/`python-function-app`
+already use:
+
+- **`node-app` framework choice** (`--framework`, default `none`): plain flag
+  plumbing to the generator's own `express`/`fastify`/`koa`/`nest`/`none`
+  choices — `mnci` adds no framework-specific logic of its own. Verified
+  empirically that all four scaffold, build and test cleanly on Nx 23.1.0.
+  One quirk worth knowing: `--framework=nest` silently overrides
+  `--bundler=esbuild` — NestJS needs its own webpack build (decorator/DI
+  metadata emission esbuild's transform-only approach can't produce), so a
+  `nest` app's `dist/main.js` is a single webpack bundle instead of the
+  esbuild non-bundled mirrored-tree + shim the other frameworks (and `none`)
+  produce. The `package` target needs no framework branch either way — both
+  shapes' runnable entry is `dist/main.js`, so zipping the whole `dist` folder
+  works unchanged. `node-function-app` never accepts `--framework`: the Azure
+  Functions v4 programming model (`app.http(...)` registration) runs its own
+  request lifecycle, so a full HTTP server framework doesn't apply there.
 
 - `build` = the generator's own `@nx/esbuild:esbuild` target, **non-bundled**
   (`bundle: false`): it transpiles each file individually and mirrors the

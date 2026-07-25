@@ -311,6 +311,14 @@ console.log('\n▸ wiring node app (svc) -> utils (private internal) + ms (real 
 writeFileSync(path.join(workspace, 'apps/svc/src/main.ts'), 'import ms from \'ms\';\nimport { utils } from \'@demo/utils\';\n\nconsole.log(\'deps-check:\', utils(), ms(60000));\n')
 run('npx nx sync', workspace)
 
+// --framework is otherwise plain flag plumbing (no mnci-side logic — verified
+// empirically in a scratch workspace that express/fastify/koa/nest all
+// generate, build and test cleanly via the same generator call), so only one
+// representative framework is exercised here for real; the rest are covered
+// by node.test.ts's unit tests asserting the flag reaches the generator.
+console.log('\n▸ mnci add node-app svc-express --framework express')
+run(`node ${CLI} add node-app svc-express --framework express`, workspace)
+
 console.log('\n▸ mnci add node-function-app api')
 run(`node ${CLI} add node-function-app api`, workspace)
 
@@ -412,6 +420,14 @@ enforce('node app packs into the drop (node-app-svc.zip)', existsSync(nodeAppZip
 const nodeAppZipEntries = existsSync(nodeAppZip) ? new AdmZip(nodeAppZip).getEntries().map((entry) => entry.entryName) : []
 enforce('node app zip actually contains the runnable dist shim, not just an empty drop',
   nodeAppZipEntries.includes('main.js'))
+
+// --framework express: a real HTTP-framework dependency was scaffolded (not
+// just a --framework=none bare app), and the generator's own express sample
+// already built+tested green as part of the run-many above.
+const svcExpressManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/svc-express/package.json'), 'utf8'))
+enforce('node app --framework express declares a real express dependency', Boolean(svcExpressManifest.dependencies?.express))
+enforce('node app --framework express bundles the compiled entry (esbuild non-bundled, same as --framework=none)',
+  existsSync(path.join(workspace, 'apps/svc-express/dist/main.js')))
 
 enforce('node function app bundles the compiled entry the same way', existsSync(path.join(workspace, 'apps/api/dist/main.js')))
 const nodeFunctionAppRun = tryRunCapture('node apps/api/dist/main.js', workspace)

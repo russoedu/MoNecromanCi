@@ -107,7 +107,7 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
       break
     }
     case 'node-app': {
-      addNodeApp(workspaceRoot, resolvedName, stack)
+      addNodeApp(workspaceRoot, resolvedName, stack, options.framework)
       break
     }
     case 'node-function-app': {

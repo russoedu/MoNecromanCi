@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { addNxTargets, ensureAdmZip, hasPlugin, type WorkspaceStack } from './shared'
+import { addNxTargets, ensureAdmZip, hasPlugin, type NodeFramework, type WorkspaceStack } from './shared'
 
 /**
  * Ensures an Nx plugin is installed in the workspace, installing it on first use.
@@ -30,22 +30,30 @@ function ensurePlugin (workspaceRoot: string, packageName: string): void {
  * Generates a Node app with the official `@nx/node:application` generator.
  *
  * @remarks
- * Plain delegation — `esbuild` (non-bundled: it transpiles each file and
- * mirrors the workspace tree into `dist`, rather than producing one bundled
- * file) is the generator's own default, and `--framework=none` keeps the
- * scaffold a bare Node app (no Express/Fastify/Koa/Nest opinion). Both
- * `node-app` and `node-function-app` generate identically — the function app
+ * Plain delegation — no framework-specific logic here at all, `framework` is
+ * passed straight through to the generator. `--bundler=esbuild` is requested
+ * either way, but verified empirically that `--framework=nest` silently
+ * overrides it: NestJS needs its own webpack build (decorator/DI metadata
+ * emission esbuild's transform-only approach can't produce), so a
+ * `nest`-flavoured app builds to a single webpack-bundled `dist/main.js`
+ * instead of the esbuild non-bundled mirrored-tree + shim the other
+ * frameworks (and `none`) produce. {@link nodeAppPackageTarget} needs no
+ * framework branch regardless — either shape's runnable entry is
+ * `dist/main.js`, so zipping the whole `dist` folder works unchanged. Both
+ * `node-app` and `node-function-app` generate identically (function apps
+ * always pass `'none'` — see {@link addNodeFunctionApp}) — the function app
  * is this plus an Azure Functions v2 file overlay, the same split already
  * used for `python-app`/`python-function-app` (`add/python.ts`).
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
  * @param stack - The workspace's chosen linter/test runner.
+ * @param framework - The HTTP framework to scaffold (`none` for a bare app).
  * @returns Nothing.
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function runNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
+function runNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack, framework: NodeFramework): void {
   ensurePlugin(workspaceRoot, '@nx/node')
   runNx([
     'g', '@nx/node:application', `apps/${name}`,
@@ -53,7 +61,7 @@ function runNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack)
     `--unitTestRunner=${stack.testRunner}`,
     `--linter=${stack.linter}`,
     '--e2eTestRunner=none',
-    '--framework=none',
+    `--framework=${framework}`,
     '--no-interactive',
   ], workspaceRoot)
 }
@@ -90,20 +98,22 @@ function nodeAppPackageTarget (name: string): Record<string, unknown> {
  * Adds a plain Node app: `@nx/node:application` plus a packaging target.
  *
  * @remarks
- * Pure delegation to the official generator (esbuild, non-bundled) — no
- * custom build rewiring, no relocated output; every kind builds to its own
+ * Pure delegation to the official generator (esbuild, non-bundled unless
+ * `framework` forces its own build — see {@link runNodeApp}) — no custom
+ * build rewiring, no relocated output; every kind builds to its own
  * Nx-default location. {@link nodeAppPackageTarget} is the one thing the
  * generator doesn't do: zip the build into the CI drop.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
  * @param stack - The workspace's chosen linter/test runner.
+ * @param framework - The HTTP framework to scaffold (defaults to `none`, a bare Node app).
  * @returns Nothing.
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
-  runNodeApp(workspaceRoot, name, stack)
+export function addNodeApp (workspaceRoot: string, name: string, stack: WorkspaceStack, framework: NodeFramework = 'none'): void {
+  runNodeApp(workspaceRoot, name, stack, framework)
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), { package: nodeAppPackageTarget(name) })
 }
@@ -300,7 +310,11 @@ function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
  * and the manifest repair the deploy needs. The `func` CLI is never invoked —
  * unlike the removed `@nxazure/func` plugin, nothing here shells out to it,
  * so it isn't a prerequisite for `add node-function-app` (only for local
- * `func start`, same as `python-function-app`).
+ * `func start`, same as `python-function-app`). Always `--framework=none` —
+ * unlike `node-app`, no framework choice: the Azure Functions v4 programming
+ * model registers its own routes and runs its own request lifecycle
+ * ({@link NODE_FUNCTION_APP_HELLO}'s `app.http(...)`), so a full HTTP server
+ * framework (Express/Fastify/Koa/Nest) doesn't apply here.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
@@ -310,7 +324,7 @@ function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
  * @typeParam None - this function has no generic type parameters.
  */
 export function addNodeFunctionApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
-  runNodeApp(workspaceRoot, name, stack)
+  runNodeApp(workspaceRoot, name, stack, 'none')
   ensureAzureFunctionsPackage(workspaceRoot)
   const nodeFunctionAppRoot = join(workspaceRoot, 'apps', name)
   writeFileEnsured(join(nodeFunctionAppRoot, 'src/main.ts'), NODE_FUNCTION_APP_MAIN)

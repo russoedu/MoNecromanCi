@@ -91,6 +91,26 @@ describe('runAdd node-app', () => {
     const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nx/node:application')
     expect(generatorCall?.[0]).toContain('--unitTestRunner=vitest')
   })
+
+  it.each(['express', 'fastify', 'koa', 'nest'] as const)('passes --framework=%s straight through to the generator', async (framework) => {
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/svc/package.json'), JSON.stringify({ name: '@demo/svc' }))
+
+    await runAdd('node-app', 'svc', { framework })
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nx/node:application')
+    expect(generatorCall?.[0]).toContain(`--framework=${framework}`)
+  })
+
+  it('defaults to --framework=none when no framework flag is passed', async () => {
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/svc/package.json'), JSON.stringify({ name: '@demo/svc' }))
+
+    await runAdd('node-app', 'svc', {})
+
+    const generatorCall = mockRunNx.mock.calls.find((call) => call[0][1] === '@nx/node:application')
+    expect(generatorCall?.[0]).toContain('--framework=none')
+  })
 })
 
 describe('runAdd node-function-app', () => {
