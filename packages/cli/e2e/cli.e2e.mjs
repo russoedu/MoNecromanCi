@@ -188,8 +188,25 @@ enforce('dual compiler: the importable TypeScript API stays TS6 (Nx graph/Vite/e
  * ------------------------------------------------------------------------- */
 
 const workspaceGithub = path.join(temporary, 'demo-github')
-console.log(`\n▸ mnci new demo-github --ci both (in ${temporary})`)
-run(`node ${CLI} new demo-github --yes --registry npm --scope @demo --ci both`, temporary)
+// --nx-cloud exercised here too (item 7): `--ci both` maps to no direct Nx
+// `--nxCloud` value, so this is the one case worth proving for real — the
+// mapping falls back to `--nxCloud=github` (see nxCloudProviderValue's
+// remarks in new.ts). The real point of this real-execution proof is the
+// negative case: `run()` throws on a non-zero exit and this whole e2e run
+// would hang/fail here if `--nx-cloud` ever regressed into passing the
+// bare, upstream-broken `--nxCloud=yes` (verified empirically to prompt
+// interactively and exit without creating a workspace at all under
+// --no-interactive) instead of a named provider.
+console.log(`\n▸ mnci new demo-github --ci both --nx-cloud (in ${temporary})`)
+run(`node ${CLI} new demo-github --yes --registry npm --scope @demo --ci both --nx-cloud`, temporary)
+
+// Informational only (not `enforce`d): whether create-nx-workspace's own
+// Nx Cloud registration call actually landed a `nxCloudId` is third-party
+// network reliability, outside this CLI's control — what we own and DO
+// enforce is that the right `--nxCloud` value was passed and the run never
+// hung (both proven by reaching this line at all).
+const workspaceGithubNxJson = JSON.parse(readFileSync(path.join(workspaceGithub, 'nx.json'), 'utf8'))
+console.log(`  (info) nxCloudId after --nx-cloud: ${workspaceGithubNxJson.nxCloudId ?? '<not set — Nx Cloud registration did not land locally>'}`)
 
 enforce('azure-pipelines.yml still written when --ci both', existsSync(path.join(workspaceGithub, 'azure-pipelines.yml')))
 const workflowPath = path.join(workspaceGithub, '.github/workflows/ci.yml')

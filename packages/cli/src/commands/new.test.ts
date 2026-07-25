@@ -1,17 +1,18 @@
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({ applyOverlay: jest.fn(), DEFAULT_STACK: { linter: 'eslint', testRunner: 'jest' } }))
-jest.mock('../prompts', () => ({ promptCi: jest.fn(), promptRegistry: jest.fn(), promptStack: jest.fn(), promptText: jest.fn() }))
+jest.mock('../prompts', () => ({ promptCi: jest.fn(), promptNxCloud: jest.fn(), promptRegistry: jest.fn(), promptStack: jest.fn(), promptText: jest.fn() }))
 
 import { join } from 'node:path'
 import { runNpx, runShell } from '../nx'
 import { applyOverlay } from '../overlay'
-import { promptCi, promptRegistry, promptStack, promptText } from '../prompts'
+import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { runNew } from './new'
 
 const mockRunNpx = jest.mocked(runNpx)
 const mockRunShell = jest.mocked(runShell)
 const mockApplyOverlay = jest.mocked(applyOverlay)
 const mockPromptCi = jest.mocked(promptCi)
+const mockPromptNxCloud = jest.mocked(promptNxCloud)
 const mockPromptRegistry = jest.mocked(promptRegistry)
 const mockPromptStack = jest.mocked(promptStack)
 const mockPromptText = jest.mocked(promptText)
@@ -23,6 +24,7 @@ beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue('/somewhere')
   jest.spyOn(console, 'log').mockImplementation(() => {})
   mockRunShell.mockReturnValue(0)
+  mockPromptNxCloud.mockResolvedValue(false)
 })
 
 afterEach(() => {
@@ -87,6 +89,49 @@ describe('runNew', () => {
     expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptText).not.toHaveBeenCalledWith('Azure DevOps variable group holding the npm PAT', 'Build')
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ ci: 'github', variableGroup: 'Build' }))
+  })
+
+  it('stays disconnected from Nx Cloud by default, without prompting under --yes', async () => {
+    await runNew('demo', { yes: true })
+
+    expect(mockRunNpx.mock.calls[0][0]).toContain('--nxCloud=skip')
+    expect(mockPromptNxCloud).not.toHaveBeenCalled()
+  })
+
+  it('opts into Nx Cloud with --nx-cloud, mapping --ci azure to --nxCloud=azure', async () => {
+    await runNew('demo', { yes: true, nxCloud: true, ci: 'azure' })
+
+    expect(mockRunNpx.mock.calls[0][0]).toContain('--nxCloud=azure')
+    expect(mockPromptNxCloud).not.toHaveBeenCalled()
+  })
+
+  it('opts into Nx Cloud with --nx-cloud, mapping --ci github to --nxCloud=github', async () => {
+    await runNew('demo', { yes: true, nxCloud: true, ci: 'github' })
+
+    expect(mockRunNpx.mock.calls[0][0]).toContain('--nxCloud=github')
+  })
+
+  it('opts into Nx Cloud with --nx-cloud, mapping --ci both to --nxCloud=github (no Nx equivalent for "both")', async () => {
+    await runNew('demo', { yes: true, nxCloud: true, ci: 'both' })
+
+    expect(mockRunNpx.mock.calls[0][0]).toContain('--nxCloud=github')
+  })
+
+  it('prompts for Nx Cloud on the interactive path when --nx-cloud is not passed', async () => {
+    mockPromptText
+      .mockResolvedValueOnce('shop') // workspace name
+      .mockResolvedValueOnce('@shop') // scope
+      .mockResolvedValueOnce('ubuntu-latest') // agent
+      .mockResolvedValueOnce('Build') // variable group
+    mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
+    mockPromptCi.mockResolvedValue('azure')
+    mockPromptStack.mockResolvedValue(DEFAULT_STACK)
+    mockPromptNxCloud.mockResolvedValue(true)
+
+    await runNew(undefined, {})
+
+    expect(mockPromptNxCloud).toHaveBeenCalled()
+    expect(mockRunNpx.mock.calls[0][0]).toContain('--nxCloud=azure')
   })
 
   it('installs the commit toolchain for real (default stack adds nothing extra)', async () => {

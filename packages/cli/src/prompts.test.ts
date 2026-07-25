@@ -1,8 +1,9 @@
-jest.mock('@inquirer/prompts', () => ({ input: jest.fn(), select: jest.fn() }))
+jest.mock('@inquirer/prompts', () => ({ confirm: jest.fn(), input: jest.fn(), select: jest.fn() }))
 
-import { input, select } from '@inquirer/prompts'
-import { promptCi, promptRegistry, promptText } from './prompts'
+import { confirm, input, select } from '@inquirer/prompts'
+import { promptCi, promptNxCloud, promptRegistry, promptText } from './prompts'
 
+const mockConfirm = jest.mocked(confirm)
 const mockInput = jest.mocked(input)
 const mockSelect = jest.mocked(select)
 
@@ -50,5 +51,13 @@ describe('promptCi', () => {
     expect(await promptCi()).toBe('github')
     const { choices } = mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
     expect(choices.map((choice) => choice.value)).toEqual(['azure', 'github', 'both'])
+  })
+})
+
+describe('promptNxCloud', () => {
+  it('defaults to declined and forwards the resolved answer', async () => {
+    mockConfirm.mockResolvedValue(true)
+    expect(await promptNxCloud()).toBe(true)
+    expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({ default: false }))
   })
 })

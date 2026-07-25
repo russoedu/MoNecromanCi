@@ -1,4 +1,4 @@
-import { input, select } from '@inquirer/prompts'
+import { confirm, input, select } from '@inquirer/prompts'
 import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
 
 /**
@@ -79,6 +79,40 @@ export async function promptCi (): Promise<CiProvider> {
       { name: 'GitHub Actions', value: 'github' },
       { name: 'Both', value: 'both' },
     ],
+  })
+}
+
+/**
+ * Prompts for the stack: linter and unit-test runner.
+ *
+ * @remarks
+ * The knobs asked up front at `mnci new`. TypeScript is fixed (the
+ * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), so only the
+ * linter and test runner are asked. Each is a binary choice — no "none" — with
+ * the current opinionated default listed first.
+ *
+ * @param None - this function takes no parameters.
+ * @returns The resolved stack configuration.
+ * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
+ * @typeParam None - this function has no generic type parameters.
+ */
+/**
+ * Prompts whether to connect the new workspace to Nx Cloud.
+ *
+ * @remarks
+ * Defaults to `false` (declined) — an external service enrollment is not
+ * something to opt a user into silently. Only reached on the interactive
+ * path; `--yes`/an explicit `--nx-cloud` flag skip straight past this.
+ *
+ * @param None - this function takes no parameters.
+ * @returns Whether to connect to Nx Cloud.
+ * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function promptNxCloud (): Promise<boolean> {
+  return await confirm({
+    message: 'Connect this workspace to Nx Cloud (remote caching + CI insights)?',
+    default: false,
   })
 }
 

@@ -54,6 +54,7 @@ export function buildProgram (): Command {
     .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--linter <linter>', 'linter: eslint | oxlint')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
+    .option('--nx-cloud', 'connect the workspace to Nx Cloud (remote caching + CI insights)')
     .action(async (name: string | undefined, options: NewOptions) => {
       await runNew(name, options)
     })

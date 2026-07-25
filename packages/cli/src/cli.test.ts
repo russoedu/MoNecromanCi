@@ -153,6 +153,11 @@ describe('buildProgram', () => {
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })
 
+  it('routes `new`\'s --nx-cloud flag to runNew', async () => {
+    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--nx-cloud'])
+    expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ nxCloud: true }))
+  })
+
   it('routes `upgrade` with its flags to runUpgrade, against the current working directory', async () => {
     jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
     await buildProgram().parseAsync(['node', 'mnci', 'upgrade', '--agent', 'windows-latest'])
