@@ -4,6 +4,22 @@ import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
 /**
+ * The HTTP frameworks `@nx/node:application` can scaffold a `node-app` with.
+ *
+ * @remarks
+ * The generator's own `--framework` choices (verified empirically against a
+ * real Nx 23.1.0 workspace: `nx g @nx/node:application --help`), passed
+ * straight through — `node.ts` adds no framework-specific logic of its own.
+ * `none` (the default) is a bare Node app with no HTTP framework opinion.
+ * `node-function-app` never accepts this: the Azure Functions v4 programming
+ * model (`app.http(...)` registration) runs its own request lifecycle, so a
+ * full HTTP server framework doesn't apply there.
+ *
+ * @typeParam None - this type has no generic type parameters.
+ */
+export type NodeFramework = 'express' | 'fastify' | 'koa' | 'nest' | 'none'
+
+/**
  * Options accepted by `runAdd`.
  *
  * @remarks
@@ -17,7 +33,9 @@ import { logger } from '../../util/logger'
  */
 export interface AddOptions {
   /** npm scope for a publishable lib's import path (defaults to `@<workspace name>`). */
-  scope?: string
+  scope?:     string
+  /** `node-app` only: the HTTP framework `@nx/node:application` scaffolds (defaults to `none`, a bare Node app). */
+  framework?: NodeFramework
 }
 
 /**
