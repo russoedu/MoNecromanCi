@@ -33,7 +33,7 @@
     "@types/jest": "~30.0.0",
     "@types/node": "^24.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "eslint": "^10.6.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-jest": "^29.15.3",
     "eslint-plugin-jsonc": "^3.2.0",
