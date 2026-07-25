@@ -325,6 +325,36 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('displayName: pip-audit (non-blocking)')
   })
 
+  it('seeds the Go toolchain before the build, and skips cleanly without a root go.mod', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const goDownloadIndex = pipeline.indexOf('Download Go module dependencies')
+    const golangciIndex = pipeline.indexOf('Install golangci-lint')
+    const pathIndex = pipeline.indexOf('Add Go tool bin to PATH')
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+
+    expect(goDownloadIndex).toBeGreaterThan(-1)
+    // PATH must be published after the install that populates GOPATH/bin,
+    // and all of it before anything that runs the lint target.
+    expect(pathIndex).toBeGreaterThan(golangciIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pathIndex)
+
+    // Every Go step is gated on the root go.mod, so a JS-only workspace pays
+    // nothing — the same shape as the Python guards' requirements-dev.txt check.
+    expect(pipeline).toContain("existsSync('go.mod')")
+    expect(pipeline).toContain('No Go projects - skipping.')
+    // Azure's own mechanism for a step to extend PATH for later steps.
+    expect(pipeline).toContain('##vso[task.prependpath]')
+  })
+
+  it('pins golangci-lint as the Go linter rather than the plugin default of go fmt', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    expect(pipeline).toContain('golangci-lint')
+    // Skips the install when the agent already provides the binary.
+    expect(pipeline).toContain('golangci-lint already installed - skipping.')
+  })
+
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -480,6 +510,25 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain('name: pip-audit (non-blocking)')
   })
 
+  it('seeds the Go toolchain before the build, using GITHUB_PATH rather than the Azure logging command', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const goDownloadIndex = workflow.indexOf('Download Go module dependencies')
+    const golangciIndex = workflow.indexOf('Install golangci-lint')
+    const pathIndex = workflow.indexOf('Add Go tool bin to PATH')
+    const syncCheckIndex = workflow.indexOf('nx sync:check')
+
+    expect(goDownloadIndex).toBeGreaterThan(-1)
+    expect(pathIndex).toBeGreaterThan(golangciIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pathIndex)
+
+    expect(workflow).toContain("existsSync('go.mod')")
+    expect(workflow).toContain('No Go projects - skipping.')
+    // The two providers publish PATH differently; this one appends to a file.
+    expect(workflow).toContain('GITHUB_PATH')
+    expect(workflow).not.toContain('##vso[task.prependpath]')
+  })
+
   it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -566,7 +615,7 @@ describe('readMnciConfig', () => {
       JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } })
     )
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -629,7 +678,7 @@ describe('applyOverlay', () => {
 
   const overlayWith = (stack: StackConfig): void =>
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
@@ -654,7 +703,7 @@ describe('applyOverlay', () => {
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -684,7 +733,7 @@ describe('applyOverlay', () => {
 
   it('writes only azure-pipelines.yml when ci: "azure" (the default)', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -699,7 +748,7 @@ describe('applyOverlay', () => {
 
   it('writes only .github/workflows/ci.yml when ci: "github"', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -719,7 +768,7 @@ describe('applyOverlay', () => {
 
   it('threads the registry kind through to azure-pipelines.yml too, when both providers are chosen for a public npm registry', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -735,7 +784,7 @@ describe('applyOverlay', () => {
 
   it('writes both pipeline files when ci: "both"', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -750,7 +799,7 @@ describe('applyOverlay', () => {
 
   it('never writes .github/dependabot.yml when ci: "azure" (the default) — Dependabot is GitHub-native', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -764,7 +813,7 @@ describe('applyOverlay', () => {
 
   it('writes .github/dependabot.yml alongside the workflow for ci: "github"', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -791,7 +840,7 @@ describe('applyOverlay', () => {
 
   it('writes .github/dependabot.yml for ci: "both" too', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -805,7 +854,7 @@ describe('applyOverlay', () => {
 
   it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -843,7 +892,7 @@ describe('applyOverlay', () => {
 
   it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: {
         kind: 'azure-artifacts',
@@ -898,7 +947,7 @@ describe('applyOverlay', () => {
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -937,7 +986,7 @@ describe('applyOverlay', () => {
 
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -957,7 +1006,7 @@ describe('applyOverlay', () => {
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -969,7 +1018,12 @@ describe('applyOverlay', () => {
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
-    const { 'python:install': pythonInstall, format, 'format:check': formatCheck, ...rest } = manifest.scripts
+    const {
+      'python:install': pythonInstall,
+      format,
+      'format:check': formatCheck,
+      ...rest
+    } = manifest.scripts
     expect(rest).toEqual({
       build: 'nx run-many -t build',
       lint: 'nx run-many -t lint',
@@ -994,7 +1048,7 @@ describe('applyOverlay', () => {
     )
 
     applyOverlay(workspaceRoot, {
-      workspaceName: "demo",
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',

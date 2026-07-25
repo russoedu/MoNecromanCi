@@ -114,17 +114,23 @@ jest.mock('./commands/add', () => ({ runAdd: jest.fn(), PROJECT_KINDS: [] }))
 jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
 jest.mock('./commands/upgrade', () => ({ runUpgrade: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
+jest.mock('./util/versionChecker', () => ({
+  checkForUpdate: jest.fn(),
+  readCliVersion: jest.fn(() => '1.0.0'),
+}))
 
 import { buildProgram, main } from './cli'
 import { runAdd } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
 import { runUpgrade } from './commands/upgrade'
+import { checkForUpdate } from './util/versionChecker'
 
 const mockRunAdd = jest.mocked(runAdd)
 const mockRunNew = jest.mocked(runNew)
 const mockRunUpgrade = jest.mocked(runUpgrade)
 const mockRunInteractive = jest.mocked(runInteractive)
+const mockCheckForUpdate = jest.mocked(checkForUpdate)
 
 let errorSpy: jest.SpyInstance
 
@@ -139,7 +145,15 @@ afterEach(() => {
 
 describe('buildProgram', () => {
   it('routes `new` with its flags to runNew', async () => {
-    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--registry', 'npm'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'new',
+      'demo',
+      '--yes',
+      '--registry',
+      'npm',
+    ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
       expect.objectContaining({ yes: true, registry: 'npm' })
@@ -147,7 +161,15 @@ describe('buildProgram', () => {
   })
 
   it('routes `add` with kind, name and scope to runAdd', async () => {
-    await buildProgram().parseAsync(['node', 'mnci', 'add', 'npm-lib', 'sdk', '--scope', '@acme'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'add',
+      'npm-lib',
+      'sdk',
+      '--scope',
+      '@acme',
+    ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'npm-lib',
       'sdk',
@@ -156,7 +178,7 @@ describe('buildProgram', () => {
   })
 
   it("routes `add node-app`'s --framework flag to runAdd", async () => {
-    await buildProgram().parseAsync([
+    await buildProgram('1.0.0').parseAsync([
       'node',
       'mnci',
       'add',
@@ -173,7 +195,7 @@ describe('buildProgram', () => {
   })
 
   it("routes `add python-vendor`'s --lib flag to runAdd", async () => {
-    await buildProgram().parseAsync([
+    await buildProgram('1.0.0').parseAsync([
       'node',
       'mnci',
       'add',
@@ -190,7 +212,7 @@ describe('buildProgram', () => {
   })
 
   it('routes `new` test-runner flag to runNew', async () => {
-    await buildProgram().parseAsync([
+    await buildProgram('1.0.0').parseAsync([
       'node',
       'mnci',
       'new',
@@ -206,18 +228,26 @@ describe('buildProgram', () => {
   })
 
   it("routes `new`'s --ci flag to runNew", async () => {
-    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--ci', 'github'])
+    await buildProgram('1.0.0').parseAsync([
+      'node',
+      'mnci',
+      'new',
+      'demo',
+      '--yes',
+      '--ci',
+      'github',
+    ])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })
 
   it("routes `new`'s --nx-cloud flag to runNew", async () => {
-    await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--nx-cloud'])
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--nx-cloud'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ nxCloud: true }))
   })
 
   it('routes `upgrade` with its flags to runUpgrade, against the current working directory', async () => {
     jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
-    await buildProgram().parseAsync(['node', 'mnci', 'upgrade', '--agent', 'windows-latest'])
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'upgrade', '--agent', 'windows-latest'])
     expect(mockRunUpgrade).toHaveBeenCalledWith(
       '/somewhere/demo',
       expect.objectContaining({ agent: 'windows-latest' })
@@ -225,7 +255,7 @@ describe('buildProgram', () => {
   })
 
   it('runs the interactive wizard when invoked with no subcommand', async () => {
-    await buildProgram().parseAsync(['node', 'mnci'])
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci'])
     expect(mockRunInteractive).toHaveBeenCalled()
     expect(mockRunNew).not.toHaveBeenCalled()
     expect(mockRunAdd).not.toHaveBeenCalled()
@@ -250,5 +280,29 @@ describe('main', () => {
     await main()
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('plain failure'))
+  })
+
+  it('kicks off a background update check with the running version', async () => {
+    process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
+
+    await main()
+
+    expect(mockCheckForUpdate).toHaveBeenCalledWith('1.0.0')
+  })
+
+  it('does not let the update check delay or fail the command', async () => {
+    // checkForUpdate is void-returning by design: anything promise-shaped
+    // here would be a floating promise at the call site, and a rejected one
+    // would take the process down with an unhandled rejection.
+    // The preceding cases set a persistent rejection on runNew (restoreAllMocks
+    // does not reset jest.mock factory fns), so re-arm it for the happy path.
+    mockRunNew.mockResolvedValue(undefined)
+    process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
+
+    await main()
+
+    expect(mockCheckForUpdate).toHaveReturnedWith(undefined)
+    expect(mockRunNew).toHaveBeenCalled()
+    expect(process.exitCode).toBe(0)
   })
 })

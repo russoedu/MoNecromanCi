@@ -1,23 +1,10 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { Argument, Command } from 'commander'
 import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
 import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
 import { logger } from './util/logger'
-
-/** Reads the CLI version from the packaged package.json (next to dist/). */
-function readVersion(): string {
-  try {
-    const package_ = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
-      version?: string
-    }
-    return package_.version ?? '0.0.0'
-  } catch {
-    return '0.0.0'
-  }
-}
+import { checkForUpdate, readCliVersion } from './util/versionChecker'
 
 /**
  * Builds the commander program for the CLI.
@@ -28,18 +15,18 @@ function readVersion(): string {
  * repo needs day-to-day (build/test/lint/release) is plain Nx, so the CLI
  * deliberately has no wrapper commands for those.
  *
- * @param None - this function takes no parameters.
+ * @param cliVersion - The current CLI version (from package.json).
  * @returns The configured commander program.
  * @throws Never - wiring only; execution errors surface when commands run.
  * @typeParam None - this function has no generic type parameters.
  */
-export function buildProgram(): Command {
+export function buildProgram(cliVersion: string): Command {
   const program = new Command()
 
   program
     .name('mnci')
     .description('MoNecromanCI — a thin CLI over official Nx plugins')
-    .version(readVersion(), '-v, --version', 'display the version')
+    .version(cliVersion, '-v, --version', 'display the version')
 
   program
     .command('new')
@@ -121,6 +108,7 @@ export function buildProgram(): Command {
  *
  * @remarks
  * Exported so tests can drive the program without spawning a process.
+ * Runs a non-blocking version check in the background (fire-and-forget).
  *
  * @param None - this function takes no parameters.
  * @returns A promise that resolves when the invoked command completes.
@@ -129,7 +117,13 @@ export function buildProgram(): Command {
  */
 export async function main(): Promise<void> {
   try {
-    await buildProgram().parseAsync(process.argv)
+    const cliVersion = readCliVersion(__dirname)
+    const program = buildProgram(cliVersion)
+
+    // Check for updates in the background (non-blocking).
+    checkForUpdate(cliVersion)
+
+    await program.parseAsync(process.argv)
   } catch (error) {
     logger.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
