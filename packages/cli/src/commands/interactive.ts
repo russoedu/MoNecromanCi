@@ -3,26 +3,28 @@ import { select } from '@inquirer/prompts'
 import { fileExists } from '../util/fsx'
 import { runAdd } from './add'
 import { runNew } from './new'
+import { runUpgrade } from './upgrade'
 
-/** The two things the wizard can start: scaffold a workspace, or add to one. */
-type InteractiveAction = 'new' | 'add'
+/** The three things the wizard can start: scaffold, add to, or upgrade a workspace. */
+type InteractiveAction = 'new' | 'add' | 'upgrade'
 
 /**
  * Runs the guided wizard shown when `mnci` is invoked with no arguments.
  *
  * @remarks
- * A thin dispatcher: it picks between the two commands, then hands off to the
- * existing flows — {@link runNew} and {@link runAdd} — which already prompt for
- * every field they need (name/scope/registry/agent/variable group for `new`;
- * kind/name, and the npm-lib scope on this bare path, for `add`). Nothing about
- * the prompting lives here, so the wizard and the flag-driven commands can
- * never drift.
+ * A thin dispatcher: it picks between the three commands, then hands off to
+ * the existing flows — {@link runNew}, {@link runAdd} and {@link runUpgrade} —
+ * which already handle every field they need (name/scope/registry/agent/
+ * variable group for `new`; kind/name, and the npm-lib scope on this bare
+ * path, for `add`; whatever `mnci new`/a previous upgrade persisted, for
+ * `upgrade`). Nothing about the prompting or resolution lives here, so the
+ * wizard and the flag-driven commands can never drift.
  *
  * The menu is ordered by context: inside a workspace (an `nx.json` in the cwd)
- * `add` is offered first, otherwise `new` — so the default highlight matches
- * what the user most likely wants. Both are always shown; picking `add`
- * outside a workspace surfaces {@link runAdd}'s clear "run from the workspace
- * root" error.
+ * `add` is offered first, then `upgrade`, then `new` — so the default
+ * highlight matches what the user most likely wants. All three are always
+ * shown; picking `add` or `upgrade` outside a workspace surfaces that flow's
+ * own clear "run from the workspace root" error.
  *
  * @param None - this function takes no parameters.
  * @returns A promise that resolves when the chosen flow completes.
@@ -33,14 +35,22 @@ export async function runInteractive(): Promise<void> {
   const inWorkspace = fileExists(join(process.cwd(), 'nx.json'))
   const newChoice = { name: 'Create a new monorepo', value: 'new' as const }
   const addChoice = { name: 'Add a project to this workspace', value: 'add' as const }
+  const upgradeChoice = {
+    name: 'Upgrade this workspace (re-apply the latest overlay)',
+    value: 'upgrade' as const,
+  }
 
   const action = await select<InteractiveAction>({
     message: 'What would you like to do?',
-    choices: inWorkspace ? [addChoice, newChoice] : [newChoice, addChoice],
+    choices: inWorkspace
+      ? [addChoice, upgradeChoice, newChoice]
+      : [newChoice, addChoice, upgradeChoice],
   })
 
   if (action === 'new') {
     await runNew(undefined, {})
+  } else if (action === 'upgrade') {
+    runUpgrade(process.cwd(), {})
   } else {
     await runAdd(undefined, undefined, {})
   }

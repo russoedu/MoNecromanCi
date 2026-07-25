@@ -305,4 +305,50 @@ describe('main', () => {
     expect(mockRunNew).toHaveBeenCalled()
     expect(process.exitCode).toBe(0)
   })
+
+  describe('version banner', () => {
+    let logSpy: jest.SpyInstance
+    let isTTY: boolean | undefined
+
+    beforeEach(() => {
+      mockRunNew.mockResolvedValue(undefined)
+      logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+      isTTY = process.stdout.isTTY
+    })
+
+    afterEach(() => {
+      process.stdout.isTTY = isTTY as boolean
+    })
+
+    it('prints "mnci v<version>" for an interactive (TTY) invocation', async () => {
+      process.stdout.isTTY = true
+      process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
+
+      await main()
+
+      expect(logSpy).toHaveBeenCalledWith('mnci v1.0.0')
+    })
+
+    it('stays silent for a non-TTY invocation (CI, piped output)', async () => {
+      process.stdout.isTTY = false
+      process.argv = ['node', 'mnci', 'new', 'demo', '--yes']
+
+      await main()
+
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('mnci v'))
+    })
+
+    it('skips the banner when -v/--version was passed, to avoid a redundant duplicate', async () => {
+      process.stdout.isTTY = true
+
+      process.argv = ['node', 'mnci', '-v']
+      await main()
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('mnci v'))
+
+      logSpy.mockClear()
+      process.argv = ['node', 'mnci', '--version']
+      await main()
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('mnci v'))
+    })
+  })
 })

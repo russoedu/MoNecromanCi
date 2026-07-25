@@ -108,7 +108,12 @@ export function buildProgram(cliVersion: string): Command {
  *
  * @remarks
  * Exported so tests can drive the program without spawning a process.
- * Runs a non-blocking version check in the background (fire-and-forget).
+ * Runs a non-blocking version check in the background (fire-and-forget), and
+ * prints a `mnci vX.Y.Z` banner for interactive use — gated on stdout being a
+ * TTY (like {@link checkForUpdate}) so CI/piped invocations see nothing extra,
+ * and skipped when `-v`/`--version` was passed explicitly since commander
+ * already prints the bare version for that case; a banner above it would just
+ * be a redundant duplicate.
  *
  * @param None - this function takes no parameters.
  * @returns A promise that resolves when the invoked command completes.
@@ -122,6 +127,12 @@ export async function main(): Promise<void> {
 
     // Check for updates in the background (non-blocking).
     checkForUpdate(cliVersion)
+
+    const arguments_ = new Set(process.argv.slice(2))
+    const requestedVersionFlag = arguments_.has('-v') || arguments_.has('--version')
+    if (process.stdout.isTTY && !requestedVersionFlag) {
+      logger.info(`mnci v${cliVersion}`)
+    }
 
     await program.parseAsync(process.argv)
   } catch (error) {
