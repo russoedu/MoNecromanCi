@@ -77,7 +77,7 @@ export default [
  * @param options - The CLI flags.
  * @param kindProvided - Whether `kind` was passed as a flag (vs. prompted) —
  * gates whether the scope is prompted for or silently defaulted.
- * @param stack - The workspace's chosen linter/test runner.
+ * @param stack - The workspace's chosen test runner.
  * @returns A promise that resolves when the generator has finished.
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
@@ -103,20 +103,17 @@ export async function addNpmLib(
       `--importPath=${scope}/${name}`,
       '--bundler=rollup',
       `--unitTestRunner=${stack.testRunner}`,
-      `--linter=${stack.linter}`,
+      '--linter=eslint',
       '--no-interactive',
     ],
     workspaceRoot
   )
   markPublic(join(workspaceRoot, 'packages', name, 'package.json'))
-  // The dependency-check override is an ESLint config; oxlint has no such
-  // rule, so it only applies when ESLint is the chosen linter.
-  if (stack.linter === 'eslint') {
-    writeFileEnsured(
-      join(workspaceRoot, 'packages', name, 'eslint.config.mjs'),
-      NPM_LIB_ESLINT_CONFIG
-    )
-  }
+  // Write an ESLint config with a dependency-check override for private workspace packages.
+  writeFileEnsured(
+    join(workspaceRoot, 'packages', name, 'eslint.config.mjs'),
+    NPM_LIB_ESLINT_CONFIG
+  )
 }
 
 /**

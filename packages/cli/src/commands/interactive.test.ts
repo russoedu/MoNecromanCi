@@ -1,6 +1,7 @@
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn() }))
 jest.mock('./new', () => ({ runNew: jest.fn() }))
 jest.mock('./add', () => ({ runAdd: jest.fn() }))
+jest.mock('./upgrade', () => ({ runUpgrade: jest.fn() }))
 jest.mock('../util/fsx', () => ({ fileExists: jest.fn() }))
 
 import { select } from '@inquirer/prompts'
@@ -8,11 +9,13 @@ import { fileExists } from '../util/fsx'
 import { runAdd } from './add'
 import { runInteractive } from './interactive'
 import { runNew } from './new'
+import { runUpgrade } from './upgrade'
 
 const mockSelect = jest.mocked(select)
 const mockFileExists = jest.mocked(fileExists)
 const mockRunNew = jest.mocked(runNew)
 const mockRunAdd = jest.mocked(runAdd)
+const mockRunUpgrade = jest.mocked(runUpgrade)
 
 afterEach(() => {
   jest.clearAllMocks()
@@ -27,6 +30,7 @@ describe('runInteractive', () => {
 
     expect(mockRunNew).toHaveBeenCalledWith(undefined, {})
     expect(mockRunAdd).not.toHaveBeenCalled()
+    expect(mockRunUpgrade).not.toHaveBeenCalled()
   })
 
   it('dispatches to runAdd (prompting everything) when the user picks "add"', async () => {
@@ -37,9 +41,22 @@ describe('runInteractive', () => {
 
     expect(mockRunAdd).toHaveBeenCalledWith(undefined, undefined, {})
     expect(mockRunNew).not.toHaveBeenCalled()
+    expect(mockRunUpgrade).not.toHaveBeenCalled()
   })
 
-  it('offers "add" first inside a workspace, "new" first otherwise', async () => {
+  it('dispatches to runUpgrade against the current working directory when the user picks "upgrade"', async () => {
+    mockFileExists.mockReturnValue(true)
+    mockSelect.mockResolvedValue('upgrade')
+    jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
+
+    await runInteractive()
+
+    expect(mockRunUpgrade).toHaveBeenCalledWith('/somewhere/demo', {})
+    expect(mockRunNew).not.toHaveBeenCalled()
+    expect(mockRunAdd).not.toHaveBeenCalled()
+  })
+
+  it('offers "add" then "upgrade" then "new" inside a workspace, "new" first otherwise', async () => {
     mockSelect.mockResolvedValue('new')
 
     mockFileExists.mockReturnValue(true)
@@ -47,7 +64,7 @@ describe('runInteractive', () => {
     const insideChoices = (
       mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
     ).choices
-    expect(insideChoices.map(choice => choice.value)).toEqual(['add', 'new'])
+    expect(insideChoices.map(choice => choice.value)).toEqual(['add', 'upgrade', 'new'])
 
     mockSelect.mockClear()
     mockFileExists.mockReturnValue(false)
@@ -55,6 +72,6 @@ describe('runInteractive', () => {
     const outsideChoices = (
       mockSelect.mock.calls[0][0] as unknown as { choices: Array<{ value: string }> }
     ).choices
-    expect(outsideChoices.map(choice => choice.value)).toEqual(['new', 'add'])
+    expect(outsideChoices.map(choice => choice.value)).toEqual(['new', 'add', 'upgrade'])
   })
 })

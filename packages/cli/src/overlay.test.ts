@@ -325,6 +325,36 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('displayName: pip-audit (non-blocking)')
   })
 
+  it('seeds the Go toolchain before the build, and skips cleanly without a root go.mod', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const goDownloadIndex = pipeline.indexOf('Download Go module dependencies')
+    const golangciIndex = pipeline.indexOf('Install golangci-lint')
+    const pathIndex = pipeline.indexOf('Add Go tool bin to PATH')
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+
+    expect(goDownloadIndex).toBeGreaterThan(-1)
+    // PATH must be published after the install that populates GOPATH/bin,
+    // and all of it before anything that runs the lint target.
+    expect(pathIndex).toBeGreaterThan(golangciIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pathIndex)
+
+    // Every Go step is gated on the root go.mod, so a JS-only workspace pays
+    // nothing — the same shape as the Python guards' requirements-dev.txt check.
+    expect(pipeline).toContain("existsSync('go.mod')")
+    expect(pipeline).toContain('No Go projects - skipping.')
+    // Azure's own mechanism for a step to extend PATH for later steps.
+    expect(pipeline).toContain('##vso[task.prependpath]')
+  })
+
+  it('pins golangci-lint as the Go linter rather than the plugin default of go fmt', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    expect(pipeline).toContain('golangci-lint')
+    // Skips the install when the agent already provides the binary.
+    expect(pipeline).toContain('golangci-lint already installed - skipping.')
+  })
+
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -480,6 +510,25 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain('name: pip-audit (non-blocking)')
   })
 
+  it('seeds the Go toolchain before the build, using GITHUB_PATH rather than the Azure logging command', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const goDownloadIndex = workflow.indexOf('Download Go module dependencies')
+    const golangciIndex = workflow.indexOf('Install golangci-lint')
+    const pathIndex = workflow.indexOf('Add Go tool bin to PATH')
+    const syncCheckIndex = workflow.indexOf('nx sync:check')
+
+    expect(goDownloadIndex).toBeGreaterThan(-1)
+    expect(pathIndex).toBeGreaterThan(golangciIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pathIndex)
+
+    expect(workflow).toContain("existsSync('go.mod')")
+    expect(workflow).toContain('No Go projects - skipping.')
+    // The two providers publish PATH differently; this one appends to a file.
+    expect(workflow).toContain('GITHUB_PATH')
+    expect(workflow).not.toContain('##vso[task.prependpath]')
+  })
+
   it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -517,21 +566,13 @@ describe('githubActionsYaml', () => {
 })
 
 describe('generatorDefaults', () => {
-  it('maps eslint straight through', () => {
-    const defaults = generatorDefaults({ linter: 'eslint', testRunner: 'jest' }) as Record<
+  it('always uses eslint and carries the testRunner', () => {
+    const defaults = generatorDefaults({ testRunner: 'jest' }) as Record<
       string,
       { linter: string; unitTestRunner: string }
     >
     expect(defaults['@nx/js:library']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
     expect(defaults['@nx/react:application']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
-  })
-
-  it('maps oxlint to linter:none (oxlint is not an Nx linter) and carries the runner', () => {
-    const defaults = generatorDefaults({ linter: 'oxlint', testRunner: 'vitest' }) as Record<
-      string,
-      { linter: string; unitTestRunner: string }
-    >
-    expect(defaults['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'vitest' })
   })
 })
 
@@ -543,7 +584,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github' as const,
-      stack: { linter: 'oxlint' as const, testRunner: 'vitest' as const },
+      stack: { testRunner: 'vitest' as const },
     }
     expect(mnciConfig(options)).toEqual({
       scope: '@demo',
@@ -551,7 +592,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: { linter: 'oxlint', testRunner: 'vitest' },
+      stack: { testRunner: 'vitest' },
     })
   })
 })
@@ -574,6 +615,7 @@ describe('readMnciConfig', () => {
       JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } })
     )
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -600,22 +642,15 @@ describe('readMnciConfig', () => {
 })
 
 describe('rootScripts', () => {
-  it('keeps nx lint (and no formatter) for eslint', () => {
-    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+  it('uses nx lint and prettier format scripts', () => {
+    const scripts = rootScripts({ testRunner: 'jest' })
     expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBeUndefined()
-    expect(scripts['format:check']).toBeUndefined()
-  })
-
-  it('swaps to oxlint and adds the oxfmt format scripts for oxlint', () => {
-    const scripts = rootScripts({ linter: 'oxlint', testRunner: 'jest' })
-    expect(scripts.lint).toBe('oxlint')
-    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
-    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
+    expect(scripts.format).toBe('prettier --write .')
+    expect(scripts['format:check']).toBe('prettier --check .')
   })
 
   it('adds python:install chaining the same two guards CI runs (for local-dev convenience)', () => {
-    const scripts = rootScripts({ linter: 'eslint', testRunner: 'jest' })
+    const scripts = rootScripts({ testRunner: 'jest' })
 
     // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
     expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
@@ -632,9 +667,9 @@ describe('rootScripts', () => {
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
   })
 
-  it('stamps python:install regardless of linter (both guards already no-op on a workspace with no Python projects)', () => {
-    expect(rootScripts({ linter: 'eslint', testRunner: 'jest' })['python:install']).toBeDefined()
-    expect(rootScripts({ linter: 'oxlint', testRunner: 'vitest' })['python:install']).toBeDefined()
+  it('stamps python:install in all stacks (both guards already no-op on a workspace with no Python projects)', () => {
+    expect(rootScripts({ testRunner: 'jest' })['python:install']).toBeDefined()
+    expect(rootScripts({ testRunner: 'vitest' })['python:install']).toBeDefined()
   })
 })
 
@@ -643,6 +678,8 @@ describe('applyOverlay', () => {
 
   const overlayWith = (stack: StackConfig): void =>
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -666,6 +703,7 @@ describe('applyOverlay', () => {
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -695,6 +733,7 @@ describe('applyOverlay', () => {
 
   it('writes only azure-pipelines.yml when ci: "azure" (the default)', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -709,6 +748,7 @@ describe('applyOverlay', () => {
 
   it('writes only .github/workflows/ci.yml when ci: "github"', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -728,6 +768,7 @@ describe('applyOverlay', () => {
 
   it('threads the registry kind through to azure-pipelines.yml too, when both providers are chosen for a public npm registry', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -743,6 +784,7 @@ describe('applyOverlay', () => {
 
   it('writes both pipeline files when ci: "both"', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -757,6 +799,7 @@ describe('applyOverlay', () => {
 
   it('never writes .github/dependabot.yml when ci: "azure" (the default) — Dependabot is GitHub-native', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -770,6 +813,7 @@ describe('applyOverlay', () => {
 
   it('writes .github/dependabot.yml alongside the workflow for ci: "github"', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -796,6 +840,7 @@ describe('applyOverlay', () => {
 
   it('writes .github/dependabot.yml for ci: "both" too', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -809,6 +854,7 @@ describe('applyOverlay', () => {
 
   it('turns on sync.applyChanges so a stale TS project reference is fixed automatically, not just prompted', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -824,28 +870,29 @@ describe('applyOverlay', () => {
   })
 
   it("writes the stack as nx.json generator defaults (for a user's own direct `nx g`)", () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       generators: Record<string, { linter: string; unitTestRunner: string }>
     }
     expect(nxJson.generators['@nx/js:library']).toEqual({
-      linter: 'none',
+      linter: 'eslint',
       unitTestRunner: 'vitest',
     })
   })
 
   it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
-      mnci: { stack: { linter: string; testRunner: string } }
+      mnci: { stack: { testRunner: string } }
     }
-    expect(nxJson.mnci.stack).toEqual({ linter: 'oxlint', testRunner: 'vitest' })
+    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
   })
 
   it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: {
         kind: 'azure-artifacts',
@@ -877,46 +924,30 @@ describe('applyOverlay', () => {
     })
   })
 
-  it('sets up oxlint + oxfmt (typed .mts configs + scripts) only when oxlint is chosen', () => {
-    overlayWith({ linter: 'oxlint', testRunner: 'jest' })
-    const oxlintConfig = readFileSync(join(workspaceRoot, 'oxlint.config.mts'), 'utf8')
-    // A typed config extending the oxc-standard StandardJS preset (not JSON).
-    expect(oxlintConfig).toContain(`import { defineConfig } from 'oxlint'`)
-    expect(oxlintConfig).toContain(
-      `import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }`
-    )
-    expect(oxlintConfig).toContain('extends: [standard]')
-    expect(existsSync(join(workspaceRoot, '.oxlintrc.json'))).toBe(false)
-    // The formatter counterpart, mirroring oxc-standard's .oxfmtrc.json.
-    const oxfmtConfig = readFileSync(join(workspaceRoot, 'oxfmt.config.mts'), 'utf8')
-    expect(oxfmtConfig).toContain(`import { defineConfig } from 'oxfmt'`)
-    expect(oxfmtConfig).toContain('semi: false')
-    expect(oxfmtConfig).toContain('singleQuote: true')
-    const scripts = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        scripts: Record<string, string>
-      }
-    ).scripts
-    expect(scripts.lint).toBe('oxlint')
-    expect(scripts.format).toBe('oxfmt -c oxfmt.config.mts .')
-    expect(scripts['format:check']).toBe('oxfmt -c oxfmt.config.mts --check .')
-  })
-
-  it('does not write oxlint/oxfmt configs when eslint is chosen', () => {
+  it('writes Prettier config and VS Code extensions when eslint is used', () => {
     overlayWith(DEFAULT_STACK)
-    expect(existsSync(join(workspaceRoot, 'oxlint.config.mts'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, 'oxfmt.config.mts'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.prettierignore'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
     const scripts = (
       JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
         scripts: Record<string, string>
       }
     ).scripts
     expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBeUndefined()
+    expect(scripts.format).toBe('prettier --write .')
+    expect(scripts['format:check']).toBe('prettier --check .')
+    // Check VS Code workspace file
+    const workspace = JSON.parse(
+      readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')
+    ) as { extensions: { recommendations: string[] } }
+    expect(workspace.extensions.recommendations).toContain('dbaeumer.vscode-eslint')
+    expect(workspace.extensions.recommendations).toContain('esbenp.prettier-vscode')
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -955,6 +986,7 @@ describe('applyOverlay', () => {
 
   it('stamps the chosen scope into the root package name, preserving the rest', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -974,6 +1006,7 @@ describe('applyOverlay', () => {
 
   it('stamps the curated root scripts — single cross-platform commands only', () => {
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -985,7 +1018,12 @@ describe('applyOverlay', () => {
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
-    const { 'python:install': pythonInstall, ...rest } = manifest.scripts
+    const {
+      'python:install': pythonInstall,
+      format,
+      'format:check': formatCheck,
+      ...rest
+    } = manifest.scripts
     expect(rest).toEqual({
       build: 'nx run-many -t build',
       lint: 'nx run-many -t lint',
@@ -995,6 +1033,8 @@ describe('applyOverlay', () => {
       'release:preview': 'nx release --dry-run',
       prepare: 'husky',
     })
+    expect(format).toBe('prettier --write .')
+    expect(formatCheck).toBe('prettier --check .')
     // The local-dev counterpart of the CI Python-install guards — see the
     // dedicated `python:install` describe block below for the full assertions.
     expect(pythonInstall).toContain('-m pip install -r requirements-dev.txt')
@@ -1008,6 +1048,7 @@ describe('applyOverlay', () => {
     )
 
     applyOverlay(workspaceRoot, {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',

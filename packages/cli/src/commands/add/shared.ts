@@ -45,13 +45,11 @@ export interface AddOptions {
  * `add.ts` resolves and every plugin-generated kind consumes).
  *
  * @remarks
- * `linter` is the value passed straight to `@nx/*` generators — `eslint`, or
- * `none` when the workspace chose oxlint (oxlint is not an Nx linter).
+ * Only testRunner is configurable; linting is always ESLint + Prettier.
  *
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface WorkspaceStack {
-  linter: 'eslint' | 'none'
   testRunner: 'jest' | 'vitest'
 }
 

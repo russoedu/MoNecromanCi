@@ -39,8 +39,6 @@ export interface NewOptions {
   variableGroup?: string
   /** CI provider: `azure` | `github` | `both`. */
   ci?: CiProvider
-  /** Linter (`eslint` or `oxlint`). */
-  linter?: StackConfig['linter']
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
@@ -80,9 +78,8 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
  * Resolves the stack from flags, prompts, or `--yes` defaults.
  *
  * @remarks
- * Any of the three knobs passed as a flag is taken as-is; if all three are
- * passed (or `--yes` is set) nothing is prompted. Otherwise the interactive
- * {@link promptStack} runs and its answers fill the gaps.
+ * The testRunner flag is taken as-is if passed; otherwise the interactive
+ * {@link promptStack} runs and fills the gap, or `--yes` uses the default.
  *
  * @param options - The CLI flags.
  * @returns The resolved stack configuration.
@@ -90,18 +87,14 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
  * @typeParam None - this function has no generic type parameters.
  */
 async function resolveStack(options: NewOptions): Promise<StackConfig> {
-  const fromFlags = { linter: options.linter, testRunner: options.testRunner }
-  const complete = Boolean(fromFlags.linter && fromFlags.testRunner)
-  if (complete || options.yes) {
+  if (options.testRunner || options.yes) {
     return {
-      linter: fromFlags.linter ?? DEFAULT_STACK.linter,
-      testRunner: fromFlags.testRunner ?? DEFAULT_STACK.testRunner,
+      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner,
     }
   }
   const prompted = await promptStack()
   return {
-    linter: fromFlags.linter ?? prompted.linter,
-    testRunner: fromFlags.testRunner ?? prompted.testRunner,
+    testRunner: prompted.testRunner,
   }
 }
 
@@ -223,27 +216,17 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
 
   const workspaceRoot = join(process.cwd(), workspaceName)
 
-  logger.step('Applying MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)')
-  applyOverlay(workspaceRoot, { scope, registry, agent, variableGroup, ci, stack })
-
-  // Install the commit toolchain (and, for the oxlint stack, oxc-standard —
-  // which brings oxlint + oxfmt and the JavaScript Standard Style preset the
-  // generated oxlint.config.mts / oxfmt.config.mts reference; ESLint is set up
-  // by the Nx generators on first `add`). One install.
-  const stackDependencies = stack.linter === 'oxlint' ? ['oxc-standard'] : []
   logger.step(
-    `Installing the toolchain (${stack.linter === 'oxlint' ? 'oxc-standard' : 'eslint'}, commit toolchain)`
+    'Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)'
   )
+  applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
+
+  // Install the commit toolchain (ESLint and Prettier are set up by the Nx
+  // generators on first `add`). One install.
+  logger.step('Installing the toolchain (commitlint + husky)')
   const installStatus = runShell(
     'npm',
-    [
-      'install',
-      '--save-dev',
-      ...stackDependencies,
-      'husky',
-      '@commitlint/cli',
-      '@commitlint/config-conventional',
-    ],
+    ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
     workspaceRoot
   )
   if (installStatus !== 0) {
