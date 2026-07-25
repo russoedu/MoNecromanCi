@@ -7,14 +7,14 @@ import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
 import { addNpmLib } from './add/npmLib'
-import { addPythonApp, addPythonFunctionApp, addPythonInternalLib, addPythonLib } from './add/python'
+import { addPythonApp, addPythonFunctionApp, addPythonInternalLib, addPythonLib, addPythonVendor } from './add/python'
 import { addReactApp } from './add/reactApp'
 import type { AddOptions, WorkspaceStack } from './add/shared'
 
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just nine.
+ * The project kinds this CLI can add — deliberately just ten.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -39,11 +39,18 @@ export type { AddOptions } from './add/shared'
  * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
  * (internal-lib is small enough to stay inline below).
  *
+ * `python-vendor` is the one kind that generates nothing: plain pip has no
+ * bundled-local-dependency feature, so wiring an internal Python library
+ * into a consumer's built wheel is a hand-edit of the consumer's
+ * `pyproject.toml` (see `@mnci/nx-python-pip`'s README) — this kind
+ * automates exactly that edit, idempotently, instead of delegating to a
+ * generator. `name` is the consumer; the library is `--lib <name>`.
+ *
  * @typeParam None - this type has no generic type parameters.
  */
 export type ProjectKind
   = | 'react-app' | 'node-app' | 'node-function-app' | 'npm-lib' | 'internal-lib'
-    | 'python-app' | 'python-function-app' | 'python-lib' | 'python-internal-lib'
+    | 'python-app' | 'python-function-app' | 'python-lib' | 'python-internal-lib' | 'python-vendor'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -54,7 +61,7 @@ export type ProjectKind
  */
 export const PROJECT_KINDS: ProjectKind[] = [
   'react-app', 'node-app', 'node-function-app', 'npm-lib', 'internal-lib',
-  'python-app', 'python-function-app', 'python-lib', 'python-internal-lib',
+  'python-app', 'python-function-app', 'python-lib', 'python-internal-lib', 'python-vendor',
 ]
 
 /**
@@ -147,6 +154,14 @@ export async function runAdd (kind: ProjectKind | undefined, name: string | unde
     case 'python-internal-lib': {
       addPythonInternalLib(workspaceRoot, resolvedName)
       break
+    }
+    case 'python-vendor': {
+      await addPythonVendor(workspaceRoot, resolvedName, options, kindProvided)
+      // `resolvedName` is the consumer, not something newly created — the
+      // generic "Added ... 'name'" success message below reads wrong for
+      // this kind, so it returns early with its own message instead.
+      syncProjectReferences(workspaceRoot)
+      return
     }
     default: {
       // Unreachable while every ProjectKind has a case above: `exhaustive`

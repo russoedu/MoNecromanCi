@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { promptText } from '../../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin } from './shared'
+import { ensureAdmZip, hasPlugin, type AddOptions } from './shared'
 
 /**
  * Fails fast, with an install hint, when Python is not on the PATH.
@@ -289,4 +291,151 @@ export function addPythonInternalLib (workspaceRoot: string, name: string): void
   ensureRequirementsDev(workspaceRoot)
 
   runNx(['g', '@mnci/nx-python-pip:internal-library', name, `--directory=libs/${name}`, '--no-interactive'], workspaceRoot)
+}
+
+/**
+ * The directories a Python project (app, publishable lib, internal lib) can
+ * live under — mirrors the directory convention every Python `add*` function
+ * above already writes to.
+ */
+const PYTHON_PROJECT_DIRS = ['apps', 'python-packages', 'libs'] as const
+
+/**
+ * Finds which of the three Python project directories holds `name`'s
+ * `pyproject.toml`.
+ *
+ * @remarks
+ * A Python function app has no `pyproject.toml` at all (source deploy, no
+ * wheel — see {@link addPythonFunctionApp}), so it is never found here; that
+ * is intentional, not a gap — there is nothing to vendor into.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The project name to look up.
+ * @returns The directory (`apps`, `python-packages`, or `libs`) the project
+ * lives under, or `undefined` when no matching `pyproject.toml` exists.
+ * @throws Never - pure filesystem probing.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function findPythonProjectDirectory (workspaceRoot: string, name: string): typeof PYTHON_PROJECT_DIRS[number] | undefined {
+  return PYTHON_PROJECT_DIRS.find((directory) => fileExists(join(workspaceRoot, directory, name, 'pyproject.toml')))
+}
+
+/**
+ * Extracts the vendored internal-lib project names from a `pyproject.toml`'s
+ * `[tool.mnci-python-pip] vendor = [...]` table.
+ *
+ * @remarks
+ * Mirrors `@mnci/nx-python-pip`'s own `parseVendorEntries` (`internal/vendor.ts`,
+ * not part of that package's public API) — kept as a small, independent
+ * regex here rather than adding a runtime dependency on that package for one
+ * function: this CLI already owns the exact shape it writes (via
+ * {@link addPythonVendor}), the same reasoning that justifies the plugin's
+ * own copy owning the shape it reads.
+ *
+ * @param pyprojectToml - The `pyproject.toml` file contents.
+ * @returns The vendored project names, or `[]` when the project vendors nothing.
+ * @throws Never - a missing/malformed table simply yields an empty array.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function parseVendorEntries (pyprojectToml: string): string[] {
+  const match = /^\s*vendor\s*=\s*\[([^\]]*)\]/m.exec(pyprojectToml)
+  if (!match) {
+    return []
+  }
+  return match[1]
+    .split(',')
+    .map((entry) => entry.trim().replaceAll(/^["']|["']$/g, ''))
+    .filter(Boolean)
+}
+
+/**
+ * Adds `lib` to a `pyproject.toml`'s `[tool.mnci-python-pip] vendor = [...]`
+ * table, creating the table when absent.
+ *
+ * @remarks
+ * Every Python project's `pyproject.toml` this CLI generates (via
+ * `@mnci/nx-python-pip`'s `pythonPyprojectToml`) ends with a fixed
+ * `[tool.pytest.ini_options]` table — a reliable, always-present anchor to
+ * insert the new table right before, matching the exact shape a hand-edit
+ * would produce (see `@mnci/nx-python-pip`'s README). Caller ensures `lib`
+ * is not already present ({@link parseVendorEntries}) before calling this.
+ *
+ * @param pyprojectToml - The consumer's current `pyproject.toml` contents.
+ * @param lib - The internal-lib project name to add.
+ * @returns The patched `pyproject.toml` contents.
+ * @throws Never - pure string manipulation; an existing table without the
+ * `[tool.pytest.ini_options]` anchor is left with a new table appended at
+ * the end instead.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function addVendorEntry (pyprojectToml: string, lib: string): string {
+  const existing = parseVendorEntries(pyprojectToml)
+  if (existing.length > 0) {
+    const merged = [...existing, lib].map((name) => `"${name}"`).join(', ')
+    return pyprojectToml.replace(/^(\s*vendor\s*=\s*)\[([^\]]*)\]/m, (_match, prefix: string) => `${prefix}[${merged}]`)
+  }
+  const table = `[tool.mnci-python-pip]\nvendor = ["${lib}"]\n\n`
+  return pyprojectToml.includes('[tool.pytest.ini_options]')
+    ? pyprojectToml.replace('[tool.pytest.ini_options]', () => `${table}[tool.pytest.ini_options]`)
+    : `${pyprojectToml}\n${table}`
+}
+
+/**
+ * Wires an internal Python library into a consumer's built wheel, by
+ * hand-adding a `[tool.mnci-python-pip] vendor = [...]` entry to the
+ * consumer's `pyproject.toml`.
+ *
+ * @remarks
+ * Automates the one step `@mnci/nx-python-pip`'s README documents as always
+ * hand-added (plain pip has no bundled-local-dependency feature — see that
+ * package's "Internal-lib vendoring" section): this function does the exact
+ * same text edit a developer would make by hand, just validated and
+ * idempotent. Nothing is regenerated or reinstalled — the vendored module is
+ * only copied into the consumer's wheel at the consumer's next `build` (the
+ * plugin's `build` executor resolves `lib`'s root via the real Nx project
+ * graph at that point, not anything this function writes).
+ *
+ * `lib` is resolved the same way `addNpmLib` resolves `--scope`: taken from
+ * `options.lib` when given, prompted for on the bare/interactive path
+ * (`kindProvided` false), and a clear error otherwise — there is no sensible
+ * default library to fall back to silently.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param consumer - The project name to vendor into (an app, publishable lib,
+ * or another internal lib — anything with a `pyproject.toml`).
+ * @param options - The CLI flags (`--lib`).
+ * @param kindProvided - Whether `python-vendor` was passed explicitly (flag
+ * path) rather than picked interactively — gates the `--lib` prompt.
+ * @returns A promise that resolves once the edit is written.
+ * @throws Error when no library was given/prompted, `consumer` has no
+ * `pyproject.toml`, the library is not an internal library under `libs/`, or
+ * a project is asked to vendor itself.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function addPythonVendor (workspaceRoot: string, consumer: string, options: AddOptions, kindProvided: boolean): Promise<void> {
+  const lib = options.lib ?? (kindProvided ? undefined : await promptText('Internal Python library to vendor (an existing libs/<name>)'))
+  if (!lib) {
+    throw new Error('`add python-vendor` needs the library to vendor: pass --lib <name> (an existing libs/<name> internal library).')
+  }
+
+  const consumerDirectory = findPythonProjectDirectory(workspaceRoot, consumer)
+  if (!consumerDirectory) {
+    throw new Error(`No Python project named '${consumer}' with a pyproject.toml found (checked apps/, python-packages/, libs/). A Python function app has no pyproject.toml — there is nothing to vendor into.`)
+  }
+  if (!fileExists(join(workspaceRoot, 'libs', lib, 'pyproject.toml'))) {
+    throw new Error(`No internal Python library named '${lib}' found at libs/${lib}/pyproject.toml. Only an internal library (added via 'mnci add python-internal-lib') can be vendored.`)
+  }
+  if (consumerDirectory === 'libs' && consumer === lib) {
+    throw new Error(`'${consumer}' cannot vendor itself.`)
+  }
+
+  const pyprojectPath = join(workspaceRoot, consumerDirectory, consumer, 'pyproject.toml')
+  const pyprojectToml = readFileSync(pyprojectPath, 'utf8')
+  if (parseVendorEntries(pyprojectToml).includes(lib)) {
+    logger.info(`'${consumer}' already vendors '${lib}' — nothing to do.`)
+    return
+  }
+
+  writeFileEnsured(pyprojectPath, addVendorEntry(pyprojectToml, lib))
+  logger.success(`'${consumer}' now vendors '${lib}' — its wheel will include '${lib}''s module on the next build.`)
 }

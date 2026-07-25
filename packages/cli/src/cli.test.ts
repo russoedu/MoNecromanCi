@@ -143,6 +143,11 @@ describe('buildProgram', () => {
     expect(mockRunAdd).toHaveBeenCalledWith('node-app', 'api', expect.objectContaining({ framework: 'fastify' }))
   })
 
+  it('routes `add python-vendor`\'s --lib flag to runAdd', async () => {
+    await buildProgram().parseAsync(['node', 'mnci', 'add', 'python-vendor', 'svc', '--lib', 'pycore'])
+    expect(mockRunAdd).toHaveBeenCalledWith('python-vendor', 'svc', expect.objectContaining({ lib: 'pycore' }))
+  })
+
   it('routes `new` stack flags (linter/test-runner) to runNew', async () => {
     await buildProgram().parseAsync(['node', 'mnci', 'new', 'demo', '--yes', '--linter', 'oxlint', '--test-runner', 'vitest'])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ linter: 'oxlint', testRunner: 'vitest' }))

@@ -646,9 +646,18 @@ enforce('python: function app carries the Azure Functions v2 files, and has no p
  * verbatim (\`tomli>=2.0.0\`, not a resolved \`tomli==x.y.z\`).
  * ------------------------------------------------------------------------- */
 
-console.log('\n▸ wiring pyshared (publishable) -> pycore (private internal, vendored)')
+console.log('\n▸ mnci add python-vendor pyshared --lib pycore (wiring pyshared, publishable -> pycore, private internal, vendored)')
+run(`node ${CLI} add python-vendor pyshared --lib pycore`, altWorkspace)
 const pysharedPyprojectPath = path.join(altWorkspace, 'python-packages/pyshared/pyproject.toml')
-writeFileSync(pysharedPyprojectPath, readFileSync(pysharedPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci-python-pip]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+enforce('python-vendor: writes the [tool.mnci-python-pip] vendor entry into the consumer\'s real pyproject.toml',
+  readFileSync(pysharedPyprojectPath, 'utf8').includes('vendor = ["pycore"]'))
+// Real-execution idempotency proof: running it again must not duplicate the entry.
+run(`node ${CLI} add python-vendor pyshared --lib pycore`, altWorkspace)
+enforce('python-vendor is idempotent for real: running it twice does not duplicate the entry',
+  (readFileSync(pysharedPyprojectPath, 'utf8').match(/pycore/g) ?? []).length === 1)
+// Real-execution rejection proof: a project cannot vendor itself.
+enforce('python-vendor rejects a project vendoring itself, for real (non-zero exit)',
+  !tryRun(`node ${CLI} add python-vendor pycore --lib pycore`, altWorkspace))
 // Named greeting.py, not hello.py: pyshared/__init__.py (written by the
 // plugin's `library` generator) already exports a top-level `hello` symbol,
 // and a same-named submodule would shadow it as soon as either gets
@@ -755,8 +764,8 @@ enforce('python: app installs into a clean venv and runs correctly, resolving th
  * reproduce that bug. Proven here directly, not just asserted in a comment.
  * ------------------------------------------------------------------------- */
 
-console.log('\n▸ combined proof: vendoring + a real external dependency on the SAME project')
-writeFileSync(pysvcPyprojectPath, readFileSync(pysvcPyprojectPath, 'utf8').replace('[tool.pytest.ini_options]', '[tool.mnci-python-pip]\nvendor = ["pycore"]\n\n[tool.pytest.ini_options]'))
+console.log('\n▸ mnci add python-vendor pysvc --lib pycore (combined proof: vendoring + a real external dependency on the SAME project)')
+run(`node ${CLI} add python-vendor pysvc --lib pycore`, altWorkspace)
 enforce('python: build succeeds with both a vendored internal lib and a real external dependency on the same project',
   tryRun('npx nx build pysvc', altWorkspace))
 const pysvcCombinedZip = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath) : null

@@ -36,6 +36,8 @@ export interface AddOptions {
   scope?:     string
   /** `node-app` only: the HTTP framework `@nx/node:application` scaffolds (defaults to `none`, a bare Node app). */
   framework?: NodeFramework
+  /** `python-vendor` only: the internal Python library (under `libs/`) to vendor into `name`. */
+  lib?:       string
 }
 
 /**

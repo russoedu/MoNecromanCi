@@ -5,14 +5,18 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
+import { select } from '@inquirer/prompts'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { promptText } from '../../prompts'
 import { runAdd } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
 const mockRunShell = jest.mocked(runShell)
+const mockPromptText = jest.mocked(promptText)
+const mockSelect = jest.mocked(select)
 
 let workspaceRoot: string
 
@@ -130,5 +134,98 @@ describe('runAdd python', () => {
     await runAdd('python-internal-lib', 'core', {})
 
     expect(readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')).toContain('some-extra-tool')
+  })
+})
+
+/** A minimal pyproject.toml matching the exact shape `add/python.ts`'s generators write. */
+const SAMPLE_PYPROJECT = `[project]
+name = "PLACEHOLDER"
+version = "1.0.0"
+description = ""
+requires-python = ">=3.9"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["placeholder"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+`
+
+describe('runAdd python-vendor', () => {
+  beforeEach(() => {
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), SAMPLE_PYPROJECT)
+    mkdirSync(join(workspaceRoot, 'libs/pycore'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'libs/pycore/pyproject.toml'), SAMPLE_PYPROJECT)
+  })
+
+  it('adds a new [tool.mnci-python-pip] vendor table to the consumer\'s pyproject.toml', async () => {
+    await runAdd('python-vendor', 'svc', { lib: 'pycore' })
+
+    const pyproject = readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')
+    expect(pyproject).toContain('[tool.mnci-python-pip]\nvendor = ["pycore"]')
+    // Inserted before the fixed pytest anchor, not appended blindly at the end.
+    expect(pyproject.indexOf('[tool.mnci-python-pip]')).toBeLessThan(pyproject.indexOf('[tool.pytest.ini_options]'))
+    expect(mockRunNx).not.toHaveBeenCalled()
+  })
+
+  it('appends to an existing vendor table instead of overwriting it', async () => {
+    writeFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'),
+      SAMPLE_PYPROJECT.replace('[tool.pytest.ini_options]', '[tool.mnci-python-pip]\nvendor = ["other-lib"]\n\n[tool.pytest.ini_options]'))
+    mkdirSync(join(workspaceRoot, 'libs/pycore'), { recursive: true })
+
+    await runAdd('python-vendor', 'svc', { lib: 'pycore' })
+
+    const pyproject = readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')
+    expect(pyproject).toContain('vendor = ["other-lib", "pycore"]')
+  })
+
+  it('is idempotent: vendoring the same lib twice does not duplicate the entry', async () => {
+    await runAdd('python-vendor', 'svc', { lib: 'pycore' })
+    await runAdd('python-vendor', 'svc', { lib: 'pycore' })
+
+    const pyproject = readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')
+    expect(pyproject.match(/pycore/g)).toHaveLength(1)
+  })
+
+  it('works for any Python project kind, not just apps (publishable and internal libs too)', async () => {
+    mkdirSync(join(workspaceRoot, 'python-packages/pyshared'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'python-packages/pyshared/pyproject.toml'), SAMPLE_PYPROJECT)
+
+    await runAdd('python-vendor', 'pyshared', { lib: 'pycore' })
+
+    expect(readFileSync(join(workspaceRoot, 'python-packages/pyshared/pyproject.toml'), 'utf8')).toContain('vendor = ["pycore"]')
+  })
+
+  it('rejects a consumer with no pyproject.toml (e.g. a Python function app)', async () => {
+    await expect(runAdd('python-vendor', 'nonexistent', { lib: 'pycore' })).rejects.toThrow('No Python project named \'nonexistent\'')
+  })
+
+  it('rejects a lib that is not an internal library under libs/', async () => {
+    await expect(runAdd('python-vendor', 'svc', { lib: 'nonexistent-lib' })).rejects.toThrow('No internal Python library named \'nonexistent-lib\'')
+  })
+
+  it('rejects a project vendoring itself', async () => {
+    await expect(runAdd('python-vendor', 'pycore', { lib: 'pycore' })).rejects.toThrow('cannot vendor itself')
+  })
+
+  it('requires --lib when the kind was passed explicitly (no silent default, no prompt)', async () => {
+    await expect(runAdd('python-vendor', 'svc', {})).rejects.toThrow('needs the library to vendor')
+    expect(mockPromptText).not.toHaveBeenCalled()
+  })
+
+  it('prompts for the library on the bare/interactive path', async () => {
+    mockSelect.mockResolvedValue('python-vendor')
+    mockPromptText.mockResolvedValueOnce('svc').mockResolvedValueOnce('pycore')
+
+    await runAdd(undefined, undefined, {})
+
+    expect(mockPromptText).toHaveBeenCalledWith('Internal Python library to vendor (an existing libs/<name>)')
+    expect(readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')).toContain('vendor = ["pycore"]')
   })
 })
