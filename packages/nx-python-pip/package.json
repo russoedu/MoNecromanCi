@@ -54,10 +54,10 @@
     "@nx/devkit": "23.1.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.1",
-    "eslint": "^10.6.0",
+    "eslint": "^10.8.0",
     "jest": "^30.4.2",
     "nx": "23.1.0",
     "ts-jest": "^29.4.11",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }

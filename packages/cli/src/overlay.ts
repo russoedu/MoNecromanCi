@@ -34,16 +34,13 @@ export type CiProvider = 'azure' | 'github' | 'both'
  * TypeScript is not a knob: every workspace runs the **dual compiler**
  * ({@link TS_COMPILER_DEPENDENCIES}) — TypeScript 6 for the programmatic API
  * (Nx's graph/plugins, Vite, typescript-eslint, the editor) and TypeScript 7's
- * native `tsc` for the `typecheck`/`build` tasks. So the two real knobs are the
- * linter and the unit-test runner, persisted as Nx **generator defaults** in
- * `nx.json` (the oxlint case also writes a workspace `oxlint.config.mts` and
- * points the root `lint` script at `oxlint`).
+ * native `tsc` for the `typecheck`/`build` tasks. The only stack knob is the
+ * unit-test runner, persisted as Nx **generator defaults** in `nx.json`.
+ * Linting is ESLint + Prettier (always).
  *
  * @typeParam None - this type has no generic type parameters.
  */
 export interface StackConfig {
-  /** Linter: Nx-native `eslint`, or workspace-wide `oxlint`. */
-  linter: 'eslint' | 'oxlint'
   /** Unit-test runner (both Nx-native for the plugin kinds). */
   testRunner: 'jest' | 'vitest'
 }
@@ -52,17 +49,18 @@ export interface StackConfig {
  * The `--yes` / flagless defaults — the current opinionated stack.
  *
  * @remarks
- * ESLint and Jest: the combination existing generated repos (and the e2e
- * suite) already assume, so defaulting to it keeps behaviour unchanged when
- * the stack is not chosen explicitly.
+ * Jest: the test runner existing generated repos (and the e2e suite)
+ * already assume, so defaulting to it keeps behaviour unchanged when
+ * the stack is not chosen explicitly. Linting is always ESLint + Prettier.
  */
-export const DEFAULT_STACK: StackConfig = { linter: 'eslint', testRunner: 'jest' }
+export const DEFAULT_STACK: StackConfig = { testRunner: 'jest' }
 
 /**
- * Prettier version pinned into ESLint workspaces.
+ * Prettier version pinned into all workspaces.
  *
  * @remarks
- * Oxlint workspaces use oxfmt (bundled with oxc-standard) instead.
+ * Prettier handles code formatting following JavaScript Standard Style
+ * in all generated workspaces.
  */
 export const PRETTIER_VERSION = '^3.8.1'
 
@@ -334,6 +332,68 @@ package-lock.json
 `
 
 /**
+ * VS Code workspace file template for generated monorepos.
+ *
+ * @remarks
+ * Creates a single .code-workspace file that configures the entire monorepo:
+ * folder structure, recommended extensions (ESLint, Prettier), and workspace settings.
+ * Users open this file in VS Code (`File > Open Workspace from File`).
+ *
+ * @param workspaceName - The workspace name.
+ * @returns The JSON string for a .code-workspace file.
+ * @throws Never - performs pure string formatting with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function vscodeWorkspace(workspaceName: string): string {
+  return JSON.stringify(
+    {
+      folders: [
+        { path: '.', name: workspaceName },
+        { path: 'packages/cli', name: '@mnci/cli' },
+        { path: 'packages/nx-python-pip', name: '@mnci/nx-python-pip' },
+        { path: 'libs/monecromanci-v2', name: '@mnci/monecromanci' },
+      ],
+      settings: {
+        'eslint.validate': [
+          'javascript',
+          'javascriptreact',
+          'typescript',
+          'typescriptreact',
+          'json',
+          'jsonc',
+          'markdown',
+          'yaml',
+        ],
+        'editor.codeActionsOnSave': {
+          'source.fixAll.eslint': 'explicit',
+        },
+        'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        'editor.formatOnSave': true,
+        '[json]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+        '[jsonc]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+        '[yaml]': {
+          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        },
+      },
+      extensions: {
+        recommendations: [
+          'dbaeumer.vscode-eslint',
+          'esbenp.prettier-vscode',
+          'nrwl.angular-console',
+          'firsttris.vscode-jest-runner',
+        ],
+      },
+    },
+    null,
+    2
+  )
+}
+
+/**
  * The curated npm scripts stamped into a generated workspace's root manifest.
  *
  * @remarks
@@ -353,20 +413,12 @@ export const ROOT_SCRIPTS = {
 } as const
 
 /**
- * The curated scripts with `lint` bound to the chosen linter.
+ * The curated scripts with formatting via Prettier and linting via ESLint.
  *
  * @remarks
- * ESLint is a per-project Nx target (`nx run-many -t lint`); oxlint is a single
- * workspace-wide binary, so its `lint` is just `oxlint`. Everything downstream
- * (the CI pipeline) calls `npm run lint`, so it never needs to know which
- * linter was chosen.
- *
- * The oxlint stack also gets the oxc-standard formatter as `format` (write) and
- * `format:check` (CI-safe, no writes) — the JavaScript Standard Style *layout*
- * half that oxlint (a linter) does not enforce. The `-c oxfmt.config.mts` flag
- * is explicit because oxfmt (0.48) auto-discovers `.oxfmtrc.json` but not the
- * typed `.mts` config, and the whole stack is committed to typed configs.
- * ESLint workspaces keep Nx's own formatting story, so they get no `format`.
+ * ESLint is a per-project Nx target (`nx run-many -t lint`) following code-quality
+ * and correctness rules. Prettier handles all formatting (`npm run format` writes;
+ * `npm run format:check` verifies without writing), following JavaScript Standard Style.
  *
  * Every stack also gets `python:install`, chaining the same two guards CI runs
  * ({@link PYTHON_INSTALL_GUARD} then {@link PYTHON_WORKSPACE_INSTALL_GUARD}) —
@@ -376,27 +428,14 @@ export const ROOT_SCRIPTS = {
  * guards already no-op cleanly on a workspace with no Python projects, so it is
  * safe to stamp unconditionally rather than gating on whether one exists yet.
  *
- * @param stack - The chosen stack.
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
- * @typeParam None - this function has no generic type parameters.
  */
-export function rootScripts(stack: StackConfig): Record<string, string> {
-  const scripts =
-    stack.linter === 'oxlint'
-      ? {
-          ...ROOT_SCRIPTS,
-          lint: 'oxlint',
-          format: 'oxfmt -c oxfmt.config.mts .',
-          'format:check': 'oxfmt -c oxfmt.config.mts --check .',
-        }
-      : {
-          ...ROOT_SCRIPTS,
-          format: 'prettier --write .',
-          'format:check': 'prettier --check .',
-        }
+export function rootScripts(): Record<string, string> {
   return {
-    ...scripts,
+    ...ROOT_SCRIPTS,
+    format: 'prettier --write .',
+    'format:check': 'prettier --check .',
     'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`,
   }
 }
@@ -406,9 +445,8 @@ export function rootScripts(stack: StackConfig): Record<string, string> {
  *
  * @remarks
  * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci add`)
- * pick up the workspace's chosen linter/runner automatically. oxlint is not an
- * Nx linter, so it maps to `linter: 'none'` — the workspace `oxlint.config.mts`
- * + the `oxlint` root script cover linting instead.
+ * pick up the workspace's chosen test runner automatically. Linting is always
+ * ESLint (code quality/correctness rules only) + Prettier (formatting).
  *
  * `mnci add` itself does **not** read this back — see {@link mnciConfig} for
  * the dedicated, single-source-of-truth block it reads instead. The two used
@@ -422,7 +460,7 @@ export function rootScripts(stack: StackConfig): Record<string, string> {
  */
 export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
   const shared = {
-    linter: stack.linter === 'oxlint' ? 'none' : 'eslint',
+    linter: 'eslint',
     unitTestRunner: stack.testRunner,
   }
   return {
@@ -459,7 +497,7 @@ export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
     agent: options.agent,
     variableGroup: options.variableGroup,
     ci: options.ci,
-    stack: { linter: options.stack.linter, testRunner: options.stack.testRunner },
+    stack: { testRunner: options.stack.testRunner },
   }
 }
 
@@ -486,73 +524,6 @@ export function readMnciConfig(workspaceRoot: string): Partial<OverlayOptions> {
   const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
   return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
-
-/**
- * The `oxlint.config.mts` written when oxlint is the chosen linter.
- *
- * @remarks
- * A typed config (`defineConfig` from `oxlint`, auto-detected — needs Node ≥22)
- * rather than JSON. Instead of hand-listing plugins and rules it **extends the
- * [oxc-standard](https://github.com/JohnDeved/ox-standard) preset** — the real
- * JavaScript Standard Style rule set for the oxc toolchain (unicorn + React +
- * react-perf + TypeScript + oxc, `correctness: error`, `suspicious: warn`,
- * `style: off`). A `.mts` config's `extends` must hold **config objects, not
- * paths** (unlike `.oxlintrc.json`, which cannot import from a package), so the
- * preset is imported as JSON and passed in — the pattern oxlint documents for
- * extending a shared package's config.
- *
- * The one local override keeps a freshly generated workspace green: Nx scaffolds
- * with the modern JSX transform, so React need not be in scope and the preset's
- * `react/react-in-jsx-scope` correctness rule is turned off. Add further project
- * overrides in the same `rules` block.
- *
- * Its formatting counterpart is {@link OXFMT_CONFIG} (Standard Style layout).
- */
-export const OXLINT_CONFIG = `import { defineConfig } from 'oxlint'
-import standard from 'oxc-standard/.oxlintrc.json' with { type: 'json' }
-
-// Generated by MoNecromanCI. JavaScript Standard Style linting via the
-// oxc-standard preset (unicorn + React + react-perf + TypeScript + oxc).
-// Add project-specific rule overrides in the \`rules\` block below.
-export default defineConfig({
-  extends: [standard],
-  rules: {
-    // The modern JSX transform (Nx's default) needs no React import in scope.
-    'react/react-in-jsx-scope': 'off',
-  },
-})
-`
-
-/**
- * The `oxfmt.config.mts` written alongside {@link OXLINT_CONFIG} for oxlint.
- *
- * @remarks
- * oxfmt is the oxc toolchain's formatter — the *layout* half oxlint (a linter)
- * does not enforce. These options mirror oxc-standard's own `.oxfmtrc.json` so
- * formatting and linting agree on JavaScript Standard Style: no semicolons,
- * single quotes, 2-space indent, `es5` trailing commas, and parens omitted on
- * single-argument arrows. (oxfmt has no `extends`, so the preset's values are
- * inlined — exactly how oxc-standard itself scaffolds them.)
- *
- * `npm run format` writes; `npm run format:check` verifies without writing
- * ({@link rootScripts}) — both pass `-c oxfmt.config.mts` since oxfmt (0.48)
- * auto-discovers only `.oxfmtrc.json`, not the typed config. Nx generators emit
- * semicolon/double-quote code, so a new workspace is normalised on the first
- * `npm run format`.
- */
-export const OXFMT_CONFIG = `import { defineConfig } from 'oxfmt'
-
-// Generated by MoNecromanCI. JavaScript Standard Style formatting, matching the
-// oxc-standard lint preset: no semicolons, single quotes, 2-space indent.
-export default defineConfig({
-  singleQuote: true,
-  semi: false,
-  printWidth: 100,
-  tabWidth: 2,
-  trailingComma: 'es5',
-  arrowParens: 'avoid',
-})
-`
 
 /**
  * The Python package registry's `twine upload` URL for a registry config.
@@ -664,6 +635,84 @@ const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),pat
  * is drawn from.
  */
 const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"`
+
+/**
+ * The portable `node -e` one-liner that downloads the workspace's Go module
+ * dependencies.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml},
+ * and gated on the workspace-root `go.mod` that `add/go.ts` writes on the
+ * first `mnci add go-*` — so a workspace with no Go projects skips cleanly,
+ * exactly like the Python guards skip on a missing `requirements-dev.txt`.
+ *
+ * One root `go.mod` is the whole story here: mnci generates Go projects into
+ * a single module (see `add/go.ts`), so there is no per-project manifest to
+ * walk and no `go.work` to keep in step — a plain `go mod download` at the
+ * root fetches everything every Go project needs.
+ *
+ * Strictly speaking this step is optional, since `go build` and `go test`
+ * both fetch on demand. It is here so a network failure surfaces as an
+ * obvious "download dependencies" failure rather than as a confusing error
+ * inside the build, matching what the Python install steps do.
+ */
+const GO_MODULE_DOWNLOAD_GUARD = `node -e "if(!require('node:fs').existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('go',['mod','download'],{stdio:'inherit'}).status ?? 1)"`
+
+/**
+ * The portable `node -e` one-liner that installs `golangci-lint` when the
+ * workspace has Go projects and the agent does not already provide it.
+ *
+ * @remarks
+ * Needed because mnci's generated Go `lint` target pins
+ * `linter: golangci-lint` — `@nx-go/nx-go`'s own default is `go fmt`, which
+ * only reformats and would make a green lint step meaningless. Hosted agents
+ * ship Go but not golangci-lint, so CI has to supply it.
+ *
+ * Installs via `go install`, which needs no package manager, no sudo and no
+ * platform switch — the same binary lands on Linux, macOS and Windows
+ * agents. `go install` places it in `GOBIN` (or `GOPATH/bin`), so that
+ * directory is appended to `PATH` for subsequent steps through each
+ * provider's own mechanism (see the call sites).
+ *
+ * Skips when `golangci-lint` is already resolvable, so a self-hosted agent
+ * that pre-installs it pays nothing.
+ */
+const GOLANGCI_LINT_INSTALL_GUARD = `node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}if(cp.spawnSync('golangci-lint',['--version'],{stdio:'ignore'}).status===0){console.log('golangci-lint already installed - skipping.');process.exit(0)}process.exit(cp.spawnSync('go',['install','github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest'],{stdio:'inherit'}).status ?? 1)"`
+
+/**
+ * The shared prelude that resolves `GOPATH/bin` — where
+ * {@link GOLANGCI_LINT_INSTALL_GUARD}'s `go install` puts the linter.
+ *
+ * @remarks
+ * Not a step on its own: {@link GO_TOOL_PATH_AZURE} and
+ * {@link GO_TOOL_PATH_GITHUB} each append the one line that publishes the
+ * directory to the rest of the job, because the two providers use entirely
+ * different mechanisms for that (a logging command vs a file). Everything up
+ * to that point — the skip-when-no-Go check and reading `go env GOPATH` —
+ * is identical, so it lives here once.
+ */
+const GO_TOOL_PATH_PRELUDE = `const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}const r=cp.spawnSync('go',['env','GOPATH'],{encoding:'utf8'});if(r.status!==0){console.log('Could not resolve GOPATH - skipping.');process.exit(0)}const bin=require('node:path').join(r.stdout.trim(),'bin');`
+
+/**
+ * Azure Pipelines: publishes `GOPATH/bin` to later steps in the job.
+ *
+ * @remarks
+ * Uses the `task.prependpath` logging command — Azure's supported way for a
+ * step to alter `PATH` for the steps that follow it. Skips cleanly when the
+ * workspace has no Go projects, so this is inert in a JS-only repo.
+ */
+const GO_TOOL_PATH_AZURE = `node -e "${GO_TOOL_PATH_PRELUDE}console.log('##vso[task.prependpath]'+bin)"`
+
+/**
+ * GitHub Actions: publishes `GOPATH/bin` to later steps in the job.
+ *
+ * @remarks
+ * Appends to the file named by `GITHUB_PATH`, the documented equivalent of
+ * Azure's `prependpath` logging command. Skips cleanly both when the
+ * workspace has no Go projects and when `GITHUB_PATH` is unset (i.e. when
+ * the same script is run outside Actions).
+ */
+const GO_TOOL_PATH_GITHUB = `node -e "${GO_TOOL_PATH_PRELUDE}if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+${String.raw`'\n'`})"`
 
 /**
  * The `npm audit` step run right after `npm ci`, non-blocking (warn-only).
@@ -937,6 +986,22 @@ steps:
   - script: ${PIP_AUDIT_GUARD}
     displayName: pip-audit (non-blocking)
 
+  # Go, if the workspace has any: hosted agents ship the toolchain, so only
+  # the module cache and the linter need seeding. Both guards skip cleanly on
+  # a workspace with no root go.mod.
+  - script: ${GO_MODULE_DOWNLOAD_GUARD}
+    displayName: Download Go module dependencies
+
+  # golangci-lint is what the generated Go lint target actually runs (the
+  # plugin's own default is 'go fmt', which only reformats). 'go install'
+  # drops it in GOPATH/bin, which is not on PATH by default on a hosted
+  # agent — so prepend it for every later step in the job.
+  - script: ${GOLANGCI_LINT_INSTALL_GUARD}
+    displayName: Install golangci-lint
+
+  - script: ${GO_TOOL_PATH_AZURE}
+    displayName: Add Go tool bin to PATH
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -1118,6 +1183,22 @@ jobs:
       - run: ${PIP_AUDIT_GUARD}
         name: pip-audit (non-blocking)
 
+      # Go, if the workspace has any: hosted runners ship the toolchain, so
+      # only the module cache and the linter need seeding. Both guards skip
+      # cleanly on a workspace with no root go.mod.
+      - run: ${GO_MODULE_DOWNLOAD_GUARD}
+        name: Download Go module dependencies
+
+      # golangci-lint is what the generated Go lint target actually runs (the
+      # plugin's own default is 'go fmt', which only reformats). 'go install'
+      # drops it in GOPATH/bin, which is not on PATH by default on a hosted
+      # runner — so publish it for every later step in the job.
+      - run: ${GOLANGCI_LINT_INSTALL_GUARD}
+        name: Install golangci-lint
+
+      - run: ${GO_TOOL_PATH_GITHUB}
+        name: Add Go tool bin to PATH
+
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
       # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -1236,6 +1317,8 @@ updates:
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface OverlayOptions {
+  /** The monorepo workspace name. */
+  workspaceName: string
   /** The npm scope for publishable packages (e.g. `@demo`). */
   scope: string
   /** Where publishable packages are released to. */
@@ -1297,15 +1380,12 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts(options.stack),
+    ...rootScripts(),
   }
   const devDeps = {
     ...(manifest.devDependencies as Record<string, string> | undefined),
     ...TS_COMPILER_DEPENDENCIES,
-  }
-  // ESLint workspaces need Prettier for formatting (oxlint workspaces use oxfmt instead).
-  if (options.stack.linter === 'eslint') {
-    devDeps.prettier = PRETTIER_VERSION
+    prettier: PRETTIER_VERSION,
   }
   writeFileEnsured(
     manifestPath,
@@ -1317,17 +1397,15 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
-  // oxlint is workspace-wide: one config, no per-project Nx lint target. It
-  // ships with oxfmt (both from the oxc-standard preset) for the Standard Style
-  // formatting half — `npm run format` / `npm run format:check`.
-  if (options.stack.linter === 'oxlint') {
-    writeFileEnsured(join(workspaceRoot, 'oxlint.config.mts'), OXLINT_CONFIG)
-    writeFileEnsured(join(workspaceRoot, 'oxfmt.config.mts'), OXFMT_CONFIG)
-  } else {
-    // ESLint workspaces use Prettier for formatting, following JS Standard Style.
-    writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
-    writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
-  }
+  // ESLint handles code quality and correctness rules. Prettier handles formatting
+  // following JavaScript Standard Style (no semicolons, 2-space indents, single quotes).
+  writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
+  writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
+  // VS Code workspace file with folder structure, extensions, and settings.
+  writeFileEnsured(
+    join(workspaceRoot, `${options.workspaceName}.code-workspace`),
+    vscodeWorkspace(options.workspaceName)
+  )
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)

@@ -83,20 +83,6 @@ export async function promptCi(): Promise<CiProvider> {
 }
 
 /**
- * Prompts for the stack: linter and unit-test runner.
- *
- * @remarks
- * The knobs asked up front at `mnci new`. TypeScript is fixed (the
- * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), so only the
- * linter and test runner are asked. Each is a binary choice — no "none" — with
- * the current opinionated default listed first.
- *
- * @param None - this function takes no parameters.
- * @returns The resolved stack configuration.
- * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
- * @typeParam None - this function has no generic type parameters.
- */
-/**
  * Prompts whether to connect the new workspace to Nx Cloud.
  *
  * @remarks
@@ -117,13 +103,12 @@ export async function promptNxCloud(): Promise<boolean> {
 }
 
 /**
- * Prompts for the stack: linter and unit-test runner.
+ * Prompts for the stack: unit-test runner only.
  *
  * @remarks
- * The knobs asked up front at `mnci new`. TypeScript is fixed (the
- * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), so only the
- * linter and test runner are asked. Each is a binary choice — no "none" — with
- * the current opinionated default listed first.
+ * The knob asked up front at `mnci new`. TypeScript is fixed (the
+ * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), and
+ * linting is always ESLint + Prettier. Only the test runner is configurable.
  *
  * @param None - this function takes no parameters.
  * @returns The resolved stack configuration.
@@ -131,13 +116,6 @@ export async function promptNxCloud(): Promise<boolean> {
  * @typeParam None - this function has no generic type parameters.
  */
 export async function promptStack(): Promise<StackConfig> {
-  const linter = await select<StackConfig['linter']>({
-    message: 'Linter',
-    choices: [
-      { name: 'ESLint', value: 'eslint' },
-      { name: 'Oxlint', value: 'oxlint' },
-    ],
-  })
   const testRunner = await select<StackConfig['testRunner']>({
     message: 'Unit-test runner',
     choices: [
@@ -145,5 +123,5 @@ export async function promptStack(): Promise<StackConfig> {
       { name: 'Vitest', value: 'vitest' },
     ],
   })
-  return { linter, testRunner }
+  return { testRunner }
 }

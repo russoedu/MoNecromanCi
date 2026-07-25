@@ -137,7 +137,7 @@ describe('runAdd react-app', () => {
   it('passes the vitest runner from nx.json to the react generator', async () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
-      JSON.stringify({ mnci: { stack: { linter: 'eslint', testRunner: 'vitest' } } })
+      JSON.stringify({ mnci: { stack: { testRunner: 'vitest' } } })
     )
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(

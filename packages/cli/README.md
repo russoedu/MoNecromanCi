@@ -46,6 +46,12 @@ mnci add python-lib shared         # publishable -> python-packages/ (twine uplo
 mnci add python-internal-lib core  # private shared lib -> libs/
 mnci add python-vendor shared --lib core  # wire core's module into shared's built wheel
 
+# Go (@nx-go/nx-go — one root go.mod, golangci-lint + go test)
+mnci add go-app api            # executable -> apps/ (binary, zipped into the drop)
+mnci add go-function-app fn    # serverless handler -> apps/
+mnci add go-lib core           # publishable (by git tag) -> packages/
+mnci add go-internal-lib util  # private shared package -> libs/
+
 mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
 ```
@@ -78,7 +84,10 @@ each a single cross-platform command:
    `commit-msg` hook, the chosen CI provider's pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
    `azure`; `github`/`both` also gets `.github/dependabot.yml` — weekly
-   dependency-update PRs), and the curated root scripts.
+   dependency-update PRs), a `<workspace-name>.code-workspace` file (VS Code
+   workspace configuration with folder structure, ESLint/Prettier settings, and
+   recommended extensions — open it in VS Code via `File > Open Workspace from
+File`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 
@@ -120,16 +129,23 @@ will overwrite hand customizations to any of the files it owns (e.g. an extra
 CI job appended by hand to the pipeline file) — `git diff` is exactly how
 you'd notice and re-apply those on top.
 
-## Stack: two choices asked up front
+## Stack: one choice asked up front
 
-`mnci new` (run bare, or with flags) asks two questions — the linter and the
-test runner. Each is stored where every later `mnci add` honours it, so the
-whole workspace stays one stack:
+`mnci new` (run bare, or with flags) asks one question — the test runner. It is
+stored where every later `mnci add` honours it, so the whole workspace stays one
+stack:
 
-| Question        | Options              | Default  | Stored as / honoured via                                                                                                                                                                                                          |
-| --------------- | -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--linter`      | `eslint` \| `oxlint` | `eslint` | `nx.json` generator `linter` default (`none` for oxlint) + a typed `oxlint.config.mts` + `oxfmt.config.mts` (both from the [oxc-standard](https://github.com/JohnDeved/ox-standard) preset) + the `oxlint` / `oxfmt` root scripts |
-| `--test-runner` | `jest` \| `vitest`   | `jest`   | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too                                                                                                                                          |
+| Question        | Options            | Default | Stored as / honoured via                                                                 |
+| --------------- | ------------------ | ------- | ---------------------------------------------------------------------------------------- |
+| `--test-runner` | `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
+
+**Linting and formatting are unified across the workspace**: every project uses
+**ESLint + Prettier** with the JavaScript Standard Style configuration (no
+semicolons, single quotes, 2-space indents). ESLint is a per-project Nx target
+handling code quality (correctness only), while Prettier handles all formatting.
+Both are automatically configured; `npm run lint` checks code quality, `npm run
+format` (write) and `npm run format:check` (CI-safe) handle formatting. The CI
+runs lint/test/build only — formatting is left as a local/pre-commit step.
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
 [Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
@@ -141,24 +157,6 @@ analysing config through the TS 6 API — no target rewiring, frozen per repo by
 the lockfile. (A plain `typescript@7` install would break Nx, since TS 7 ships
 no programmatic API yet; the two aliases are what make it work.)
 
-- **Linter**: ESLint is a per-project Nx target; oxlint is a single
-  workspace-wide binary. Either way `npm run lint` (and the CI) is
-  linter-agnostic, so nothing downstream branches. Under oxlint a publishable
-  package's private-lib import needs no dependency-check override (that rule is
-  ESLint-only), so none is written.
-  - The oxlint stack installs **[oxc-standard](https://github.com/JohnDeved/ox-standard)**
-    (which brings `oxlint` + `oxfmt`) and generates two `.mts` configs that use
-    its **JavaScript Standard Style** preset: `oxlint.config.mts` _extends_
-    `oxc-standard`'s rule set (unicorn + React + react-perf + TypeScript + oxc),
-    and `oxfmt.config.mts` mirrors its formatting (no semicolons, single quotes,
-    2-space, `es5` trailing commas, avoid arrow parens). That gives the full
-    Standard experience — **linting _and_ formatting** — since oxlint (a linter)
-    does not enforce layout.
-  - Formatting is `npm run format` (write) and `npm run format:check` (CI-safe,
-    no writes). Nx generators emit semicolon/double-quote code, so run
-    `npm run format` once after scaffolding to normalise a new workspace to
-    Standard Style. (CI stays lint/test/build only — formatting is left as a
-    local/pre-commit step so the pipeline needs no linter-specific branch.)
 - **Test runner**: passed straight to the `@nx/*` generators; the function app
   gets a matching `jest.config.mjs` (+ ts-jest) or `vitest.config.ts`.
 
@@ -372,22 +370,17 @@ fix-ci`) — `mnci` does not automate that step.
 Being upfront about what mnci leans on, so it's a conscious trade-off rather
 than a surprise:
 
-- **One unofficial, small-team third-party Nx plugin carries real weight**:
-  [`oxc-standard`](https://github.com/JohnDeved/ox-standard) (the oxlint/oxfmt
-  StandardJS preset) — not `@nx`-scoped/officially maintained. Neither Azure
-  Function generation nor any Python kind pulls in a _third-party_ Nx plugin:
-  Node apps use the **official** `@nx/node:application` plus a small
-  hand-written Azure Functions v4 file overlay (see "How Node apps work"
-  below), and Python uses **`@mnci/nx-python-pip`** — a real Nx plugin this
-  project built and maintains itself (`libs/nx-python-pip` in this same
-  monorepo), after `@nxlv/python` (the previous Python plugin) turned out to
-  require `uv`, which the company standardizing on this tool does not use,
-  and no maintained alternative supports pip. That trades third-party risk
-  for a different, real one: **this project now owns a second package's
-  maintenance surface** (generators, executors, its own release cycle) —
-  worth being explicit about, since it did not exist before this migration.
-  If `oxc-standard` stalls or breaks compatibility with a future Nx major,
-  that surface needs a real maintenance response, not just a version bump.
+- **One Nx plugin this project builds and maintains** carries the most weight:
+  **`@mnci/nx-python-pip`** — a real Nx plugin built into this monorepo itself
+  (`packages/nx-python-pip`), created because no maintained, Nx-23-compatible
+  Python plugin supports pip (the previous Python plugin, `@nxlv/python`,
+  requires `uv`, which the company standardizing on this tool does not use, and
+  no maintained alternative supports pip). This trades third-party risk for a
+  different, real one: **this project now owns a second package's maintenance
+  surface** (generators, executors, its own release cycle) — worth being
+  explicit about, since it did not exist before. Unlike official `@nx/*`
+  plugins, if this one needs fixes or updates, this project owns those directly.
+  That's the cost of having no maintained pip-native Nx plugin in the ecosystem.
 - **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
   TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
   `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
@@ -609,8 +602,68 @@ release version --dry-run`), which wins over the workspace's default
   Python package is still versioned + tagged, but publishing it needs
   user-provided `TWINE_*` — e.g. a PyPI token.)
 - **CI** also runs `nx run-many -t lint,test,build`, so Python's ruff `lint`
-  target runs alongside the JS build even on the oxlint stack (whose
-  `npm run lint` only covers JS). One guarded pipeline step installs
+  target runs alongside the JS ESLint build. One guarded pipeline step installs
   `requirements-dev.txt` first (the fixed toolchain), then a second installs
   every Python project workspace-wide (the workspace-wide install above) —
   both skipped cleanly when the workspace has no Python projects.
+
+## Go (`@nx-go/nx-go` — one root `go.mod`, golangci-lint + `go test`)
+
+Requires **Go 1.21+** on the machine and on the build agent; `mnci add go-*`
+fails fast with an install link when `go` is not on the `PATH`. The generated
+pipeline installs `golangci-lint` itself (see below).
+
+| Kind              | Location          | Build / deploy                                                                                                                                                                                                |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `go-app`          | `apps/<name>`     | `go build` binary into `dist/apps/<name>/`, zipped by mnci into `dist/drop/go-app-<name>.zip`                                                                                                                 |
+| `go-function-app` | `apps/<name>`     | same build; zipped into `dist/drop/go-function-app-<name>.zip`. The handler body is yours to write — AWS Lambda, Google Cloud Functions and Azure each want a different signature, and mnci does not pick one |
+| `go-lib`          | `packages/<name>` | publishable **by git tag** — see below; lint + test targets only                                                                                                                                              |
+| `go-internal-lib` | `libs/<name>`     | private shared code, lint + test only — a non-`main` package produces no binary                                                                                                                               |
+
+- **One root `go.mod`**, matching how TS uses one root `package.json` and
+  Python one root `requirements-dev.txt`. `add/go.ts` bootstraps it on the
+  first Go `add` by running the plugin's `init` then `convert-to-one-mod`
+  generators, in that order — `convert-to-one-mod` refuses once `go.work`
+  lists any module, so it has to happen before the first Go project exists.
+  Every Go project then shares that module and imports its siblings as
+  `<module>/libs/<name>`, with no per-project manifests and no `replace`
+  directives.
+- **The `go.work` multi-module layout was rejected deliberately.** Besides
+  splitting dependencies across per-project manifests, it is brittle: a
+  single stale `use` entry — a project directory removed by hand — makes
+  `go list -m -json` fail, and that breaks the **entire** Nx project graph,
+  not just the Go projects. Verified empirically.
+- **Targets are written explicitly** rather than inferred. `@nx-go/nx-go`
+  supplies `build`/`test`/`lint` by inference, but keys that inference on a
+  per-project `go.mod` — which single-module mode does not have, so nothing
+  is inferred. mnci writes them into `project.json` instead, as it already
+  does for most kinds.
+- **Lint is `golangci-lint`, pinned deliberately.** The plugin's `lint`
+  executor defaults to `go fmt`, which only reformats — a green lint step
+  with that default would mean nothing. The generated target passes
+  `linter: golangci-lint`, and `mnci add` warns (without failing) when the
+  binary is missing locally, since CI installs its own.
+- **Publishing a `go-lib` is a git tag, not a registry upload.** The whole
+  repository is one module, so consumers depend on a library by import path
+  at a repo-level version tag — `go get <module>/packages/<name>@v1.2.3`.
+  That tag is the one `nx release` already creates, so no
+  `nx-release-publish` target is written: there is nothing to push. The only
+  real difference between `go-lib` and `go-internal-lib` is intent, recorded
+  in the `type:go-lib` tag and the `packages/` location.
+- **No publish-time dependency injection**, unlike Python's vendoring: `go
+build` links statically, so the binary in the drop already contains
+  everything it needs.
+- **Build output is a directory**, `dist/apps/<name>/`, with the binary
+  inside it. The executor's own default writes a bare file at
+  `dist/apps/<name>`, which cannot be declared as an Nx `outputs` entry —
+  Nx scans each declared output to cache it, and scanning a file fails with
+  `ENOTDIR`. Building one level deeper keeps the root-`dist` convention and
+  makes the target cacheable.
+- **CI** runs Go through the same `nx run-many -t lint,test,build` as
+  everything else. Two guarded steps precede it: `go mod download` (so a
+  network failure reads as a dependency failure rather than a confusing
+  build error), and a `golangci-lint` install via `go install` — no package
+  manager, no sudo, same command on every agent OS — whose `GOPATH/bin` is
+  then added to `PATH` for later steps. All three skip cleanly when the
+  workspace has no root `go.mod`, and the linter install also skips when the
+  agent already provides it.
