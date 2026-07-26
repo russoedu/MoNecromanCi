@@ -5,6 +5,7 @@ import { promptText } from '../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
+import { addFlutterApp, addFlutterInternalLib, addFlutterLib } from './add/flutter'
 import { addGoApp, addGoFunctionApp, addGoInternalLib, addGoLib } from './add/go'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
 import { addNpmLib } from './add/npmLib'
@@ -21,7 +22,7 @@ import type { AddOptions, WorkspaceStack } from './add/shared'
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just fourteen.
+ * The project kinds this CLI can add — deliberately just seventeen.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -61,6 +62,24 @@ export type { AddOptions } from './add/shared'
  * reformats. Go needs no publish-time dependency injection at all: `go build`
  * links statically.
  *
+ * The Flutter kinds use **`@mnci/nx-flutter`** (`packages/nx-flutter` in this
+ * same monorepo) — the second real Nx plugin this project builds and
+ * maintains, for the same reason as the Python one: no maintained,
+ * Nx-23-compatible Flutter plugin exists (`@nxrocks/nx-flutter` cannot even
+ * load on Nx 23 — it imports `@nx/workspace/src/utilities/fileutils`, removed
+ * in 23). Its generators delegate scaffolding to the official Flutter CLI
+ * (`flutter create`), so no template is hand-maintained against SDK releases.
+ *
+ * Flutter follows the same root-manifest model as the rest: a **Dart pub
+ * workspace**, with one root `pubspec.yaml` listing every project and each
+ * project carrying `resolution: workspace`, so a single `flutter pub get` at
+ * the root resolves the whole graph into one `pubspec.lock`. The payoff is
+ * that a project depending on an internal lib declares a **plain version
+ * constraint with no `path:`** — pub resolves it locally because it is a
+ * workspace member. That is also why Flutter needs no vendoring step (unlike
+ * `python-vendor` below): there is nothing to weave in at build time. Apps
+ * build for **web** only, which keeps the Android SDK off every build agent.
+ *
  * `python-vendor` is the one kind that generates nothing: plain pip has no
  * bundled-local-dependency feature, so wiring an internal Python library
  * into a consumer's built wheel is a hand-edit of the consumer's
@@ -85,6 +104,9 @@ export type ProjectKind =
   | 'go-function-app'
   | 'go-lib'
   | 'go-internal-lib'
+  | 'flutter-app'
+  | 'flutter-lib'
+  | 'flutter-internal-lib'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -108,6 +130,9 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'go-function-app',
   'go-lib',
   'go-internal-lib',
+  'flutter-app',
+  'flutter-lib',
+  'flutter-internal-lib',
 ]
 
 /**
@@ -228,6 +253,18 @@ export async function runAdd(
       addGoInternalLib(workspaceRoot, resolvedName)
       break
     }
+    case 'flutter-app': {
+      addFlutterApp(workspaceRoot, resolvedName)
+      break
+    }
+    case 'flutter-lib': {
+      addFlutterLib(workspaceRoot, resolvedName)
+      break
+    }
+    case 'flutter-internal-lib': {
+      addFlutterInternalLib(workspaceRoot, resolvedName)
+      break
+    }
     case 'python-vendor': {
       await addPythonVendor(workspaceRoot, resolvedName, options, kindProvided)
       // `resolvedName` is the consumer, not something newly created — the
@@ -238,7 +275,7 @@ export async function runAdd(
     }
     default: {
       // Unreachable while every ProjectKind has a case above: `exhaustive`
-      // being `never` makes adding a 9th kind without a matching case a
+      // being `never` makes adding a new kind without a matching case a
       // *compile-time* error, not just a runtime gap. The CLI itself already
       // rejects an unrecognized value before this ever runs (cli.ts's
       // Argument#choices()); this is the last line of defense for any other

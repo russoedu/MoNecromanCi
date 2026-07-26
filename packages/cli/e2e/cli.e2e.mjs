@@ -7,9 +7,15 @@
  * latest create-nx-workspace and real npm installs), then `add` for one of
  * each kind, then real `nx run-many -t lint,test,build` and a real
  * `nx release --dry-run` inside the generated repo. Every ENFORCED
- * failure exits non-zero — none of `add`'s generators shell out to an
- * external CLI that might be missing locally, so there is nothing left to
- * treat as merely PENDING.
+ * failure exits non-zero.
+ *
+ * One exception, and it is deliberate: the **Flutter** section needs the
+ * Flutter SDK, which — unlike Python (CPython is assumed present) and Node —
+ * is not installed on a stock machine or a stock CI image. Rather than
+ * silently dropping Flutter from the suite (which is what happened to Go, and
+ * is why Go still has no e2e coverage at all), it runs whenever `flutter` is
+ * on the PATH and is reported as SKIPPED, loudly, when it is not. Nothing else
+ * in the suite is skippable.
  */
 
 import { execSync } from 'node:child_process'
@@ -96,12 +102,35 @@ function tryRunCapture(command, cwd) {
   }
 }
 
-const results = { enforced: [] }
+const results = { enforced: [], skipped: [] }
 
 /** Records an ENFORCED expectation, which fails the run when false. */
 function enforce(label, ok, detail = '') {
   results.enforced.push({ label, ok, detail })
   console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  — ${detail}`}`)
+}
+
+/**
+ * Records a section that could not run because its toolchain is absent.
+ *
+ * @remarks
+ * Used only by the Flutter section — see the file header. Deliberately does
+ * NOT fail the run, but is printed in the summary so a skipped section can
+ * never be mistaken for a passing one.
+ */
+function skip(label, reason) {
+  results.skipped.push({ label, reason })
+  console.log(`  ⊘ SKIPPED ${label} — ${reason}`)
+}
+
+/** Whether the Flutter SDK is available to drive the Flutter section. */
+function hasFlutter() {
+  try {
+    execSync('flutter --version', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
 }
 
 const temporary = mkdtempSync(path.join(tmpdir(), 'mnci-e2e-'))
@@ -134,8 +163,8 @@ enforce(
   release.git?.commit === false && release.git?.tag === true && release.git?.push === false
 )
 enforce(
-  'release scoped to the publishable dirs (npm + python)',
-  JSON.stringify(release.projects) === '["packages/*","python-packages/*"]'
+  'release scoped to the publishable dirs (npm + python), with go-lib excluded',
+  JSON.stringify(release.projects) === '["packages/*","python-packages/*","!tag:type:go-lib"]'
 )
 
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
@@ -343,11 +372,12 @@ try {
   /* leaves dependabotParsed null → the check below fails with the parse error surfaced above */
 }
 enforce(
-  '.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip ecosystems',
+  '.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip + pub ecosystems',
   Boolean(dependabotParsed) &&
     dependabotParsed.updates?.map(update => update['package-ecosystem']).join(',') ===
-      'npm,github-actions,pip' &&
-    Array.isArray(dependabotParsed.updates?.[2]?.directories)
+      'npm,github-actions,pip,pub' &&
+    Array.isArray(dependabotParsed.updates?.[2]?.directories) &&
+    Array.isArray(dependabotParsed.updates?.[3]?.directories)
 )
 
 /* ---------------------------------------------------------------------------
@@ -809,63 +839,64 @@ enforce(
 run(`node ${CLI} upgrade --agent ubuntu-latest`, workspace)
 
 /* ---------------------------------------------------------------------------
- * Alternate stack: TS6 + oxlint + vitest, exercised end-to-end so the non-default
- * choices are proven on the real toolchain (not just in unit tests).
+ * Alternate stack: vitest, exercised end-to-end so the non-default choice is
+ * proven on the real toolchain (not just in unit tests). The test runner is the
+ * only stack knob — linting is always ESLint + Prettier since oxlint was
+ * dropped, which is what this section used to exercise.
  * ------------------------------------------------------------------------- */
 
 const altWorkspace = path.join(temporary, 'alt')
-console.log('\n▸ mnci new alt --linter oxlint --test-runner vitest')
-run(
-  `node ${CLI} new alt --yes --registry npm --scope @alt --linter oxlint --test-runner vitest`,
-  temporary
-)
+// NOTE: this used to pass `--linter oxlint`. That flag was removed from the CLI
+// when oxlint was dropped (the stack has one knob now: the test runner), so the
+// invocation had been hard-crashing the suite here — taking the whole Python
+// section, which lives below, down with it.
+console.log('\n▸ mnci new alt --test-runner vitest')
+run(`node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest`, temporary)
 
 const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
+// The stack has exactly one knob now — the test runner. This workspace is the
+// vitest half of that pair (the `demo` workspace above covers jest); linting is
+// always ESLint + Prettier. These assertions used to check oxlint/oxfmt, which
+// were removed from the CLI, so they described a workspace mnci can no longer
+// produce.
 enforce(
-  'alt: stack persisted as nx.json generator defaults (linter:none + vitest)',
-  altNx.generators?.['@nx/js:library']?.linter === 'none' &&
+  'alt: stack persisted as nx.json generator defaults (eslint + vitest)',
+  altNx.generators?.['@nx/js:library']?.linter === 'eslint' &&
     altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
 )
 const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
 enforce(
-  'alt: oxlint set up (oxlint.config.mts + root lint = oxlint)',
-  existsSync(path.join(altWorkspace, 'oxlint.config.mts')) && altManifest.scripts?.lint === 'oxlint'
+  'alt: lint runs ESLint through nx, for every project',
+  altManifest.scripts?.lint === 'nx run-many -t lint'
 )
 enforce(
-  'alt: oxlint config extends the oxc-standard StandardJS preset',
-  readFileSync(path.join(altWorkspace, 'oxlint.config.mts'), 'utf8').includes(
-    `import standard from 'oxc-standard/.oxlintrc.json'`
-  )
-)
-enforce(
-  'alt: oxfmt set up (oxfmt.config.mts + format/format:check scripts)',
-  existsSync(path.join(altWorkspace, 'oxfmt.config.mts')) &&
-    altManifest.scripts?.format === 'oxfmt -c oxfmt.config.mts .' &&
-    altManifest.scripts?.['format:check'] === 'oxfmt -c oxfmt.config.mts --check .'
+  'alt: Prettier set up (format + format:check scripts)',
+  altManifest.scripts?.format === 'prettier --write .' &&
+    altManifest.scripts?.['format:check'] === 'prettier --check .'
 )
 
 run(`node ${CLI} add npm-lib sdk`, altWorkspace)
 run(`node ${CLI} add react-app web`, altWorkspace)
 enforce(
-  'alt: npm-lib gets no per-lib eslint config under oxlint',
-  !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
+  'alt: npm-lib gets its own eslint config from the generator',
+  existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
 )
 // This coding-agent sandbox injects .agents/.opencode/.github/skills into every
 // cwd; they are not part of a generated workspace, so drop them before the
-// whole-repo oxlint (a real user never has them).
+// whole-repo lint/format run (a real user never has them).
 for (const injected of ['.agents', '.opencode', '.github/skills']) {
   rmSync(path.join(altWorkspace, injected), { recursive: true, force: true })
 }
 // Nx generators emit semicolon/double-quote code, so a fresh workspace is not
 // yet Standard-formatted: `npm run format` normalises it, after which
-// `format:check` must be clean (proves oxfmt + the config actually run).
+// `format:check` must be clean (proves Prettier + the config actually run).
 enforce(
-  'alt: npm run format (oxfmt) then format:check round-trips green',
+  'alt: npm run format (Prettier) then format:check round-trips green',
   tryRun('npm run format', altWorkspace) && tryRun('npm run format:check', altWorkspace),
   'see log above'
 )
 enforce(
-  'alt: npm run lint (oxlint) runs green',
+  'alt: npm run lint (ESLint) runs green',
   tryRun('npm run lint', altWorkspace),
   'see log above'
 )
@@ -1269,6 +1300,154 @@ enforce(
 )
 
 /* ---------------------------------------------------------------------------
+ * Flutter — @mnci/nx-flutter (this monorepo's second own Nx plugin), packed
+ * from its build output (MNCI_NX_FLUTTER_SPEC) rather than the published
+ * registry package, exactly as the Python section does.
+ *
+ * This is the one section gated on a toolchain: the Flutter SDK is not on a
+ * stock machine or CI image. See the file header for why it is reported as
+ * SKIPPED rather than dropped.
+ * ------------------------------------------------------------------------- */
+
+if (hasFlutter()) {
+  console.log('\n▸ packing @mnci/nx-flutter for the e2e to install locally')
+  const nxFlutterDirectory = path.resolve(SCRIPT_DIR, '..', '..', 'nx-flutter')
+  run('npm run build', nxFlutterDirectory)
+  const nxFlutterPackDirectory = path.join(temporary, 'nx-flutter-pack')
+  mkdirSync(nxFlutterPackDirectory, { recursive: true })
+  const flutterPackOutput = execSync(
+    `npm pack --silent --pack-destination "${nxFlutterPackDirectory}"`,
+    { cwd: nxFlutterDirectory, encoding: 'utf8' }
+  ).trim()
+  process.env.MNCI_NX_FLUTTER_SPEC = path.join(
+    nxFlutterPackDirectory,
+    flutterPackOutput.split('\n').at(-1)
+  )
+
+  console.log('\n▸ mnci add flutter-app / flutter-lib / flutter-internal-lib')
+  run(`node ${CLI} add flutter-app hello`, altWorkspace)
+  run(`node ${CLI} add flutter-lib dartshared`, altWorkspace)
+  run(`node ${CLI} add flutter-internal-lib dartcore`, altWorkspace)
+
+  const flutterManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+  enforce(
+    'flutter: the plugin is a real devDependency and mnci itself hand-writes no Dart project files',
+    Boolean(flutterManifest.devDependencies?.['@mnci/nx-flutter']) &&
+      existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-flutter/generators.json'))
+  )
+
+  // The central-dependency model: one root pubspec listing every project.
+  const rootPubspec = readFileSync(path.join(altWorkspace, 'pubspec.yaml'), 'utf8')
+  enforce(
+    'flutter: ONE root pubspec.yaml lists all three projects under workspace:',
+    ['apps/hello', 'packages/dartshared', 'libs/dartcore'].every(member =>
+      rootPubspec.includes(`- ${member}`)
+    ) && rootPubspec.includes('publish_to: none'),
+    rootPubspec
+  )
+  enforce(
+    'flutter: every member declares `resolution: workspace`, so pub resolves through the root',
+    ['apps/hello', 'packages/dartshared', 'libs/dartcore'].every(member =>
+      readFileSync(path.join(altWorkspace, member, 'pubspec.yaml'), 'utf8').includes(
+        'resolution: workspace'
+      )
+    )
+  )
+  enforce(
+    'flutter: lint config is central — each project just includes the root analysis_options.yaml',
+    readFileSync(path.join(altWorkspace, 'analysis_options.yaml'), 'utf8').includes(
+      'package:flutter_lints/flutter.yaml'
+    ) &&
+      readFileSync(path.join(altWorkspace, 'apps/hello/analysis_options.yaml'), 'utf8').includes(
+        'include: ../../analysis_options.yaml'
+      )
+  )
+
+  // An internal dependency, declared with a PLAIN constraint and no `path:`.
+  const dartsharedPubspecPath = path.join(altWorkspace, 'packages/dartshared/pubspec.yaml')
+  writeFileSync(
+    dartsharedPubspecPath,
+    readFileSync(dartsharedPubspecPath, 'utf8').replace(
+      /^dependencies:\n {2}flutter:\n {4}sdk: flutter\n/m,
+      'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
+    )
+  )
+  writeFileSync(
+    path.join(altWorkspace, 'packages/dartshared/lib/dartshared.dart'),
+    "import 'package:dartcore/dartcore.dart';\n\n/// Uses the internal lib across a workspace boundary.\nclass Greeter {\n  /// Bumps a number using dartcore.\n  int bump(int value) => Calculator().addOne(value);\n}\n"
+  )
+  writeFileSync(
+    path.join(altWorkspace, 'packages/dartshared/test/dartshared_test.dart'),
+    "import 'package:flutter_test/flutter_test.dart';\nimport 'package:dartshared/dartshared.dart';\n\nvoid main() {\n  test('bumps via the internal lib', () {\n    expect(Greeter().bump(2), 3);\n  });\n}\n"
+  )
+
+  // THE dependency-injection step: one command for internal + external deps.
+  run('flutter pub get', altWorkspace)
+
+  const lockfiles = ['pubspec.lock', 'apps/hello/pubspec.lock', 'packages/dartshared/pubspec.lock']
+  enforce(
+    'flutter: one root pub get produces ONE lockfile — pub deletes the per-package ones',
+    existsSync(path.join(altWorkspace, lockfiles[0])) &&
+      !existsSync(path.join(altWorkspace, lockfiles[1])) &&
+      !existsSync(path.join(altWorkspace, lockfiles[2]))
+  )
+  const packageConfig = JSON.parse(
+    readFileSync(path.join(altWorkspace, '.dart_tool/package_config.json'), 'utf8')
+  )
+  enforce(
+    'flutter: the internal dep resolved to the LOCAL package with no `path:` dependency',
+    packageConfig.packages.some(
+      entry => entry.name === 'dartcore' && entry.rootUri.includes('libs/dartcore')
+    ) && !readFileSync(dartsharedPubspecPath, 'utf8').includes('path:'),
+    JSON.stringify(packageConfig.packages.find(entry => entry.name === 'dartcore'))
+  )
+
+  const flutterVerify = tryRunCapture(
+    'npx nx run-many -t lint,test --projects=hello,dartshared,dartcore',
+    altWorkspace
+  )
+  enforce(
+    'flutter: real flutter analyze + flutter test pass for all three projects',
+    flutterVerify.ok,
+    flutterVerify.output
+  )
+
+  const flutterPackage = tryRunCapture('npx nx package hello', altWorkspace)
+  const flutterZipPath = path.join(altWorkspace, 'dist/drop/flutter-app-hello.zip')
+  enforce(
+    'flutter: package builds a real web bundle and zips it to dist/drop/flutter-app-hello.zip',
+    flutterPackage.ok && existsSync(flutterZipPath),
+    flutterPackage.output
+  )
+  if (existsSync(flutterZipPath)) {
+    const AdmZipFlutter = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
+    const flutterEntries = new AdmZipFlutter(flutterZipPath)
+      .getEntries()
+      .map(entry => entry.entryName)
+    enforce(
+      'flutter: the drop zip contains a genuinely built web app, not an empty shell',
+      ['index.html', 'main.dart.js', 'flutter_bootstrap.js'].every(file =>
+        flutterEntries.includes(file)
+      ),
+      flutterEntries.slice(0, 12).join(', ')
+    )
+  }
+
+  // The publishable Dart lib must not break `nx release` for the whole workspace.
+  const flutterRelease = tryRunCapture('npx nx release --dry-run', altWorkspace)
+  enforce(
+    'flutter: nx release versions the Dart lib from its pubspec.yaml (DartVersionActions), leaving the rest of the release intact',
+    flutterRelease.ok && /dartshared/i.test(flutterRelease.output),
+    flutterRelease.output
+  )
+} else {
+  skip(
+    'the entire Flutter section',
+    'the Flutter SDK is not on PATH (install it, or run this on a machine that has it)'
+  )
+}
+
+/* ---------------------------------------------------------------------------
  * Report
  * ------------------------------------------------------------------------- */
 
@@ -1277,9 +1456,16 @@ const failed = results.enforced.filter(result => !result.ok)
 for (const result of results.enforced) {
   console.log(`  ${result.ok ? '✓' : '✗'} ENFORCED  ${result.label}`)
 }
+for (const result of results.skipped) {
+  console.log(`  ⊘ SKIPPED   ${result.label} — ${result.reason}`)
+}
 
 if (failed.length > 0) {
   console.error(`\n✗ ${failed.length} ENFORCED expectation(s) failed.`)
   process.exit(1)
 }
-console.log(`\n✓ ${results.enforced.length} enforced checks passed.`)
+console.log(
+  `\n✓ ${results.enforced.length} enforced checks passed.${
+    results.skipped.length > 0 ? ` (${results.skipped.length} section(s) SKIPPED — see above.)` : ''
+  }`
+)

@@ -1,7 +1,7 @@
 {
   "name": "@mnci/cli",
   "version": "1.0.0",
-  "description": "MoNecromanCI CLI — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint/oxlint+Prettier-equivalent oxfmt, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), npm/Python libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for both npm and Python packages.",
+  "description": "MoNecromanCI CLI \u2014 a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint + Prettier, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), and npm/Python/Go/Flutter libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for npm, Python and Dart packages.",
   "bin": {
     "mnci": "./dist/cli.js"
   },
@@ -34,7 +34,10 @@
     "cli",
     "scaffold",
     "typescript",
-    "python"
+    "python",
+    "go",
+    "flutter",
+    "dart"
   ],
   "author": "Eduardo Russo",
   "license": "MIT",

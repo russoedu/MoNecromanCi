@@ -225,9 +225,30 @@ export function npmrcContent(registry: RegistryConfig, scope: string): string {
  * `project.json` by that plugin's own `library` generator, not by anything
  * here) reads/writes the right manifest (`package.json` vs `pyproject.toml`)
  * — project-level config wins over the group's, so both kinds coexist in the
- * one group correctly.
+ * one group correctly. Publishable **Flutter/Dart** packages also live in
+ * `packages/*` and are covered by the same flat list;
+ * `@mnci/nx-flutter`'s own `library` generator stamps its
+ * `DartVersionActions` on for `pubspec.yaml`.
  * Internal libraries live in `libs/` and apps in `apps/`, so release scoping
- * still needs no custom tags.
+ * needs no tags for them.
+ *
+ * `!tag:type:go-lib` is the one exception, and it is a **bug fix**, not
+ * fine-tuning. A `go-lib` also lands in `packages/`, but it has no
+ * per-project manifest at all — mnci puts every Go project in one root
+ * `go.mod` — so Nx falls back to its default `versionActions`, looks for a
+ * `packages/<name>/package.json` that does not exist, and aborts. Because
+ * that happens while building the release graph, it takes down the release of
+ * **every** project in the workspace, not just the Go one: before this
+ * exclusion, a single `mnci add go-lib` made `nx release` exit 1 for the
+ * whole repo (verified empirically, then re-verified green with the
+ * exclusion in place).
+ *
+ * Excluding rather than teaching Go a `versionActions` is the semantically
+ * correct fix: in a single-module layout there is exactly one Go module, so
+ * its packages have no independent versions to bump: a consumer running
+ * `go get` on one of them resolves against the *module's* tag, so a
+ * per-project version would be a fiction. Go's "publishing" is that
+ * repo-level tag, which is not a per-project release concern.
  *
  * @param ci - Which CI provider(s) the workspace generates a pipeline for —
  * only `'github'` (GitHub Actions and nothing else) turns on GitHub Release
@@ -240,7 +261,7 @@ export function releaseConfig(ci: CiProvider) {
   const githubReleases = ci === 'github'
   return {
     projectsRelationship: 'independent',
-    projects: ['packages/*', 'python-packages/*'],
+    projects: ['packages/*', 'python-packages/*', '!tag:type:go-lib'],
     releaseTag: { pattern: '{projectName}@{version}' },
     git: { commit: false, tag: true, push: githubReleases },
     version: {
@@ -750,6 +771,124 @@ const GO_TOOL_PATH_AZURE = `node -e "${GO_TOOL_PATH_PRELUDE}console.log('##vso[t
 const GO_TOOL_PATH_GITHUB = `node -e "${GO_TOOL_PATH_PRELUDE}if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+${String.raw`'\n'`})"`
 
 /**
+ * The Flutter SDK version the generated pipeline installs.
+ *
+ * @remarks
+ * Pinned, unlike `golangci-lint`'s `@latest`, because the Flutter version
+ * *determines the Dart version*, and Dart is what has the hard floor here:
+ * pub workspaces — the whole basis of mnci's central-dependency model for
+ * Dart — need Dart 3.6+. A floating `stable` could in principle move the
+ * toolchain under a workspace without warning, so the version is explicit and
+ * bumped deliberately.
+ *
+ * `3.44.8` ships Dart 3.12.2. Exported so tests can assert it and so bumping
+ * it is a one-line change.
+ */
+export const FLUTTER_SDK_VERSION = '3.44.8'
+
+/**
+ * The shared expression that resolves where the Flutter SDK is installed.
+ *
+ * @remarks
+ * Deliberately **outside** the workspace, under the agent's home directory —
+ * not in a workspace-local `.flutter-sdk`. Two reasons, and the second is the
+ * serious one:
+ *
+ * 1. Nothing needs adding to `.gitignore` (the overlay writes no `.gitignore`
+ *    of its own; `create-nx-workspace` owns that file).
+ * 2. The Flutter SDK ships **its own `pubspec.yaml` files** — dozens of them,
+ *    across `packages/flutter`, `packages/flutter_test` and the rest. Cloning
+ *    it inside the workspace would drop those into the pub workspace's own
+ *    tree, where `pub` treats a stray nested pubspec as an error to resolve
+ *    around, and would give Nx thousands of extra files to glob for its
+ *    project graph.
+ *
+ * Keyed by version, so bumping {@link FLUTTER_SDK_VERSION} provisions a fresh
+ * clone instead of leaving a stale checkout on a cached agent. Computed
+ * identically by the install guard and the PATH guards so they always agree.
+ */
+const FLUTTER_SDK_DIRECTORY_EXPRESSION = `require('node:path').join(require('node:os').homedir(),'.mnci-flutter-${FLUTTER_SDK_VERSION}')`
+
+/**
+ * The portable `node -e` one-liner that installs the Flutter SDK.
+ *
+ * @remarks
+ * Flutter is the one toolchain the pipeline genuinely has to install: Python
+ * and Go both ship on every hosted agent image, Flutter does not. So unlike
+ * the Python and Go guards — which only fetch *dependencies* — this one
+ * fetches the SDK itself.
+ *
+ * Installed by shallow `git clone` at a pinned tag, which is Flutter's own
+ * documented install method and the only one that is genuinely uniform across
+ * agents: the release archives differ by platform (`.tar.xz` on Linux,
+ * `.zip` on macOS/Windows), which would force a platform switch and an
+ * extractor into what is meant to be one portable line. `git` is already a
+ * hard requirement of this pipeline, so nothing new is assumed.
+ * `--depth 1` keeps it to a single revision.
+ *
+ * Two levels of skip, mirroring {@link GOLANGCI_LINT_INSTALL_GUARD}: nothing
+ * happens without a workspace-root `pubspec.yaml` (so a JS-only repo pays
+ * nothing), and nothing happens when `flutter` already resolves — so a
+ * self-hosted agent with a preinstalled SDK, or a second run on a warm
+ * workspace, skips the download entirely.
+ */
+const FLUTTER_SDK_INSTALL_GUARD = `node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}if(cp.spawnSync('flutter',['--version'],{stdio:'ignore',shell:process.platform==='win32'}).status===0){console.log('Flutter SDK already on PATH - skipping.');process.exit(0)}const sdk=${FLUTTER_SDK_DIRECTORY_EXPRESSION};if(fs.existsSync(sdk)){console.log('Flutter SDK already installed at '+sdk+' - skipping.');process.exit(0)}process.exit(cp.spawnSync('git',['clone','--depth','1','--branch','${FLUTTER_SDK_VERSION}','https://github.com/flutter/flutter.git',sdk],{stdio:'inherit'}).status ?? 1)"`
+
+/**
+ * The shared prelude that resolves the Flutter SDK's `bin` directory.
+ *
+ * @remarks
+ * Not a step on its own — {@link FLUTTER_TOOL_PATH_AZURE} and
+ * {@link FLUTTER_TOOL_PATH_GITHUB} each append the one line that publishes the
+ * directory, exactly as the Go pair does. Skips when there are no Flutter
+ * projects, and also when the SDK was never cloned because one was already on
+ * `PATH` (in which case there is nothing to publish).
+ */
+const FLUTTER_TOOL_PATH_PRELUDE = `const fs=require('node:fs'),path=require('node:path');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}const sdk=${FLUTTER_SDK_DIRECTORY_EXPRESSION};if(!fs.existsSync(sdk)){console.log('Flutter SDK was not installed by mnci (already on PATH) - skipping.');process.exit(0)}const bin=path.join(sdk,'bin');`
+
+/**
+ * Azure Pipelines: publishes the Flutter SDK's `bin` to later steps.
+ *
+ * @remarks
+ * Uses the `task.prependpath` logging command, the same mechanism
+ * {@link GO_TOOL_PATH_AZURE} uses.
+ */
+const FLUTTER_TOOL_PATH_AZURE = `node -e "${FLUTTER_TOOL_PATH_PRELUDE}console.log('##vso[task.prependpath]'+bin)"`
+
+/**
+ * GitHub Actions: publishes the Flutter SDK's `bin` to later steps.
+ *
+ * @remarks
+ * Appends to the file named by `GITHUB_PATH`, mirroring
+ * {@link GO_TOOL_PATH_GITHUB}, and skips cleanly when run outside Actions.
+ */
+const FLUTTER_TOOL_PATH_GITHUB = `node -e "${FLUTTER_TOOL_PATH_PRELUDE}if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+${String.raw`'\n'`})"`
+
+/**
+ * The portable `node -e` one-liner that resolves every Dart dependency.
+ *
+ * @remarks
+ * **This is the dependency-injection step for Flutter**, and it is a single
+ * command for the whole workspace by design. Because every project is a
+ * member of the root pub workspace (`workspace:` in the root `pubspec.yaml`,
+ * `resolution: workspace` in each member), one `flutter pub get` at the root
+ * resolves **internal and external dependencies together** into one
+ * `pubspec.lock` and one `.dart_tool/package_config.json` — pub even deletes
+ * any stale per-package copies.
+ *
+ * That is why there is no second, workspace-wide step here of the kind Python
+ * needs ({@link PYTHON_WORKSPACE_INSTALL_GUARD} exists only because pip has no
+ * workspace protocol and every project must be editable-installed by hand).
+ * Dart has a real workspace protocol, so this one line is the whole story —
+ * and a project importing an internal lib resolves it with a plain version
+ * constraint, no `path:` and no vendoring.
+ *
+ * Runs with `shell: true` on Windows only, where `flutter` is a `.bat` shim
+ * that `spawnSync` cannot execute directly.
+ */
+const FLUTTER_PUB_GET_GUARD = `node -e "const fs=require('node:fs');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('flutter',['pub','get'],{stdio:'inherit',shell:process.platform==='win32'}).status ?? 1)"`
+
+/**
  * The `npm audit` step run right after `npm ci`, non-blocking (warn-only).
  *
  * @remarks
@@ -1037,6 +1176,23 @@ steps:
   - script: ${GO_TOOL_PATH_AZURE}
     displayName: Add Go tool bin to PATH
 
+  # Flutter, if the workspace has any. Unlike Python and Go, hosted agents do
+  # NOT ship the Flutter SDK, so this installs it (shallow git clone at a
+  # pinned tag) and puts it on PATH. All three guards skip cleanly on a
+  # workspace with no root pubspec.yaml, and the install also skips when an
+  # SDK is already on PATH.
+  - script: ${FLUTTER_SDK_INSTALL_GUARD}
+    displayName: Install the Flutter SDK (${FLUTTER_SDK_VERSION})
+
+  - script: ${FLUTTER_TOOL_PATH_AZURE}
+    displayName: Add the Flutter SDK to PATH
+
+  # One command resolves EVERY Dart dependency, internal and external, for the
+  # whole workspace: the projects are pub workspace members, so this writes a
+  # single root pubspec.lock they all share.
+  - script: ${FLUTTER_PUB_GET_GUARD}
+    displayName: Resolve Dart dependencies (one pub get for the whole workspace)
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -1240,6 +1396,23 @@ jobs:
       - run: ${GO_TOOL_PATH_GITHUB}
         name: Add Go tool bin to PATH
 
+      # Flutter, if the workspace has any. Unlike Python and Go, hosted runners
+      # do NOT ship the Flutter SDK, so this installs it (shallow git clone at
+      # a pinned tag) and puts it on PATH. All three guards skip cleanly on a
+      # workspace with no root pubspec.yaml, and the install also skips when an
+      # SDK is already on PATH.
+      - run: ${FLUTTER_SDK_INSTALL_GUARD}
+        name: Install the Flutter SDK (${FLUTTER_SDK_VERSION})
+
+      - run: ${FLUTTER_TOOL_PATH_GITHUB}
+        name: Add the Flutter SDK to PATH
+
+      # One command resolves EVERY Dart dependency, internal and external, for
+      # the whole workspace: the projects are pub workspace members, so this
+      # writes a single root pubspec.lock they all share.
+      - run: ${FLUTTER_PUB_GET_GUARD}
+        name: Resolve Dart dependencies (one pub get for the whole workspace)
+
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
       # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -1362,6 +1535,18 @@ updates:
     directories:
       - "/apps/*"
       - "/python-packages/*"
+      - "/libs/*"
+    schedule:
+      interval: weekly
+
+  # Same glob reasoning as pip above. Dart projects are pub workspace members,
+  # so each one declares its own dependencies even though they all resolve
+  # through the single root pubspec.lock — hence the per-project directories
+  # rather than just "/".
+  - package-ecosystem: pub
+    directories:
+      - "/apps/*"
+      - "/packages/*"
       - "/libs/*"
     schedule:
       interval: weekly

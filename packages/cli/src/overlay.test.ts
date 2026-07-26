@@ -6,6 +6,7 @@ import {
   applyOverlay,
   azurePipelinesYaml,
   DEFAULT_STACK,
+  FLUTTER_SDK_VERSION,
   generatorDefaults,
   githubActionsYaml,
   mnciConfig,
@@ -111,7 +112,12 @@ describe('withReleaseConfig', () => {
       // would hit immediately. Each project's own versionActions (npm's
       // default, or the hand-written PythonVersionActions stamped onto every
       // python-lib by add/python.ts) wins over this shared config anyway.
-      projects: ['packages/*', 'python-packages/*'],
+      // `!tag:type:go-lib` is a bug fix, not tuning: a go-lib also lands in
+      // packages/ but has no per-project manifest (one root go.mod), so Nx's
+      // default versionActions looks for a package.json that is not there and
+      // aborts the release for the WHOLE workspace. Verified: without this,
+      // one `mnci add go-lib` made `nx release` exit 1 for every project.
+      projects: ['packages/*', 'python-packages/*', '!tag:type:go-lib'],
       releaseTag: { pattern: '{projectName}@{version}' },
       // Tag-only model: nothing is ever committed to main; the tag is pushed.
       // Top-level (not version.git) — Nx rejects granular git config for the
@@ -381,6 +387,59 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('golangci-lint already installed - skipping.')
   })
 
+  it('installs the Flutter SDK itself, unlike Python and Go which ship on the agent', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    const installIndex = pipeline.indexOf('Install the Flutter SDK')
+    const pathIndex = pipeline.indexOf('Add the Flutter SDK to PATH')
+    const pubGetIndex = pipeline.indexOf('Resolve Dart dependencies')
+    const syncCheckIndex = pipeline.indexOf('nx sync:check')
+
+    expect(installIndex).toBeGreaterThan(-1)
+    // PATH must be published after the clone, and pub get needs both — then
+    // everything must precede anything that runs a Flutter target.
+    expect(pathIndex).toBeGreaterThan(installIndex)
+    expect(pubGetIndex).toBeGreaterThan(pathIndex)
+    expect(syncCheckIndex).toBeGreaterThan(pubGetIndex)
+
+    // Every Flutter step is gated on the root pubspec.yaml that the plugin's
+    // generators write, so a JS-only workspace pays nothing.
+    expect(pipeline).toContain("existsSync('pubspec.yaml')")
+    expect(pipeline).toContain('No Flutter projects - skipping.')
+  })
+
+  it('pins the Flutter SDK version, because it determines the Dart version', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Pub workspaces need Dart 3.6+, so a floating `stable` could move the
+    // toolchain under a workspace. Cloned at an explicit tag instead.
+    expect(pipeline).toContain(FLUTTER_SDK_VERSION)
+    expect(pipeline).toContain(`'--branch','${FLUTTER_SDK_VERSION}'`)
+    expect(pipeline).toContain('https://github.com/flutter/flutter.git')
+    // Skips entirely when an SDK is already available.
+    expect(pipeline).toContain('Flutter SDK already on PATH - skipping.')
+  })
+
+  it('installs the Flutter SDK outside the workspace, so its own pubspecs cannot leak in', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // The SDK ships dozens of its own pubspec.yaml files; cloning it inside the
+    // workspace would drop them into the pub workspace tree and give Nx
+    // thousands of extra files to glob. Version-keyed so a bump re-provisions.
+    expect(pipeline).toContain("require('node:os').homedir()")
+    expect(pipeline).toContain(`.mnci-flutter-${FLUTTER_SDK_VERSION}`)
+    expect(pipeline).not.toContain("'.flutter-sdk'")
+  })
+
+  it('resolves every Dart dependency with a single root pub get', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Dart has a real workspace protocol, so unlike Python there is no second
+    // per-project install step: one pub get covers internal AND external deps.
+    expect(pipeline).toContain("'pub','get'")
+    expect(pipeline).toContain('one pub get for the whole workspace')
+  })
+
   it('packs all apps into one drop artifact, tags per app, then releases — in order', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -555,6 +614,25 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('##vso[task.prependpath]')
   })
 
+  it('installs the Flutter SDK and publishes it via GITHUB_PATH, not the Azure logging command', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    const installIndex = workflow.indexOf('Install the Flutter SDK')
+    const pathIndex = workflow.indexOf('Add the Flutter SDK to PATH')
+    const pubGetIndex = workflow.indexOf('Resolve Dart dependencies')
+
+    expect(installIndex).toBeGreaterThan(-1)
+    expect(pathIndex).toBeGreaterThan(installIndex)
+    expect(pubGetIndex).toBeGreaterThan(pathIndex)
+
+    expect(workflow).toContain("existsSync('pubspec.yaml')")
+    expect(workflow).toContain('No Flutter projects - skipping.')
+    expect(workflow).toContain(FLUTTER_SDK_VERSION)
+    // Same PATH-publishing split as the Go pair.
+    expect(workflow).toContain('GITHUB_PATH')
+    expect(workflow).not.toContain('##vso[task.prependpath]')
+  })
+
   it('packs all apps into one drop artifact, then releases — in order, gated to main-only', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -593,7 +671,7 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('GITHUB_TOKEN')
     expect(workflow).toContain('git push origin --tags')
     expect(workflow).toContain(
-      'Push release tags (nx release\'s own push never runs without a remote Release configured)'
+      "Push release tags (nx release's own push never runs without a remote Release configured)"
     )
   })
 
@@ -615,6 +693,18 @@ describe('githubActionsYaml', () => {
     expect(azure).toContain(`globSync('apps/*/project.json')`)
     expect(github).toContain(`Buffer.from(process.env.PAT,'base64')`)
     expect(azure).toContain(`Buffer.from(process.env.PAT,'base64')`)
+
+    // The Flutter SDK install and the root pub get are byte-identical in both.
+    // Only the PATH step legitimately differs, because the two providers have
+    // genuinely different mechanisms for extending PATH — asserted separately
+    // in each provider's own test above.
+    const flutterInstall = `'--branch','${FLUTTER_SDK_VERSION}','https://github.com/flutter/flutter.git'`
+    expect(github).toContain(flutterInstall)
+    expect(azure).toContain(flutterInstall)
+    expect(github).toContain(`'pub','get'`)
+    expect(azure).toContain(`'pub','get'`)
+    expect(github).toContain('No Flutter projects - skipping.')
+    expect(azure).toContain('No Flutter projects - skipping.')
   })
 })
 
@@ -883,12 +973,20 @@ describe('applyOverlay', () => {
       'npm',
       'github-actions',
       'pip',
+      'pub',
     ])
     // pip covers wherever a Python project might later land (add python-*),
     // via directories that currently match nothing — not an error for Dependabot.
     expect(
       parsed.updates.find(update => update['package-ecosystem'] === 'pip')?.directories
     ).toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
+    // pub, same reasoning, for the three directories Flutter projects land in.
+    // Per-project rather than just "/" because each pub workspace member
+    // declares its own dependencies even though they all resolve through the
+    // single root pubspec.lock.
+    expect(
+      parsed.updates.find(update => update['package-ecosystem'] === 'pub')?.directories
+    ).toEqual(['/apps/*', '/packages/*', '/libs/*'])
   })
 
   it('writes .github/dependabot.yml for ci: "both" too', () => {

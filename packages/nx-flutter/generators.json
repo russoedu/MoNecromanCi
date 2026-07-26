@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "generators": {
+    "application": {
+      "factory": "./dist/generators/application/generator",
+      "schema": "./dist/generators/application/schema.json",
+      "description": "Create a Flutter web application (pub workspace member + project.json with lint/test/build/package targets)."
+    },
+    "library": {
+      "factory": "./dist/generators/library/generator",
+      "schema": "./dist/generators/library/schema.json",
+      "description": "Create a publishable Flutter/Dart package (adds a project-level versionActions override so nx release versions pubspec.yaml)."
+    },
+    "internal-library": {
+      "factory": "./dist/generators/internalLibrary/generator",
+      "schema": "./dist/generators/internalLibrary/schema.json",
+      "description": "Create a private, never-published Flutter/Dart package (lint/test only)."
+    }
+  }
+}

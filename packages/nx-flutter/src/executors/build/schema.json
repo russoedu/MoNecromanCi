@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxFlutterBuild",
+  "title": "Build a Flutter web bundle",
+  "type": "object",
+  "properties": {
+    "outputPath": {
+      "type": "string",
+      "description": "Workspace-relative output directory for the web bundle (e.g. dist/apps/web)."
+    }
+  },
+  "required": ["outputPath"]
+}
