@@ -291,7 +291,16 @@ lint,test,build`. Pushes to `main` then:
   the raw token twine needs for the Python publish. Skipped cleanly when there
   is nothing to release. A guarded step installs the fixed Python toolchain
   (`ruff`/`pytest`/`build`/`twine`/`pip-audit`) before any Python target runs,
-  skipped cleanly on a workspace with no Python projects.
+  skipped cleanly on a workspace with no Python projects. On a `--ci=github`
+  workspace this same step also creates a **GitHub Release per project**, with
+  a changelog Nx generates from conventional commits — `nx release` pushes the
+  tag itself here (needs `GITHUB_TOKEN`, which GitHub Actions provides for
+  free under the workflow's own `contents: write` permission), so there's no
+  separate explicit `git push origin --tags` step on this provider. `--ci=azure`
+  and `--ci=both` keep today's behaviour (no GitHub Release, explicit tag
+  push) — GitHub Release creation only turns on when GitHub Actions is the
+  *only* configured provider, since that's the one case a `GITHUB_TOKEN` is
+  guaranteed to exist.
 
 **npm auth** is the base64 `PAT`, read the same way on both providers but from
 a different place: on Azure Pipelines, a **variable group**
@@ -400,8 +409,13 @@ than a surprise:
   inside the published `drop` artifact is the deploy input. Deploying it means
   Azure's Oryx build installing real dependencies (`npm install`/`pip install`)
   from the zipped manifest — no `node_modules`/venv is bundled.
-- Changelog files are off (unpushable under the tag-only model); the git tag
-  history is the changelog for now.
+- Changelog **files** are off everywhere (unpushable under the tag-only
+  model — `git.commit` stays `false`, so a written `CHANGELOG.md` would just
+  be discarded at the end of every CI run). On a `--ci=github` workspace (and
+  only that one — see below) each release still gets a real changelog: Nx
+  generates it from conventional commits and posts it straight to a GitHub
+  Release, with no file ever touched. `--ci=azure` and `--ci=both` fall back
+  to the git tag history as the changelog, same as before.
 - **No lock file for Python** — plain pip has none, matching the company
   standard this migration was for. A published wheel's `Requires-Dist` mirrors
   whatever specifier the `pyproject.toml` declares (e.g. `tomli>=2.0.0`)

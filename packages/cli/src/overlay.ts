@@ -160,7 +160,7 @@ export function npmrcContent(registry: RegistryConfig, scope: string): string {
 }
 
 /**
- * The `release` block merged into a generated workspace's `nx.json`.
+ * Builds the `release` block merged into a generated workspace's `nx.json`.
  *
  * @remarks
  * The tag-only model: versions are computed from conventional commits since
@@ -169,8 +169,7 @@ export function npmrcContent(registry: RegistryConfig, scope: string): string {
  * pushed — so a protected `main` never rejects a release, and future runs
  * resolve versions from tag names, not from a committed `package.json`.
  * `fallbackCurrentVersionResolver: 'disk'` keeps a brand-new package (no tag
- * yet) from hard-erroring. Changelog files are disabled because they would be
- * unpushable under the tag-only model.
+ * yet) from hard-erroring.
  *
  * The git options live under a top-level `git` (not `version.git`): the
  * guarded CI release step and the generated `release:preview` script both run
@@ -180,23 +179,38 @@ export function npmrcContent(registry: RegistryConfig, scope: string): string {
  * of the bare `version` subcommand's own requirement, which is why the two
  * forms aren't interchangeable (verified empirically).
  *
- * `push: false` here is deliberate, not an oversight: the combined
- * `nx release` command's own final push (`release.js`, after tagging) only
- * runs when a remote GitHub/GitLab Release is being created
- * (`shouldCreateWorkspaceRemoteRelease`), which this config never enables —
- * so that push never fires. The *only* push Nx does run is an internal one
- * buried inside the version step, which happens **before** the tag exists
- * (tagging is deliberately suppressed there and done later, by `release.js`
- * itself) — so even with `pushArgs: '--tags'` that earlier push has no new
- * tag to push yet, and the tag is left local-only (verified empirically
- * against a real CI run: the release step and publish both report success,
- * "Pushing to git remote" logs *before* "Tagging commit with git", and the
- * new tag never reaches `origin`, even though the version it names does
- * reach npm — a silent, permanent mismatch that makes every subsequent
- * release recompute and re-skip the same already-published version forever).
- * Disabling Nx's own push entirely and pushing tags explicitly, once, after
- * tagging is guaranteed to have happened (the CI step below), sidesteps this
- * ordering bug rather than fighting it.
+ * **GitHub Releases (`ci === 'github'` only).** Verified empirically against
+ * the pinned Nx version (23.1.0, real `--dry-run` runs, and the installed
+ * `release.js` source) that the combined `nx release` command now tags
+ * *before* it pushes — an earlier version of this comment described a bug
+ * where Nx's internal push fired before the tag existed, silently losing
+ * every tag; that ordering bug no longer reproduces on this pinned version.
+ * Nx itself also refuses to enable `createRelease` while `git.push: false`
+ * (hard error: "createRelease... cannot be enabled when git push is
+ * explicitly disabled"), so `push: true` here is required, not optional, once
+ * `createRelease` is on. `changelog.projectChangelogs.file: false` sends the
+ * generated changelog content straight into the GitHub Release body without
+ * writing an unpushable `CHANGELOG.md` (`git.commit` stays `false`, so a
+ * written file would just be silently discarded at the end of every CI run).
+ * `workspaceChangelog` stays `false` for every provider: projects release
+ * independently (see below), so only per-project changelogs/releases make
+ * sense — a single workspace-wide changelog would conflate unrelated
+ * packages' histories. `GITHUB_TOKEN` (GitHub Actions' own built-in token,
+ * already sufficient under the `contents: write` permission the workflow
+ * already grants) is exported in {@link githubActionsYaml}'s release step;
+ * once it's pushing anyway, {@link githubActionsYaml} drops its separate
+ * explicit `git push origin --tags` step as redundant.
+ *
+ * **Azure-only and `both`** deliberately keep today's `push: false` /
+ * no-`createRelease` behaviour. GitHub Releases only make sense when the repo
+ * is actually hosted on GitHub, which `ci` alone cannot confirm for `'azure'`
+ * (Azure Pipelines can build a GitHub-hosted repo too) or safely guarantee
+ * for `'both'` (both pipeline files exist; whichever one actually executes
+ * might be the Azure one, which has no `GITHUB_TOKEN` to give Nx) — so this
+ * scope is intentionally limited to the one case where a `GITHUB_TOKEN` is
+ * guaranteed to exist: GitHub Actions as the *only* configured provider.
+ * {@link azurePipelinesYaml} is unchanged and keeps its own explicit
+ * `git push origin --tags` step for exactly this reason.
  *
  * Two directories are released: `packages/*` (publishable **npm** libraries)
  * and `python-packages/*` (publishable **Python** packages) — deliberately one
@@ -214,25 +228,40 @@ export function npmrcContent(registry: RegistryConfig, scope: string): string {
  * one group correctly.
  * Internal libraries live in `libs/` and apps in `apps/`, so release scoping
  * still needs no custom tags.
+ *
+ * @param ci - Which CI provider(s) the workspace generates a pipeline for —
+ * only `'github'` (GitHub Actions and nothing else) turns on GitHub Release
+ * creation; see the remarks above for why `'azure'` and `'both'` do not.
+ * @returns The object to merge onto `nx.json`'s `release` key.
+ * @throws Never - builds a plain object with no I/O.
+ * @typeParam None - this function has no generic type parameters.
  */
-export const RELEASE_CONFIG = {
-  projectsRelationship: 'independent',
-  projects: ['packages/*', 'python-packages/*'],
-  releaseTag: { pattern: '{projectName}@{version}' },
-  git: { commit: false, tag: true, push: false },
-  version: {
-    conventionalCommits: true,
-    fallbackCurrentVersionResolver: 'disk',
-    // Build only what is being released. Without this, @nx/js:lib's generator
-    // defaults the pre-version command to building EVERY project, so a broken
-    // (or merely slow) app build would block releasing unrelated packages.
-    // Set here at `new` time it wins: the generator only fills this in when
-    // absent (it spreads the existing release.version over its default). Both
-    // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
-    preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
-  },
-  changelog: { workspaceChangelog: false },
-} as const
+export function releaseConfig(ci: CiProvider) {
+  const githubReleases = ci === 'github'
+  return {
+    projectsRelationship: 'independent',
+    projects: ['packages/*', 'python-packages/*'],
+    releaseTag: { pattern: '{projectName}@{version}' },
+    git: { commit: false, tag: true, push: githubReleases },
+    version: {
+      conventionalCommits: true,
+      fallbackCurrentVersionResolver: 'disk',
+      // Build only what is being released. Without this, @nx/js:lib's generator
+      // defaults the pre-version command to building EVERY project, so a broken
+      // (or merely slow) app build would block releasing unrelated packages.
+      // Set here at `new` time it wins: the generator only fills this in when
+      // absent (it spreads the existing release.version over its default). Both
+      // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
+      preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
+    },
+    changelog: githubReleases
+      ? {
+          workspaceChangelog: false,
+          projectChangelogs: { createRelease: 'github', file: false },
+        }
+      : { workspaceChangelog: false },
+  } as const
+}
 
 /**
  * The `sync` block merged into a generated workspace's `nx.json`.
@@ -265,12 +294,18 @@ export const SYNC_CONFIG = { applyChanges: true } as const
  * default for.
  *
  * @param nxJson - The parsed `nx.json` produced by `create-nx-workspace`.
+ * @param ci - Which CI provider(s) the workspace generates a pipeline for —
+ * forwarded to {@link releaseConfig} to decide whether GitHub Release
+ * creation is turned on.
  * @returns A new object with `release` (and `defaultBase: 'main'`) set.
  * @throws Never - performs a pure object merge with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withReleaseConfig(nxJson: Record<string, unknown>): Record<string, unknown> {
-  return { ...nxJson, defaultBase: 'main', release: RELEASE_CONFIG }
+export function withReleaseConfig(
+  nxJson: Record<string, unknown>,
+  ci: CiProvider
+): Record<string, unknown> {
+  return { ...nxJson, defaultBase: 'main', release: releaseConfig(ci) }
 }
 
 /**
@@ -1107,13 +1142,18 @@ steps:
 export function githubActionsYaml(
   agent: string,
   pythonPublishUrl?: string,
-  registryKind: RegistryConfig['kind'] = 'azure-artifacts'
+  registryKind: RegistryConfig['kind'] = 'azure-artifacts',
+  ci: CiProvider = 'github'
 ): string {
   const onMain = `github.event_name != 'pull_request' && github.ref_name == 'main'`
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(
     registryKind,
     name => `\${{ secrets.${name} }}`
   )
+  // Matches releaseConfig(ci)'s own condition exactly — GitHub Release
+  // creation (and therefore Nx's own tag push) is only ever on when GitHub
+  // Actions is the *only* configured provider; see releaseConfig's remarks.
+  const githubReleases = ci === 'github'
   return `name: CI
 
 # Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
@@ -1129,7 +1169,8 @@ on:
     branches: [main]
 
 permissions:
-  # Lets the release step push the version tag nx release creates back to main.
+  # Lets the release step push the version tag nx release creates back to main,
+  # and (github-only provider) create the GitHub Release itself.
   contents: write
 
 jobs:
@@ -1236,13 +1277,30 @@ jobs:
       # (python-packages/*) — conventional commits, tag-only push. Portable guard:
       # nx release errors on an empty scope, so skip cleanly when there is nothing
       # to release. When there are Python packages and an Azure feed, twine
-      # publish credentials are exported (raw PAT, decoded from the base64 secret).
+      # publish credentials are exported (raw PAT, decoded from the base64 secret).${
+        githubReleases
+          ? `
+      # This provider also creates a per-project GitHub Release (changelog
+      # generated from conventional commits since that project's last tag),
+      # which is why 'nx release' pushes the tag itself here — see
+      # releaseConfig's remarks for why that is safe on this Nx version and
+      # why every other provider combination keeps the explicit push step below.`
+          : ''
+      }
       - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
-        name: Release — version, tag and publish (npm + Python)
+        name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python)
         if: \${{ ${onMain} }}
         env:
-          ${npmAuthName}: ${npmAuthValue}
-
+          ${npmAuthName}: ${npmAuthValue}${
+            githubReleases
+              ? `
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}`
+              : ''
+          }
+${
+  githubReleases
+    ? ''
+    : `
       # nx release's own git push (release.git.push) is deliberately left off: it
       # only runs when a remote GitHub/GitLab Release is configured, which this
       # workflow never does, so it would never push the tag the step above just
@@ -1252,6 +1310,7 @@ jobs:
         name: Push release tags (nx release's own push never runs without a remote Release configured)
         if: \${{ ${onMain} }}
 `
+}`
 }
 
 /**
@@ -1367,7 +1426,10 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
-  writeFileEnsured(nxJsonPath, toJson({ ...withReleaseConfig(nxJson), generators, sync, mnci }))
+  writeFileEnsured(
+    nxJsonPath,
+    toJson({ ...withReleaseConfig(nxJson, options.ci), generators, sync, mnci })
+  )
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,
@@ -1418,7 +1480,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   if (options.ci === 'github' || options.ci === 'both') {
     writeFileEnsured(
       join(workspaceRoot, '.github/workflows/ci.yml'),
-      githubActionsYaml(options.agent, publishUrl, options.registry.kind)
+      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci)
     )
     writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), DEPENDABOT_CONFIG)
   }
