@@ -82,6 +82,34 @@ describe('runAdd npm-lib', () => {
     expect(eslintConfig).toContain('@nx/dependency-checks')
   })
 
+  it('teaches the dependency check to ignore the test toolchain, which is never published', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
+    // Regression guard: rollup bundles from the entry point only, so neither the
+    // Vitest config nor the spec files reach the published package. Without these
+    // a vitest-stack workspace failed `npm run lint` on a freshly generated
+    // npm-lib — Nx's own spec imports `vitest`, and @nx/dependency-checks then
+    // demanded it be declared as a runtime dependency.
+    expect(eslintConfig).toContain('{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}')
+    // `.spec` only: that is what every Nx generator emits, and covering an
+    // unused `.test` glob too would drag an eslint-disable comment into the
+    // generated file — which the consuming workspace could then flag as an
+    // unused directive.
+    expect(eslintConfig).toContain('{projectRoot}/**/*.spec.{js,ts,jsx,tsx}')
+    expect(eslintConfig).not.toContain('eslint-disable')
+  })
+
+  it('emits an eslint config whose backticked prose does not break the template literal', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    // The config is built from a JS template literal, so an unescaped backtick in
+    // an explanatory comment would silently truncate the generated file.
+    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
+    expect(eslintConfig.trimEnd().endsWith('];')).toBe(true)
+    expect(eslintConfig).toContain('export default [')
+  })
+
   it('prefers an explicit --scope for a publishable lib', async () => {
     await runAdd('npm-lib', 'sdk', { scope: '@acme' })
 

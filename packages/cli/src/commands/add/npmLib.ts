@@ -43,6 +43,17 @@ export default [
           ignoredFiles: [
             '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
             '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
+            // Same reasoning as the two config files above, extended to the test
+            // toolchain: rollup bundles from the entry point only, so neither the
+            // Vitest config nor the spec files reach the published package — their
+            // imports must not drive the published manifest.
+            //
+            // Without this, a vitest-stack workspace fails \`npm run lint\` on a
+            // freshly generated npm-lib: Nx's own spec imports \`vitest\`, and
+            // @nx/dependency-checks then demands it be declared as a runtime
+            // dependency of a package that never uses it at runtime.
+            '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
+            '{projectRoot}/**/*.spec.{js,ts,jsx,tsx}',
           ],
         },
       ],
