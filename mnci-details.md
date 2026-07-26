@@ -118,6 +118,24 @@ only mnci-owned files — never project source or `project.json` targets.
 - **Flutter:** the CLI passes no `--directory`, so the plugin's defaults apply
   (`apps/`, `packages/`, `libs/`).
 
+**Every `add` also registers local-dev commands.** After generating and
+target-wiring a project, every `add/*.ts` kind function calls
+`registerProjectCommands` (`commands/add/shared.ts`), which writes root
+`package.json` scripts — `<name>:build` (when the kind has a build target),
+`<name>:qa` (`nx run <name>:lint && nx run <name>:test`, always), and
+`<name>:start` (only kinds with a real dev-server story — never a library) —
+and mirrors them as VS Code Tasks in `<workspace-name>.code-workspace`.
+Idempotent: a repeat `add` of the same name overwrites its own entries. Where
+no dev-server target already existed, mnci writes a small `nx:run-commands`
+`start` target itself: `go run .` (`go-app`), `flutter run -d chrome`
+(`flutter-app`), `python3 main.py` (`python-app` — mnci also writes that
+`main.py`, since the plugin's own sample module has no entry point), and
+`func start` for `node-function-app`/`python-function-app` (which have real
+`host.json` wiring). `react-app`/`node-app` route through the generator's own
+inferred `serve` target instead. `go-function-app` deliberately gets no
+`:start`: it writes no Azure Functions custom-handler config, so there is
+nothing for `func start` to attach to — a known gap, not an oversight.
+
 **Adding an 18th kind** requires touching, at minimum: the `ProjectKind` union,
 `PROJECT_KINDS`, the module import, and a `switch` case in `add.ts`. A missing
 `switch` case is a **compile-time error** (`const exhaustive: never`), so it

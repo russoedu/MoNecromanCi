@@ -122,6 +122,15 @@ describe('runAdd node-app', () => {
     expect(manifest.nx.targets.package.options.command).toContain(
       `writeZip('dist/drop/node-app-svc.zip')`
     )
+
+    // The root package.json gets discoverable local-dev scripts, routed
+    // through the generator's own inferred 'serve' target for :start.
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['svc:build']).toBe('nx run svc:build')
+    expect(rootManifest.scripts['svc:qa']).toBe('nx run svc:lint && nx run svc:test')
+    expect(rootManifest.scripts['svc:start']).toBe('nx run svc:serve')
   })
 
   it('passes the vitest runner from nx.json to the node generator', async () => {
@@ -229,8 +238,10 @@ describe('runAdd node-function-app', () => {
     )
 
     // The manifest is repaired for the Azure deploy: `main` points at the
-    // esbuild dist shim, and the real dependency is declared (for Oryx's
-    // deploy-time npm install) — the generator's own `nx` targets survive.
+    // esbuild dist shim relative to this manifest (the same relative layout
+    // both locally and once unzipped — see the `package` target below), and
+    // the real dependency is declared (for Oryx's deploy-time npm install) —
+    // the generator's own `nx` targets survive.
     const manifest = JSON.parse(
       readFileSync(join(workspaceRoot, 'apps/api/package.json'), 'utf8')
     ) as {
@@ -238,12 +249,14 @@ describe('runAdd node-function-app', () => {
       dependencies: Record<string, string>
       nx: { targets: Record<string, unknown> }
     }
-    expect(manifest.main).toBe('main.js')
+    expect(manifest.main).toBe('dist/main.js')
     expect(manifest.dependencies['@azure/functions']).toBe('^4.16.2')
     expect(manifest.nx.targets.build).toEqual({})
 
-    // Package target zips the dist output together with host.json and the
-    // repaired manifest — no node_modules bundled (Oryx installs at deploy).
+    // Package target zips the dist output — nested under 'dist/', not
+    // flattened — together with host.json and the repaired manifest, so the
+    // unzipped layout matches the source layout exactly. No node_modules
+    // bundled (Oryx installs at deploy).
     expect(manifest.nx.targets.package).toMatchObject({
       executor: 'nx:run-commands',
       dependsOn: ['build'],
@@ -251,10 +264,26 @@ describe('runAdd node-function-app', () => {
     })
     const packageCommand = (manifest.nx.targets.package as { options: { command: string } }).options
       .command
-    expect(packageCommand).toContain(`addLocalFolder('apps/api/dist')`)
+    expect(packageCommand).toContain(`addLocalFolder('apps/api/dist','dist')`)
     expect(packageCommand).toContain(`addLocalFile('apps/api/host.json')`)
     expect(packageCommand).toContain(`addLocalFile('apps/api/package.json')`)
     expect(packageCommand).toContain(`writeZip('dist/drop/node-function-app-api.zip')`)
+
+    // A local `func start`, wired through Nx so it depends on `build` first.
+    expect(manifest.nx.targets.start).toMatchObject({
+      executor: 'nx:run-commands',
+      dependsOn: ['build'],
+      continuous: true,
+      options: { command: 'func start', cwd: 'apps/api' },
+    })
+
+    // The root package.json gets the discoverable <name>:build/:qa/:start scripts.
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
+    expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
+    expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
   })
 
   it('skips the @azure/functions install when it is already a dependency', async () => {

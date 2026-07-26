@@ -392,7 +392,13 @@ package-lock.json
  *
  * @remarks
  * Creates a single .code-workspace file that configures the entire monorepo:
- * folder structure, recommended extensions (ESLint, Prettier), and workspace settings.
+ * folder structure, recommended extensions (ESLint, Prettier), workspace
+ * settings, and a `tasks` array. The array starts empty; `add/*.ts`'s
+ * `registerProjectCommands` (`commands/add/shared.ts`) appends a
+ * `build`/`qa`/`start` task per project as it is added, so this template
+ * itself carries no project-specific content — it must stay generic across
+ * every `mnci new`-generated workspace, not just this repo's own dogfooded
+ * root.
  * Users open this file in VS Code (`File > Open Workspace from File`).
  *
  * @param workspaceName - The workspace name.
@@ -403,12 +409,7 @@ package-lock.json
 export function vscodeWorkspace(workspaceName: string): string {
   return JSON.stringify(
     {
-      folders: [
-        { path: '.', name: workspaceName },
-        { path: 'packages/cli', name: '@mnci/cli' },
-        { path: 'packages/nx-python-pip', name: '@mnci/nx-python-pip' },
-        { path: 'libs/monecromanci-v2', name: '@mnci/monecromanci' },
-      ],
+      folders: [{ path: '.', name: workspaceName }],
       settings: {
         'eslint.validate': [
           'javascript',
@@ -443,6 +444,7 @@ export function vscodeWorkspace(workspaceName: string): string {
           'firsttris.vscode-jest-runner',
         ],
       },
+      tasks: { version: '2.0.0', tasks: [] },
     },
     null,
     2

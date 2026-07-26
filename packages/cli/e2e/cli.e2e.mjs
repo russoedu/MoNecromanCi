@@ -689,12 +689,24 @@ const nodeFunctionAppManifest = JSON.parse(
 )
 enforce(
   'node function app manifest repaired (main points at the esbuild dist shim, real Azure Functions dependency declared)',
-  nodeFunctionAppManifest.main === 'main.js' &&
+  nodeFunctionAppManifest.main === 'dist/main.js' &&
     Boolean(nodeFunctionAppManifest.dependencies?.['@azure/functions'])
+)
+enforce(
+  // dist/main.js relative to this manifest is the same layout locally
+  // (apps/api/{host.json,package.json,dist/main.js}) and once the deploy zip
+  // is unzipped — a plain 'main.js' (the pre-fix value) never resolves
+  // locally, since only 'dist/main.js' exists before a manual copy.
+  "node function app's main field actually resolves to a real file — what makes local `func start` work",
+  existsSync(path.join(workspace, 'apps/api', nodeFunctionAppManifest.main))
 )
 enforce(
   'node function app has a package target',
   Boolean(nodeFunctionAppManifest.nx?.targets?.package)
+)
+enforce(
+  'node function app has a local `func start` target, wired through Nx',
+  nodeFunctionAppManifest.nx?.targets?.start?.options?.command === 'func start'
 )
 enforce(
   'node function app test target runs green (sample spec passes)',
@@ -715,8 +727,11 @@ const zipEntries = existsSync(nodeFunctionAppZip)
   ? new AdmZip(nodeFunctionAppZip).getEntries().map(entry => entry.entryName)
   : []
 enforce(
-  'node function app zip contains the dist shim, host.json and the repaired manifest at its root',
-  zipEntries.includes('main.js') &&
+  // Nested under dist/, not flattened — the same relative layout as the
+  // source directory, so the manifest's `main: 'dist/main.js'` resolves
+  // identically whether run locally or from this unzipped deploy artifact.
+  'node function app zip nests the dist shim under dist/, alongside host.json and the repaired manifest',
+  zipEntries.includes('dist/main.js') &&
     zipEntries.includes('host.json') &&
     zipEntries.includes('package.json')
 )

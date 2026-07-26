@@ -123,6 +123,26 @@ describe('runAdd go', () => {
     expect(JSON.stringify(targets.package)).toContain('dist/drop/go-app-api.zip')
   })
 
+  it('wires a local `go run .` start target and the discoverable root scripts', async () => {
+    seedProjectJson('apps/api', 'api')
+
+    await runAdd('go-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets.start).toMatchObject({
+      executor: 'nx:run-commands',
+      continuous: true,
+      options: { command: 'go run .', cwd: 'apps/api' },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
+    expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
+    expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+  })
+
   it('builds into a dist DIRECTORY, not a bare file, so Nx can cache the output', async () => {
     seedProjectJson('apps/api', 'api')
 
@@ -167,6 +187,15 @@ describe('runAdd go', () => {
     )
     const { targets } = readProjectJson('apps/handler')
     expect(JSON.stringify(targets.package)).toContain('dist/drop/go-function-app-handler.zip')
+
+    // No `start` target: there is no Azure Functions custom-handler wiring
+    // for Go yet, so `func start` would just fail — a known gap, not a script.
+    expect(targets.start).toBeUndefined()
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['handler:build']).toBe('nx run handler:build')
+    expect(rootManifest.scripts['handler:start']).toBeUndefined()
   })
 
   it('adds a publishable Go lib under packages/ with test and lint but no build or publish target', async () => {

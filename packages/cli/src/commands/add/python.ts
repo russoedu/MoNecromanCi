@@ -4,7 +4,7 @@ import { runNx, runShell } from '../../nx'
 import { promptText } from '../../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin, type AddOptions } from './shared'
+import { ensureAdmZip, hasPlugin, registerProjectCommands, type AddOptions } from './shared'
 
 /**
  * Fails fast, with an install hint, when Python is not on the PATH.
@@ -147,6 +147,80 @@ function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<strin
 }
 
 /**
+ * The runnable entry point written into every generated Python app.
+ *
+ * @remarks
+ * `@mnci/nx-python-pip:application` scaffolds a module (`<name>/__init__.py`)
+ * shaped like a library — no `if __name__ == '__main__':` block, since the
+ * plugin has no opinion on what "running" an app means. This file is what
+ * gives `mnci add python-app` a real local-dev entry point for
+ * {@link pythonAppStartTarget} to run, independent of whatever the sample
+ * module's own function happens to be named — so it survives that code being
+ * deleted or rewritten.
+ *
+ * @param name - The project name (used only in the printed message).
+ * @returns The `main.py` file contents.
+ * @throws Never - pure string formatting.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function pythonAppMain(name: string): string {
+  return `def main() -> None:
+    print('${name} is running')
+
+
+if __name__ == '__main__':
+    main()
+`
+}
+
+/**
+ * The `start` target for a Python app: `python3 main.py`, locally.
+ *
+ * @remarks
+ * `continuous: true` marks it as a long-running dev task, matching the shape
+ * every other kind's custom `start` target uses — Nx does not try to cache or
+ * wait out a process that never exits on its own (a Python "app" here is
+ * whatever `main.py` does; many will exit immediately, but the target shape
+ * stays uniform rather than guessing).
+ *
+ * @param name - The Python app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pythonAppStartTarget(name: string): Record<string, unknown> {
+  return {
+    executor: 'nx:run-commands',
+    continuous: true,
+    options: { command: 'python3 main.py', cwd: `apps/${name}` },
+  }
+}
+
+/**
+ * The `start` target for a Python Azure Function: `func start`, locally.
+ *
+ * @remarks
+ * Unlike the Node function app, this needs no prior `build` — Python function
+ * apps deploy as source ({@link pythonFunctionAppPackageTarget}), so
+ * `function_app.py` + `host.json` already sit together in the project root
+ * exactly as Core Tools expects. Requires Azure Functions Core Tools (and the
+ * Python worker) locally — never a prerequisite for
+ * `add python-function-app` itself.
+ *
+ * @param name - The function app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pythonFunctionAppStartTarget(name: string): Record<string, unknown> {
+  return {
+    executor: 'nx:run-commands',
+    continuous: true,
+    options: { command: 'func start', cwd: `apps/${name}` },
+  }
+}
+
+/**
  * The `package` target for a Python app: zip its built wheel into the drop.
  *
  * @remarks
@@ -231,9 +305,12 @@ export function addPythonApp(workspaceRoot: string, name: string): void {
     ['g', '@mnci/nx-python-pip:application', name, `--directory=apps/${name}`, '--no-interactive'],
     workspaceRoot
   )
+  writeFileEnsured(join(workspaceRoot, 'apps', name, 'main.py'), pythonAppMain(name))
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonAppPackageTarget(name),
+    start: pythonAppStartTarget(name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
 
 /**
@@ -269,7 +346,9 @@ export function addPythonFunctionApp(workspaceRoot: string, name: string): void 
   const moduleDirectory = pythonModuleDirectory(name)
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonFunctionAppPackageTarget(name, moduleDirectory),
+    start: pythonFunctionAppStartTarget(name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: false, start: `nx run ${name}:start` })
 }
 
 /**
@@ -302,6 +381,7 @@ export function addPythonLib(workspaceRoot: string, name: string): void {
     ],
     workspaceRoot
   )
+  registerProjectCommands(workspaceRoot, name, { build: true })
 }
 
 /**
@@ -334,6 +414,7 @@ export function addPythonInternalLib(workspaceRoot: string, name: string): void 
     ],
     workspaceRoot
   )
+  registerProjectCommands(workspaceRoot, name, { build: false })
 }
 
 /**

@@ -3,7 +3,13 @@ import { join } from 'node:path'
 import { runNx } from '../../nx'
 import { fileExists, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { addNxTargets, ensureAdmZip, hasPlugin, type WorkspaceStack } from './shared'
+import {
+  addNxTargets,
+  ensureAdmZip,
+  hasPlugin,
+  registerProjectCommands,
+  type WorkspaceStack,
+} from './shared'
 
 /**
  * Ensures an Nx plugin is installed in the workspace, installing it on first use.
@@ -178,4 +184,7 @@ export function addReactApp(workspaceRoot: string, name: string, stack: Workspac
   }
   allowEnvFiles(workspaceRoot)
   addNxTargets(join(reactAppRoot, 'package.json'), reactAppTargets(name))
+  // Vite's inferred 'serve' target (the dev server) is what @nx/react:app
+  // already wires — no per-env variant needed for local dev, unlike build.
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
 }

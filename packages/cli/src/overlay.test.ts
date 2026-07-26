@@ -1091,9 +1091,19 @@ describe('applyOverlay', () => {
     // Check VS Code workspace file
     const workspace = JSON.parse(
       readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')
-    ) as { extensions: { recommendations: string[] } }
+    ) as {
+      folders: { path: string; name: string }[]
+      extensions: { recommendations: string[] }
+      tasks: { version: string; tasks: unknown[] }
+    }
     expect(workspace.extensions.recommendations).toContain('dbaeumer.vscode-eslint')
     expect(workspace.extensions.recommendations).toContain('esbenp.prettier-vscode')
+    // Generic across every generated workspace — no hardcoded package names
+    // from this repo's own dogfooded root leaking into the template.
+    expect(workspace.folders).toEqual([{ path: '.', name: 'demo' }])
+    // Starts empty; `add/*.ts`'s registerProjectCommands appends a task per
+    // project as it's added (see commands/add/shared.test.ts).
+    expect(workspace.tasks).toEqual({ version: '2.0.0', tasks: [] })
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {

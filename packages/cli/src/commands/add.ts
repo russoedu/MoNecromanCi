@@ -17,7 +17,7 @@ import {
   addPythonVendor,
 } from './add/python'
 import { addReactApp } from './add/reactApp'
-import type { AddOptions, WorkspaceStack } from './add/shared'
+import { registerProjectCommands, type AddOptions, type WorkspaceStack } from './add/shared'
 
 export type { AddOptions } from './add/shared'
 
@@ -219,6 +219,7 @@ export async function runAdd(
         workspaceRoot
       )
       markPrivate(join(workspaceRoot, 'libs', resolvedName, 'package.json'))
+      registerProjectCommands(workspaceRoot, resolvedName, { build: true })
       break
     }
     case 'python-app': {

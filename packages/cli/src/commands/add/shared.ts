@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
@@ -150,5 +151,176 @@ export function addNxTargets(manifestPath: string, newTargets: Record<string, un
   writeFileEnsured(
     manifestPath,
     toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } })
+  )
+}
+
+/**
+ * The local-dev commands a newly added project actually has, for {@link registerProjectCommands}.
+ *
+ * @remarks
+ * `qa` (lint then test) is unconditional — every kind has both — so it is not
+ * a field here. `build` and `start` vary by kind: several (`go-lib`,
+ * `python-internal-lib`, `flutter-lib`, ...) have no build target at all, and
+ * only kinds with a genuine local dev-server story get `start` — never a
+ * library, and not `go-function-app` (no Azure Functions custom-handler
+ * wiring exists for Go yet, so a `func start` script would just fail).
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+export interface ProjectCommands {
+  /** Whether this kind has a `build` Nx target — adds `<name>:build` when true. */
+  build: boolean
+  /**
+   * The exact command for `<name>:start` (e.g. `nx run <name>:serve`,
+   * `nx run <name>:start`) — omitted entirely when the kind has no local
+   * dev-server story.
+   */
+  start?: string
+}
+
+/**
+ * Finds the workspace's single `<name>.code-workspace` file.
+ *
+ * @remarks
+ * Its filename is the workspace name, which `add/*.ts` call sites don't
+ * otherwise track past `mnci new` — cheaper to look it up by extension than
+ * to thread the name through every kind module.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The absolute path, or `undefined` when none exists (a workspace
+ * predating this file, or a test fixture that never wrote one).
+ * @throws Never - a missing/unreadable directory yields `undefined`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function findCodeWorkspaceFile(workspaceRoot: string): string | undefined {
+  try {
+    const entry = readdirSync(workspaceRoot).find(file => file.endsWith('.code-workspace'))
+    return entry ? join(workspaceRoot, entry) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reads a `.code-workspace` file, tolerating trailing commas.
+ *
+ * @remarks
+ * `.code-workspace` is VS Code's own JSONC dialect (comments and trailing
+ * commas both allowed) — not strict JSON. Verified empirically: Prettier 3.9
+ * has native `.code-workspace` support and reformats a single-entry array
+ * with a trailing comma, which `JSON.parse` then rejects. Since
+ * `npm run format` is part of mnci's own documented pre-commit routine, a
+ * strict parse here would break on the very first `add` after a real
+ * `format` run.
+ * Comments are not stripped — mnci itself never writes one, and a workspace
+ * that already contains hand-added `//` comments predates this handling
+ * regardless.
+ *
+ * @param path - Absolute path to the `.code-workspace` file.
+ * @returns The parsed JSON value.
+ * @throws Propagates `fs`/`JSON.parse` errors for anything not a trailing comma.
+ * @typeParam T - The expected shape of the parsed JSON.
+ */
+function readCodeWorkspaceFile<T>(path: string): T {
+  const contents = readFileSync(path, 'utf8').replaceAll(/,(\s*[}\]])/g, '$1')
+  return JSON.parse(contents) as T
+}
+
+/**
+ * One VS Code task for a project's script, matching its root `package.json` entry.
+ *
+ * @remarks
+ * `start` tasks run a dev server that never exits on its own, so they are
+ * marked `isBackground` (VS Code won't wait for them to finish) rather than
+ * given a `group` — `build`/`qa` do exit, so they get the matching group
+ * VS Code's Command Palette/Tasks menu groups them under.
+ *
+ * @param name - The project name.
+ * @param kind - Which of the three commands this task runs.
+ * @returns The VS Code task object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function projectTask(name: string, kind: 'build' | 'qa' | 'start'): Record<string, unknown> {
+  const script = `${name}:${kind}`
+  const base = { label: `${name}: ${kind}`, type: 'npm', script, problemMatcher: [] }
+  return kind === 'start' ? { ...base, isBackground: true } : { ...base, group: kind }
+}
+
+/**
+ * Registers a newly added project's local-dev commands: root `package.json`
+ * scripts, and matching VS Code tasks in the workspace's `.code-workspace` file.
+ *
+ * @remarks
+ * Every `add/*.ts` kind function calls this once it has finished generating
+ * and target-wiring a project, so `npm run <name>:build`/`:qa`/`:start` (and
+ * the equivalent VS Code Command Palette entries) work immediately — no
+ * separate `mnci upgrade` needed, since these are per-project entries, not
+ * one of the fixed files `applyOverlay()` regenerates.
+ *
+ * `<name>:qa` (`nx run <name>:lint && nx run <name>:test`) is unconditional.
+ * `<name>:build`/`<name>:start` are added only when {@link ProjectCommands}
+ * says the kind actually has them. Idempotent: repeat calls for the same
+ * `name` (a second `add` of the same project) overwrite rather than
+ * duplicate, in both the manifest scripts and the `.code-workspace` tasks
+ * array. A workspace with no `.code-workspace` file (predates it, or a test
+ * fixture) still gets the `package.json` scripts — only the VS Code half is
+ * skipped.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The newly added project's name.
+ * @param commands - Which commands this kind actually has.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing either file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function registerProjectCommands(
+  workspaceRoot: string,
+  name: string,
+  commands: ProjectCommands
+): void {
+  const scripts: Record<string, string> = {
+    [`${name}:qa`]: `nx run ${name}:lint && nx run ${name}:test`,
+  }
+  if (commands.build) {
+    scripts[`${name}:build`] = `nx run ${name}:build`
+  }
+  if (commands.start) {
+    scripts[`${name}:start`] = commands.start
+  }
+
+  const manifestPath = join(workspaceRoot, 'package.json')
+  const manifest = readJson<Record<string, unknown>>(manifestPath)
+  const existingScripts = (manifest.scripts as Record<string, string> | undefined) ?? {}
+  writeFileEnsured(
+    manifestPath,
+    toJson({ ...manifest, scripts: { ...existingScripts, ...scripts } })
+  )
+
+  const codeWorkspacePath = findCodeWorkspaceFile(workspaceRoot)
+  if (!codeWorkspacePath) {
+    return
+  }
+  const workspaceFile = readCodeWorkspaceFile<{
+    tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+  }>(codeWorkspacePath)
+  const label = (task: Record<string, unknown>): string => (task.label as string | undefined) ?? ''
+  const existingTasks = (workspaceFile.tasks?.tasks ?? []).filter(
+    task => !label(task).startsWith(`${name}: `)
+  )
+  const newTasks = [
+    projectTask(name, 'qa'),
+    ...(commands.build ? [projectTask(name, 'build')] : []),
+    ...(commands.start ? [projectTask(name, 'start')] : []),
+  ]
+  writeFileEnsured(
+    codeWorkspacePath,
+    toJson({
+      ...workspaceFile,
+      tasks: {
+        version: workspaceFile.tasks?.version ?? '2.0.0',
+        tasks: [...existingTasks, ...newTasks],
+      },
+    })
   )
 }

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin } from './shared'
+import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
 
 /**
  * Fails fast, with an install hint, when Go is not on the PATH.
@@ -262,6 +262,28 @@ function goPackageTarget(tag: string, name: string): Record<string, unknown> {
   }
 }
 
+/**
+ * The `start` target for a Go app: `go run .`, locally.
+ *
+ * @remarks
+ * `go run` compiles and runs from source in one step — unlike
+ * {@link goBuildTarget}, no separate build/`dependsOn` is needed.
+ * `continuous: true` marks it as a long-running dev task, the same shape
+ * every other kind's custom `start` target uses.
+ *
+ * @param name - The Go app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function goStartTarget(name: string): Record<string, unknown> {
+  return {
+    executor: 'nx:run-commands',
+    continuous: true,
+    options: { command: 'go run .', cwd: `apps/${name}` },
+  }
+}
+
 /** Shared preflight for every Go kind: toolchain, plugin and root module. */
 function prepareGo(workspaceRoot: string): void {
   ensureGo(workspaceRoot)
@@ -304,7 +326,9 @@ export function addGoApp(workspaceRoot: string, name: string): void {
     test: goTestTarget(),
     lint: goLintTarget(),
     package: goPackageTarget('go-app', name),
+    start: goStartTarget(name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
 
 /**
@@ -317,6 +341,13 @@ export function addGoApp(workspaceRoot: string, name: string): void {
  * its drop basename (`go-function-app-<name>`). The handler body itself is
  * left to the user: AWS Lambda, Google Cloud Functions and Azure each want a
  * different signature, and mnci does not pick one for you.
+ *
+ * No `start` target, unlike `node-function-app`/`python-function-app`:
+ * `func start` needs a `host.json` (and, for the custom-handler model Go
+ * would use, a matching `customHandler` config), and this kind writes
+ * neither — an honest known gap, not an oversight papered over with a
+ * command that would just fail. `go-app`'s `go run .` doesn't apply either,
+ * since there is no Functions host to dispatch triggers to it.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
@@ -345,6 +376,7 @@ export function addGoFunctionApp(workspaceRoot: string, name: string): void {
     lint: goLintTarget(),
     package: goPackageTarget('go-function-app', name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: true })
 }
 
 /**
@@ -385,6 +417,7 @@ export function addGoLib(workspaceRoot: string, name: string): void {
     test: goTestTarget(),
     lint: goLintTarget(),
   })
+  registerProjectCommands(workspaceRoot, name, { build: false })
 
   const module = goModulePath(workspaceRoot)
   if (module) {
@@ -425,6 +458,7 @@ export function addGoInternalLib(workspaceRoot: string, name: string): void {
     test: goTestTarget(),
     lint: goLintTarget(),
   })
+  registerProjectCommands(workspaceRoot, name, { build: false })
 
   const module = goModulePath(workspaceRoot)
   if (module) {

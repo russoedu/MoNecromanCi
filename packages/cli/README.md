@@ -75,6 +75,43 @@ each a single cross-platform command:
 | `npm run python:install`  | fixed Python toolchain (ruff/pytest/build/twine) + editable-install every Python project — the same two guards CI runs, for local dev |
 | `prepare`                 | `husky` (commit-msg lint hook)                                                                                                        |
 
+## Every `add` also wires local-dev commands
+
+Every `mnci add` (and the inline `internal-lib` case) finishes by calling
+`registerProjectCommands` (`commands/add/shared.ts`), which writes up to three
+root `package.json` scripts for the project just added:
+
+| Script         | Runs                                       | When it's added                                                                                                                                    |
+| -------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>:build` | `nx run <name>:build`                      | the kind has a `build` target (not every kind does — a private lib with nothing to publish, or a Python function app deployed as source, has none) |
+| `<name>:qa`    | `nx run <name>:lint && nx run <name>:test` | always — every kind has both                                                                                                                       |
+| `<name>:start` | the kind's real local-dev command          | only kinds with a genuine dev-server story — never a library                                                                                       |
+
+The same three (when present) are appended as VS Code Tasks into the
+workspace's `<workspace-name>.code-workspace` file, so they also show up
+under **Terminal → Run Task** / the Command Palette — `build`/`qa` grouped
+accordingly, `start` marked `isBackground` since it runs a process that
+doesn't exit on its own. Re-running `add` for the same project name
+overwrites its own scripts/tasks rather than duplicating them.
+
+`:start` resolves differently per kind — an existing generator target where
+one already exists, a small `nx:run-commands` target mnci writes where none
+did:
+
+| Kind(s)                                    | `:start` runs                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `react-app`, `node-app`                    | `nx run <name>:serve` — the generator's own inferred dev-server target                                                                |
+| `node-function-app`, `python-function-app` | `nx run <name>:start` → `func start` (Azure Functions Core Tools, install separately — never a prerequisite for `add` itself)         |
+| `python-app`                               | `nx run <name>:start` → `python3 main.py` — mnci writes a runnable `main.py`, since the plugin's own sample module has no entry point |
+| `go-app`                                   | `nx run <name>:start` → `go run .`                                                                                                    |
+| `flutter-app`                              | `nx run <name>:start` → `flutter run -d chrome` (web is the only platform this plugin builds for)                                     |
+| every library, `go-function-app`           | no `:start` at all — see below                                                                                                        |
+
+**`go-function-app` is a known gap, not an oversight**: unlike the Node and
+Python function-app kinds, it writes no `host.json`/custom-handler config, so
+there is nothing for `func start` to attach to. Shipping a `:start` script
+that would just fail felt worse than being upfront that it doesn't exist yet.
+
 ## What `new` actually does
 
 1. `npx create-nx-workspace@latest <name> --preset=ts` — npm workspaces +
@@ -90,9 +127,10 @@ each a single cross-platform command:
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
    `azure`; `github`/`both` also gets `.github/dependabot.yml` — weekly
    dependency-update PRs), a `<workspace-name>.code-workspace` file (VS Code
-   workspace configuration with folder structure, ESLint/Prettier settings, and
-   recommended extensions — open it in VS Code via `File > Open Workspace from
-File`), and the curated root scripts.
+   workspace configuration with folder structure, ESLint/Prettier settings,
+   recommended extensions, and an empty `tasks` array that `mnci add` fills in
+   per project — see below — open it in VS Code via `File > Open Workspace
+from File`), and the curated root scripts.
 4. Installs the chosen **stack** (see below), `husky` + `@commitlint/*` for
    real, so versions resolve at generation time.
 

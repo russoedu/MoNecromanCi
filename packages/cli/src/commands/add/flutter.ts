@@ -1,6 +1,53 @@
+import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin } from './shared'
+import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
+
+/**
+ * Merges an extra target into a plugin-written `project.json`.
+ *
+ * @remarks
+ * `@mnci/nx-flutter`'s generators write a real `project.json` (lint/test/
+ * build/package), same as `@mnci/nx-python-pip` and `@nx-go/nx-go` — this is
+ * the analogous post-generation merge those two plugins' `add/*.ts` modules
+ * already have their own copy of (`addProjectJsonTargets`), used here only
+ * for the `start` target ({@link flutterAppStartTarget}), which the plugin
+ * itself has no opinion on.
+ *
+ * @param projectJsonPath - Absolute path to the project's `project.json`.
+ * @param newTargets - The targets to merge in.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<string, unknown>): void {
+  const project = readJson<Record<string, unknown>>(projectJsonPath)
+  const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
+  writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
+}
+
+/**
+ * The `start` target for a Flutter app: `flutter run -d chrome`, locally.
+ *
+ * @remarks
+ * Web is the only platform this plugin builds for ({@link addFlutterApp}), so
+ * `-d chrome` matches — hot-reload against the same target the `build`
+ * executor produces. `continuous: true` marks it as a long-running dev-server
+ * task, the same shape every other kind's custom `start` target uses.
+ *
+ * @param name - The Flutter app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function flutterAppStartTarget(name: string): Record<string, unknown> {
+  return {
+    executor: 'nx:run-commands',
+    continuous: true,
+    options: { command: 'flutter run -d chrome', cwd: `apps/${name}` },
+  }
+}
 
 /**
  * Fails fast, with an install hint, when the Flutter SDK is not on the PATH.
@@ -105,6 +152,10 @@ export function addFlutterApp(workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   ensureAdmZip(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:application', name, '--no-interactive'], workspaceRoot)
+  addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
+    start: flutterAppStartTarget(name),
+  })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
 
 /**
@@ -129,6 +180,7 @@ export function addFlutterApp(workspaceRoot: string, name: string): void {
 export function addFlutterLib(workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:library', name, '--no-interactive'], workspaceRoot)
+  registerProjectCommands(workspaceRoot, name, { build: false })
 }
 
 /**
@@ -151,4 +203,5 @@ export function addFlutterLib(workspaceRoot: string, name: string): void {
 export function addFlutterInternalLib(workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:internal-library', name, '--no-interactive'], workspaceRoot)
+  registerProjectCommands(workspaceRoot, name, { build: false })
 }

@@ -2,7 +2,12 @@ import { join } from 'node:path'
 import { runNx } from '../../nx'
 import { promptText } from '../../prompts'
 import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
-import { defaultScope, type AddOptions, type WorkspaceStack } from './shared'
+import {
+  defaultScope,
+  registerProjectCommands,
+  type AddOptions,
+  type WorkspaceStack,
+} from './shared'
 
 /**
  * The per-npm-lib ESLint config written over the generator's default.
@@ -125,6 +130,7 @@ export async function addNpmLib(
     join(workspaceRoot, 'packages', name, 'eslint.config.mjs'),
     NPM_LIB_ESLINT_CONFIG
   )
+  registerProjectCommands(workspaceRoot, name, { build: true })
 }
 
 /**

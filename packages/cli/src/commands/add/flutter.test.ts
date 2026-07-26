@@ -5,7 +5,7 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
@@ -19,6 +19,24 @@ let workspaceRoot: string
 /** The argv of every `runNx` call, flattened for easy matching. */
 function nxCalls(): string[][] {
   return mockRunNx.mock.calls.map(call => call[0] as string[])
+}
+
+/** Pre-creates the `project.json` the (mocked) plugin's app generator would write. */
+function seedProjectJson(relativeDirectory: string, name: string): void {
+  mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
+  writeFileSync(
+    join(workspaceRoot, relativeDirectory, 'project.json'),
+    JSON.stringify({ name, projectType: 'application', targets: { build: {} } })
+  )
+}
+
+/** Reads a generated project.json back. */
+function readProjectJson(relativeDirectory: string): {
+  targets: Record<string, { executor?: string; options?: Record<string, unknown> }>
+} {
+  return JSON.parse(
+    readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8')
+  ) as never
 }
 
 /** The command+argv of every `runShell` call. */
@@ -56,6 +74,8 @@ describe('runAdd flutter', () => {
   })
 
   it('installs the plugin then delegates the app to its application generator', async () => {
+    seedProjectJson('apps/web', 'web')
+
     await runAdd('flutter-app', 'web', {})
 
     expect(mockRunShell).toHaveBeenCalledWith('flutter', ['--version'], workspaceRoot)
@@ -71,9 +91,44 @@ describe('runAdd flutter', () => {
   })
 
   it("installs adm-zip for an app (the zip-into-drop convention is mnci's, not the plugin's)", async () => {
+    seedProjectJson('apps/web', 'web')
+
     await runAdd('flutter-app', 'web', {})
 
     expect(shellCalls()).toContain('npm install --save-dev adm-zip --no-audit --no-fund')
+  })
+
+  it('wires a local `flutter run -d chrome` start target and the discoverable root scripts', async () => {
+    seedProjectJson('apps/web', 'web')
+
+    await runAdd('flutter-app', 'web', {})
+
+    const project = readProjectJson('apps/web')
+    expect(project.targets.start).toMatchObject({
+      executor: 'nx:run-commands',
+      continuous: true,
+      options: { command: 'flutter run -d chrome', cwd: 'apps/web' },
+    })
+    // build survives from the seeded fixture — this call only adds 'start'.
+    expect(project.targets.build).toBeDefined()
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['web:build']).toBe('nx run web:build')
+    expect(rootManifest.scripts['web:qa']).toBe('nx run web:lint && nx run web:test')
+    expect(rootManifest.scripts['web:start']).toBe('nx run web:start')
+  })
+
+  it('registers only build/qa (no start) for a publishable lib — a Dart package has no dev server', async () => {
+    await runAdd('flutter-lib', 'shared', {})
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['shared:qa']).toBe('nx run shared:lint && nx run shared:test')
+    expect(rootManifest.scripts['shared:build']).toBeUndefined()
+    expect(rootManifest.scripts['shared:start']).toBeUndefined()
   })
 
   it('does not install adm-zip for a library — a Dart package is never packed into the drop', async () => {

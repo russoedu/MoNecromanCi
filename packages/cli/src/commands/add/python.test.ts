@@ -92,6 +92,24 @@ describe('runAdd python', () => {
     expect(project.targets.package.options.command).toContain(
       `writeZip('dist/drop/python-app-svc.zip')`
     )
+
+    // A runnable main.py (the plugin's own sample module has no entry point)
+    // plus a local `python3 main.py` start target, wired through Nx.
+    expect(readFileSync(join(workspaceRoot, 'apps/svc/main.py'), 'utf8')).toContain(
+      "if __name__ == '__main__':"
+    )
+    expect(project.targets.start).toMatchObject({
+      executor: 'nx:run-commands',
+      continuous: true,
+      options: { command: 'python3 main.py', cwd: 'apps/svc' },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['svc:build']).toBe('nx run svc:build')
+    expect(rootManifest.scripts['svc:qa']).toBe('nx run svc:lint && nx run svc:test')
+    expect(rootManifest.scripts['svc:start']).toBe('nx run svc:start')
   })
 
   it('adds a Python Azure Function: delegates to @mnci/nx-python-pip:function-application, packages the source zip', async () => {
@@ -133,6 +151,20 @@ describe('runAdd python', () => {
     expect(project.targets.package.options.command).toContain(
       `writeZip('dist/drop/python-function-app-api.zip')`
     )
+
+    // A local `func start` needs no prior build here — the source (function_app.py
+    // + host.json) is the deployable, unlike node-function-app.
+    expect(project.targets.start).toMatchObject({
+      executor: 'nx:run-commands',
+      continuous: true,
+      options: { command: 'func start', cwd: 'apps/api' },
+    })
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+    // No build script: a Python function app has no build target at all.
+    expect(rootManifest.scripts['api:build']).toBeUndefined()
   })
 
   it('adds a publishable Python lib: delegates to @mnci/nx-python-pip:library, no post-generation merge needed', async () => {
@@ -153,6 +185,12 @@ describe('runAdd python', () => {
     expect(() =>
       readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')
     ).toThrow()
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['shared:build']).toBe('nx run shared:build')
+    expect(rootManifest.scripts['shared:start']).toBeUndefined()
   })
 
   it('adds a private Python lib under libs/: delegates to @mnci/nx-python-pip:internal-library', async () => {
@@ -168,6 +206,14 @@ describe('runAdd python', () => {
       ],
       workspaceRoot
     )
+
+    // No build target at all for an internal lib (nothing to publish), so no
+    // <name>:build script — only :qa.
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['core:qa']).toBe('nx run core:lint && nx run core:test')
+    expect(rootManifest.scripts['core:build']).toBeUndefined()
   })
 
   it('fails fast when Python is not installed', async () => {

@@ -6,6 +6,7 @@ import {
   addNxTargets,
   ensureAdmZip,
   hasPlugin,
+  registerProjectCommands,
   type NodeFramework,
   type WorkspaceStack,
 } from './shared'
@@ -139,6 +140,7 @@ export function addNodeApp(
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
     package: nodeAppPackageTarget(name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
 }
 
 /**
@@ -265,16 +267,27 @@ describe('buildGreeting', () => {
  *
  * @remarks
  * `@nx/esbuild:esbuild --bundle=false` writes a `dist/main.js` shim that
- * `require`s the compiled entry (verified empirically) — so the deployable
- * manifest's `main` is simply `main.js`, sitting beside that shim once the
- * `package` target zips `dist` + `host.json` + `package.json` together (see
- * {@link nodeFunctionAppPackageTarget}). `@azure/functions` is added for
- * real (not just referenced): Azure's deploy-time Oryx build reads this
- * manifest's `dependencies` and runs `npm install` there — verified
- * empirically that a plain `npm install` in a simulated deploy folder (no
- * bundled `node_modules`) resolves and runs correctly once the dependency is
- * declared, mirroring exactly how `python-function-app` already relies on
- * Azure's Python Oryx build installing `requirements.txt` at deploy time.
+ * `require`s the compiled entry (verified empirically) — so `main` is
+ * `dist/main.js`, resolved relative to wherever this manifest sits. That
+ * makes the source layout (`host.json` + `package.json` + `dist/main.js`,
+ * once built, all under `apps/<name>`) directly `func start`-able, which
+ * matters: unlike `python-function-app`, there is no pre-build step Azure
+ * Functions Core Tools does for you, so the local `start` target
+ * ({@link nodeFunctionAppStartTarget}) depends on `build` and then runs
+ * `func start` right here, no staging copy needed.
+ * {@link nodeFunctionAppPackageTarget}
+ * mirrors this same relative layout inside the deploy zip (nesting `dist/`
+ * rather than flattening it), so one `main` value is correct for both local
+ * dev and the Azure deploy — verified against a real generated app that
+ * `main.js` sitting flat (the old shape) would have broken `func start`
+ * entirely (`dist/main.js` never exists at `apps/<name>/main.js`).
+ * `@azure/functions` is added for real (not just referenced): Azure's
+ * deploy-time Oryx build reads this manifest's `dependencies` and runs
+ * `npm install` there — verified empirically that a plain `npm install` in a
+ * simulated deploy folder (no bundled `node_modules`) resolves and runs
+ * correctly once the dependency is declared, mirroring exactly how
+ * `python-function-app` already relies on Azure's Python Oryx build
+ * installing `requirements.txt` at deploy time.
  *
  * @param nodeFunctionAppRoot - Absolute path to the function app's directory.
  * @param workspaceRoot - Absolute path to the workspace (to read the
@@ -294,7 +307,7 @@ function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoo
     manifestPath,
     toJson({
       ...manifest,
-      main: 'main.js',
+      main: 'dist/main.js',
       dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` },
     })
   )
@@ -305,12 +318,15 @@ function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoo
  *
  * @remarks
  * Zips `apps/<name>/dist` (the esbuild output — the `main.js` shim plus the
- * mirrored source tree) together with `host.json` and the repaired
- * `package.json` into `dist/drop/node-function-app-<name>.zip`. No
- * `node_modules` bundled: Azure's Oryx build installs real dependencies from
- * the zipped `package.json` at deploy time (see
- * {@link repairNodeFunctionAppManifest}). Basename exactly
- * `node-function-app-<name>` (the CI build tag).
+ * mirrored source tree) **nested under `dist/`**, alongside `host.json` and
+ * the repaired `package.json`, into `dist/drop/node-function-app-<name>.zip`
+ * — the exact same relative layout as the source directory, so the deployed
+ * `package.json`'s `main: 'dist/main.js'` resolves identically whether run
+ * locally (`func start` in `apps/<name>`) or from the unzipped deploy
+ * artifact (see {@link repairNodeFunctionAppManifest}). No `node_modules`
+ * bundled: Azure's Oryx build installs real dependencies from the zipped
+ * `package.json` at deploy time. Basename exactly `node-function-app-<name>`
+ * (the CI build tag).
  *
  * @param name - The function app's project name.
  * @returns The nx:run-commands target object.
@@ -320,13 +336,39 @@ function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoo
 function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
   const zip = `dist/drop/node-function-app-${name}.zip`
   const root = `apps/${name}`
-  const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('${root}/dist');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/package.json');z.writeZip('${zip}')"`
+  const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('${root}/dist','dist');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/package.json');z.writeZip('${zip}')"`
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
     // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
+  }
+}
+
+/**
+ * The `start` target for a Node Azure Function: `func start`, locally.
+ *
+ * @remarks
+ * Depends on `build` so `dist/main.js` exists before Core Tools tries to load
+ * it via the manifest's `main` field ({@link repairNodeFunctionAppManifest}).
+ * `continuous: true` marks it as a long-running dev-server task, the same
+ * shape `@nx/js:node`'s own inferred `serve` target uses — Nx does not try to
+ * cache or wait out a process that never exits on its own. Requires Azure
+ * Functions Core Tools locally (never a prerequisite for
+ * `add node-function-app` itself — see `ensureAzureFunctionsPackage`'s docs).
+ *
+ * @param name - The function app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nodeFunctionAppStartTarget(name: string): Record<string, unknown> {
+  return {
+    executor: 'nx:run-commands',
+    dependsOn: ['build'],
+    continuous: true,
+    options: { command: 'func start', cwd: `apps/${name}` },
   }
 }
 
@@ -376,5 +418,7 @@ export function addNodeFunctionApp(
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(nodeFunctionAppRoot, 'package.json'), {
     package: nodeFunctionAppPackageTarget(name),
+    start: nodeFunctionAppStartTarget(name),
   })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }

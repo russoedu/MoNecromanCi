@@ -164,7 +164,41 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Go and Flutter Support, Plus Four Pre-existing Bug Fixes (Latest)
+### Local-Dev Commands: `:build`/`:qa`/`:start` Scripts and VS Code Tasks (Latest)
+
+- Every `mnci add` now finishes by calling `registerProjectCommands`
+  (`commands/add/shared.ts`) on the project it just generated: `<name>:build`
+  (when the kind has a build target), `<name>:qa` (`lint && test`, always),
+  and `<name>:start` (only kinds with a real local dev-server story — never a
+  library) get written as root `package.json` scripts, and mirrored as VS
+  Code Tasks in the workspace's `.code-workspace` file. Idempotent — a repeat
+  `add` of the same name overwrites its own entries rather than duplicating.
+- `:start` routes through an existing generator target where one already
+  exists (`nx run <name>:serve` for `react-app`/`node-app`) or a small
+  `nx:run-commands` target mnci writes where none did: `go run .` (`go-app`),
+  `flutter run -d chrome` (`flutter-app`), `python3 main.py` (`python-app` —
+  mnci writes a runnable `main.py` too, since the plugin's own sample module
+  has none), and `func start` for `node-function-app`/`python-function-app`.
+- **Fixed a real bug found while wiring this up**: `node-function-app`'s
+  manifest `main` field was `main.js`, correct only for the _deployed_ (zip,
+  flattened) layout, never for local dev — `apps/<name>/main.js` never exists
+  before a build, and the build only ever writes `apps/<name>/dist/main.js`.
+  Local `func start` would have failed outright. Fixed by pointing `main` at
+  `dist/main.js` and changing the `package` target to nest `dist/` inside the
+  zip (`addLocalFolder(..., 'dist')`) instead of flattening it — one `main`
+  value now resolves correctly both locally and once deployed.
+- `go-function-app` deliberately gets **no** `:start` script: unlike the Node
+  and Python function-app kinds, it writes no `host.json`/custom-handler
+  config, so there is nothing for `func start` to attach to. A known gap,
+  stated plainly rather than shipping a script that would just fail.
+- Also fixed a pre-existing, unrelated bug found in the same file:
+  `vscodeWorkspace()`'s `folders` array was hardcoded to _this repo's own_
+  packages (`packages/cli`, `packages/nx-python-pip`, and a stale
+  `libs/monecromanci-v2` path that no longer exists) instead of being
+  generic — every fresh `mnci new` workspace was getting nonsense folder
+  entries. Now just `[{ path: '.', name: workspaceName }]`.
+
+### Go and Flutter Support, Plus Four Pre-existing Bug Fixes
 
 - **Go**: four kinds (`go-app`, `go-lib`, `go-internal-lib`, `go-function-app`) via
   `@nx-go/nx-go`, one root `go.mod`. No e2e coverage yet (needs Go on the CI machine) —
