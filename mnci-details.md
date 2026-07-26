@@ -361,6 +361,7 @@ package.json               (curated root scripts only)
 .prettierrc.json + .prettierignore
 commitlint.config.mjs
 .husky/commit-msg
+<workspace-name>.code-workspace  (VS Code multi-root workspace, extensions, settings)
 azure-pipelines.yml        (--ci=azure|both)
 .github/workflows/ci.yml   (--ci=github|both)
 .github/dependabot.yml     (--ci=github|both)
