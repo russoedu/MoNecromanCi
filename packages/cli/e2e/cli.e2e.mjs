@@ -163,8 +163,8 @@ enforce(
   release.git?.commit === false && release.git?.tag === true && release.git?.push === false
 )
 enforce(
-  'release scoped to the publishable dirs (npm + python)',
-  JSON.stringify(release.projects) === '["packages/*","python-packages/*"]'
+  'release scoped to the publishable dirs (npm + python), with go-lib excluded',
+  JSON.stringify(release.projects) === '["packages/*","python-packages/*","!tag:type:go-lib"]'
 )
 
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
@@ -372,11 +372,12 @@ try {
   /* leaves dependabotParsed null → the check below fails with the parse error surfaced above */
 }
 enforce(
-  '.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip ecosystems',
+  '.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip + pub ecosystems',
   Boolean(dependabotParsed) &&
     dependabotParsed.updates?.map(update => update['package-ecosystem']).join(',') ===
-      'npm,github-actions,pip' &&
-    Array.isArray(dependabotParsed.updates?.[2]?.directories)
+      'npm,github-actions,pip,pub' &&
+    Array.isArray(dependabotParsed.updates?.[2]?.directories) &&
+    Array.isArray(dependabotParsed.updates?.[3]?.directories)
 )
 
 /* ---------------------------------------------------------------------------
@@ -843,11 +844,12 @@ run(`node ${CLI} upgrade --agent ubuntu-latest`, workspace)
  * ------------------------------------------------------------------------- */
 
 const altWorkspace = path.join(temporary, 'alt')
-console.log('\n▸ mnci new alt --linter oxlint --test-runner vitest')
-run(
-  `node ${CLI} new alt --yes --registry npm --scope @alt --linter oxlint --test-runner vitest`,
-  temporary
-)
+// NOTE: this used to pass `--linter oxlint`. That flag was removed from the CLI
+// when oxlint was dropped (the stack has one knob now: the test runner), so the
+// invocation had been hard-crashing the suite here — taking the whole Python
+// section, which lives below, down with it.
+console.log('\n▸ mnci new alt --test-runner vitest')
+run(`node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest`, temporary)
 
 const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
 enforce(
