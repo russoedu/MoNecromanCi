@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxFlutterApplication",
+  "title": "Create a Flutter web application",
+  "description": "Scaffolds a Flutter app via `flutter create --platforms=web`, registers it as a pub workspace member, and writes project.json with lint/test/build/package targets.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The project name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "What name would you like to use?",
+      "pattern": "^[a-zA-Z][^:]*$"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Workspace-relative directory for the project (defaults to apps/<name>)."
+    }
+  },
+  "required": ["name"]
+}

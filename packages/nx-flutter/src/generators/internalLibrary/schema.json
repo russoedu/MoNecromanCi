@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxFlutterInternalLibrary",
+  "title": "Create a private Flutter/Dart package",
+  "description": "Scaffolds a Dart package via `flutter create --template=package` under libs/, registered as a pub workspace member. Never released: lint and test targets only.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The project name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "What name would you like to use?",
+      "pattern": "^[a-zA-Z][^:]*$"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Workspace-relative directory for the project (defaults to libs/<name>)."
+    }
+  },
+  "required": ["name"]
+}

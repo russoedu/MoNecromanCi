@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxFlutterTest",
+  "title": "Test a Flutter/Dart project",
+  "type": "object",
+  "properties": {},
+  "required": []
+}

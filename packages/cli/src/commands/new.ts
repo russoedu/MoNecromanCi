@@ -241,7 +241,13 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
     '  mnci add react-app web        # or: node-app, node-function-app, npm-lib, internal-lib,'
   )
   logger.info(
-    '                                 #     python-app, python-function-app, python-lib, python-internal-lib'
+    '                                 #     python-app, python-function-app, python-lib, python-internal-lib,'
+  )
+  logger.info(
+    '                                 #     go-app, go-function-app, go-lib, go-internal-lib,'
+  )
+  logger.info(
+    '                                 #     flutter-app, flutter-lib, flutter-internal-lib'
   )
   logger.info('  git add -A && git commit -m "feat: initial workspace"')
 }

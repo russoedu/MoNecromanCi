@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "MnciNxFlutterLibrary",
+  "title": "Create a publishable Flutter/Dart package",
+  "description": "Scaffolds a Dart package via `flutter create --template=package`, registers it as a pub workspace member, and adds a project-level versionActions override so nx release versions its pubspec.yaml.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The project name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "What name would you like to use?",
+      "pattern": "^[a-zA-Z][^:]*$"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Workspace-relative directory for the project (defaults to packages/<name>)."
+    }
+  },
+  "required": ["name"]
+}
