@@ -105,7 +105,7 @@ describe('the versionActions path generators stamp onto a project', () => {
     // workspace. Assert the string and the exports map agree.
     const stamped = '@mnci/nx-flutter/release/version-actions'
     const subpath = stamped.replace('@mnci/nx-flutter', '.')
-     
+
     const manifest = require('../../package.json') as {
       name: string
       exports: Record<string, { default: string }>

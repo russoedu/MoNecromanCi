@@ -671,7 +671,7 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('GITHUB_TOKEN')
     expect(workflow).toContain('git push origin --tags')
     expect(workflow).toContain(
-      'Push release tags (nx release\'s own push never runs without a remote Release configured)'
+      "Push release tags (nx release's own push never runs without a remote Release configured)"
     )
   })
 

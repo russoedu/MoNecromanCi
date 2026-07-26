@@ -52,6 +52,11 @@ mnci add go-function-app fn    # serverless handler -> apps/
 mnci add go-lib core           # publishable (by git tag) -> packages/
 mnci add go-internal-lib util  # private shared package -> libs/
 
+# Flutter (@mnci/nx-flutter — one root pubspec.yaml pub workspace, analyze + test)
+mnci add flutter-app hello         # Flutter web app -> apps/ (bundle, zipped into the drop)
+mnci add flutter-lib shared        # publishable (by git tag) -> packages/
+mnci add flutter-internal-lib core # private shared package -> libs/
+
 mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
 ```
@@ -162,15 +167,24 @@ no programmatic API yet; the two aliases are what make it work.)
 
 ## Layout convention = release scoping
 
-| Directory          | Contents                                              | Released?                              |
-| ------------------ | ----------------------------------------------------- | -------------------------------------- |
-| `apps/`            | React / Node / Python apps (plain or Azure Functions) | Never (packed into the drop)           |
-| `packages/`        | Publishable npm libraries (rollup-bundled)            | Yes — `nx release`, per-package tags   |
-| `python-packages/` | Publishable Python packages (hatchling wheels)        | Yes — `twine upload` (Azure Artifacts) |
-| `libs/`            | Internal libraries (TS or Python), never published    | Never                                  |
+| Directory          | Contents                                                       | Released?                              |
+| ------------------ | -------------------------------------------------------------- | -------------------------------------- |
+| `apps/`            | React / Node / Python / Go / Flutter apps (plain or Functions) | Never (packed into the drop)           |
+| `packages/`        | Publishable npm libraries, plus Go and Dart packages           | Yes — `nx release`, per-package tags   |
+| `python-packages/` | Publishable Python packages (hatchling wheels)                 | Yes — `twine upload` (Azure Artifacts) |
+| `libs/`            | Internal libraries (TS, Python, Go or Dart), never published   | Never                                  |
 
-No custom tags, no stamp file — the directory (and, for npm, the `private` flag)
-are the whole model. Publishable Python packages get their own
+The directory is very nearly the whole model — one exception, and it is a bug
+fix rather than a nicety. `go-lib` also lives in `packages/`, but a Go package
+has **no per-project manifest** (mnci puts every Go project in one root
+`go.mod`), so Nx's default `versionActions` looks for a `package.json` that is
+not there and aborts _while building the release graph_ — killing `nx release`
+for the whole workspace, not just the Go project. It is therefore excluded with
+`!tag:type:go-lib`, which is also the semantically correct call: one module
+means its packages have no independent versions to bump. A publishable **Dart**
+package in `packages/` needs no such exclusion — `pubspec.yaml` has a real
+`version:` field, and `@mnci/nx-flutter` stamps a `versionActions` override that
+reads it. Publishable Python packages get their own
 `python-packages/` dir so the npm `nx release` (`packages/*`) is never entangled
 with Python publishing.
 
@@ -299,7 +313,7 @@ lint,test,build`. Pushes to `main` then:
   separate explicit `git push origin --tags` step on this provider. `--ci=azure`
   and `--ci=both` keep today's behaviour (no GitHub Release, explicit tag
   push) — GitHub Release creation only turns on when GitHub Actions is the
-  *only* configured provider, since that's the one case a `GITHUB_TOKEN` is
+  _only_ configured provider, since that's the one case a `GITHUB_TOKEN` is
   guaranteed to exist.
 
 **npm auth** is the base64 `PAT`, read the same way on both providers but from
@@ -379,17 +393,31 @@ fix-ci`) — `mnci` does not automate that step.
 Being upfront about what mnci leans on, so it's a conscious trade-off rather
 than a surprise:
 
-- **One Nx plugin this project builds and maintains** carries the most weight:
-  **`@mnci/nx-python-pip`** — a real Nx plugin built into this monorepo itself
-  (`packages/nx-python-pip`), created because no maintained, Nx-23-compatible
-  Python plugin supports pip (the previous Python plugin, `@nxlv/python`,
-  requires `uv`, which the company standardizing on this tool does not use, and
-  no maintained alternative supports pip). This trades third-party risk for a
-  different, real one: **this project now owns a second package's maintenance
-  surface** (generators, executors, its own release cycle) — worth being
-  explicit about, since it did not exist before. Unlike official `@nx/*`
-  plugins, if this one needs fixes or updates, this project owns those directly.
-  That's the cost of having no maintained pip-native Nx plugin in the ecosystem.
+- **Two Nx plugins this project builds and maintains** carry the most weight,
+  both for the same reason — the ecosystem has no maintained, Nx-23-compatible
+  option:
+  - **`@mnci/nx-python-pip`** (`packages/nx-python-pip`): no maintained plugin
+    supports pip. The obvious candidate, `@nxlv/python`, requires `uv`, which
+    the company standardizing on this tool does not use.
+  - **`@mnci/nx-flutter`** (`packages/nx-flutter`): `@nxrocks/nx-flutter`
+    cannot even load on Nx 23 — it imports
+    `@nx/workspace/src/utilities/fileutils`, removed in 23 — and there is no
+    alternative. Its exposure is smaller than the Python plugin's, because
+    scaffolding is delegated to the official `flutter create` rather than
+    hand-maintained templates; what this project owns is the pub-workspace
+    wiring, the targets and the release integration.
+
+  Both trade third-party risk for a different, real one: **this project owns
+  two extra packages' maintenance surface** (generators, executors, their own
+  release cycles). Unlike official `@nx/*` plugins, if either needs fixes, this
+  project owns them directly. That is the cost of the gaps in the ecosystem.
+
+- **`@nx-go/nx-go` is a third-party plugin on a declared-incompatible range.**
+  It declares `@nx/devkit ">= 20 < 23"` while this workspace runs Nx 23. That
+  range is a plain dependency rather than a peer, so npm nests its own devkit
+  copy and everything works — validated empirically against a real Nx 23.1.0
+  workspace (generators, build, test, lint). It is still a version trap worth
+  re-checking on Nx upgrades.
 - **The TS7 dual-compiler aliases pin a very new, fast-moving dependency.**
   TypeScript 7's native compiler is recent; `TS_COMPILER_DEPENDENCIES` pins
   `npm:typescript@^7.0.2` / `npm:@typescript/typescript6@^6.0.2` specifically
@@ -401,6 +429,15 @@ than a surprise:
 ## Known gaps (accepted for the experiment)
 
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
+- **Flutter apps build for web only.** Android would require the Android SDK and
+  NDK on every build agent; iOS is impossible on a Linux agent regardless. Add
+  other platforms per-app with `flutter create --platforms=...` — the generated
+  `build` target only knows about web.
+- **Go has no e2e coverage.** The `go-*` kinds have real unit tests and real CI
+  wiring, but the e2e suite never drives them, because it needs Go on the
+  machine. Flutter took the opposite approach — its e2e section runs when the
+  SDK is present and reports **SKIPPED** (loudly) when it is not — so the same
+  pattern could be applied to Go, but has not been.
 - Azure Functions Core Tools is only needed for **local** `func start` — never
   for `mnci add node-function-app`/`python-function-app` generation, since
   neither shells out to the `func` CLI.
@@ -681,3 +718,69 @@ build` links statically, so the binary in the drop already contains
   then added to `PATH` for later steps. All three skip cleanly when the
   workspace has no root `go.mod`, and the linter install also skips when the
   agent already provides it.
+
+## Flutter (`@mnci/nx-flutter` — one root `pubspec.yaml` pub workspace)
+
+Requires the **Flutter SDK** (3.27+, for Dart 3.6+ pub workspaces) on the
+machine; `mnci add flutter-*` fails fast with an install link when `flutter` is
+not on the `PATH`. Unlike Python and Go, the SDK is **not** present on hosted
+build agents, so the generated pipeline installs it itself (see below).
+
+| Kind                   | Location          | Build / deploy                                                                                        |
+| ---------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `flutter-app`          | `apps/<name>`     | `flutter build web` bundle into `dist/apps/<name>/`, zipped into `dist/drop/flutter-app-<name>.zip`   |
+| `flutter-lib`          | `packages/<name>` | publishable **by git tag** — see below; analyze + test targets only                                   |
+| `flutter-internal-lib` | `libs/<name>`     | private shared code, analyze + test only — a Dart package is compiled into whatever app depends on it |
+
+- **Dependencies are central, via a Dart pub workspace.** One root
+  `pubspec.yaml` lists every project under `workspace:`, and each project
+  carries `resolution: workspace`. A single `flutter pub get` at the root then
+  resolves the whole graph into **one** `pubspec.lock` and **one**
+  `.dart_tool/package_config.json` — pub actively deletes any per-package
+  copies. This is the Flutter half of the same root-manifest model as the root
+  `package.json` for TS, `requirements-dev.txt` for Python and `go.mod` for Go.
+- **An internal library is consumed with a plain version constraint — no
+  `path:`.** `dependencies: { core: ^0.0.1 }` resolves to the local package
+  because it is a workspace member. That is also why Flutter needs **no
+  vendoring step**: contrast `mnci add python-vendor`, which exists only
+  because pip cannot bundle an unpublished sibling into a wheel. Flutter is in
+  the Go camp here — nothing to weave in at build time.
+- **Lint configuration is central too.** The workspace root owns one
+  `analysis_options.yaml` (including `package:flutter_lints/flutter.yaml`), and
+  each project's own file is a one-line relative `include:` of it, so a rule
+  change lands in one place.
+- **`flutter analyze --fatal-infos`, pinned explicitly.** `flutter analyze`
+  already defaults `--fatal-infos` on — verified against 3.44.8, where
+  `--no-fatal-infos` turns a failing lint run green. It is passed anyway
+  because that default is the only thing making this a real gate: nearly every
+  `flutter_lints` rule reports at _info_ severity. Worth knowing that plain
+  `dart analyze` defaults the opposite way (it fails on errors and warnings but
+  not infos), so swapping the command without carrying the flag across would
+  silently stop enforcing anything.
+- **Publishing a `flutter-lib` is a git tag, not a registry upload.** Azure
+  Artifacts has no pub/Dart feed type, so a private pub registry is not
+  available on this stack, and these packages are deliberately not pushed to
+  pub.dev. `nx release` versions and tags them; no `nx-release-publish` target
+  is written.
+- **The publishable lib carries a `versionActions` override, and it is
+  load-bearing.** Nx's default reads a `package.json`, which a Dart package
+  does not have. Without the override `nx release` aborts while building the
+  release graph — taking down the release of **every** project in the
+  workspace, not just the Dart one. The plugin's `library` generator stamps
+  `@mnci/nx-flutter/release/version-actions` on, which reads and writes
+  `pubspec.yaml`'s `version:`.
+- **Apps build for web only.** Web needs nothing beyond the Flutter SDK,
+  whereas an Android build would drag the whole Android SDK and NDK onto every
+  build agent. Other platforms can be added per-app later with
+  `flutter create --platforms=...`.
+- **CI** installs the SDK by shallow `git clone` at a pinned tag — Flutter's own
+  documented install method, and the only one uniform across agents (the
+  release archives differ by platform). It is cloned **outside** the workspace,
+  under the agent's home directory: the SDK ships dozens of its own
+  `pubspec.yaml` files, which inside the tree would pollute pub's resolution and
+  give Nx thousands of extra files to glob. The SDK version is **pinned**
+  (unlike `golangci-lint`'s `@latest`) because it determines the Dart version,
+  and pub workspaces need Dart 3.6+. Three guarded steps precede the build —
+  install, add to `PATH`, and one root `flutter pub get` — and all three skip
+  cleanly when the workspace has no root `pubspec.yaml`; the install also skips
+  when an SDK is already available.

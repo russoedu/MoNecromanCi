@@ -191,5 +191,8 @@ export function addWorkspaceMember(tree: Tree, projectRoot: string): void {
   const rebuilt = `workspace:\n${members.map(member => `  - ${member}\n`).join('')}`
   // Function replacement so a `$` in a project path cannot be read as a
   // capture-group reference.
-  tree.write(ROOT_PUBSPEC, contents.replace(WORKSPACE_BLOCK, () => rebuilt))
+  tree.write(
+    ROOT_PUBSPEC,
+    contents.replace(WORKSPACE_BLOCK, () => rebuilt)
+  )
 }

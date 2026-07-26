@@ -43,7 +43,12 @@ describe('application generator', () => {
     await appGenerator(tree, { name: 'web' })
 
     const { targets } = readProjectConfiguration(tree, 'web')
-    expect(Object.keys(targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual(['build', 'lint', 'package', 'test'])
+    expect(Object.keys(targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'build',
+      'lint',
+      'package',
+      'test',
+    ])
     expect(targets?.lint.executor).toBe('@mnci/nx-flutter:lint')
     expect(targets?.build.executor).toBe('@mnci/nx-flutter:build')
   })
@@ -98,7 +103,10 @@ describe('library generator', () => {
     await libraryGenerator(tree, { name: 'shared' })
 
     const { targets } = readProjectConfiguration(tree, 'shared')
-    expect(Object.keys(targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual(['lint', 'test'])
+    expect(Object.keys(targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'lint',
+      'test',
+    ])
     expect(targets?.['nx-release-publish']).toBeUndefined()
   })
 })
@@ -111,7 +119,10 @@ describe('internal-library generator', () => {
     expect(project.root).toBe('libs/core')
     expect(project.tags).toEqual(['type:flutter-internal-lib'])
     expect(project.release).toBeUndefined()
-    expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual(['lint', 'test'])
+    expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
+      'lint',
+      'test',
+    ])
   })
 })
 
