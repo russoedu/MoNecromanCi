@@ -839,8 +839,10 @@ enforce(
 run(`node ${CLI} upgrade --agent ubuntu-latest`, workspace)
 
 /* ---------------------------------------------------------------------------
- * Alternate stack: TS6 + oxlint + vitest, exercised end-to-end so the non-default
- * choices are proven on the real toolchain (not just in unit tests).
+ * Alternate stack: vitest, exercised end-to-end so the non-default choice is
+ * proven on the real toolchain (not just in unit tests). The test runner is the
+ * only stack knob — linting is always ESLint + Prettier since oxlint was
+ * dropped, which is what this section used to exercise.
  * ------------------------------------------------------------------------- */
 
 const altWorkspace = path.join(temporary, 'alt')
@@ -852,51 +854,49 @@ console.log('\n▸ mnci new alt --test-runner vitest')
 run(`node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest`, temporary)
 
 const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
+// The stack has exactly one knob now — the test runner. This workspace is the
+// vitest half of that pair (the `demo` workspace above covers jest); linting is
+// always ESLint + Prettier. These assertions used to check oxlint/oxfmt, which
+// were removed from the CLI, so they described a workspace mnci can no longer
+// produce.
 enforce(
-  'alt: stack persisted as nx.json generator defaults (linter:none + vitest)',
-  altNx.generators?.['@nx/js:library']?.linter === 'none' &&
+  'alt: stack persisted as nx.json generator defaults (eslint + vitest)',
+  altNx.generators?.['@nx/js:library']?.linter === 'eslint' &&
     altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
 )
 const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
 enforce(
-  'alt: oxlint set up (oxlint.config.mts + root lint = oxlint)',
-  existsSync(path.join(altWorkspace, 'oxlint.config.mts')) && altManifest.scripts?.lint === 'oxlint'
+  'alt: lint runs ESLint through nx, for every project',
+  altManifest.scripts?.lint === 'nx run-many -t lint'
 )
 enforce(
-  'alt: oxlint config extends the oxc-standard StandardJS preset',
-  readFileSync(path.join(altWorkspace, 'oxlint.config.mts'), 'utf8').includes(
-    `import standard from 'oxc-standard/.oxlintrc.json'`
-  )
-)
-enforce(
-  'alt: oxfmt set up (oxfmt.config.mts + format/format:check scripts)',
-  existsSync(path.join(altWorkspace, 'oxfmt.config.mts')) &&
-    altManifest.scripts?.format === 'oxfmt -c oxfmt.config.mts .' &&
-    altManifest.scripts?.['format:check'] === 'oxfmt -c oxfmt.config.mts --check .'
+  'alt: Prettier set up (format + format:check scripts)',
+  altManifest.scripts?.format === 'prettier --write .' &&
+    altManifest.scripts?.['format:check'] === 'prettier --check .'
 )
 
 run(`node ${CLI} add npm-lib sdk`, altWorkspace)
 run(`node ${CLI} add react-app web`, altWorkspace)
 enforce(
-  'alt: npm-lib gets no per-lib eslint config under oxlint',
-  !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
+  'alt: npm-lib gets its own eslint config from the generator',
+  existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
 )
 // This coding-agent sandbox injects .agents/.opencode/.github/skills into every
 // cwd; they are not part of a generated workspace, so drop them before the
-// whole-repo oxlint (a real user never has them).
+// whole-repo lint/format run (a real user never has them).
 for (const injected of ['.agents', '.opencode', '.github/skills']) {
   rmSync(path.join(altWorkspace, injected), { recursive: true, force: true })
 }
 // Nx generators emit semicolon/double-quote code, so a fresh workspace is not
 // yet Standard-formatted: `npm run format` normalises it, after which
-// `format:check` must be clean (proves oxfmt + the config actually run).
+// `format:check` must be clean (proves Prettier + the config actually run).
 enforce(
-  'alt: npm run format (oxfmt) then format:check round-trips green',
+  'alt: npm run format (Prettier) then format:check round-trips green',
   tryRun('npm run format', altWorkspace) && tryRun('npm run format:check', altWorkspace),
   'see log above'
 )
 enforce(
-  'alt: npm run lint (oxlint) runs green',
+  'alt: npm run lint (ESLint) runs green',
   tryRun('npm run lint', altWorkspace),
   'see log above'
 )
