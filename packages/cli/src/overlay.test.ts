@@ -91,11 +91,14 @@ describe('npmrcContent', () => {
 })
 
 describe('withReleaseConfig', () => {
-  it('patches release and defaultBase while preserving what the preset generated', () => {
-    const patched = withReleaseConfig({
-      $schema: './node_modules/nx/schemas/nx-schema.json',
-      namedInputs: { default: [] },
-    })
+  it('patches release and defaultBase while preserving what the preset generated, for azure', () => {
+    const patched = withReleaseConfig(
+      {
+        $schema: './node_modules/nx/schemas/nx-schema.json',
+        namedInputs: { default: [] },
+      },
+      'azure'
+    )
 
     expect(patched.$schema).toBe('./node_modules/nx/schemas/nx-schema.json')
     expect(patched.namedInputs).toEqual({ default: [] })
@@ -114,12 +117,9 @@ describe('withReleaseConfig', () => {
       // Top-level (not version.git) — Nx rejects granular git config for the
       // combined `nx release` command, which is what CI and release:preview
       // both run (never the bare `nx release version` subcommand).
-      // push: false is deliberate — the combined `nx release` command's own
-      // final push only runs when a remote GitHub/GitLab Release is
-      // configured (never true here), and its one push that does run happens
-      // before the tag is even created (verified empirically against a real
-      // CI run). The generated pipeline pushes tags itself, explicitly, once
-      // tagging is guaranteed to have already happened.
+      // push: false for azure/both: GitHub Release creation (which requires
+      // push: true) is scoped to the github-only provider — see releaseConfig's
+      // remarks for why azure/both keep the pipeline's own explicit tag push.
       git: { commit: false, tag: true, push: false },
       version: {
         conventionalCommits: true,
@@ -129,6 +129,32 @@ describe('withReleaseConfig', () => {
         preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
       },
       changelog: { workspaceChangelog: false },
+    })
+  })
+
+  it('does the same for both (GitHub Releases are not safe to assume when Azure Pipelines might be the one that runs)', () => {
+    const patched = withReleaseConfig({ $schema: 'x' }, 'both')
+    expect(patched.release).toMatchObject({
+      git: { commit: false, tag: true, push: false },
+      changelog: { workspaceChangelog: false },
+    })
+  })
+
+  it('turns on GitHub Release creation for the github-only provider', () => {
+    const patched = withReleaseConfig({ $schema: 'x' }, 'github')
+
+    expect(patched.release).toMatchObject({
+      // Nx hard-errors createRelease when push is disabled — push: true is
+      // required here, not optional, and Nx's own push now runs after
+      // tagging on this Nx version (verified empirically), so this is safe.
+      git: { commit: false, tag: true, push: true },
+      changelog: {
+        workspaceChangelog: false,
+        // file: false: the changelog content still flows into the GitHub
+        // Release body, but no CHANGELOG.md is written — one would never get
+        // committed under this tag-only model (git.commit stays false).
+        projectChangelogs: { createRelease: 'github', file: false },
+      },
     })
   })
 })
@@ -435,7 +461,7 @@ describe('githubActionsYaml', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const workflow = githubActionsYaml('ubuntu-latest', url)
 
-    expect(workflow).toContain('Release — version, tag and publish (npm + Python)')
+    expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python)')
     expect(workflow).not.toContain('nx run-many -t publish')
     expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
     expect(workflow).toContain(`Buffer.from(process.env.PAT,'base64')`)
@@ -542,6 +568,33 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain('path: dist/drop')
     // No Azure classic-Release-pipeline build-tag mechanism — no equivalent on GitHub.
     expect(workflow).not.toContain('addbuildtag')
+  })
+
+  it('creates GitHub Releases and lets nx push its own tag when github is the only provider', () => {
+    const workflow = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'github')
+
+    expect(workflow).toContain('GITHUB_TOKEN')
+    expect(workflow).toContain('secrets.GITHUB_TOKEN')
+    // Nx pushes the tag itself now (release.git.push: true) — the pipeline's
+    // own explicit push step would be redundant, so it must be gone.
+    expect(workflow).not.toContain('git push origin --tags')
+  })
+
+  it('defaults to the github-only behaviour when ci is omitted', () => {
+    const withDefault = githubActionsYaml('ubuntu-latest')
+    const withExplicit = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'github')
+    expect(withDefault).toBe(withExplicit)
+  })
+
+  it('keeps the explicit tag push and skips GitHub Release creation when both providers are configured', () => {
+    const workflow = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'both')
+    expect(() => yaml.load(workflow)).not.toThrow()
+
+    expect(workflow).not.toContain('GITHUB_TOKEN')
+    expect(workflow).toContain('git push origin --tags')
+    expect(workflow).toContain(
+      'Push release tags (nx release\'s own push never runs without a remote Release configured)'
+    )
   })
 
   it('runs the same guard scripts as azure-pipelines.yml (both providers can never drift)', () => {
