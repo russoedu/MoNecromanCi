@@ -1,11 +1,12 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
+  runPrettier: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
@@ -150,4 +151,41 @@ describe('runAdd react-app', () => {
     const generatorCall = mockRunNx.mock.calls.find(call => call[0][1] === '@nx/react:app')
     expect(generatorCall?.[0]).toContain('--unitTestRunner=vitest')
   })
+})
+
+describe('root-only ESLint config', () => {
+  /** Every extension Nx might choose, driven off the project's module type. */
+  const EXTENSIONS = ['js', 'mjs', 'cjs', 'ts', 'mts', 'cts']
+
+  it.each([['react-app', 'web', 'apps/web']])(
+    'leaves no per-project eslint config behind after adding a %s',
+    async (kind, name, projectRoot) => {
+      // An mnci workspace has exactly ONE eslint config, at the root. Every
+      // @nx/* generator drops one into the project it creates, which would
+      // re-fragment the config on every add.
+      //
+      // The generator is mocked here, so plant the files it would have written
+      // first — otherwise this asserts the absence of something that was never
+      // there and passes even if the cleanup is deleted.
+      mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
+      writeFileSync(
+        join(workspaceRoot, projectRoot, 'package.json'),
+        JSON.stringify({ name: `@demo/${name}` })
+      )
+      for (const extension of EXTENSIONS) {
+        writeFileSync(
+          join(workspaceRoot, projectRoot, `eslint.config.${extension}`),
+          'export default []'
+        )
+      }
+
+      await runAdd(kind as ProjectKind, name, {})
+
+      for (const extension of EXTENSIONS) {
+        expect(existsSync(join(workspaceRoot, projectRoot, `eslint.config.${extension}`))).toBe(
+          false
+        )
+      }
+    }
+  )
 })

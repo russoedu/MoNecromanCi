@@ -1,19 +1,21 @@
 jest.mock('../nx', () => ({
   runNx: jest.fn(),
+  runPrettier: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
-import { runNx, runShell } from '../nx'
+import { runNx, runPrettier, runShell } from '../nx'
 import { promptText } from '../prompts'
 import { runAdd, type ProjectKind } from './add'
 
 const mockRunNx = jest.mocked(runNx)
+const mockRunPrettier = jest.mocked(runPrettier)
 const mockRunShell = jest.mocked(runShell)
 const mockSelect = jest.mocked(select)
 const mockPromptText = jest.mocked(promptText)
@@ -70,6 +72,16 @@ describe('runAdd', () => {
     )
 
     await expect(runAdd('react-app', 'web', {})).resolves.toBeUndefined()
+  })
+
+  it('formats the workspace after adding a project, so format:check stays green', async () => {
+    // Nx's generators write semicolons and double quotes; `nx sync` and the
+    // root-manifest/.code-workspace edits touch files outside the new project.
+    // Without this the workspace fails its own `npm run format:check` the
+    // moment a project is added.
+    await runAdd('react-app', 'web', {})
+
+    expect(mockRunPrettier).toHaveBeenCalledWith(workspaceRoot)
   })
 
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {
@@ -135,4 +147,41 @@ describe('runAdd', () => {
 
     expect(mockRunNx).not.toHaveBeenCalled()
   })
+})
+
+describe('root-only ESLint config', () => {
+  /** Every extension Nx might choose, driven off the project's module type. */
+  const EXTENSIONS = ['js', 'mjs', 'cjs', 'ts', 'mts', 'cts']
+
+  it.each([['internal-lib', 'core', 'libs/core']])(
+    'leaves no per-project eslint config behind after adding a %s',
+    async (kind, name, projectRoot) => {
+      // An mnci workspace has exactly ONE eslint config, at the root. Every
+      // @nx/* generator drops one into the project it creates, which would
+      // re-fragment the config on every add.
+      //
+      // The generator is mocked here, so plant the files it would have written
+      // first — otherwise this asserts the absence of something that was never
+      // there and passes even if the cleanup is deleted.
+      mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
+      writeFileSync(
+        join(workspaceRoot, projectRoot, 'package.json'),
+        JSON.stringify({ name: `@demo/${name}` })
+      )
+      for (const extension of EXTENSIONS) {
+        writeFileSync(
+          join(workspaceRoot, projectRoot, `eslint.config.${extension}`),
+          'export default []'
+        )
+      }
+
+      await runAdd(kind as ProjectKind, name, {})
+
+      for (const extension of EXTENSIONS) {
+        expect(existsSync(join(workspaceRoot, projectRoot, `eslint.config.${extension}`))).toBe(
+          false
+        )
+      }
+    }
+  )
 })

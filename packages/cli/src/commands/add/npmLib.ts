@@ -5,73 +5,10 @@ import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import {
   defaultScope,
   registerProjectCommands,
+  removeGeneratedEslintConfig,
   type AddOptions,
   type WorkspaceStack,
 } from './shared'
-
-/**
- * The per-npm-lib ESLint config written over the generator's default.
- *
- * @remarks
- * Identical to what `@nx/js:lib --bundler=rollup` generates, plus ONE
- * addition: `@nx/dependency-checks` gets an `ignoredDependencies` list of
- * every `private: true` workspace package, computed at lint time. Private
- * libs are compiled INTO the rollup bundle and never declared in the
- * manifest (a consumer could not install them) — without this, the rule
- * flags every internal-lib import as a missing dependency. Because the list
- * is computed, adding a new internal lib never requires touching this file.
- */
-export const NPM_LIB_ESLINT_CONFIG = `import { globSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import baseConfig from '../../eslint.config.mjs';
-
-// Private workspace libs are compiled INTO this package's rollup bundle and
-// never declared in the manifest (a consumer could not install them), so the
-// dependency check must ignore them. Computed at lint time: adding a new
-// internal lib never requires touching this file.
-const workspaceRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const privateWorkspacePackages = globSync(['libs/*/package.json', 'packages/*/package.json'], { cwd: workspaceRoot })
-  .map((manifestPath) => JSON.parse(readFileSync(join(workspaceRoot, manifestPath), 'utf8')))
-  .filter((manifest) => manifest.private === true)
-  .map((manifest) => manifest.name);
-
-export default [
-  ...baseConfig,
-  {
-    files: ['**/*.json'],
-    rules: {
-      '@nx/dependency-checks': [
-        'error',
-        {
-          ignoredDependencies: privateWorkspacePackages,
-          ignoredFiles: [
-            '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
-            '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
-            // Same reasoning as the two config files above, extended to the test
-            // toolchain: rollup bundles from the entry point only, so neither the
-            // Vitest config nor the spec files reach the published package — their
-            // imports must not drive the published manifest.
-            //
-            // Without this, a vitest-stack workspace fails \`npm run lint\` on a
-            // freshly generated npm-lib: Nx's own spec imports \`vitest\`, and
-            // @nx/dependency-checks then demands it be declared as a runtime
-            // dependency of a package that never uses it at runtime.
-            '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
-            '{projectRoot}/**/*.spec.{js,ts,jsx,tsx}',
-          ],
-        },
-      ],
-    },
-    languageOptions: {
-      parser: await import('jsonc-eslint-parser'),
-    },
-  },
-  {
-    ignores: ['**/out-tsc'],
-  },
-];
-`
 
 /**
  * Adds a publishable npm library: `@nx/js:lib` as a rollup bundle.
@@ -125,11 +62,10 @@ export async function addNpmLib(
     workspaceRoot
   )
   markPublic(join(workspaceRoot, 'packages', name, 'package.json'))
-  // Write an ESLint config with a dependency-check override for private workspace packages.
-  writeFileEnsured(
-    join(workspaceRoot, 'packages', name, 'eslint.config.mjs'),
-    NPM_LIB_ESLINT_CONFIG
-  )
+  // The @nx/dependency-checks exclusions this kind needs now live in the ROOT
+  // config (@mnci/eslint-config's dependencyChecks block), so the generator's
+  // per-project config is deleted rather than overwritten.
+  removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
 

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
-import { runNx, runShell } from '../nx'
+import { runNx, runPrettier, runShell } from '../nx'
 import { promptText } from '../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 import { logger } from '../util/logger'
@@ -17,7 +17,12 @@ import {
   addPythonVendor,
 } from './add/python'
 import { addReactApp } from './add/reactApp'
-import { registerProjectCommands, type AddOptions, type WorkspaceStack } from './add/shared'
+import {
+  registerProjectCommands,
+  removeGeneratedEslintConfig,
+  type AddOptions,
+  type WorkspaceStack,
+} from './add/shared'
 
 export type { AddOptions } from './add/shared'
 
@@ -219,6 +224,7 @@ export async function runAdd(
         workspaceRoot
       )
       markPrivate(join(workspaceRoot, 'libs', resolvedName, 'package.json'))
+      removeGeneratedEslintConfig(workspaceRoot, `libs/${resolvedName}`)
       registerProjectCommands(workspaceRoot, resolvedName, { build: true })
       break
     }
@@ -272,6 +278,7 @@ export async function runAdd(
       // generic "Added ... 'name'" success message below reads wrong for
       // this kind, so it returns early with its own message instead.
       syncProjectReferences(workspaceRoot)
+      runPrettier(workspaceRoot)
       return
     }
     default: {
@@ -289,6 +296,12 @@ export async function runAdd(
   }
 
   syncProjectReferences(workspaceRoot)
+
+  // Nx's generators write in their own style (semicolons, double quotes), and
+  // `nx sync` plus the root-manifest/`.code-workspace` edits above touch files
+  // outside the new project — so this formats the workspace, not just
+  // `<projectRoot>`. Keeps `npm run format:check` green after every add.
+  runPrettier(workspaceRoot)
 
   logger.success(`Added ${resolvedKind} '${resolvedName}'.`)
 }

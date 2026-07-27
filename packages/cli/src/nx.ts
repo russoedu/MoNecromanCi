@@ -1,4 +1,5 @@
 import spawn from 'cross-spawn'
+import { logger } from './util/logger'
 
 /**
  * Runs a command synchronously, inheriting stdio so its output streams live.
@@ -69,5 +70,43 @@ export function runNpx(arguments_: string[], cwd: string): void {
   const status = runShell('npx', arguments_, cwd)
   if (status !== 0) {
     throw new Error(`npx ${arguments_.join(' ')} failed with exit code ${status}`)
+  }
+}
+
+/**
+ * Runs Prettier over a freshly generated workspace or project.
+ *
+ * @remarks
+ * Nx's own generators emit semicolons, double quotes and trailing commas —
+ * the opposite of the JavaScript Standard Style mnci configures Prettier for.
+ * Without this pass a workspace fails its own `npm run format:check` the
+ * moment it is created, which is a poor first impression and, worse, buries
+ * every real formatting change under a wall of generator noise on the first
+ * commit. Running it here means what mnci hands back is already normalised.
+ *
+ * `.prettierignore` (written by the overlay) keeps this off `node_modules`,
+ * build output and lockfiles, so the pass stays cheap even on a large
+ * workspace.
+ *
+ * Deliberately non-fatal. The project has already been generated and wired by
+ * the time this runs; aborting on a formatter hiccup would leave a usable
+ * workspace behind an error message. A warning names the exact command to
+ * re-run instead.
+ *
+ * @param cwd - The workspace root to run in.
+ * @param target - What to format, relative to `cwd`. Defaults to the whole
+ * workspace (`.`); `add` passes the new project's root to keep the pass
+ * proportional to what actually changed.
+ * @returns Nothing.
+ * @throws Never - a non-zero exit is reported as a warning.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function runPrettier(cwd: string, target = '.'): void {
+  const status = runShell('npx', ['prettier', '--write', '--log-level', 'warn', target], cwd)
+  if (status !== 0) {
+    logger.warn(
+      `Prettier could not format '${target}' (exit code ${status}). ` +
+        "The project was generated; run 'npm run format' to normalise it."
+    )
   }
 }

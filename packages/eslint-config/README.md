@@ -1,0 +1,115 @@
+<p align="center">
+  <img src="../../assets/logo.svg" alt="mnci" width="160">
+</p>
+
+# @mnci/eslint-config
+
+> The shared ESLint flat config every `mnci`-generated monorepo uses. **One
+> config, at the root, for every language in the workspace.**
+
+## Why this exists
+
+`mnci` generates opinionated monorepos, and linting is one of the opinions. It
+used to be delivered badly: `create-nx-workspace`'s bare `@nx/eslint-plugin`
+default landed at the root, each `nx g` generator dropped another
+`eslint.config.mjs` into its own project, and the richer rules the project
+actually wanted lived only in mnci's own repo — never in anything it generated.
+
+This package is that opinion, packaged. A generated workspace gets:
+
+```js
+// eslint.config.mjs
+import mnci from '@mnci/eslint-config'
+
+export default mnci({ workspaceRoot: import.meta.dirname })
+```
+
+…and nothing else. No per-project configs.
+
+Shipping it as a package rather than a template string means an upgrade reaches
+existing workspaces through `npm update`, the plugins are _this_ package's
+dependencies instead of a dozen devDependencies in every generated workspace,
+and the config is independently testable — which it is, against the real
+`eslint` binary.
+
+## What it covers
+
+Correctness and code quality only. **Formatting is Prettier's job**, and
+`eslint-config-prettier` is composed last to guarantee no rule here fights it.
+
+| Area                 | Plugin                                                     |
+| -------------------- | ---------------------------------------------------------- |
+| JS/TS correctness    | `@eslint/js`, `typescript-eslint`, `eslint-plugin-unicorn` |
+| Node + promises      | `eslint-plugin-n`, `eslint-plugin-promise`                 |
+| Unused code          | `eslint-plugin-unused-imports` (auto-removes on `--fix`)   |
+| React                | `eslint-plugin-react`, `react-hooks`, `react-refresh`      |
+| JSON / JSONC / JSON5 | `eslint-plugin-jsonc`                                      |
+| YAML                 | `eslint-plugin-yml`                                        |
+| Markdown             | `@eslint/markdown`                                         |
+| CSS                  | `@eslint/css`                                              |
+| HTML + a11y          | `@html-eslint/eslint-plugin`                               |
+| Tests                | `eslint-plugin-jest` (works for Vitest too — same globals) |
+
+### The stylistic exceptions
+
+Prettier covers most of JavaScript Standard Style (no semicolons, single
+quotes, 2-space indent, no trailing commas). Three Standard rules sit in
+territory Prettier never touches at all, so they live in
+`configs/stylistic.js`, composed **after** `eslint-config-prettier` so it
+cannot switch them back off:
+
+| Rule                          | Why Prettier can't do it       |
+| ----------------------------- | ------------------------------ |
+| `spaced-comment`              | never edits comment bodies     |
+| `lines-between-class-members` | preserves whatever you wrote   |
+| `unicode-bom`                 | passes a BOM through unchanged |
+
+The list was derived by diffing `eslint-config-standard`'s stylistic rules
+against `eslint-config-prettier`'s disable list, not by guesswork. That
+ordering — stylistic last — is covered by a regression test.
+
+### Why `space-before-function-paren` is not here
+
+It is Standard's signature rule and the obvious omission. It is deliberate.
+
+`eslint-config-prettier` disables that rule because it **conflicts** with
+Prettier, not because it is redundant: Prettier emits `function f(a)` and
+rewrites `function f (a)` back on every run, while the rule demands the
+opposite. Enabling it makes `npm run lint` and `npm run format:check` mutually
+unsatisfiable — a real ping-pong, verified by round-tripping a file through
+both binaries, not a theoretical concern. Prettier has closed the corresponding
+option permanently, so there is no version to wait for.
+
+Choosing Prettier as the formatter means accepting its call here. mnci does,
+and a regression test asserts the rule stays off so nobody re-adds it in good
+faith later.
+
+## Usage
+
+```js
+import mnci from '@mnci/eslint-config'
+
+export default mnci({ workspaceRoot: import.meta.dirname })
+```
+
+`workspaceRoot` is optional. Passing it enables the `@nx/dependency-checks`
+block for `packages/*` and `libs/*`, which needs to scan for `private: true`
+manifests. Omit it in a workspace with no publishable npm packages.
+
+Individual blocks are exported too, if you need to recompose:
+
+```js
+import { base, typescript, react, ignores } from '@mnci/eslint-config'
+```
+
+## Notes
+
+- **No build step.** This is plain ESM that consumers load directly. Compiling
+  it would only create a way for the published config to drift from the source.
+- **`@nx/eslint-plugin` is an optional peer.** Its version has to track the
+  workspace's own Nx version, and the `dependency-checks` block is skipped
+  entirely when it is absent — so the config still works outside Nx.
+- **Tests shell out to the real `eslint` binary.** Asserting on a flat config's
+  object shape proves nothing, because a later block can silently disable an
+  earlier rule. Every test lints a real fixture and asserts on what was actually
+  reported.
