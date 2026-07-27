@@ -57,15 +57,20 @@ export default [
       'n/prefer-node-protocol': 'error',
 
       // Unicorn, minus the opinionated-naming and stylistic members.
+      //
+      // Pinned to v61 because that is the last line supporting ESLint 9, and
+      // ESLint 9 is where this whole stack has to sit: `eslint-plugin-react`
+      // has no ESLint 10 release at all (it throws on every .tsx file), and
+      // `@nx/react` pins `eslint-plugin-import@2.31.0`, which peer-caps at 9.
+      // On a future upgrade, expect `name-replacements`,
+      // `consistent-boolean-name` and `no-top-level-assignment-in-function` to
+      // start firing — all three are newer additions this config would want off
+      // (the first two rename a team's own vocabulary; the third condemns the
+      // standard per-test fixture idiom). They are not listed here because
+      // ESLint rejects a config that names a rule the plugin does not have.
       ...unicorn.configs.recommended.rules,
       'unicorn/filename-case': 'off',
       'unicorn/prevent-abbreviations': 'off',
-      // Same family as `prevent-abbreviations`, and off for the same reason:
-      // it renames domain vocabulary (`lib` → `library`, `env` → `environment`)
-      // across a codebase it knows nothing about. A shared config has no
-      // business dictating a team's identifiers.
-      'unicorn/name-replacements': 'off',
-      'unicorn/consistent-boolean-name': 'off',
       'unicorn/no-null': 'off',
       'unicorn/prefer-top-level-await': 'off',
       'unicorn/no-array-reduce': 'off',
@@ -73,6 +78,11 @@ export default [
       // 'node:path'`. Named imports are idiomatic, tree-shake better, and are
       // what Nx's own generators emit — this is preference, not correctness.
       'unicorn/import-style': 'off',
+      // `document.getElementById('root')` is the canonical React mount, is what
+      // every Nx/Vite/CRA template emits, and is faster than the selector form.
+      // A rule that fails a generated app on its own entry point is not earning
+      // its keep.
+      'unicorn/prefer-query-selector': 'off',
       // An Nx monorepo is legitimately mixed CJS/ESM: Nx generates CJS jest
       // configs, executors run under CJS, and `__dirname`/`createRequire` are
       // the correct tools there. The rule cannot tell those apart from real

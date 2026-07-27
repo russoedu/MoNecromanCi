@@ -106,7 +106,6 @@ function nodeAppPackageTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
   }
@@ -217,10 +216,11 @@ export const NODE_FUNCTION_APP_HOST_JSON = `{
  * needs no `@azure/functions` mocking. Anonymous auth keeps the sample
  * runnable locally with `func start`.
  */
-export const NODE_FUNCTION_APP_HELLO = `import { app, HttpRequest, HttpResponseInit } from '@azure/functions'
+export const NODE_FUNCTION_APP_HELLO = `import { app } from '@azure/functions'
+import type { HttpRequest, HttpResponseInit } from '@azure/functions'
 import { buildGreeting } from './greeting'
 
-async function hello (request: HttpRequest): Promise<HttpResponseInit> {
+async function hello(request: HttpRequest): Promise<HttpResponseInit> {
   const name = request.query.get('name') ?? 'world'
   return { body: buildGreeting(name) }
 }
@@ -342,7 +342,6 @@ function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
   }

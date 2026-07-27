@@ -225,7 +225,6 @@ function goLintTarget(): Record<string, unknown> {
 function goBuildTarget(name: string): Record<string, unknown> {
   return {
     executor: '@nx-go/nx-go:build',
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/dist/apps/${name}`],
     options: { outputPath: `../../dist/apps/${name}/${name}` },
   }
@@ -256,7 +255,6 @@ function goPackageTarget(tag: string, name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
   }

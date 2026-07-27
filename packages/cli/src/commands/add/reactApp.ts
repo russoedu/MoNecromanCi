@@ -89,7 +89,6 @@ export function reactAppTargets(name: string): Record<string, unknown> {
   for (const environment of REACT_ENVIRONMENTS) {
     targets[`build-${environment}`] = {
       executor: 'nx:run-commands',
-      // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
       outputs: [`{workspaceRoot}/apps/${name}/dist-${environment}`],
       options: {
         command: `vite build --mode ${environment} --outDir dist-${environment}`,
@@ -105,7 +104,6 @@ export function reactAppTargets(name: string): Record<string, unknown> {
     executor: 'nx:run-commands',
     dependsOn: REACT_ENVIRONMENTS.map(environment => `build-${environment}`),
     outputs: REACT_ENVIRONMENTS.map(
-      // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation
       environment => `{workspaceRoot}/dist/drop/react-app-${name}-${environment}.zip`
     ),
     options: {

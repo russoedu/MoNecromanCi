@@ -2,7 +2,7 @@
   "name": "@mnci/eslint-config",
   "version": "0.1.0",
   "type": "module",
-  "description": "The shared ESLint flat config every mnci-generated monorepo uses — one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
+  "description": "The shared ESLint flat config every mnci-generated monorepo uses \u2014 one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
   "publishConfig": {
     "access": "public"
   },
@@ -36,7 +36,7 @@
   },
   "peerDependencies": {
     "@nx/eslint-plugin": ">=21",
-    "eslint": ">=9"
+    "eslint": "^9"
   },
   "peerDependenciesMeta": {
     "@nx/eslint-plugin": {
@@ -58,7 +58,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
-    "eslint-plugin-unicorn": "^69.0.0",
+    "eslint-plugin-unicorn": "^61.0.2",
     "eslint-plugin-unused-imports": "^4.4.1",
     "eslint-plugin-yml": "^3.5.0",
     "globals": "^17.7.0",

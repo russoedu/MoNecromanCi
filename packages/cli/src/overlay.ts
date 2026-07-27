@@ -473,7 +473,7 @@ export function eslintConfigSpec(): string {
  * @remarks
  * `@mnci/eslint-config` peers on `eslint`, so it never installs one itself.
  */
-export const ESLINT_VERSION = '^10.8.0'
+export const ESLINT_VERSION = '^9.39.0'
 
 /**
  * The ESLint toolchain a generated workspace needs as real devDependencies.

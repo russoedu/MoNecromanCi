@@ -30,12 +30,6 @@ export default [
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
       'unicorn/no-useless-undefined': 'off',
-
-      // `let fixture` at module scope, assigned in `beforeEach`, is THE way
-      // every Jest/Vitest suite gets a fresh fixture per test. The rule is
-      // sound for production code and stays on there — here it would condemn
-      // the standard idiom in every spec file a generated workspace has.
-      'unicorn/no-top-level-assignment-in-function': 'off',
     },
   },
 ]
