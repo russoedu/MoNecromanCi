@@ -270,6 +270,17 @@ enforceWorkspaceShape(workspace, 'after new')
 
 // The root config is three lines importing the shared package — the whole
 // linting opinion lives there, not inlined per workspace.
+// Without this registration every project silently loses its lint target while
+// `npm run lint` still exits 0 — the worst possible failure mode. Nx used to
+// add it as a side effect of `nx g … --linter=eslint`; mnci passes
+// `--linter=none` now, so the overlay must own it.
+enforce(
+  'mnci registers @nx/eslint/plugin in nx.json',
+  (nxJson.plugins ?? []).some(
+    entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin'
+  )
+)
+
 enforce(
   'root eslint config delegates to @mnci/eslint-config',
   readFileSync(path.join(workspace, 'eslint.config.mjs'), 'utf8').includes('@mnci/eslint-config')
@@ -1026,10 +1037,19 @@ const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'
 // always ESLint + Prettier. These assertions used to check oxlint/oxfmt, which
 // were removed from the CLI, so they described a workspace mnci can no longer
 // produce.
+// `linter: 'none'` is not "no linting": it stops a direct `nx g` from
+// scaffolding a per-project config that would compete with the root one.
+// The `lint` target comes from @nx/eslint/plugin, asserted separately below.
 enforce(
-  'alt: stack persisted as nx.json generator defaults (eslint + vitest)',
-  altNx.generators?.['@nx/js:library']?.linter === 'eslint' &&
+  "alt: stack persisted as nx.json generator defaults (linter 'none' + vitest)",
+  altNx.generators?.['@nx/js:library']?.linter === 'none' &&
     altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
+)
+enforce(
+  'alt: mnci registers @nx/eslint/plugin — what gives every project its lint target',
+  (altNx.plugins ?? []).some(
+    entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin'
+  )
 )
 const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
 enforce(
