@@ -123,6 +123,105 @@ function skip(label, reason) {
   console.log(`  ⊘ SKIPPED ${label} — ${reason}`)
 }
 
+/**
+ * Paths this coding-agent sandbox injects into every cwd.
+ *
+ * @remarks
+ * They are not part of a generated workspace — a real user never has them —
+ * so any whole-workspace lint/format assertion has to drop them first or it
+ * fails for a harness reason rather than a real one.
+ */
+const SANDBOX_INJECTED = ['.agents', '.opencode', '.github/skills']
+
+/** Removes the sandbox-injected paths from a generated workspace. */
+function dropSandboxInjected(root) {
+  for (const injected of SANDBOX_INJECTED) {
+    rmSync(path.join(root, injected), { recursive: true, force: true })
+  }
+}
+
+/**
+ * Every file matching `predicate` under `directory`, recursively.
+ *
+ * @remarks
+ * Skips `node_modules` and `.git`, which otherwise dwarf a generated
+ * workspace and would drag in hundreds of third-party config files —
+ * defeating the "exactly one config" assertions this exists to serve.
+ */
+function findFiles(directory, predicate, base = directory) {
+  const found = []
+  const entries = readdirSync(directory, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name === '.git') {
+      continue
+    }
+    const full = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      found.push(...findFiles(full, predicate, base))
+    } else if (predicate(entry.name)) {
+      found.push(path.relative(base, full).replaceAll('\\', '/'))
+    }
+  }
+  return found
+}
+
+/**
+ * The config-shape invariants a generated workspace must hold at every point
+ * in its life — not just at `mnci new`.
+ *
+ * @remarks
+ * Re-run after each `add`, because every one of these is something an
+ * `@nx/*` generator actively re-creates: a per-project `eslint.config.mjs`,
+ * a `.vscode/launch.json` (`@nx/node`), and generator-styled source that
+ * would fail `format:check`. Asserting them once after `new` would prove
+ * nothing about the state a real user's workspace is actually in.
+ *
+ * `stage` names the point in the run, so a failure says which `add`
+ * regressed rather than just "the workspace is wrong".
+ */
+function enforceWorkspaceShape(root, stage) {
+  dropSandboxInjected(root)
+
+  const eslintConfigs = findFiles(root, name =>
+    /^eslint\.config\.(js|mjs|cjs|ts|mts|cts)$/.test(name)
+  )
+  enforce(
+    `${stage}: exactly one eslint config, at the root`,
+    eslintConfigs.length === 1 && eslintConfigs[0] === 'eslint.config.mjs',
+    `found: ${JSON.stringify(eslintConfigs)}`
+  )
+
+  // Two Prettier configs is not a cosmetic duplicate: `.prettierrc` wins
+  // Prettier's precedence over `.prettierrc.json`, so Nx's leftover file
+  // silently discarded mnci's entire formatting opinion. Asserting the count
+  // is not enough — assert which one Prettier actually resolves.
+  const prettierConfigs = findFiles(root, name => /^\.prettierrc(\..+)?$/.test(name))
+  enforce(
+    `${stage}: exactly one Prettier config`,
+    prettierConfigs.length === 1 && prettierConfigs[0] === '.prettierrc.json',
+    `found: ${JSON.stringify(prettierConfigs)}`
+  )
+  const resolved = tryRunCapture('npx prettier --find-config-path package.json', root)
+  enforce(
+    `${stage}: Prettier resolves that config, not a stray one`,
+    (resolved.output ?? '').trim().endsWith('.prettierrc.json'),
+    `resolved: ${(resolved.output ?? '').trim()}`
+  )
+
+  // The .code-workspace file covers everything Nx's .vscode/ did. @nx/node
+  // re-creates launch.json on every add, so this must hold after each one.
+  enforce(`${stage}: no .vscode directory`, !existsSync(path.join(root, '.vscode')))
+
+  // The whole point of the post-generate Prettier pass: a user should never
+  // have to run `npm run format` to make a freshly generated workspace pass
+  // its own CI. This is the check that regresses the moment that call is
+  // dropped, so it runs WITHOUT a format step in front of it.
+  enforce(
+    `${stage}: format:check is already green — no manual format needed`,
+    tryRun('npm run format:check', root)
+  )
+}
+
 /** Whether the Flutter SDK is available to drive the Flutter section. */
 function hasFlutter() {
   try {
@@ -167,7 +266,35 @@ enforce(
   JSON.stringify(release.projects) === '["packages/*","python-packages/*","!tag:type:go-lib"]'
 )
 
+enforceWorkspaceShape(workspace, 'after new')
+
+// The root config is three lines importing the shared package — the whole
+// linting opinion lives there, not inlined per workspace.
+enforce(
+  'root eslint config delegates to @mnci/eslint-config',
+  readFileSync(path.join(workspace, 'eslint.config.mjs'), 'utf8').includes('@mnci/eslint-config')
+)
+
+// Standard forbids trailing commas; the old "es5" value contradicted it and
+// went unnoticed because Nx's .prettierrc was winning anyway.
+enforce(
+  'Prettier configured for Standard (no semicolons, single quotes, no trailing commas)',
+  (() => {
+    const config = JSON.parse(readFileSync(path.join(workspace, '.prettierrc.json'), 'utf8'))
+    return config.semi === false && config.singleQuote === true && config.trailingComma === 'none'
+  })()
+)
+
+// Publish auth is deliberately deferred: the file exists (npm reads it) but
+// carries only comments. It previously claimed, in the README, to do scope
+// routing it never actually emitted. See the plan's ".npmrc" deferral note.
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
+enforce(
+  '.npmrc is comment-only — publish auth is a documented deferral, not silent config',
+  readFileSync(path.join(workspace, '.npmrc'), 'utf8')
+    .split('\n')
+    .every(line => line.trim() === '' || line.trim().startsWith(';') || line.trim().startsWith('#'))
+)
 enforce('commitlint config written', existsSync(path.join(workspace, 'commitlint.config.mjs')))
 const hookPath = path.join(workspace, '.husky/commit-msg')
 // NTFS has no POSIX exec-bit semantics — `mode & 0o111` is meaningless on
@@ -542,11 +669,36 @@ enforce(
   internalLibraryManifest.name === '@demo/utils'
 )
 
+enforceWorkspaceShape(workspace, 'after adds')
+
+// THE risk of deleting per-project eslint configs. `@nx/eslint/plugin` infers
+// a `lint` target by mapping config DIRECTORIES onto the project roots beneath
+// them, so a project with no config of its own still gets one from the root.
+// That is Nx behaviour we do not control, and if it ever changes, linting
+// silently switches off across an entire workspace with everything still
+// green. Enforced permanently, per project, for exactly that reason.
+for (const project of ['web', 'svc', 'sdk', 'utils']) {
+  const shown = tryRunCapture(`npx nx show project ${project} --json`, workspace)
+  const targets = shown.ok ? Object.keys(JSON.parse(shown.output).targets ?? {}) : []
+  enforce(
+    `every project keeps an inferred lint target without its own config (${project})`,
+    targets.includes('lint'),
+    `targets: ${JSON.stringify(targets)}`
+  )
+}
+
+// "A lint target exists" is not "linting works". Plant a real violation and
+// require the ROOT config to catch it — the only proof the rules actually
+// reach a project that has no config of its own.
+const plantedPath = path.join(workspace, 'packages/sdk/src/planted-violation.ts')
+writeFileSync(plantedPath, 'export function bad() {\n  var x = 1\n  return x\n}\n')
+const planted = tryRunCapture('npx nx lint sdk', workspace)
 enforce(
-  'no per-project eslint config beyond the root one',
-  !existsSync(path.join(workspace, 'packages/sdk/eslint.config.mjs')) ||
-    existsSync(path.join(workspace, 'eslint.config.mjs'))
+  'the root config genuinely reports violations in a project with no config of its own',
+  !planted.ok && planted.output.includes('no-var'),
+  'nx lint sdk did not report the planted `var`'
 )
+rmSync(plantedPath, { force: true })
 
 // A typo'd kind must be a clear, real failure -- not a silent "success" that
 // creates nothing (the exact bug this check regression-tests: it used to
@@ -892,24 +1044,37 @@ enforce(
 
 run(`node ${CLI} add npm-lib sdk`, altWorkspace)
 run(`node ${CLI} add react-app web`, altWorkspace)
+// This assertion used to require the OPPOSITE — that npm-lib kept its own
+// generated config. That was the bug: every generator dropped one, so the
+// linting opinion fragmented a little further with each add.
 enforce(
-  'alt: npm-lib gets its own eslint config from the generator',
-  existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
+  'alt: npm-lib keeps no eslint config of its own — the root config covers it',
+  !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
 )
-// This coding-agent sandbox injects .agents/.opencode/.github/skills into every
-// cwd; they are not part of a generated workspace, so drop them before the
-// whole-repo lint/format run (a real user never has them).
-for (const injected of ['.agents', '.opencode', '.github/skills']) {
-  rmSync(path.join(altWorkspace, injected), { recursive: true, force: true })
-}
-// Nx generators emit semicolon/double-quote code, so a fresh workspace is not
-// yet Standard-formatted: `npm run format` normalises it, after which
-// `format:check` must be clean (proves Prettier + the config actually run).
+dropSandboxInjected(altWorkspace)
+// Nx generators emit semicolon/double-quote code, but mnci now runs Prettier
+// itself at the end of `new` and every `add` — so the workspace must already
+// be Standard-formatted, with no manual `npm run format` in front of this.
+// (This check previously ran `format` first, which meant it could not
+// distinguish "Prettier is configured correctly" from "Prettier is configured
+// at all" — and in fact Nx's leftover .prettierrc was winning the whole time.)
 enforce(
-  'alt: npm run format (Prettier) then format:check round-trips green',
-  tryRun('npm run format', altWorkspace) && tryRun('npm run format:check', altWorkspace),
+  'alt: format:check is green with no manual format step',
+  tryRun('npm run format:check', altWorkspace),
   'see log above'
 )
+
+// Prove the config in force is actually mnci's, not a default: plant
+// deliberately non-Standard code and require `format` to normalise exactly it.
+const misformatted = path.join(altWorkspace, 'packages/sdk/src/misformatted.ts')
+writeFileSync(misformatted, 'export const greeting =    "hi";\n')
+run('npm run format', altWorkspace)
+enforce(
+  'alt: Prettier applies Standard style (drops semicolons, converts to single quotes)',
+  readFileSync(misformatted, 'utf8') === "export const greeting = 'hi'\n",
+  `got: ${JSON.stringify(readFileSync(misformatted, 'utf8'))}`
+)
+rmSync(misformatted, { force: true })
 enforce(
   'alt: npm run lint (ESLint) runs green',
   tryRun('npm run lint', altWorkspace),

@@ -72,6 +72,7 @@ export default function dependencyChecks(workspaceRoot) {
             ignoredFiles: [
               '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
               '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
+              '{projectRoot}/tsup.config.{js,ts,mjs,mts,cjs,cts}',
               '{projectRoot}/vite.config.{js,ts,mjs,mts,cjs,cts}',
               '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
               '{projectRoot}/jest.config.{js,ts,mjs,mts,cjs,cts}',

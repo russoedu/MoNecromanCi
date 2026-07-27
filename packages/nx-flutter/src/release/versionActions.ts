@@ -1,8 +1,9 @@
 import { join } from 'node:path'
 import type { ProjectGraph, Tree } from '@nx/devkit'
+import type * as NxRelease from 'nx/release'
 import { readPubspecVersion, writePubspecVersion } from '../internal/pubspec'
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- nx/release is CJS; no ESM entry to `import` from.
-const { VersionActions } = require('nx/release') as typeof import('nx/release')
+const { VersionActions } = require('nx/release') as typeof NxRelease
 
 /**
  * Hand-written Nx release `VersionActions` for Dart/Flutter packages — reads

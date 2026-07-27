@@ -106,6 +106,9 @@ describe('the versionActions path generators stamp onto a project', () => {
     const stamped = '@mnci/nx-flutter/release/version-actions'
     const subpath = stamped.replace('@mnci/nx-flutter', '.')
 
+    // Read as data, not imported: a static import would need
+    // `resolveJsonModule` and would drag package.json into the emitted output.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const manifest = require('../../package.json') as {
       name: string
       exports: Record<string, { default: string }>

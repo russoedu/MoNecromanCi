@@ -62,6 +62,14 @@ describe('pythonPublishUrl', () => {
   })
 })
 
+/** Everything in an .npmrc that is not a comment or blank — i.e. actual config. */
+function directives(npmrc: string): string[] {
+  return npmrc
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !line.startsWith(';') && !line.startsWith('#'))
+}
+
 describe('npmrcContent', () => {
   const azure = {
     kind: 'azure-artifacts',
@@ -69,14 +77,6 @@ describe('npmrcContent', () => {
     project: 'proj',
     artifactsFeed: 'feed',
   } as const
-
-  /** Everything that is not a comment or blank — i.e. actual npm config. */
-  function directives(npmrc: string): string[] {
-    return npmrc
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0 && !line.startsWith(';') && !line.startsWith('#'))
-  }
 
   it('emits no configuration at all — publish auth is deliberately deferred', () => {
     expect(directives(npmrcContent({ kind: 'npm' }, '@demo'))).toEqual([])
@@ -523,7 +523,6 @@ describe('githubActionsYaml', () => {
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN secret), not PAT, for the public npm registry', () => {
     const workflow = githubActionsYaml('ubuntu-latest', undefined, 'npm')
 
-    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal GitHub Actions expression syntax the generated workflow must contain.
     expect(workflow).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}')
     expect(workflow).not.toContain('secrets.PAT')
   })

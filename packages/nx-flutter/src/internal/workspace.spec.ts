@@ -40,19 +40,19 @@ describe('ensureWorkspaceRoot', () => {
   })
 })
 
+/** The `workspace:` entries currently listed in the root pubspec. */
+function members(): string[] {
+  const contents = tree.read(ROOT_PUBSPEC, 'utf8') ?? ''
+  return contents
+    .split('\n')
+    .filter(line => /^\s+-\s/.test(line))
+    .map(line => line.replace(/^\s*-\s*/, '').trim())
+}
+
 describe('addWorkspaceMember', () => {
   beforeEach(() => {
     ensureWorkspaceRoot(tree, 'demo_workspace')
   })
-
-  /** The `workspace:` entries currently listed in the root pubspec. */
-  function members(): string[] {
-    const contents = tree.read(ROOT_PUBSPEC, 'utf8') ?? ''
-    return contents
-      .split('\n')
-      .filter(line => /^\s+-\s/.test(line))
-      .map(line => line.replace(/^\s*-\s*/, '').trim())
-  }
 
   it('registers a project so pub resolves it through the root, not standalone', () => {
     addWorkspaceMember(tree, 'apps/web')

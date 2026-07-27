@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import type { ProjectGraph, Tree } from '@nx/devkit'
+import type * as NxRelease from 'nx/release'
 import { pythonCommand } from '../internal/pythonCommand'
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- nx/release is CJS; no ESM entry to `import` from.
-const { VersionActions } = require('nx/release') as typeof import('nx/release')
+const { VersionActions } = require('nx/release') as typeof NxRelease
 
 const VERSION_LINE = /^version\s*=\s*"([^"]+)"/m
 
