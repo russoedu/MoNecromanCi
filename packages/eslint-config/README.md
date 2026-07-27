@@ -102,6 +102,25 @@ Individual blocks are exported too, if you need to recompose:
 import { base, typescript, react, ignores } from '@mnci/eslint-config'
 ```
 
+## ESLint 9, deliberately
+
+The stack is pinned to ESLint **9**, and `eslint-plugin-unicorn` to **v61**
+(the last line supporting it). Not conservatism — the plugins decide:
+
+- `eslint-plugin-react` has no ESLint 10 release. Its latest peer range stops
+  at `^9.7`, and on 10 it throws `contextOrFilename.getFilename is not a
+function` while loading `react/display-name`, which kills linting for every
+  `.tsx` file in the workspace.
+- `@nx/react`'s generator pins `eslint-plugin-import@2.31.0`, which caps at 9
+  too — on 10 the install fails outright.
+
+Three unicorn rules this config would otherwise switch off —
+`name-replacements`, `consistent-boolean-name` and
+`no-top-level-assignment-in-function` — do not exist in v61, so they are not
+listed: ESLint rejects a config that names a rule its plugin does not have.
+`configs/base.js` says which, so a future upgrade re-adds them deliberately
+instead of rediscovering why they suddenly fire.
+
 ## Notes
 
 - **No build step.** This is plain ESM that consumers load directly. Compiling
