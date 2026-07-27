@@ -47,7 +47,7 @@ describe('runAdd react-app', () => {
         'apps/web',
         '--bundler=vite',
         '--unitTestRunner=jest',
-        '--linter=eslint',
+        '--linter=none',
         '--style=css',
         '--e2eTestRunner=none',
         '--no-interactive',

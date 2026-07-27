@@ -199,6 +199,15 @@ mnci worked while everything it produced did not.
 - **`space-before-function-paren` cannot be enabled alongside Prettier** — see the ESLint
   section under Design Decisions. This reversed an earlier decision; it was verified by
   round-tripping a real file through both binaries rather than argued from docs.
+- **Nx's generators run with `--linter=none`, and mnci registers
+  `@nx/eslint/plugin` in `nx.json` itself.** Found by real end-to-end
+  generation, not by reading code: `@nx/react` pins `eslint-plugin-import@2.31.0`,
+  whose peer range caps at ESLint 9, so `mnci add react-app` failed its npm
+  install outright against the ESLint 10 toolchain. `--linter=none` is the right
+  answer regardless — mnci deletes the config those generators write — but it
+  removes the side effect that used to register the plugin, so the overlay now
+  owns that too. A latent oddity goes with it: `npm run lint` previously worked
+  in a fresh workspace only by accident.
 - **This repo now lints itself with the config it ships** (`eslint.config.mjs` is the same
   three-line import), which is what makes the original drift impossible to reintroduce.
   TSDoc enforcement stays a root-only extra block — an mnci-authoring standard, not

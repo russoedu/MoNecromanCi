@@ -75,7 +75,7 @@ function runNodeApp(
       `apps/${name}`,
       '--bundler=esbuild',
       `--unitTestRunner=${stack.testRunner}`,
-      '--linter=eslint',
+      '--linter=none',
       '--e2eTestRunner=none',
       `--framework=${framework}`,
       '--no-interactive',

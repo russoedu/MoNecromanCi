@@ -58,7 +58,7 @@ describe('runAdd npm-lib', () => {
         '--importPath=@demo/sdk',
         '--bundler=rollup',
         '--unitTestRunner=jest',
-        '--linter=eslint',
+        '--linter=none',
         '--no-interactive',
       ],
       workspaceRoot
