@@ -1,5 +1,6 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
+  runPrettier: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
@@ -9,11 +10,12 @@ import { select } from '@inquirer/prompts'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runNx, runShell } from '../../nx'
+import { runNx, runPrettier, runShell } from '../../nx'
 import { promptText } from '../../prompts'
 import { runAdd } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
+const mockRunPrettier = jest.mocked(runPrettier)
 const mockRunShell = jest.mocked(runShell)
 const mockPromptText = jest.mocked(promptText)
 const mockSelect = jest.mocked(select)
@@ -306,6 +308,14 @@ describe('runAdd python-vendor', () => {
       pyproject.indexOf('[tool.pytest.ini_options]')
     )
     expect(mockRunNx).not.toHaveBeenCalled()
+  })
+
+  it('formats the workspace, even though this kind returns early from runAdd', async () => {
+    // python-vendor short-circuits before runAdd's shared tail, so its format
+    // pass is a second, separate call site — easy to miss, easy to regress.
+    await runAdd('python-vendor', 'svc', { lib: 'pycore' })
+
+    expect(mockRunPrettier).toHaveBeenCalledWith(workspaceRoot)
   })
 
   it('appends to an existing vendor table instead of overwriting it', async () => {

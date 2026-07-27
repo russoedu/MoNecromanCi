@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { runNpx, runShell } from '../nx'
+import { runNpx, runPrettier, runShell } from '../nx'
 import {
   applyOverlay,
   DEFAULT_STACK,
@@ -221,9 +221,10 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   )
   applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
 
-  // Install the commit toolchain (ESLint and Prettier are set up by the Nx
-  // generators on first `add`). One install.
-  logger.step('Installing the toolchain (commitlint + husky)')
+  // One install. It also pulls in everything `applyOverlay` just added to the
+  // manifest — Prettier, ESLint and `@mnci/eslint-config` — which is why the
+  // formatting pass below can run immediately after.
+  logger.step('Installing the toolchain (commitlint + husky + linting/formatting)')
   const installStatus = runShell(
     'npm',
     ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
@@ -234,6 +235,12 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   }
   // The overlay already stamped `prepare: husky` into the root scripts.
   runShell('npx', ['husky'], workspaceRoot)
+
+  // `create-nx-workspace` wrote its scaffold in its own style, which is not
+  // mnci's. Normalise it now so the workspace passes its own `format:check`
+  // from the very first commit.
+  logger.step('Formatting the workspace (Prettier, JavaScript Standard Style)')
+  runPrettier(workspaceRoot)
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)

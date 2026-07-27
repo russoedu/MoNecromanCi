@@ -8,6 +8,7 @@ import {
   ensureAdmZip,
   hasPlugin,
   registerProjectCommands,
+  removeGeneratedEslintConfig,
   type WorkspaceStack,
 } from './shared'
 
@@ -184,6 +185,7 @@ export function addReactApp(workspaceRoot: string, name: string, stack: Workspac
   }
   allowEnvFiles(workspaceRoot)
   addNxTargets(join(reactAppRoot, 'package.json'), reactAppTargets(name))
+  removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   // Vite's inferred 'serve' target (the dev server) is what @nx/react:app
   // already wires — no per-env variant needed for local dev, unlike build.
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })

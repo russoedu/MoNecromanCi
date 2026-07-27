@@ -1,5 +1,6 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
+  runPrettier: jest.fn(),
   runShell: jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
@@ -73,41 +74,19 @@ describe('runAdd npm-lib', () => {
     expect(manifest.publishConfig).toEqual({ access: 'public' })
   })
 
-  it('teaches the npm-lib dependency check to ignore private workspace packages', async () => {
+  it('leaves no per-project eslint config behind — an mnci workspace has exactly one, at the root', async () => {
+    // The @nx/js:lib generator writes one; mnci used to overwrite it with its
+    // own (NPM_LIB_ESLINT_CONFIG) carrying the @nx/dependency-checks
+    // exclusions. Those exclusions now live in the root config
+    // (@mnci/eslint-config's dependencyChecks block), so the generated file is
+    // deleted instead. Verified separately that a project without its own
+    // config still gets an inferred `lint` target and still reports real
+    // violations — the e2e enforces that permanently.
     await runAdd('npm-lib', 'sdk', {})
 
-    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
-    expect(eslintConfig).toContain('ignoredDependencies: privateWorkspacePackages')
-    expect(eslintConfig).toContain('manifest.private === true')
-    expect(eslintConfig).toContain('@nx/dependency-checks')
-  })
-
-  it('teaches the dependency check to ignore the test toolchain, which is never published', async () => {
-    await runAdd('npm-lib', 'sdk', {})
-
-    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
-    // Regression guard: rollup bundles from the entry point only, so neither the
-    // Vitest config nor the spec files reach the published package. Without these
-    // a vitest-stack workspace failed `npm run lint` on a freshly generated
-    // npm-lib — Nx's own spec imports `vitest`, and @nx/dependency-checks then
-    // demanded it be declared as a runtime dependency.
-    expect(eslintConfig).toContain('{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}')
-    // `.spec` only: that is what every Nx generator emits, and covering an
-    // unused `.test` glob too would drag an eslint-disable comment into the
-    // generated file — which the consuming workspace could then flag as an
-    // unused directive.
-    expect(eslintConfig).toContain('{projectRoot}/**/*.spec.{js,ts,jsx,tsx}')
-    expect(eslintConfig).not.toContain('eslint-disable')
-  })
-
-  it('emits an eslint config whose backticked prose does not break the template literal', async () => {
-    await runAdd('npm-lib', 'sdk', {})
-
-    // The config is built from a JS template literal, so an unescaped backtick in
-    // an explanatory comment would silently truncate the generated file.
-    const eslintConfig = readFileSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'), 'utf8')
-    expect(eslintConfig.trimEnd().endsWith('];')).toBe(true)
-    expect(eslintConfig).toContain('export default [')
+    for (const extension of ['mjs', 'js', 'cjs', 'ts', 'mts', 'cts']) {
+      expect(existsSync(join(workspaceRoot, `packages/sdk/eslint.config.${extension}`))).toBe(false)
+    }
   })
 
   it('prefers an explicit --scope for a publishable lib', async () => {
@@ -138,9 +117,15 @@ describe('runAdd npm-lib', () => {
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
   })
 
-  it('always writes an eslint config with dependency-check overrides for npm-lib', async () => {
+  it('removes the .vscode directory an Nx generator may have re-created', async () => {
+    // @nx/node re-creates launch.json on every add, so cleaning it once at
+    // `mnci new` is not enough — its content is already covered by the
+    // <workspace>.code-workspace file mnci owns.
+    mkdirSync(join(workspaceRoot, '.vscode'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.vscode/extensions.json'), '{}')
+
     await runAdd('npm-lib', 'sdk', {})
 
-    expect(existsSync(join(workspaceRoot, 'packages/sdk/eslint.config.mjs'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
   })
 })

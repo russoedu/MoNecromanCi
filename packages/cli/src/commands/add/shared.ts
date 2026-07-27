@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
@@ -152,6 +152,57 @@ export function addNxTargets(manifestPath: string, newTargets: Record<string, un
     manifestPath,
     toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } })
   )
+}
+
+/**
+ * Every ESLint flat-config filename an `@nx/*` generator might write.
+ *
+ * @remarks
+ * Nx picks the extension from the project's module type, so all of these are
+ * reachable across the kinds mnci generates.
+ */
+const ESLINT_CONFIG_FILENAMES = [
+  'eslint.config.js',
+  'eslint.config.mjs',
+  'eslint.config.cjs',
+  'eslint.config.ts',
+  'eslint.config.mts',
+  'eslint.config.cts',
+] as const
+
+/**
+ * Deletes the per-project ESLint config an `@nx/*` generator just wrote, and
+ * any `.vscode/` directory it re-created.
+ *
+ * @remarks
+ * An mnci workspace has exactly ONE ESLint config, at the root
+ * (`@mnci/eslint-config`). Every `@nx/*` generator nevertheless drops an
+ * `eslint.config.mjs` into the project it creates, which re-fragments the
+ * config the moment a project is added.
+ *
+ * Deleting them is safe, and that was verified rather than assumed: with no
+ * per-project config a project still gets its inferred `lint` target from
+ * `@nx/eslint/plugin` (which maps config directories to the project roots
+ * beneath them), `nx lint <project>` still runs, and it still reports real
+ * violations from the root config. The e2e asserts both halves permanently,
+ * because a future Nx change to that inference is the one thing that would
+ * silently turn linting off across a whole workspace.
+ *
+ * `.vscode/` is handled here too: `@nx/node` re-creates `launch.json` on every
+ * `add`, so removing it once at `mnci new` would not be enough.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param projectRoot - The new project's path, relative to the workspace root
+ * (e.g. `apps/web`).
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeGeneratedEslintConfig(workspaceRoot: string, projectRoot: string): void {
+  for (const filename of ESLINT_CONFIG_FILENAMES) {
+    rmSync(join(workspaceRoot, projectRoot, filename), { force: true })
+  }
+  rmSync(join(workspaceRoot, '.vscode'), { recursive: true, force: true })
 }
 
 /**

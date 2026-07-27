@@ -1,4 +1,4 @@
-jest.mock('../nx', () => ({ runNpx: jest.fn(), runShell: jest.fn() }))
+jest.mock('../nx', () => ({ runNpx: jest.fn(), runPrettier: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
   DEFAULT_STACK: { testRunner: 'jest' },
@@ -12,12 +12,13 @@ jest.mock('../prompts', () => ({
 }))
 
 import { join } from 'node:path'
-import { runNpx, runShell } from '../nx'
+import { runNpx, runPrettier, runShell } from '../nx'
 import { applyOverlay } from '../overlay'
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { runNew } from './new'
 
 const mockRunNpx = jest.mocked(runNpx)
+const mockRunPrettier = jest.mocked(runPrettier)
 const mockRunShell = jest.mocked(runShell)
 const mockApplyOverlay = jest.mocked(applyOverlay)
 const mockPromptCi = jest.mocked(promptCi)
@@ -260,6 +261,25 @@ describe('runNew', () => {
     mockRunShell.mockReturnValueOnce(1)
 
     await expect(runNew('demo', { yes: true })).rejects.toThrow('toolchain failed with exit code 1')
+  })
+
+  it('formats the workspace after the toolchain install, so it passes its own format:check', async () => {
+    // `create-nx-workspace` scaffolds in its own style (semicolons, double
+    // quotes) — the opposite of the Standard style mnci configures Prettier
+    // for. Without this pass a brand-new workspace fails `npm run format:check`
+    // before the user has written a line, and the first commit buries every
+    // real change under generator noise.
+    await runNew('demo', { yes: true })
+
+    expect(mockRunPrettier).toHaveBeenCalledWith(join('/somewhere', 'demo'))
+  })
+
+  it('does not format when the toolchain install failed (Prettier would not be installed)', async () => {
+    mockRunShell.mockReturnValue(1)
+
+    await expect(runNew('demo', { yes: true })).rejects.toThrow('toolchain failed')
+
+    expect(mockRunPrettier).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid workspace name before creating anything (no create-nx-workspace, no install)', async () => {

@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { markExecutable, readJson, toJson, writeFileEnsured } from './util/fsx'
 
@@ -107,56 +108,48 @@ export function registryUrl(registry: RegistryConfig): string | undefined {
  * Builds the `.npmrc` body for a registry configuration.
  *
  * @remarks
- * Scope-to-registry routing is what guarantees packages never land on the
- * public npm registry by accident: every publishable package is named under
- * `scope`, and the scoped registry line routes all of them to the configured
- * feed.
+ * **This deliberately emits no configuration — only comments.** Publish
+ * authentication is an explicitly deferred design decision, not an oversight,
+ * and the file is still written so the deferral is visible in the generated
+ * workspace rather than being an absence nobody notices.
  *
- * Azure Artifacts is authenticated with the **base64-encoded PAT** the feed's
- * "Connect to feed → npm" instructions produce — the classic `_password`
- * block, one pair for the `/npm/registry/` path (install) and one for the feed
- * root (publish). The PAT *value* never lands in the file: `${PAT}` stays
- * literal on disk and is expanded at runtime — in CI from the `Build` variable
- * group's `PAT`, locally from an exported `PAT=<base64 token>`. (No
- * `npmAuthenticate@0` task: it would overwrite this hand-set password.) Public
- * npm keeps the raw `_authToken` an automation token uses.
+ * What it used to emit was wrong in ways worth recording, since the same
+ * mistakes are easy to reintroduce:
  *
- * @param registry - The monorepo's resolved registry configuration.
- * @param scope - The npm scope (e.g. `@demo`) the scoped registry applies to.
+ * - The public-npm variant carried no `@scope:registry` line at all, while the
+ *   CLI's README claimed "scope routing makes accidental public publishes
+ *   impossible" — and `overlay.test.ts` actively asserted the line's absence.
+ *   The documented safety property never existed.
+ * - `legacy-peer-deps=true` was added for `@nxazure/func`, a plugin removed
+ *   long ago. It stayed behind and quietly weakened dependency resolution in
+ *   every generated workspace.
+ *
+ * **Known consequence, stated plainly:** the generated CI still exports
+ * `NODE_AUTH_TOKEN` (public npm) or `PAT` (Azure Artifacts) for the release
+ * step, but with an empty `.npmrc` nothing consumes them — `actions/setup-node`
+ * is configured without `registry-url`, so `npm publish` will not
+ * authenticate. The token wiring is intentionally left in place so completing
+ * this is a one-line change once the auth design is settled. See the "Known
+ * gaps" section of `packages/cli/README.md`.
+ *
+ * @param _registry - The monorepo's resolved registry configuration. Unused
+ * while auth is deferred; the parameter is kept because the auth lines return
+ * here once designed, and dropping it would churn every call site twice.
+ * @param _scope - The npm scope (e.g. `@demo`). Unused, same reason.
  * @returns The full text of the generated `.npmrc`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function npmrcContent(registry: RegistryConfig, scope: string): string {
-  const scopeName = scope.replace(/^@/, '')
-  const lines = [
-    'registry=https://registry.npmjs.org/',
-    '; Community Nx plugins (e.g. the Azure Functions one) peer on the previous',
-    '; Nx major for a while after each release; accept the resolved tree.',
-    'legacy-peer-deps=true',
-  ]
-
-  if (registry.kind === 'azure-artifacts') {
-    const base = `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}`
-    const registryHost = `${base}/npm/registry/`.replace(/^https:\/\//, '')
-    const feedHost = `${base}/`.replace(/^https:\/\//, '')
-    lines.push(
-      `@${scopeName}:registry=${base}/npm/registry/`,
-      '; Azure Artifacts auth — the base64 PAT is expanded at runtime from the',
-      '; PAT env var (CI: your PAT variable group; locally: export PAT=<base64 token>).',
-      `//${registryHost}:username=${registry.organization}`,
-      `//${registryHost}:_password=\${PAT}`,
-      `//${registryHost}:email=npm@example.com`,
-      `//${feedHost}:username=${registry.organization}`,
-      `//${feedHost}:_password=\${PAT}`,
-      `//${feedHost}:email=npm@example.com`
-    )
-  } else {
-    lines.push(`//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}`)
-  }
-
-  lines.push('')
-  return lines.join('\n')
+export function npmrcContent(_registry: RegistryConfig, _scope: string): string {
+  return `; Intentionally empty.
+;
+; Publish authentication is not configured yet. The generated CI exports a
+; token for the release step (NODE_AUTH_TOKEN for public npm, PAT for Azure
+; Artifacts), but nothing here consumes it, so 'npm publish' will not
+; authenticate until this is wired up.
+;
+; See "Known gaps" in the @mnci/cli README.
+`
 }
 
 /**
@@ -353,18 +346,128 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * The Prettier config written into generated workspaces.
  *
  * @remarks
- * Follows JavaScript Standard Style (no semicolons, 2-space indents, single quotes,
- * trailing commas in multiline). Formatting via Prettier, linting via ESLint.
+ * Follows JavaScript Standard Style: no semicolons, single quotes, 2-space
+ * indents, and **no trailing commas** — Standard forbids them, so `es5` (the
+ * value this used to carry) was wrong.
+ *
+ * This is written as `.prettierrc.json`, and {@link removeNxScaffolding}
+ * deletes the `.prettierrc` that `create-nx-workspace` leaves behind. That
+ * deletion is load-bearing, not tidying: `.prettierrc` sits ABOVE
+ * `.prettierrc.json` in Prettier's config precedence, so while both existed
+ * every option below was silently ignored in every generated workspace and the
+ * effective config was Nx's `{ "singleQuote": true }`. Verified with
+ * `prettier.resolveConfig` before and after.
+ *
+ * Prettier owns all formatting. The few JavaScript Standard rules Prettier
+ * refuses to implement (`space-before-function-paren`) live in
+ * `@mnci/eslint-config`'s stylistic block instead.
  */
 export const PRETTIER_CONFIG = `{
   "semi": false,
   "singleQuote": true,
-  "trailingComma": "es5",
+  "trailingComma": "none",
   "arrowParens": "avoid",
   "printWidth": 100,
   "tabWidth": 2,
   "useTabs": false
 }
+`
+
+/**
+ * The `@mnci/eslint-config` version generated workspaces depend on.
+ *
+ * @remarks
+ * A caret range, so `npm update` carries lint-rule improvements into existing
+ * workspaces without an `mnci upgrade` — the reason the config ships as a
+ * package rather than as a template string in this file.
+ */
+export const ESLINT_CONFIG_VERSION = '^0.1.0'
+
+/**
+ * The `@mnci/eslint-config` spec to write into a generated workspace's manifest.
+ *
+ * @remarks
+ * Reads `MNCI_ESLINT_CONFIG_SPEC` so the e2e suite can point this at a local
+ * tarball (`npm pack`'d from `packages/eslint-config`) instead of the published
+ * registry package — without it, `npm install` in a freshly generated workspace
+ * 404s until the package has been released at least once. Same escape hatch
+ * `add/python.ts` and `add/flutter.ts` already use for their plugins
+ * (`MNCI2_PYTHON_PIP_SPEC`, `MNCI_NX_FLUTTER_SPEC`).
+ *
+ * {@link ESLINT_CONFIG_VERSION} is the default and the only value a real
+ * `mnci new` ever writes.
+ *
+ * @returns The dependency spec (a semver range, or a path/URL when overridden).
+ * @throws Never - reads an environment variable.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function eslintConfigSpec(): string {
+  return process.env.MNCI_ESLINT_CONFIG_SPEC ?? ESLINT_CONFIG_VERSION
+}
+
+/**
+ * The `eslint` version generated workspaces depend on.
+ *
+ * @remarks
+ * `@mnci/eslint-config` peers on `eslint`, so it never installs one itself.
+ */
+export const ESLINT_VERSION = '^10.8.0'
+
+/**
+ * The ESLint toolchain a generated workspace needs as real devDependencies.
+ *
+ * @remarks
+ * Declaring these is load-bearing, and the reason is easy to miss: `eslint`
+ * ends up in `node_modules` anyway (hoisted via `@mnci/eslint-config`), but
+ * Nx's generators resolve it from the workspace **manifest**, not from disk.
+ * Without the declaration, `mnci add npm-lib` fails outright with "Unable to
+ * find `eslint`. Ensure a valid `eslint` version is installed" — verified
+ * against a real generated workspace.
+ *
+ * `create-nx-workspace --preset=ts` does not install any of these; they used
+ * to arrive incidentally, whenever the first `nx add @nx/react`-style plugin
+ * install happened to pull them in. Now that mnci owns the root ESLint config
+ * it owns the toolchain that config needs, rather than relying on that
+ * accident.
+ *
+ * `@nx/eslint` (the `lint` target's executor and the inference plugin) and
+ * `@nx/eslint-plugin` (the `@nx/dependency-checks` rule) are pinned to the
+ * workspace's own Nx version — a mismatched pair breaks target inference.
+ *
+ * @param nxVersion - The `nx` version already in the workspace manifest.
+ * @returns The devDependency entries to merge in.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function eslintToolchainDependencies(nxVersion: string): Record<string, string> {
+  return {
+    eslint: ESLINT_VERSION,
+    '@nx/eslint': nxVersion,
+    '@nx/eslint-plugin': nxVersion,
+    '@mnci/eslint-config': eslintConfigSpec(),
+  }
+}
+
+/**
+ * The root `eslint.config.mjs` written into generated workspaces.
+ *
+ * @remarks
+ * ESLint config is an mnci-owned file as of this change; it previously was not
+ * owned at all, so workspaces silently kept `create-nx-workspace`'s bare
+ * `@nx/eslint-plugin` default while the richer rules lived only in mnci's own
+ * repo.
+ *
+ * Deliberately three lines: every rule lives in `@mnci/eslint-config`, so the
+ * thirteen plugins are that package's dependencies instead of thirteen
+ * devDependencies in every generated workspace.
+ *
+ * `workspaceRoot` enables the `@nx/dependency-checks` block for `packages/*`
+ * and `libs/*` — it has to scan for `private: true` manifests, which is why it
+ * needs the path rather than deriving one.
+ */
+export const ESLINT_CONFIG = `import mnci from '@mnci/eslint-config'
+
+export default mnci({ workspaceRoot: import.meta.dirname })
 `
 
 /**
@@ -1580,18 +1683,61 @@ export interface OverlayOptions {
 }
 
 /**
+ * Files `create-nx-workspace` scaffolds that mnci deliberately replaces.
+ *
+ * @remarks
+ * Each entry duplicates something mnci owns, and leaving it in place is not
+ * merely untidy — in the `.prettierrc` case it silently WINS:
+ *
+ * - **`.prettierrc`** — Nx writes `{ "singleQuote": true }`. Prettier resolves
+ *   `.prettierrc` before `.prettierrc.json`, so every option in
+ *   {@link PRETTIER_CONFIG} was being ignored in every generated workspace.
+ *   Deleting it is what makes mnci's formatting opinion take effect at all.
+ * - **`.vscode/`** — `extensions.json` lists the same recommendations the
+ *   `<workspace>.code-workspace` file already carries, so VS Code shows the
+ *   prompt twice and the two drift apart. mnci owned this file once
+ *   (`.vscode/extensions.json`), then moved to the single-file workspace and
+ *   never cleaned up the old location.
+ *
+ * Removal is idempotent and safe on a workspace where they are already gone,
+ * which is what makes `mnci upgrade` able to repair an existing workspace.
+ */
+const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.vscode'] as const
+
+/**
+ * Deletes the `create-nx-workspace` scaffolding mnci replaces.
+ *
+ * @remarks
+ * See {@link NX_SCAFFOLDING_TO_REMOVE} for why each entry has to go. This is
+ * the first thing `applyOverlay` deletes rather than overwrites, so
+ * `mnci upgrade`'s "review with `git diff`" advice now covers deletions too.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeNxScaffolding(workspaceRoot: string): void {
+  for (const entry of NX_SCAFFOLDING_TO_REMOVE) {
+    rmSync(join(workspaceRoot, entry), { recursive: true, force: true })
+  }
+}
+
+/**
  * Applies MoNecromanCI's opinions on top of a freshly generated workspace.
  *
  * @remarks
  * This is the ONLY file-writing this CLI does — everything else in the
  * workspace is the untouched output of Nx's own generators. Writes: the
- * `nx.json` release patch, `.npmrc`, `commitlint.config.mjs`, the husky
- * `commit-msg` hook and
+ * `nx.json` release patch, `eslint.config.mjs`, `.prettierrc.json`,
+ * `.prettierignore`, `.npmrc`, `commitlint.config.mjs`, the husky
+ * `commit-msg` hook, the `<workspace>.code-workspace` file and
  * the chosen CI provider's pipeline file(s) — `azure-pipelines.yml` and/or
- * `.github/workflows/ci.yml`, per `options.ci`. Dependency installation
- * (`husky`, `@commitlint/*`) is the caller's job — it shells out to real
- * `npm install` so versions resolve at generation time instead of being
- * pinned here.
+ * `.github/workflows/ci.yml`, per `options.ci`. It also DELETES the Nx
+ * scaffolding it replaces ({@link removeNxScaffolding}). Dependency
+ * installation (`husky`, `@commitlint/*`) is the caller's job — it shells out
+ * to real `npm install` so versions resolve at generation time instead of
+ * being pinned here.
  *
  * @param workspaceRoot - Absolute path to the generated workspace.
  * @param options - The scope, registry, CI agent/variable group and provider chosen.
@@ -1631,9 +1777,12 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...(manifest.scripts as Record<string, string> | undefined),
     ...rootScripts(),
   }
+  const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
   const devDeps = {
-    ...(manifest.devDependencies as Record<string, string> | undefined),
+    ...existingDevDeps,
     ...TS_COMPILER_DEPENDENCIES,
+    // The preset pins `nx` itself; the ESLint plugins must match it exactly.
+    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
     prettier: PRETTIER_VERSION,
   }
   writeFileEnsured(
@@ -1646,10 +1795,13 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
-  // ESLint handles code quality and correctness rules. Prettier handles formatting
-  // following JavaScript Standard Style (no semicolons, 2-space indents, single quotes).
+  // ESLint handles code quality and correctness rules; Prettier handles all
+  // formatting (JavaScript Standard Style). ONE ESLint config, at the root —
+  // `add` deletes the per-project ones Nx generators write.
+  writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
+  removeNxScaffolding(workspaceRoot)
   // VS Code workspace file with folder structure, extensions, and settings.
   writeFileEnsured(
     join(workspaceRoot, `${options.workspaceName}.code-workspace`),

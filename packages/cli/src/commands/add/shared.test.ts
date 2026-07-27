@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerProjectCommands } from './shared'
+import { registerProjectCommands, removeGeneratedEslintConfig } from './shared'
 
 let workspaceRoot: string
 
@@ -140,5 +140,55 @@ describe('registerProjectCommands', () => {
       readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')
     ) as { tasks: { version: string } }
     expect(workspaceFile.tasks.version).toBe('2.0.0')
+  })
+})
+
+describe('removeGeneratedEslintConfig', () => {
+  /** Every extension Nx can pick, driven off the module type of the project. */
+  const EXTENSIONS = ['js', 'mjs', 'cjs', 'ts', 'mts', 'cts']
+
+  it('removes a generated config whatever extension Nx chose for it', () => {
+    // Nx picks the extension from the project's module type, so a helper that
+    // only knew about `.mjs` would silently leave a second config behind for
+    // some kinds — exactly the fragmentation this exists to prevent.
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    for (const extension of EXTENSIONS) {
+      writeFileSync(join(workspaceRoot, `apps/web/eslint.config.${extension}`), 'export default []')
+    }
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    for (const extension of EXTENSIONS) {
+      expect(existsSync(join(workspaceRoot, `apps/web/eslint.config.${extension}`))).toBe(false)
+    }
+  })
+
+  it('removes the .vscode directory @nx/node re-creates, which the .code-workspace file replaces', () => {
+    // `mnci new` deletes this once, but @nx/node writes a launch.json on every
+    // add — so cleaning up only at creation time would not hold.
+    mkdirSync(join(workspaceRoot, '.vscode'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.vscode/launch.json'), '{}')
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
+  })
+
+  it('is a no-op when the generator wrote neither, rather than throwing', () => {
+    // Not every kind's generator emits an eslint config; the call site is
+    // unconditional, so a missing path must not fail the whole add.
+    expect(() => {
+      removeGeneratedEslintConfig(workspaceRoot, 'apps/nothing-here')
+    }).not.toThrow()
+  })
+
+  it('leaves the root config alone — that is the one config an mnci workspace keeps', () => {
+    writeFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'export default []')
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/web/eslint.config.mjs'), 'export default []')
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    expect(existsSync(join(workspaceRoot, 'eslint.config.mjs'))).toBe(true)
   })
 })

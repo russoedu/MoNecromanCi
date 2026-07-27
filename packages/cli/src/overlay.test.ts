@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import yaml from 'js-yaml'
@@ -55,39 +63,51 @@ describe('pythonPublishUrl', () => {
 })
 
 describe('npmrcContent', () => {
-  it('routes the scope to the Azure feed and authenticates with the base64 PAT block', () => {
-    const npmrc = npmrcContent(
-      { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
-      '@demo'
-    )
-    expect(npmrc).toContain(
-      '@demo:registry=https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
-    )
-    // Base64 PAT via _password (expanded at runtime from ${PAT}), for both the
-    // install (/npm/registry/) and publish (feed root) paths — never a raw token.
-    expect(npmrc).toContain(
-      // eslint-disable-next-line no-template-curly-in-string
-      '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:_password=${PAT}'
-    )
-    expect(npmrc).toContain(
-      // eslint-disable-next-line no-template-curly-in-string
-      '//pkgs.dev.azure.com/org/proj/_packaging/feed/:_password=${PAT}'
-    )
-    expect(npmrc).toContain(
-      '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:username=org'
-    )
-    expect(npmrc).not.toContain('_authToken')
+  const azure = {
+    kind: 'azure-artifacts',
+    organization: 'org',
+    project: 'proj',
+    artifactsFeed: 'feed',
+  } as const
+
+  /** Everything that is not a comment or blank — i.e. actual npm config. */
+  function directives(npmrc: string): string[] {
+    return npmrc
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith(';') && !line.startsWith('#'))
+  }
+
+  it('emits no configuration at all — publish auth is deliberately deferred', () => {
+    expect(directives(npmrcContent({ kind: 'npm' }, '@demo'))).toEqual([])
+    expect(directives(npmrcContent(azure, '@demo'))).toEqual([])
   })
 
-  it('authenticates the default registry for public npm', () => {
+  it('says why it is empty, so the deferral is visible in the generated workspace', () => {
+    // An absent file would be an absence nobody notices; the comments are the
+    // whole point of still writing it.
     const npmrc = npmrcContent({ kind: 'npm' }, '@demo')
-    // eslint-disable-next-line no-template-curly-in-string -- asserting the literal placeholder the generated .npmrc must contain.
-    expect(npmrc).toContain('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}')
-    expect(npmrc).not.toContain('@demo:registry')
+
+    expect(npmrc).toContain('Intentionally empty')
+    expect(npmrc).toContain('will not\n; authenticate')
   })
 
-  it('accepts lagging community-plugin peer ranges (legacy-peer-deps)', () => {
-    expect(npmrcContent({ kind: 'npm' }, '@demo')).toContain('legacy-peer-deps=true')
+  it('drops legacy-peer-deps, added for a plugin removed long ago', () => {
+    // @nxazure/func is gone; the flag stayed behind and quietly weakened
+    // dependency resolution in every generated workspace.
+    expect(npmrcContent({ kind: 'npm' }, '@demo')).not.toContain('legacy-peer-deps')
+    expect(npmrcContent(azure, '@demo')).not.toContain('legacy-peer-deps')
+  })
+
+  it('no longer claims a scope-routing guarantee it never actually provided', () => {
+    // The npm variant never emitted an @scope:registry line, while the README
+    // claimed scope routing made accidental public publishes impossible. The
+    // old test asserted the line's ABSENCE, encoding the contradiction.
+    for (const npmrc of [npmrcContent({ kind: 'npm' }, '@demo'), npmrcContent(azure, '@demo')]) {
+      expect(npmrc).not.toContain('@demo:registry')
+      expect(npmrc).not.toContain('_authToken')
+      expect(npmrc).not.toContain('_password')
+    }
   })
 })
 
@@ -1104,6 +1124,78 @@ describe('applyOverlay', () => {
     // Starts empty; `add/*.ts`'s registerProjectCommands appends a task per
     // project as it's added (see commands/add/shared.test.ts).
     expect(workspace.tasks).toEqual({ version: '2.0.0', tasks: [] })
+  })
+
+  it('writes a root eslint config that delegates to @mnci/eslint-config', () => {
+    overlayWith(DEFAULT_STACK)
+
+    // ESLint config is an mnci-owned file as of this change. Before it, a
+    // generated workspace kept create-nx-workspace's bare @nx/eslint-plugin
+    // default while the rich rules lived only in mnci's own repo.
+    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
+    expect(config).toContain("import mnci from '@mnci/eslint-config'")
+    // workspaceRoot is what enables the @nx/dependency-checks block, which has
+    // to scan for private manifests.
+    expect(config).toContain('workspaceRoot: import.meta.dirname')
+
+    const devDependencies = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(devDependencies['@mnci/eslint-config']).toBeDefined()
+  })
+
+  it('deletes the .prettierrc that create-nx-workspace leaves behind', () => {
+    // Load-bearing, not tidying: .prettierrc resolves BEFORE .prettierrc.json,
+    // so while both existed every option in PRETTIER_CONFIG was ignored and the
+    // effective config in every generated workspace was Nx's {singleQuote:true}.
+    writeFileSync(join(workspaceRoot, '.prettierrc'), '{ "singleQuote": true }\n')
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, '.prettierrc'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(true)
+  })
+
+  it('deletes the .vscode directory, whose content the .code-workspace file already carries', () => {
+    mkdirSync(join(workspaceRoot, '.vscode'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.vscode/extensions.json'), '{}')
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
+  })
+
+  it('is idempotent when the Nx scaffolding it removes is already gone', () => {
+    // This is what lets `mnci upgrade` repair an existing workspace.
+    expect(() => overlayWith(DEFAULT_STACK)).not.toThrow()
+    expect(() => overlayWith(DEFAULT_STACK)).not.toThrow()
+  })
+
+  it('formats to JavaScript Standard Style, which forbids trailing commas', () => {
+    overlayWith(DEFAULT_STACK)
+
+    const prettier = JSON.parse(
+      readFileSync(join(workspaceRoot, '.prettierrc.json'), 'utf8')
+    ) as Record<string, unknown>
+    expect(prettier.semi).toBe(false)
+    expect(prettier.singleQuote).toBe(true)
+    // Was 'es5', which contradicts Standard.
+    expect(prettier.trailingComma).toBe('none')
+  })
+
+  it('writes an empty .npmrc — publish auth is a deliberate deferral', () => {
+    overlayWith(DEFAULT_STACK)
+
+    const npmrc = readFileSync(join(workspaceRoot, '.npmrc'), 'utf8')
+    const directives = npmrc
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith(';'))
+    expect(directives).toEqual([])
+    expect(npmrc).toContain('Intentionally empty')
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {

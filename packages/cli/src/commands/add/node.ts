@@ -7,6 +7,7 @@ import {
   ensureAdmZip,
   hasPlugin,
   registerProjectCommands,
+  removeGeneratedEslintConfig,
   type NodeFramework,
   type WorkspaceStack,
 } from './shared'
@@ -140,6 +141,7 @@ export function addNodeApp(
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
     package: nodeAppPackageTarget(name),
   })
+  removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
 }
 
@@ -420,5 +422,6 @@ export function addNodeFunctionApp(
     package: nodeFunctionAppPackageTarget(name),
     start: nodeFunctionAppStartTarget(name),
   })
+  removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
