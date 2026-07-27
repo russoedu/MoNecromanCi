@@ -121,9 +121,11 @@ that would just fail felt worse than being upfront that it doesn't exist yet.
    default for): independent versioning from **conventional commits**,
    `{projectName}@{version}` tags, **tag-only git** (`commit: false`) — nothing
    is ever pushed to `main`; future runs resolve versions from tag names.
-3. Writes `.npmrc` (Azure Artifacts feed or public npm — scope routing makes
-   accidental public publishes impossible), `commitlint.config.mjs`, a husky
-   `commit-msg` hook, the chosen CI provider's pipeline file(s)
+3. Writes `eslint.config.mjs` (three lines importing `@mnci/eslint-config` —
+   the whole linting opinion, in one root config), `.prettierrc.json` +
+   `.prettierignore`, `.npmrc` (comment-only — see **Known gaps** below),
+   `commitlint.config.mjs`, a husky `commit-msg` hook, the chosen CI provider's
+   pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
    `azure`; `github`/`both` also gets `.github/dependabot.yml` — weekly
    dependency-update PRs), a `<workspace-name>.code-workspace` file (VS Code
@@ -143,9 +145,17 @@ this existed; nothing let an already-generated workspace pick one up.
 same options `new` would have and calls the exact same `applyOverlay` `new`
 itself calls — the one function that does every bit of `mnci`-owned file
 writing (`nx.json`'s `release`/`sync`/`generators`/`mnci` blocks, `.npmrc`,
-`commitlint.config.mjs`, `.husky/commit-msg`, the CI pipeline file(s), and the
-curated root `package.json` scripts). Nothing else in the workspace — app/lib
-source, `project.json` targets from `mnci add` — is ever touched.
+`eslint.config.mjs`, `.prettierrc.json`, `commitlint.config.mjs`,
+`.husky/commit-msg`, the CI pipeline file(s), and the curated root
+`package.json` scripts). Nothing else in the workspace — app/lib source,
+`project.json` targets from `mnci add` — is ever touched.
+
+`upgrade` also **deletes** two files `create-nx-workspace` scaffolds: its own
+`.prettierrc` and the `.vscode/` directory. Both are superseded (by
+`.prettierrc.json`, which Prettier would otherwise never reach, and by the
+`.code-workspace` file). Deletion is stronger than the overwriting `upgrade`
+has always done, which is one more reason to run `git diff` first — as the
+command's own output tells you to.
 
 ```sh
 mnci upgrade                          # re-apply from persisted config alone
@@ -182,13 +192,33 @@ stack:
 | --------------- | ------------------ | ------- | ---------------------------------------------------------------------------------------- |
 | `--test-runner` | `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
-**Linting and formatting are unified across the workspace**: every project uses
-**ESLint + Prettier** with the JavaScript Standard Style configuration (no
-semicolons, single quotes, 2-space indents). ESLint is a per-project Nx target
-handling code quality (correctness only), while Prettier handles all formatting.
-Both are automatically configured; `npm run lint` checks code quality, `npm run
-format` (write) and `npm run format:check` (CI-safe) handle formatting. The CI
-runs lint/test/build only — formatting is left as a local/pre-commit step.
+**Linting and formatting are unified across the workspace, from exactly one
+config file each.** The root `eslint.config.mjs` is three lines importing
+[`@mnci/eslint-config`](../eslint-config/README.md); every `@nx/*` generator
+drops a config into the project it creates, and `mnci add` deletes it. Projects
+still get their `lint` target: `@nx/eslint/plugin` infers it by mapping config
+_directories_ onto the project roots beneath them, so the root config covers
+them all. (Verified, not assumed — and the e2e enforces both "every project has
+a `lint` target" and "the root config genuinely reports violations in a project
+with no config of its own", because a future Nx change there would silently
+switch linting off workspace-wide.)
+
+ESLint handles code quality only; **Prettier owns all formatting**, configured
+for JavaScript Standard Style (no semicolons, single quotes, 2-space indents, no
+trailing commas). `mnci` runs Prettier itself at the end of `new` and every
+`add`, so a generated workspace passes its own `format:check` immediately — Nx's
+generators emit semicolons and double quotes, and without that pass the first
+commit buries every real change under generator noise.
+
+One caveat worth knowing: `space-before-function-paren`, Standard's signature
+rule, is **not** enforced. Prettier rewrites `function f (a)` to `function f(a)`
+on every run and has closed the corresponding option permanently, so enabling it
+would make `npm run lint` and `npm run format:check` mutually unsatisfiable.
+Choosing Prettier means accepting its call there.
+
+`npm run lint` checks code quality; `npm run format` (write) and
+`npm run format:check` (CI-safe) handle formatting. The CI runs lint/test/build
+only — formatting is left as a local/pre-commit step.
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
 [Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
@@ -466,6 +496,13 @@ than a surprise:
 
 ## Known gaps (accepted for the experiment)
 
+- **The generated `.npmrc` is empty (comments only), so `npm publish` will not
+  authenticate.** This is a deliberate deferral, not an oversight: the previous
+  file claimed here that scope routing made accidental public publishes
+  impossible, when in fact no `@scope:registry` line was ever emitted. Rather
+  than ship half-wired auth, the CI token export (`NODE_AUTH_TOKEN`/`PAT`) is
+  left in place so wiring it later is one line, and the generated `.npmrc`
+  carries a comment saying so. Publish-path e2e assertions are relaxed to match.
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
 - **Flutter apps build for web only.** Android would require the Android SDK and
   NDK on every build agent; iOS is impossible on a Linux agent regardless. Add

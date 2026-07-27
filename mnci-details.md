@@ -32,14 +32,15 @@ ships** (dogfooded).
 ```
 packages/
 ├── cli/              # @mnci/cli — the binary (mnci new / add / upgrade)
+├── eslint-config/    # @mnci/eslint-config — the shared ESLint flat config
 ├── nx-python-pip/    # @mnci/nx-python-pip — Nx plugin, pip-native Python
 └── nx-flutter/       # @mnci/nx-flutter — Nx plugin, Flutter/Dart pub workspaces
 libs/                 # empty (.gitkeep only)
 tsconfig.base.json    # shared TS config
 ```
 
-`nx show projects` → `@mnci/cli`, `@mnci/nx-python-pip`, `@mnci/nx-flutter`,
-`@mnci/source` (the root).
+`nx show projects` → `@mnci/cli`, `@mnci/eslint-config`, `@mnci/nx-python-pip`,
+`@mnci/nx-flutter`, `@mnci/source` (the root).
 
 ---
 
@@ -374,9 +375,10 @@ same output) and is what both `new` and `upgrade` call.
 
 ```
 nx.json                    (release, sync, generators, and the `mnci` block)
-package.json               (curated root scripts only)
-.npmrc
+package.json               (curated root scripts, dual TS compiler, ESLint toolchain)
+.npmrc                     (comment-only — publish auth is a documented deferral)
 .prettierrc.json + .prettierignore
+eslint.config.mjs          (3 lines importing @mnci/eslint-config)
 commitlint.config.mjs
 .husky/commit-msg
 <workspace-name>.code-workspace  (VS Code multi-root workspace, extensions, settings)
@@ -385,13 +387,22 @@ azure-pipelines.yml        (--ci=azure|both)
 .github/dependabot.yml     (--ci=github|both)
 ```
 
-Everything else — project source, `project.json` targets, ESLint configs — is
-owned by Nx generators or the user.
+`applyOverlay()` also **deletes** two things `create-nx-workspace` scaffolds:
 
-**`mnci` does NOT write a root ESLint config.** `create-nx-workspace` and the Nx
-generators own that. The one exception is the **per-npm-lib** `eslint.config.mjs`
-(`NPM_LIB_ESLINT_CONFIG` in `add/npmLib.ts`), which adds `@nx/dependency-checks`
-exclusions — see §11.
+```
+.prettierrc                (wins precedence over .prettierrc.json — see §11)
+.vscode/                   (superseded by the .code-workspace file)
+```
+
+Everything else — project source, `project.json` targets — is owned by Nx
+generators or the user.
+
+**`mnci` owns the root ESLint config**, and it is the only one in the workspace.
+This is a reversal: it used to come from `create-nx-workspace`, and each `nx g`
+generator dropped another into its own project. `removeGeneratedEslintConfig()`
+(`add/shared.ts`) deletes those after every `add`; the rules that used to live
+in the per-npm-lib config (`NPM_LIB_ESLINT_CONFIG`, now gone) moved into
+`@mnci/eslint-config`'s `dependencyChecks` block.
 
 ### Root scripts
 
@@ -519,14 +530,24 @@ the default PR job does not run it.
 11. **Drop-zip basenames are a contract.** They are exactly `<kind>-<name>.zip`
     (react is `<kind>-<name>-<env>.zip`), because Azure derives each per-app build
     tag from the zip filename — so the tag can never drift from the artifact.
-12. **The npm-lib ESLint config must exclude the test toolchain** from
-    `@nx/dependency-checks`. rollup bundles from the entry point only, so
-    `vitest.config.*` and `*.spec.*` never reach the published package. Without
-    this, a **vitest** workspace fails `npm run lint` on a freshly generated
-    npm-lib. (`.spec` only — matching an unused `.test` glob drags an
-    `eslint-disable` into the generated file, which a consuming workspace can flag
-    as an unused directive.)
-13. **Adding a package requires `npx nx sync`** and committing the resulting
+12. **`@nx/dependency-checks` must exclude the test and build toolchain.** rollup
+    bundles from the entry point only, so `vitest.config.*`, `tsup.config.*` and
+    `*.spec.*` never reach the published package and must not drive the published
+    manifest. Without this a **vitest** workspace fails `npm run lint` on a freshly
+    generated npm-lib. The exclusions now live in `@mnci/eslint-config`'s
+    `dependencyChecks` block (root config), not a per-project file.
+13. **`.prettierrc` beats `.prettierrc.json`.** Prettier's config resolution order
+    is not alphabetical, and `create-nx-workspace` writes the winning filename. For
+    a long time that silently discarded mnci's entire Prettier opinion in every
+    generated workspace, invisibly — both files existed and looked fine. The
+    overlay deletes Nx's; the e2e asserts `--find-config-path` resolves to
+    `.prettierrc.json`, not merely that one config file exists.
+14. **`space-before-function-paren` cannot coexist with Prettier.**
+    `eslint-config-prettier` disables it because it _conflicts_, not because it is
+    redundant: Prettier rewrites `function f (a)` to `function f(a)` every run.
+    Enabling it makes `lint` and `format:check` mutually unsatisfiable. A
+    regression test in `@mnci/eslint-config` asserts it stays off.
+15. **Adding a package requires `npx nx sync`** and committing the resulting
     `tsconfig.json` change, or `nx sync:check` fails in CI.
 
 ---
@@ -546,6 +567,11 @@ the default PR job does not run it.
 
 **Real gaps:**
 
+- **The generated `.npmrc` is empty, so `npm publish` will not authenticate.** A
+  deliberate deferral. `packages/cli/README.md` used to claim scope routing made
+  accidental public publishes impossible; no `@scope:registry` line was ever
+  emitted, so that claim was false. The CI token export stays in place so wiring
+  real auth later is one line.
 - **Go has no e2e coverage.** It has real unit tests and real CI wiring, but the
   e2e never drives it, because it needs Go on the machine. The skip mechanism
   built for Flutter would work here but has not been applied.
