@@ -24,6 +24,13 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+
+      // A component's return type is always JSX and TypeScript infers it
+      // precisely. Annotating every one adds noise and no information — and it
+      // would make Nx's own generated `app.tsx` fail lint in a workspace the
+      // user has not touched yet. Still enforced on plain `.ts`, where the
+      // return type is real API surface.
+      '@typescript-eslint/explicit-function-return-type': 'off',
     },
   },
 ]

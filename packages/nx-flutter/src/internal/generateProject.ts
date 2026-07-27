@@ -87,7 +87,6 @@ function buildTarget(name: string): ProjectConfiguration['targets'] {
   return {
     build: {
       executor: '@mnci/nx-flutter:build',
-      // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
       outputs: [`{workspaceRoot}/dist/apps/${name}`],
       options: { outputPath: `dist/apps/${name}` },
     },
@@ -115,7 +114,6 @@ function packageTarget(name: string): ProjectConfiguration['targets'] {
     package: {
       executor: 'nx:run-commands',
       dependsOn: ['build'],
-      // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
       outputs: [`{workspaceRoot}/${zip}`],
       options: { command },
     },

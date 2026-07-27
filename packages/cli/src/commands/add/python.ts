@@ -241,7 +241,6 @@ function pythonAppPackageTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
   }
@@ -274,7 +273,6 @@ function pythonFunctionAppPackageTarget(
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFile('${root}/function_app.py');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/requirements.txt');z.addLocalFolder('${root}/${moduleDirectory}','${moduleDirectory}');z.writeZip('${zip}')"`
   return {
     executor: 'nx:run-commands',
-    // eslint-disable-next-line unicorn/no-incorrect-template-string-interpolation -- {workspaceRoot} is an Nx output token
     outputs: [`{workspaceRoot}/${zip}`],
     options: { command },
   }
