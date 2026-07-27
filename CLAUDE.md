@@ -203,11 +203,19 @@ mnci worked while everything it produced did not.
   `@nx/eslint/plugin` in `nx.json` itself.** Found by real end-to-end
   generation, not by reading code: `@nx/react` pins `eslint-plugin-import@2.31.0`,
   whose peer range caps at ESLint 9, so `mnci add react-app` failed its npm
-  install outright against the ESLint 10 toolchain. `--linter=none` is the right
+  install outright. `--linter=none` is the right
   answer regardless — mnci deletes the config those generators write — but it
   removes the side effect that used to register the plugin, so the overlay now
   owns that too. A latent oddity goes with it: `npm run lint` previously worked
   in a fresh workspace only by accident.
+- **The stack is ESLint 9, not 10** — decided by the plugins, not the version
+  number. `eslint-plugin-react` has no ESLint 10 release at all (it throws while
+  loading `react/display-name`, killing lint for every `.tsx` file), and
+  `@nx/react` pins `eslint-plugin-import@2.31.0`, which caps at 9. So:
+  `eslint ^9.39` and `eslint-plugin-unicorn` pinned to `^61`, the last line
+  supporting 9. Three unicorn rules this config would want off don't exist in
+  v61 and so aren't listed — ESLint rejects a config naming a rule its plugin
+  lacks. `configs/base.js` records which ones, for whoever upgrades next.
 - **This repo now lints itself with the config it ships** (`eslint.config.mjs` is the same
   three-line import), which is what makes the original drift impossible to reintroduce.
   TSDoc enforcement stays a root-only extra block — an mnci-authoring standard, not
