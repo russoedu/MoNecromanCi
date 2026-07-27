@@ -25,6 +25,7 @@ import {
   registryUrl,
   rootScripts,
   type StackConfig,
+  withEslintPlugin,
   withReleaseConfig,
 } from './overlay'
 
@@ -727,14 +728,59 @@ describe('githubActionsYaml', () => {
   })
 })
 
+describe('withEslintPlugin', () => {
+  it('registers @nx/eslint/plugin, which is what gives every project a lint target', () => {
+    // create-nx-workspace does not add this; Nx used to, as an invisible side
+    // effect of the first `nx g … --linter=eslint`. mnci passes `--linter=none`
+    // now, so without this registration no project would get a lint target at
+    // all — and `npm run lint` in a fresh workspace would silently do nothing.
+    const patched = withEslintPlugin({ plugins: [{ plugin: '@nx/js/typescript' }] })
+
+    expect(patched.plugins).toEqual([
+      { plugin: '@nx/js/typescript' },
+      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } },
+    ])
+  })
+
+  it('is idempotent, so `mnci upgrade` cannot accumulate duplicates', () => {
+    const once = withEslintPlugin({ plugins: [] })
+
+    expect(withEslintPlugin(once).plugins).toEqual(once.plugins)
+  })
+
+  it("leaves an existing registration's own options alone", () => {
+    // A workspace generated before this existed has Nx's entry already. Its
+    // targetName may have been customised; overwriting it would rename every
+    // project's lint target out from under the user's scripts.
+    const existing = { plugin: '@nx/eslint/plugin', options: { targetName: 'eslint-check' } }
+
+    expect(withEslintPlugin({ plugins: [existing] }).plugins).toEqual([existing])
+  })
+
+  it('handles the bare-string plugin form Nx also accepts', () => {
+    expect(withEslintPlugin({ plugins: ['@nx/eslint/plugin'] }).plugins).toEqual([
+      '@nx/eslint/plugin',
+    ])
+  })
+
+  it('copes with an nx.json that has no plugins key at all', () => {
+    expect(withEslintPlugin({}).plugins).toEqual([
+      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } },
+    ])
+  })
+})
+
 describe('generatorDefaults', () => {
-  it('always uses eslint and carries the testRunner', () => {
+  it("sets linter 'none' — the root config lints everything — and carries the testRunner", () => {
+    // Not a regression: `none` stops a direct `nx g` from scaffolding a
+    // per-project config that would compete with the workspace's single root
+    // one. `@nx/eslint/plugin` still gives the project its `lint` target.
     const defaults = generatorDefaults({ testRunner: 'jest' }) as Record<
       string,
       { linter: string; unitTestRunner: string }
     >
-    expect(defaults['@nx/js:library']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
-    expect(defaults['@nx/react:application']).toEqual({ linter: 'eslint', unitTestRunner: 'jest' })
+    expect(defaults['@nx/js:library']).toEqual({ linter: 'none', unitTestRunner: 'jest' })
+    expect(defaults['@nx/react:application']).toEqual({ linter: 'none', unitTestRunner: 'jest' })
   })
 })
 
@@ -1046,7 +1092,7 @@ describe('applyOverlay', () => {
       generators: Record<string, { linter: string; unitTestRunner: string }>
     }
     expect(nxJson.generators['@nx/js:library']).toEqual({
-      linter: 'eslint',
+      linter: 'none',
       unitTestRunner: 'vitest',
     })
   })

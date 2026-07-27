@@ -300,6 +300,68 @@ export function releaseConfig(ci: CiProvider): Record<string, unknown> {
 export const SYNC_CONFIG = { applyChanges: true } as const
 
 /**
+ * The `@nx/eslint/plugin` registration merged into a generated workspace's `nx.json`.
+ *
+ * @remarks
+ * This plugin is what gives every project its `lint` target: it maps ESLint
+ * config *directories* onto the project roots beneath them, so the single root
+ * config mnci writes covers the whole workspace and no project needs one of its
+ * own.
+ *
+ * mnci registers it because mnci owns linting. Nx would otherwise add it as a
+ * side effect of the first `nx g … --linter=eslint`, which is both invisible
+ * and no longer true: the generators are invoked with `--linter=none` (see
+ * `add/shared.ts`), precisely so they stop scaffolding a per-project config —
+ * and, more pressingly, stop dragging in `eslint-plugin-import@2.31.0`, whose
+ * peer range caps at ESLint 9 and made `mnci add react-app` fail outright on
+ * the ESLint 10 toolchain this workspace installs.
+ *
+ * A consequence worth stating: `npm run lint` now works in a workspace with
+ * zero projects, which it previously did only by accident.
+ */
+export const ESLINT_PLUGIN_CONFIG = {
+  plugin: '@nx/eslint/plugin',
+  options: { targetName: 'lint' },
+} as const
+
+/**
+ * The plugin name of an `nx.json` `plugins` entry.
+ *
+ * @remarks
+ * Nx accepts both the bare-string form (`"@nx/eslint/plugin"`) and the object
+ * form (`{ plugin, options }`), and a real workspace can hold a mix.
+ *
+ * @param entry - One element of `nx.json`'s `plugins` array.
+ * @returns The plugin name, or `undefined` for an entry in neither form.
+ * @throws Never - pure property read.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pluginName(entry: unknown): string | undefined {
+  return typeof entry === 'string' ? entry : (entry as { plugin?: string }).plugin
+}
+
+/**
+ * Returns a copy of an `nx.json` object with `@nx/eslint/plugin` registered.
+ *
+ * @remarks
+ * Idempotent, so `mnci upgrade` cannot accumulate duplicate entries — and a
+ * workspace where Nx already added the plugin (generated before this existed)
+ * keeps its own entry, options included, rather than having them overwritten.
+ *
+ * @param nxJson - The parsed `nx.json`.
+ * @returns A new object whose `plugins` array contains the ESLint plugin.
+ * @throws Never - performs a pure object merge with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withEslintPlugin(nxJson: Record<string, unknown>): Record<string, unknown> {
+  const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
+  const registered = plugins.some(entry => pluginName(entry) === ESLINT_PLUGIN_CONFIG.plugin)
+  return registered
+    ? { ...nxJson, plugins }
+    : { ...nxJson, plugins: [...plugins, ESLINT_PLUGIN_CONFIG] }
+}
+
+/**
  * Returns a copy of an `nx.json` object with the release block applied.
  *
  * @remarks
@@ -606,8 +668,9 @@ export function rootScripts(): Record<string, string> {
  *
  * @remarks
  * Lets a user's own **direct** `nx g @nx/react:app ...` (outside `mnci add`)
- * pick up the workspace's chosen test runner automatically. Linting is always
- * ESLint (code quality/correctness rules only) + Prettier (formatting).
+ * pick up the workspace's chosen test runner automatically, and — via
+ * `linter: 'none'` — keep the workspace's single root ESLint config intact
+ * instead of scaffolding a competing per-project one.
  *
  * `mnci add` itself does **not** read this back — see {@link mnciConfig} for
  * the dedicated, single-source-of-truth block it reads instead. The two used
@@ -621,7 +684,13 @@ export function rootScripts(): Record<string, string> {
  */
 export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
   const shared = {
-    linter: 'eslint',
+    // `none`, not `eslint`, and the workspace is still fully linted. The root
+    // config plus `@nx/eslint/plugin` ({@link ESLINT_PLUGIN_CONFIG}) give every
+    // project its `lint` target; `eslint` here would only make the generator
+    // scaffold a per-project config mnci deletes anyway — and drag in
+    // `eslint-plugin-import@2.31.0`, which peer-caps at ESLint 9 and breaks the
+    // install outright on this workspace's ESLint 10.
+    linter: 'none',
     unitTestRunner: stack.testRunner,
   }
   return {
@@ -1759,10 +1828,8 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
-  writeFileEnsured(
-    nxJsonPath,
-    toJson({ ...withReleaseConfig(nxJson, options.ci), generators, sync, mnci })
-  )
+  const patched = withEslintPlugin(withReleaseConfig(nxJson, options.ci))
+  writeFileEnsured(nxJsonPath, toJson({ ...patched, generators, sync, mnci }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
   // chosen scope so `add npm-lib` can derive the default import path from it,

@@ -56,7 +56,7 @@ export async function addNpmLib(
       `--importPath=${scope}/${name}`,
       '--bundler=rollup',
       `--unitTestRunner=${stack.testRunner}`,
-      '--linter=eslint',
+      '--linter=none',
       '--no-interactive',
     ],
     workspaceRoot

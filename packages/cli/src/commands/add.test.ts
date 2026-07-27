@@ -101,7 +101,7 @@ describe('runAdd', () => {
         'libs/utils',
         '--bundler=tsc',
         '--unitTestRunner=jest',
-        '--linter=eslint',
+        '--linter=none',
         '--no-interactive',
       ],
       workspaceRoot

@@ -542,12 +542,19 @@ the default PR job does not run it.
     generated workspace, invisibly — both files existed and looked fine. The
     overlay deletes Nx's; the e2e asserts `--find-config-path` resolves to
     `.prettierrc.json`, not merely that one config file exists.
-14. **`space-before-function-paren` cannot coexist with Prettier.**
+14. **`@nx/eslint/plugin` must be registered by mnci, in `nx.json`.** It is what
+    turns the single root config into a `lint` target on every project. Nx used
+    to add it as a side effect of the first `nx g … --linter=eslint`; mnci passes
+    `--linter=none` now (so generators stop scaffolding per-project configs, and
+    stop dragging in `eslint-plugin-import@2.31.0`, which peer-caps at ESLint 9
+    and broke `mnci add react-app` outright). Drop the registration and every
+    project silently loses linting while `npm run lint` still exits 0.
+15. **`space-before-function-paren` cannot coexist with Prettier.**
     `eslint-config-prettier` disables it because it _conflicts_, not because it is
     redundant: Prettier rewrites `function f (a)` to `function f(a)` every run.
     Enabling it makes `lint` and `format:check` mutually unsatisfiable. A
     regression test in `@mnci/eslint-config` asserts it stays off.
-15. **Adding a package requires `npx nx sync`** and committing the resulting
+16. **Adding a package requires `npx nx sync`** and committing the resulting
     `tsconfig.json` change, or `nx sync:check` fails in CI.
 
 ---
