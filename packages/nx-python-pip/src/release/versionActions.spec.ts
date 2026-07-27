@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import type { Tree } from '@nx/devkit'
 
 // `nx/release` transitively pulls in Nx's daemon-client/analytics modules,
 // which probe for a real workspace root at import time — fine at runtime
@@ -30,7 +31,7 @@ function fakeTree(files: Record<string, string>) {
     write: (path: string, content: string) => {
       files[path] = content
     },
-  } as unknown as import('@nx/devkit').Tree
+  } as unknown as Tree
 }
 
 function instance(): PythonVersionActions {

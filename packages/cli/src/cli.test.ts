@@ -21,9 +21,11 @@ jest.mock('commander', () => {
     name(): this {
       return this
     }
+
     description(): this {
       return this
     }
+
     version(): this {
       return this
     }

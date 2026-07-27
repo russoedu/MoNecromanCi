@@ -250,7 +250,7 @@ export function npmrcContent(_registry: RegistryConfig, _scope: string): string 
  * @throws Never - builds a plain object with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function releaseConfig(ci: CiProvider) {
+export function releaseConfig(ci: CiProvider): Record<string, unknown> {
   const githubReleases = ci === 'github'
   return {
     projectsRelationship: 'independent',
