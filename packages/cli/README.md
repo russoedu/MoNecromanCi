@@ -150,12 +150,18 @@ writing (`nx.json`'s `release`/`sync`/`generators`/`mnci` blocks, `.npmrc`,
 `package.json` scripts). Nothing else in the workspace — app/lib source,
 `project.json` targets from `mnci add` — is ever touched.
 
-`upgrade` also **deletes** two files `create-nx-workspace` scaffolds: its own
-`.prettierrc` and the `.vscode/` directory. Both are superseded (by
-`.prettierrc.json`, which Prettier would otherwise never reach, and by the
-`.code-workspace` file). Deletion is stronger than the overwriting `upgrade`
-has always done, which is one more reason to run `git diff` first — as the
-command's own output tells you to.
+`upgrade` also **deletes** things, which is stronger than the overwriting it
+has always done — one more reason to run `git diff` first, as the command's own
+output tells you to:
+
+- `create-nx-workspace`'s `.prettierrc` and `.vscode/`, both superseded (by
+  `.prettierrc.json`, which Prettier would otherwise never reach, and by the
+  `.code-workspace` file).
+- **every per-project `eslint.config.*` under `apps/`, `libs/` and
+  `packages/`.** This is the migration path for a workspace generated before
+  mnci owned linting: without it an upgrade would install the root config while
+  each project kept linting against its own stale copy. The root config is never
+  touched, and neither is a config anywhere outside those three directories.
 
 ```sh
 mnci upgrade                          # re-apply from persisted config alone

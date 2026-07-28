@@ -390,9 +390,14 @@ azure-pipelines.yml        (--ci=azure|both)
 `applyOverlay()` also **deletes** two things `create-nx-workspace` scaffolds:
 
 ```
-.prettierrc                (wins precedence over .prettierrc.json — see §11)
-.vscode/                   (superseded by the .code-workspace file)
+.prettierrc                        (wins precedence over .prettierrc.json — see §11)
+.vscode/                           (superseded by the .code-workspace file)
+{apps,libs,packages}/*/eslint.config.*   (the workspace has exactly one, at the root)
 ```
+
+The per-project sweep is what makes `mnci upgrade` a real migration for a
+workspace generated before mnci owned linting — otherwise the root config would
+land while every project kept linting against its own stale copy.
 
 Everything else — project source, `project.json` targets — is owned by Nx
 generators or the user.

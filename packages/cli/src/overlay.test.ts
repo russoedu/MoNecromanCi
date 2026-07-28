@@ -1213,6 +1213,34 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
   })
 
+  it('sweeps per-project eslint configs, so `mnci upgrade` de-fragments an old workspace', () => {
+    // This is the migration path that matters. `mnci add` deletes the config
+    // its own generator writes, but that only helps projects created from now
+    // on — a workspace generated before mnci owned linting carries one in every
+    // project directory, and without this an upgrade would install the root
+    // config while leaving each project linting against its own stale rules.
+    for (const projectRoot of ['apps/web', 'libs/utils', 'packages/sdk']) {
+      mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
+      writeFileSync(join(workspaceRoot, projectRoot, 'eslint.config.mjs'), 'export default []')
+    }
+    // A non-default extension, and a path outside the three project dirs.
+    writeFileSync(join(workspaceRoot, 'apps/web/eslint.config.cjs'), 'module.exports = []')
+    mkdirSync(join(workspaceRoot, 'tools/gen'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'tools/gen/eslint.config.mjs'), 'export default []')
+
+    overlayWith(DEFAULT_STACK)
+
+    for (const projectRoot of ['apps/web', 'libs/utils', 'packages/sdk']) {
+      expect(existsSync(join(workspaceRoot, projectRoot, 'eslint.config.mjs'))).toBe(false)
+    }
+    expect(existsSync(join(workspaceRoot, 'apps/web/eslint.config.cjs'))).toBe(false)
+    // The root config is the one that must survive.
+    expect(existsSync(join(workspaceRoot, 'eslint.config.mjs'))).toBe(true)
+    // Only the three conventional project directories are swept — a config a
+    // user put somewhere else is theirs, not mnci's to delete.
+    expect(existsSync(join(workspaceRoot, 'tools/gen/eslint.config.mjs'))).toBe(true)
+  })
+
   it('is idempotent when the Nx scaffolding it removes is already gone', () => {
     // This is what lets `mnci upgrade` repair an existing workspace.
     expect(() => overlayWith(DEFAULT_STACK)).not.toThrow()

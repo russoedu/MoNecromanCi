@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs'
+import { globSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { markExecutable, readJson, toJson, writeFileEnsured } from './util/fsx'
 
@@ -420,9 +420,12 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * effective config was Nx's `{ "singleQuote": true }`. Verified with
  * `prettier.resolveConfig` before and after.
  *
- * Prettier owns all formatting. The few JavaScript Standard rules Prettier
- * refuses to implement (`space-before-function-paren`) live in
- * `@mnci/eslint-config`'s stylistic block instead.
+ * Prettier owns all formatting. The three JavaScript Standard rules Prettier
+ * never touches (`spaced-comment`, `lines-between-class-members`,
+ * `unicode-bom`) live in `@mnci/eslint-config`'s stylistic block instead.
+ * `space-before-function-paren` is deliberately NOT among them: Prettier
+ * actively reverses it, so enabling it would make `lint` and `format:check`
+ * mutually unsatisfiable.
  */
 export const PRETTIER_CONFIG = `{
   "semi": false,
@@ -1789,6 +1792,44 @@ const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.vscode'] as const
 export function removeNxScaffolding(workspaceRoot: string): void {
   for (const entry of NX_SCAFFOLDING_TO_REMOVE) {
     rmSync(join(workspaceRoot, entry), { recursive: true, force: true })
+  }
+  removeProjectEslintConfigs(workspaceRoot)
+}
+
+/**
+ * Deletes every per-project ESLint config in the workspace.
+ *
+ * @remarks
+ * An mnci workspace has exactly ONE ESLint config, at the root. `mnci add`
+ * already deletes the one its generator just wrote
+ * (`removeGeneratedEslintConfig` in `add/shared.ts`), but that only helps
+ * projects created from now on.
+ *
+ * This is the migration path for workspaces generated **before** mnci owned
+ * linting, which is the case that matters: they carry a config in every
+ * `apps/*`, `libs/*` and `packages/*` directory, and without this an
+ * `mnci upgrade` would install the root config while leaving each project
+ * still linting itself against its own stale rules — the exact fragmentation
+ * the root config exists to end. Verified against a real workspace: an
+ * upgrade fixed every root file and left `packages/sdk/eslint.config.mjs`
+ * behind until this was added.
+ *
+ * Only the three conventional project directories are swept, never the whole
+ * tree, so a config a user deliberately placed elsewhere is left alone. The
+ * root config is never matched — these globs are all one level deep inside a
+ * project directory.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeProjectEslintConfigs(workspaceRoot: string): void {
+  const matches = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
+    cwd: workspaceRoot,
+  })
+  for (const match of matches) {
+    rmSync(join(workspaceRoot, match), { force: true })
   }
 }
 

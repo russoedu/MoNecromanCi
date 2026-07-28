@@ -238,6 +238,30 @@ const workspace = path.join(temporary, 'demo')
 process.on('exit', () => rmSync(temporary, { recursive: true, force: true }))
 
 /* ---------------------------------------------------------------------------
+ * @mnci/eslint-config — packed from source, before anything else.
+ *
+ * Unlike the Python and Flutter plugins (packed later, just before the kinds
+ * that need them), this one is required by `mnci new` itself: the overlay adds
+ * it to the generated root manifest, so the very first `npm install` resolves
+ * it. It is not published yet, so without this the whole suite dies on an npm
+ * 404 at step one — which is exactly what happened the first time this ran.
+ * ------------------------------------------------------------------------- */
+
+console.log('\n▸ packing @mnci/eslint-config for the e2e to install locally')
+const eslintConfigDirectory = path.resolve(SCRIPT_DIR, '..', '..', 'eslint-config')
+const eslintConfigPackDirectory = path.join(temporary, 'eslint-config-pack')
+mkdirSync(eslintConfigPackDirectory, { recursive: true })
+// No build step — this package ships plain ESM, so `npm pack` is the whole job.
+const eslintConfigPackOutput = execSync(
+  `npm pack --silent --pack-destination "${eslintConfigPackDirectory}"`,
+  { cwd: eslintConfigDirectory, encoding: 'utf8' }
+).trim()
+process.env.MNCI_ESLINT_CONFIG_SPEC = path.join(
+  eslintConfigPackDirectory,
+  eslintConfigPackOutput.split('\n').at(-1)
+)
+
+/* ---------------------------------------------------------------------------
  * new
  * ------------------------------------------------------------------------- */
 
