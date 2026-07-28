@@ -1,7 +1,8 @@
 jest.mock('cross-spawn', () => ({ sync: jest.fn() }))
 
 import spawn from 'cross-spawn'
-import { runNpx, runNx, runShell } from './nx'
+import { runNpx, runNx, runPrettier, runShell } from './nx'
+import { logger } from './util/logger'
 
 const mockSpawnSync = jest.mocked(spawn.sync)
 
@@ -67,5 +68,65 @@ describe('runNpx', () => {
   it('throws when the process exits non-zero', () => {
     mockSpawnSync.mockReturnValue({ status: 1 } as ReturnType<typeof spawn.sync>)
     expect(() => runNpx(['boom'], '/tmp')).toThrow('npx boom failed with exit code 1')
+  })
+})
+
+describe('runPrettier', () => {
+  let warn: jest.SpyInstance
+
+  beforeEach(() => {
+    warn = jest.spyOn(logger, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    warn.mockRestore()
+  })
+
+  it('formats the whole workspace by default', () => {
+    // Nx's generators emit semicolons and double quotes, so without this pass a
+    // generated workspace fails its own `format:check` before the user has
+    // written a line.
+    mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
+
+    runPrettier('/ws')
+
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'npx',
+      ['prettier', '--write', '--log-level', 'warn', '.'],
+      expect.objectContaining({ cwd: '/ws' })
+    )
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('formats a narrower target when one is given', () => {
+    mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
+
+    runPrettier('/ws', 'apps/web')
+
+    expect(mockSpawnSync.mock.calls[0][1]).toContain('apps/web')
+  })
+
+  it('warns instead of throwing when Prettier fails, and names the recovery command', () => {
+    // Deliberately non-fatal: the project is fully generated and wired by the
+    // time this runs, so aborting on a formatter hiccup would leave a perfectly
+    // usable workspace stranded behind an error message.
+    mockSpawnSync.mockReturnValue({ status: 2 } as ReturnType<typeof spawn.sync>)
+
+    expect(() => {
+      runPrettier('/ws')
+    }).not.toThrow()
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('npm run format'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('exit code 2'))
+  })
+
+  it('treats a signal-killed Prettier (null status) as a failure, not a success', () => {
+    // runShell maps a null status to 1, so this must warn rather than read as
+    // "formatted fine".
+    mockSpawnSync.mockReturnValue({ status: null } as ReturnType<typeof spawn.sync>)
+
+    runPrettier('/ws')
+
+    expect(warn).toHaveBeenCalled()
   })
 })
