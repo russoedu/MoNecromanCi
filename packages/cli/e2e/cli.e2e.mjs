@@ -592,7 +592,7 @@ sdkManifestForDependency.dependencies = {
 writeFileSync(sdkManifestPath, `${JSON.stringify(sdkManifestForDependency, undefined, 2)}\n`)
 writeFileSync(
   path.join(workspace, 'packages/sdk/src/lib/sdk.ts'),
-  "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nexport function sdk(): string {\n  return 'sdk uses ' + utils() + ' and ' + ms(60000);\n}\n"
+  "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nexport function sdk(): string {\n  return 'sdk uses ' + utils() + ' and ' + ms(60_000);\n}\n"
 )
 writeFileSync(
   path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'),
@@ -620,7 +620,7 @@ writeFileSync(
     "import { utils } from '@demo/utils';",
     "import App from './app/app';",
     '',
-    "console.log('deps-check:', utils(), ms(60000), import.meta.env.VITE_API_URL);",
+    "console.log('deps-check:', utils(), ms(60_000), import.meta.env.VITE_API_URL);",
     '',
     'const root = ReactDOM.createRoot(',
     "  document.getElementById('root') as HTMLElement,",
@@ -646,7 +646,7 @@ run(`node ${CLI} add node-app svc`, workspace)
 console.log('\n▸ wiring node app (svc) -> utils (private internal) + ms (real external dependency)')
 writeFileSync(
   path.join(workspace, 'apps/svc/src/main.ts'),
-  "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nconsole.log('deps-check:', utils(), ms(60000));\n"
+  "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nconsole.log('deps-check:', utils(), ms(60_000));\n"
 )
 run('npx nx sync', workspace)
 
@@ -667,13 +667,19 @@ run(`node ${CLI} add node-function-app api`, workspace)
 console.log(
   '\n▸ wiring node function app (api) -> utils (private internal) + ms (real external dependency)'
 )
+// These two are written already Standard-formatted, unlike the earlier
+// fixtures. Every fixture before this one is followed by another `mnci add`,
+// whose Prettier pass normalises it in passing — which is itself evidence the
+// pass works. Nothing runs after this one, so it has to arrive clean or the
+// "format:check is already green after adds" assertion below fails on the
+// harness's own code rather than on anything mnci produced.
 writeFileSync(
   path.join(workspace, 'apps/api/src/deps.ts'),
-  "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nexport function apiDeps(): string {\n  return 'api uses ' + utils() + ' and ' + ms(60000);\n}\n"
+  "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps(): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
 )
 writeFileSync(
   path.join(workspace, 'apps/api/src/main.ts'),
-  "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello';\nimport { apiDeps } from './deps';\n\nconsole.log(apiDeps());\n"
+  "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello'\nimport { apiDeps } from './deps'\n\nconsole.log(apiDeps())\n"
 )
 run('npx nx sync', workspace)
 
