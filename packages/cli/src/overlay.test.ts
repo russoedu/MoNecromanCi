@@ -313,14 +313,24 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
 
-  it('verifies every run with npm run lint then test+build, no affected branching', () => {
+  it('verifies every run with npm run lint then typecheck+test+build, no affected branching', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     // The run-many also carries `lint` so Nx-native lint targets `npm run lint`
     // misses (Python's ruff) still run in CI.
     expect(pipeline).toContain('npm run lint')
-    expect(pipeline).toContain('npx nx run-many -t lint,test,build')
+    expect(pipeline).toContain('npx nx run-many -t lint,typecheck,test,build')
     expect(pipeline).not.toContain('nx affected')
+  })
+
+  it('typechecks in the run-many — build alone does not, since bundlers strip types', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // The gate that would have caught the `mnci upgrade` workspaceName bug.
+    // esbuild/swc strip types without reading them, so `build` passing proves
+    // nothing about type correctness — a workspace can be green on
+    // lint+test+build and still carry real errors.
+    expect(pipeline).toContain('npx nx run-many -t lint,typecheck,test,build')
   })
 
   it('gates formatting with its own format:check step, after lint', () => {
@@ -571,11 +581,11 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
   })
 
-  it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {
+  it('verifies every run with npm run lint then typecheck+test+build, no affected branching', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     expect(workflow).toContain('npm run lint')
-    expect(workflow).toContain('npx nx run-many -t lint,test,build')
+    expect(workflow).toContain('npx nx run-many -t lint,typecheck,test,build')
     expect(workflow).not.toContain('nx affected')
   })
 
@@ -745,6 +755,10 @@ describe('githubActionsYaml', () => {
     // other.
     expect(github).toContain('npm run format:check')
     expect(azure).toContain('npm run format:check')
+
+    // Same for the typecheck target, for the same reason.
+    expect(github).toContain('-t lint,typecheck,test,build')
+    expect(azure).toContain('-t lint,typecheck,test,build')
   })
 })
 
@@ -877,14 +891,14 @@ describe('readMnciConfig', () => {
 
 describe('rootScripts', () => {
   it('uses nx lint and prettier format scripts', () => {
-    const scripts = rootScripts({ testRunner: 'jest' })
+    const scripts = rootScripts()
     expect(scripts.lint).toBe('nx run-many -t lint')
     expect(scripts.format).toBe('prettier --write .')
     expect(scripts['format:check']).toBe('prettier --check .')
   })
 
   it('adds python:install chaining the same two guards CI runs (for local-dev convenience)', () => {
-    const scripts = rootScripts({ testRunner: 'jest' })
+    const scripts = rootScripts()
 
     // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
     expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
@@ -901,9 +915,12 @@ describe('rootScripts', () => {
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
   })
 
-  it('stamps python:install in all stacks (both guards already no-op on a workspace with no Python projects)', () => {
-    expect(rootScripts({ testRunner: 'jest' })['python:install']).toBeDefined()
-    expect(rootScripts({ testRunner: 'vitest' })['python:install']).toBeDefined()
+  it('stamps python:install unconditionally (both guards already no-op with no Python projects)', () => {
+    // This used to call rootScripts({ testRunner }) twice to prove the script was
+    // stack-independent. rootScripts takes no parameters, so both calls were
+    // identical and the test asserted the same thing twice — stack-independence
+    // is now guaranteed by the signature rather than by assertion.
+    expect(rootScripts()['python:install']).toBeDefined()
   })
 })
 
@@ -912,7 +929,6 @@ describe('applyOverlay', () => {
 
   const overlayWith = (stack: StackConfig): void =>
     applyOverlay(workspaceRoot, {
-      workspaceName: 'demo',
       workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
@@ -1399,7 +1415,10 @@ describe('applyOverlay', () => {
       build: 'nx run-many -t build',
       lint: 'nx run-many -t lint',
       test: 'nx run-many -t test',
-      affected: 'nx affected -t lint,test,build',
+      // Its own script because nothing else type-checks: a bundler-built
+      // project's `build` strips types without reading them.
+      typecheck: 'nx run-many -t typecheck',
+      affected: 'nx affected -t lint,typecheck,test,build',
       graph: 'nx graph',
       'release:preview': 'nx release --dry-run',
       prepare: 'husky',

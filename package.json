@@ -8,7 +8,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "nx run-many -t test",
-    "affected": "nx affected -t lint,test,build",
+    "typecheck": "nx run-many -t typecheck",
+    "affected": "nx affected -t lint,typecheck,test,build",
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
     "prepare": "husky"

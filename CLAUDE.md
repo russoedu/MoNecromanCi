@@ -151,7 +151,8 @@ npm run build          # build @mnci/cli, @mnci/nx-python-pip, @mnci/nx-flutter
 npm run test           # unit tests (cli, nx-python-pip, nx-flutter)
 npm run lint           # ESLint (code quality) + Prettier (formatting check)
 npm run format         # Prettier --write (auto-fix formatting)
-npm run affected       # lint + test + build for changed projects only
+npm run typecheck      # tsc across the workspace (bundlers do not type-check)
+npm run affected       # lint + typecheck + test + build for changed projects only
 npm run graph          # open Nx project graph
 npm run release:preview  # dry-run what nx release would do
 ```

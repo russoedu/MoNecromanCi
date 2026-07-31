@@ -15,14 +15,14 @@ config package, a custom CI engine, a dependency-injection step for published
 packages, a doctor/drift-sync system to keep it all consistent — already has a
 first-party (or established community) Nx equivalent:
 
-| Hand-rolled elsewhere                      | This CLI uses instead                                                       |
-| ------------------------------------------ | --------------------------------------------------------------------------- |
-| Template engine + per-project config files | `create-nx-workspace --preset=ts` + `nx g` plugin generators                |
-| A shared toolchain package for configs     | The configs the Nx generators emit (one root ESLint/tsconfig)               |
-| A custom multi-step CI engine              | `nx affected -t lint,test,build` + `nx release` (~60-line pipeline)         |
-| A dist-package dependency injector         | `nx release` updates dependent versions natively                            |
-| Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay |
-| doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest             |
+| Hand-rolled elsewhere                      | This CLI uses instead                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------------- |
+| Template engine + per-project config files | `create-nx-workspace --preset=ts` + `nx g` plugin generators                  |
+| A shared toolchain package for configs     | The configs the Nx generators emit (one root ESLint/tsconfig)                 |
+| A custom multi-step CI engine              | `nx affected -t lint,typecheck,test,build` + `nx release` (~60-line pipeline) |
+| A dist-package dependency injector         | `nx release` updates dependent versions natively                              |
+| Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay   |
+| doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest               |
 
 ## Commands (deliberately just three)
 
@@ -69,7 +69,8 @@ each a single cross-platform command:
 | `npm run build`           | `nx run-many -t build`                                                                                                                |
 | `npm run lint`            | `nx run-many -t lint`                                                                                                                 |
 | `npm run test`            | `nx run-many -t test`                                                                                                                 |
-| `npm run affected`        | `nx affected -t lint,test,build` (vs `main`)                                                                                          |
+| `npm run typecheck`       | `nx run-many -t typecheck` — its own script because a bundler-built project's `build` strips types without reading them               |
+| `npm run affected`        | `nx affected -t lint,typecheck,test,build` (vs `main`)                                                                                |
 | `npm run graph`           | `nx graph`                                                                                                                            |
 | `npm run release:preview` | `nx release --dry-run`                                                                                                                |
 | `npm run python:install`  | fixed Python toolchain (ruff/pytest/build/twine) + editable-install every Python project — the same two guards CI runs, for local dev |
