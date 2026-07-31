@@ -2,36 +2,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx } from '../../nx'
 import { fileExists, writeFileEnsured } from '../../util/fsx'
-import { logger } from '../../util/logger'
 import {
   addNxTargets,
   ensureAdmZip,
-  hasPlugin,
+  ensurePlugin,
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type WorkspaceStack,
 } from './shared'
-
-/**
- * Ensures an Nx plugin is installed in the workspace, installing it on first use.
- *
- * @remarks
- * `nx add` installs the package and runs its init generator — the Nx-native
- * way to bring a plugin into an existing workspace.
- *
- * @param workspaceRoot - Absolute path to the workspace.
- * @param packageName - The plugin package (e.g. `@nx/react`).
- * @returns Nothing.
- * @throws Error when the underlying `nx add` exits non-zero.
- * @typeParam None - this function has no generic type parameters.
- */
-function ensurePlugin(workspaceRoot: string, packageName: string): void {
-  if (hasPlugin(workspaceRoot, packageName)) {
-    return
-  }
-  logger.step(`Installing Nx plugin ${packageName}`)
-  runNx(['add', packageName], workspaceRoot)
-}
 
 /**
  * The deploy environments each React app is built for.

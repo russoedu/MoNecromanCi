@@ -244,9 +244,8 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)
-  logger.info(
-    '  mnci add react-app web        # or: node-app, node-function-app, npm-lib, internal-lib,'
-  )
+  logger.info('  mnci add react-app web        # or: react-lib, react-internal-lib, node-app,')
+  logger.info('                                 #     node-function-app, npm-lib, internal-lib,')
   logger.info(
     '                                 #     python-app, python-function-app, python-lib, python-internal-lib,'
   )

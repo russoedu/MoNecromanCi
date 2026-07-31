@@ -50,6 +50,9 @@ const FIXTURES: Record<string, string> = {
   'focused.spec.ts':
     "describe.only('x', () => {\n  it('y', () => {\n    expect(1).toBe(1)\n  })\n})\n",
   'packages/thing/package.json': '{ "name": "thing", "version": "1.0.0" }\n',
+  // The exact shape `@nx/react:library --bundler=rollup` emits into the rollup
+  // config it writes for every react-lib.
+  'rollup.fixture.ts': 'export const options = { limit: 10000 }\n',
 }
 
 let workspace: string
@@ -137,6 +140,16 @@ describe('@mnci/eslint-config', () => {
     // `function f (a)` to `function f(a)` on every run, so enabling it makes
     // `npm run lint` and `npm run format:check` mutually unsatisfiable.
     expect(rulesFor('spacing.ts')).not.toContain('@stylistic/space-before-function-paren')
+  })
+
+  it('does not fail generated build config over numeric separators', () => {
+    // `@nx/react:library --bundler=rollup` writes `url({ limit: 10000 })` into
+    // the rollup config it generates, so unicorn/numeric-separators-style made a
+    // freshly added react-lib fail `npm run lint` on a file the user never
+    // touched. It is also pure formatting, which is Prettier's job here — and
+    // Prettier does not rewrite numeric separators, so the rule could never be
+    // satisfied automatically.
+    expect(rulesFor('rollup.fixture.ts')).not.toContain('unicorn/numeric-separators-style')
   })
 
   it('does NOT re-enable the formatting rules Prettier owns', () => {

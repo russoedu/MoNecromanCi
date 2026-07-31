@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
 import { runNx, runPrettier, runShell } from '../nx'
 import { promptText } from '../prompts'
-import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
+import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
 import { addFlutterApp, addFlutterInternalLib, addFlutterLib } from './add/flutter'
@@ -17,7 +17,9 @@ import {
   addPythonVendor,
 } from './add/python'
 import { addReactApp } from './add/reactApp'
+import { addReactInternalLib, addReactLib } from './add/reactLib'
 import {
+  markPrivate,
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type AddOptions,
@@ -27,7 +29,7 @@ import {
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just seventeen.
+ * The project kinds this CLI can add — deliberately just nineteen.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -49,8 +51,14 @@ export type { AddOptions } from './add/shared'
  * follow the identical app/function-app split. Every kind builds to its own
  * Nx-default output location — no post-generation build-output redirection.
  * Each kind's generation logic lives in its own module under `add/` — see
- * `add/reactApp.ts`, `add/node.ts`, `add/npmLib.ts` and `add/python.ts`
- * (internal-lib is small enough to stay inline below).
+ * `add/reactApp.ts`, `add/reactLib.ts`, `add/node.ts`, `add/npmLib.ts` and
+ * `add/python.ts` (internal-lib is small enough to stay inline below).
+ *
+ * The React family covers all three shapes: `react-app` (Vite SPA),
+ * `react-lib` (publishable component library) and `react-internal-lib`
+ * (private). The two library kinds were missing for a long time, which meant a
+ * shared component library could not be built at all — `npm-lib` and
+ * `internal-lib` are both `@nx/js:lib`, with no JSX support.
  *
  * The Go kinds use **`@nx-go/nx-go`** — an established third-party plugin,
  * validated empirically against a real Nx 23.1.0 workspace (it declares
@@ -96,6 +104,8 @@ export type { AddOptions } from './add/shared'
  */
 export type ProjectKind =
   | 'react-app'
+  | 'react-lib'
+  | 'react-internal-lib'
   | 'node-app'
   | 'node-function-app'
   | 'npm-lib'
@@ -117,11 +127,14 @@ export type ProjectKind =
  * Every kind {@link runAdd} accepts, in menu order.
  *
  * @remarks
- * Also drives the interactive kind picker shown when `add` is run bare. TS/JS
- * kinds first, then the Python family.
+ * Also drives the interactive kind picker shown when `add` is run bare. The
+ * React family first, then the rest of the TS/JS kinds, then Python, Go and
+ * Flutter.
  */
 export const PROJECT_KINDS: ProjectKind[] = [
   'react-app',
+  'react-lib',
+  'react-internal-lib',
   'node-app',
   'node-function-app',
   'npm-lib',
@@ -193,6 +206,14 @@ export async function runAdd(
   switch (resolvedKind) {
     case 'react-app': {
       addReactApp(workspaceRoot, resolvedName, stack)
+      break
+    }
+    case 'react-lib': {
+      await addReactLib(workspaceRoot, resolvedName, options, kindProvided, stack)
+      break
+    }
+    case 'react-internal-lib': {
+      addReactInternalLib(workspaceRoot, resolvedName, stack)
       break
     }
     case 'node-app': {
@@ -364,21 +385,4 @@ function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
   return {
     testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
-}
-
-/**
- * Sets `"private": true` in a package manifest.
- *
- * @remarks
- * One of the deliberate post-generation touches: it makes internal
- * libraries structurally unpublishable, no matter what future config drifts.
- *
- * @param manifestPath - Absolute path to the lib's `package.json`.
- * @returns Nothing.
- * @throws Propagates any `fs`/JSON error reading or writing the manifest.
- * @typeParam None - this function has no generic type parameters.
- */
-function markPrivate(manifestPath: string): void {
-  const manifest = readJson<Record<string, unknown>>(manifestPath)
-  writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
 }

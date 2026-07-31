@@ -1,6 +1,6 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { runShell } from '../../nx'
+import { runNx, runShell } from '../../nx'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
@@ -73,6 +73,69 @@ export function hasPlugin(workspaceRoot: string, packageName: string): boolean {
   }>(join(workspaceRoot, 'package.json'))
   const installed = { ...manifest.dependencies, ...manifest.devDependencies }
   return Object.hasOwn(installed, packageName)
+}
+
+/**
+ * Ensures an Nx plugin is installed in the workspace, installing it on first use.
+ *
+ * @remarks
+ * `nx add` installs the package and runs its init generator — the Nx-native way
+ * to bring a plugin into an existing workspace. Shared by every kind whose
+ * generator lives in a plugin the workspace may not have yet (`react-app`,
+ * `react-lib`, `react-internal-lib`).
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param packageName - The plugin package (e.g. `@nx/react`).
+ * @returns Nothing.
+ * @throws Error when the underlying `nx add` exits non-zero.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function ensurePlugin(workspaceRoot: string, packageName: string): void {
+  if (hasPlugin(workspaceRoot, packageName)) {
+    return
+  }
+  logger.step(`Installing Nx plugin ${packageName}`)
+  runNx(['add', packageName], workspaceRoot)
+}
+
+/**
+ * Sets `"private": true` in a package manifest.
+ *
+ * @remarks
+ * One of the deliberate post-generation touches: it makes an internal library
+ * structurally unpublishable, no matter what future config drifts. Shared by
+ * every private-lib kind (`internal-lib`, `react-internal-lib`).
+ *
+ * @param manifestPath - Absolute path to the lib's `package.json`.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the manifest.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function markPrivate(manifestPath: string): void {
+  const manifest = readJson<Record<string, unknown>>(manifestPath)
+  writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
+}
+
+/**
+ * Sets `publishConfig.access: "public"` in a package manifest.
+ *
+ * @remarks
+ * npm treats every scoped package (`@scope/name` — what every publishable lib's
+ * `importPath` always is) as private by default: an unmodified first publish
+ * fails with `402 Payment Required — You must sign up for private packages`
+ * (verified empirically against the real registry), not with anything a dry-run
+ * surfaces, since dry-runs never call the registry. This is the one
+ * post-generation touch that makes a freshly added publishable lib publishable
+ * as-is. Shared by `npm-lib` and `react-lib`.
+ *
+ * @param manifestPath - Absolute path to the lib's `package.json`.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the manifest.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function markPublic(manifestPath: string): void {
+  const manifest = readJson<Record<string, unknown>>(manifestPath)
+  writeFileEnsured(manifestPath, toJson({ ...manifest, publishConfig: { access: 'public' } }))
 }
 
 /**

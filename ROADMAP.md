@@ -9,9 +9,10 @@ what it _does_ come before new capability. Several entries below were found by
 running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
-**If only three get done:** publish auth (#1), ~~`format:check` in CI (#2)~~
-(done), and `react-lib` (#8). All small; each closes something the project
-already implies.
+**Done so far:** #2 (`format:check` in CI), #8 (`react-lib`), #14 (dots in
+names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI).
+**Next up:** #1 (publish auth) is the last P1 — it needs a deliberate decision on
+scope routing, which is why it has not been picked up yet.
 
 ---
 
@@ -99,16 +100,45 @@ Four cheap wins, all verified absent:
 
 The two real holes first.
 
-### 8. `react-lib` — P1
+### 8. `react-lib` — ✅ done
 
-There is no React library kind at all, so a **shared component library cannot be
-built today**: `npm-lib` and `internal-lib` are both `@nx/js`, with no JSX
-support. `@nx/react:library` is the obvious delegate, and the existing
-`npm-lib`/`internal-lib` split (publishable vs private) is the pattern to mirror.
+There was no React library kind at all, so a shared component library could not
+be built: `npm-lib` and `internal-lib` are both `@nx/js`, with no JSX support.
 
-- **Files:** new `packages/cli/src/commands/add/reactLib.ts`, plus the
-  `ProjectKind` union, `PROJECT_KINDS`, and a `switch` case in `add.ts` (a
-  missing case is a compile-time error, so it can't be half-done)
+Two kinds now, following the family convention every other language already uses
+(`python-lib`/`python-internal-lib`, `go-lib`/`go-internal-lib`, …):
+**`react-lib`** (publishable → `packages/`) and **`react-internal-lib`**
+(private → `libs/`), both delegating to `@nx/react:library --bundler=rollup`.
+
+`rollup` rather than the generator's own `none` default is load-bearing twice
+over: it is what lets a published package compile a private internal lib _into_
+its bundle without the private name reaching the published manifest, and it keeps
+the internal kind **buildable**, which `@nx/enforce-module-boundaries` requires
+before any publishable lib may import it. (`tsc` is not an option here — this
+generator's enum is `none | vite | rollup`.)
+
+**Two real defects surfaced while verifying, both fixed:**
+
+1. `@nx/react:library --bundler=rollup` writes `types: './dist/index.esm.d.ts'`
+   while its build emits `dist/index.d.ts`. The referenced file never exists, so
+   every consumer failed with `TS7016: Could not find a declaration file` — a
+   React lib was unusable as a typed dependency. `repairTypesPath` repoints both
+   the `types` field and `exports['.'].types`, guarded on the exact wrong value so
+   an upstream fix is not overwritten. Same class as the `node-function-app`
+   manifest `main` bug.
+2. The rollup config the generator writes contains `url({ limit: 10000 })`, which
+   tripped `unicorn/numeric-separators-style`, so a freshly added React lib failed
+   `npm run lint` on a file the user never touched. That rule is now off in
+   `@mnci/eslint-config` — it is pure formatting (outside this config's
+   correctness-only scope, and Prettier does not rewrite numeric separators) and
+   not a Standard rule, so the same "not earning its keep" test two other unicorn
+   rules are already off for.
+
+Verified on a real workspace: `lint,typecheck,test,build` green across six
+projects in four languages, with a publishable `react-lib` importing a private
+`react-internal-lib` through a real JSX component — the private component
+**inlined** into the published bundle, and `@demo/design` absent from both the
+bundle and the published manifest's dependencies.
 
 ### 9. Container / Docker kind — P2
 
