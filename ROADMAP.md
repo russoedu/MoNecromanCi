@@ -9,8 +9,9 @@ what it _does_ come before new capability. Several entries below were found by
 running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
-**If only three get done:** publish auth (#1), `format:check` in CI (#2), and
-`react-lib` (#8). All small; each closes something the project already implies.
+**If only three get done:** publish auth (#1), ~~`format:check` in CI (#2)~~
+(done), and `react-lib` (#8). All small; each closes something the project
+already implies.
 
 ---
 
@@ -37,26 +38,27 @@ one-line change.
 - **Verify:** a generated workspace publishes to a local Verdaccio registry
   (already a devDependency here) end to end.
 
-### 2. Enforce Prettier somewhere automatic — P1
+### 2. Enforce Prettier somewhere automatic — ✅ done
 
-Formatting is currently enforced **nowhere**, in this repo or in generated ones:
+Formatting used to be enforced **nowhere**: `format:check` existed only as a root
+script, absent from both pipelines, and the overlay wrote only a `commit-msg`
+hook. So mnci deleted Nx's `.prettierrc` specifically to make its own formatting
+opinion take effect, then never checked that it held.
 
-- `format:check` exists only as a root script (`overlay.ts:664`). It is not a CI
-  step in either provider — the only lint step is `npm run lint`
-  (`overlay.ts:1384` Azure, `:1604` GitHub).
-- The overlay writes only `.husky/commit-msg` (`overlay.ts:1903`). There is no
-  `pre-commit` hook, despite `packages/cli/README.md` describing formatting as
-  "left as a local/pre-commit step".
+`npm run format:check` is now a step in both generated pipelines (and in this
+repo's own workflow), placed after `Lint` and before the `run-many`. ESLint here
+is correctness-only — `eslint-config-prettier` is composed last in
+`@mnci/eslint-config` — so it reports nothing whatsoever about formatting, which
+is why Prettier needs a gate of its own rather than riding along with lint.
 
-So mnci deletes Nx's `.prettierrc` specifically to make its own formatting
-opinion take effect, then never checks that it holds. A workspace drifts out of
-compliance silently.
+Verified against a real generated workspace: clean immediately after `mnci new`,
+still clean after adding `npm-lib`, `internal-lib` and `react-app` (the
+generators emit semicolons and double quotes; `runPrettier()` normalises them),
+exits non-zero on a deliberately mis-formatted file, and green again after
+`npm run format`.
 
-- **Fix:** add `npm run format:check` to both pipelines, and/or write a
-  `pre-commit` hook running Prettier over staged files.
-- **Care:** any CI change must be mirrored in **both** providers — the anti-drift
-  test in `overlay.test.ts` asserts the guard bodies stay byte-identical.
-- **Verify:** commit a deliberately mis-formatted file; CI must fail.
+Still open, deliberately deferred: a `pre-commit` hook running Prettier over
+staged files. CI is the gate that matters; a local hook is convenience on top.
 
 ### 3. `mnci doctor` — P2
 

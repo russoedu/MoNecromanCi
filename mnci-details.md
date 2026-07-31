@@ -281,12 +281,13 @@ tags, which have no Actions equivalent):
 16 Resolve Dart dependencies                  (guard) ← Flutter dep injection
 17 npx nx sync:check
 18 npm run lint
-19 npx nx run-many -t lint,test,build
-20 Pack all apps → dist/drop                  (main only)
-21 Publish the drop artifact                  (main only)
-22 Tag the run per app                        (main only, azure)
-23 Release — version, tag and publish         (main only)
-24 Push release tags                          (main only, non-github)
+19 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
+20 npx nx run-many -t lint,test,build
+21 Pack all apps → dist/drop                  (main only)
+22 Publish the drop artifact                  (main only)
+23 Tag the run per app                        (main only, azure)
+24 Release — version, tag and publish         (main only)
+25 Push release tags                          (main only, non-github)
 ```
 
 ### Guard scripts — how conditional steps work

@@ -223,8 +223,11 @@ would make `npm run lint` and `npm run format:check` mutually unsatisfiable.
 Choosing Prettier means accepting its call there.
 
 `npm run lint` checks code quality; `npm run format` (write) and
-`npm run format:check` (CI-safe) handle formatting. The CI runs lint/test/build
-only — formatting is left as a local/pre-commit step.
+`npm run format:check` (CI-safe) handle formatting. **Both run in CI**, as
+separate steps: ESLint is configured for correctness only and deliberately
+reports nothing about formatting, so Prettier needs a gate of its own or the
+whole formatting opinion is advisory and a workspace drifts out of compliance
+with no signal anywhere.
 
 TypeScript is not a question — every workspace runs the **dual compiler** from
 [Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
