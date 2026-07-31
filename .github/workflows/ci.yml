@@ -75,10 +75,15 @@ jobs:
         name: Check formatting (run 'npm run format' locally to fix)
       # `lint` here also runs any Nx lint targets `npm run lint` does not cover —
       # notably Python's ruff (every Python project owns a hand-authored `lint`
-      # target). For the eslint stack the JS lint runs twice, but Nx caches the
-      # repeat instantly.
-      - run: npx nx run-many -t lint,test,build
-        name: Lint, test and build everything
+      # target). The JS lint runs twice, but Nx caches the repeat instantly.
+      #
+      # `typecheck` is load-bearing and not covered by `build`: @mnci/cli builds
+      # with tsup (esbuild), which strips types without reading them. Without
+      # this step the repo could build, test and lint green while carrying real
+      # type errors — and it did: `mnci upgrade` shipped a bug TypeScript had
+      # already flagged.
+      - run: npx nx run-many -t lint,typecheck,test,build
+        name: Lint, typecheck, test and build everything
 
       # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
       # target. Portable guard: skip cleanly when the workspace has no apps yet.

@@ -224,25 +224,33 @@ filename fallback and carried genuine junk): the junk file is gone, the real fil
 survives with its tasks intact, `workspaceName` is now persisted for future runs,
 and `format:check` passes immediately after an upgrade.
 
-### 18. Run `typecheck` in CI — P1
+### 18. Run `typecheck` in CI — ✅ done
 
-`npm run typecheck` currently reports **14 TypeScript errors on `main`**, and CI
-never notices, because the pipeline runs `lint,test,build` and `typecheck` is not
-among them. `tsup` builds with esbuild, which does no type checking, so nothing
-in the pipeline type-checks the code at all.
+`npm run typecheck` reported **14 TypeScript errors on `main`** that CI never
+noticed, because the pipeline ran `lint,test,build` and `typecheck` was not among
+them. `tsup` builds with esbuild, which strips types without reading them, so
+nothing in the pipeline type-checked the code at all.
 
-This is not hypothetical: one of the 14 is `commands/upgrade.ts` — the exact
-missing-`workspaceName` bug in #17 above. TypeScript already knew. Adding
-`typecheck` to the target list would have prevented a real user-visible defect
-from shipping.
+Not hypothetical: one of the 14 was `commands/upgrade.ts` — the exact
+missing-`workspaceName` bug fixed in #17. TypeScript already knew.
 
-- **Files:** the `run-many` target list in both providers (`overlay.ts`), this
-  repo's own `.github/workflows/ci.yml`, and the 14 existing errors need fixing
-  first or the step lands red.
-- **Note:** several of the 14 are in test files (`ProjectKind` not imported,
-  `OverlayOptions` fixtures missing `workspaceName`), so some may be a
-  `tsconfig.typecheck.json` include problem rather than real defects — worth
-  triaging before assuming all 14 are bugs.
+All 14 are now fixed (#17 took the one production error; the rest were test-file
+issues: two missing `ProjectKind` imports, four stale `rootScripts({...})` calls
+against a function that takes no parameters, and one duplicate `workspaceName`
+key in an object literal — harmless at runtime, but a real smell TS catches). The
+`run-many` in both providers, this repo's own workflow, and the `affected` script
+now carry `typecheck`, and there is a root `typecheck` script.
+
+The gate was verified to be real rather than assumed, in both directions:
+
+- With the fixes stashed, `nx run-many -t typecheck` **fails** on `@mnci/cli` —
+  so it genuinely would have caught the #17 bug.
+- In a real generated workspace, a planted `const x: number = 'a string'` in an
+  `npm-lib` **builds green** and **fails typecheck** — the exact gap, since
+  esbuild/swc never read the annotation.
+
+A generated workspace passes the new gate out of the box (`typecheck` runs for
+its TS projects; Python and Go correctly have no such target).
 
 ---
 

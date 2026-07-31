@@ -282,7 +282,7 @@ tags, which have no Actions equivalent):
 17 npx nx sync:check
 18 npm run lint
 19 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
-20 npx nx run-many -t lint,test,build
+20 npx nx run-many -t lint,typecheck,test,build   ← build alone strips types
 21 Pack all apps → dist/drop                  (main only)
 22 Publish the drop artifact                  (main only)
 23 Tag the run per app                        (main only, azure)
@@ -412,15 +412,16 @@ in the per-npm-lib config (`NPM_LIB_ESLINT_CONFIG`, now gone) moved into
 
 ### Root scripts
 
-| Script                    | Runs                               |
-| ------------------------- | ---------------------------------- |
-| `build` / `lint` / `test` | `nx run-many -t <target>`          |
-| `affected`                | `nx affected -t lint,test,build`   |
-| `graph`                   | `nx graph`                         |
-| `release:preview`         | `nx release --dry-run`             |
-| `format` / `format:check` | `prettier --write .` / `--check .` |
-| `python:install`          | the same two Python guards CI runs |
-| `prepare`                 | `husky`                            |
+| Script                    | Runs                                       |
+| ------------------------- | ------------------------------------------ |
+| `build` / `lint` / `test` | `nx run-many -t <target>`                  |
+| `typecheck`               | `nx run-many -t typecheck`                 |
+| `affected`                | `nx affected -t lint,typecheck,test,build` |
+| `graph`                   | `nx graph`                                 |
+| `release:preview`         | `nx release --dry-run`                     |
+| `format` / `format:check` | `prettier --write .` / `--check .`         |
+| `python:install`          | the same two Python guards CI runs         |
+| `prepare`                 | `husky`                                    |
 
 ### The `mnci` block in `nx.json`
 
@@ -480,7 +481,8 @@ npm run test                     # 311 tests total
 npm run lint                     # ESLint (quality) — Prettier is separate
 npm run format:check             # Prettier
 npx nx sync:check                # TS project references
-npx nx run-many -t lint,test,build   # everything at once
+npm run typecheck                # tsc only — bundlers do NOT type-check
+npx nx run-many -t lint,typecheck,test,build   # everything at once
 ```
 
 Expected: **363 unit tests** — 259 (`cli`), 50 (`nx-flutter`), 40

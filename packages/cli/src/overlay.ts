@@ -661,12 +661,21 @@ export function vscodeWorkspace(
  * entry points, nothing more. `affected` compares against `main`
  * (`defaultBase` in `nx.json`); `release:preview` shows what `nx release`
  * would do on CI without touching anything.
+ *
+ * `typecheck` is its own script because nothing else type-checks. Under
+ * `--preset=ts` the `@nx/js/typescript` plugin infers a `typecheck` target for
+ * every project, but a bundler-built project's `build` does not type-check at
+ * all — esbuild and swc strip types without reading them. So a workspace can
+ * build, test and lint green while carrying real type errors, which is exactly
+ * what happened in mnci's own repo: `mnci upgrade` shipped a bug that
+ * TypeScript had already flagged, because CI never ran this.
  */
 export const ROOT_SCRIPTS = {
   build: 'nx run-many -t build',
   lint: 'nx run-many -t lint',
   test: 'nx run-many -t test',
-  affected: 'nx affected -t lint,test,build',
+  typecheck: 'nx run-many -t typecheck',
+  affected: 'nx affected -t lint,typecheck,test,build',
   graph: 'nx graph',
   'release:preview': 'nx release --dry-run',
   prepare: 'husky',
@@ -1431,10 +1440,14 @@ steps:
     displayName: Check formatting (run 'npm run format' locally to fix)
   # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
   # notably Python's ruff (every Python project owns a hand-authored \`lint\`
-  # target). For the eslint stack the JS lint runs twice, but Nx caches the
-  # repeat instantly.
-  - script: npx nx run-many -t lint,test,build
-    displayName: Lint, test and build everything
+  # target). The JS lint runs twice, but Nx caches the repeat instantly.
+  #
+  # \`typecheck\` is load-bearing and not covered by \`build\`: a bundler-built
+  # project (esbuild, swc) strips types without reading them, so a workspace can
+  # build, test and lint green while carrying real type errors. --preset=ts
+  # infers a typecheck target for every project, so this costs one target name.
+  - script: npx nx run-many -t lint,typecheck,test,build
+    displayName: Lint, typecheck, test and build everything
 
   # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
   # target. Portable guard: skip cleanly when the workspace has no apps yet.
@@ -1658,10 +1671,15 @@ jobs:
         name: Check formatting (run 'npm run format' locally to fix)
       # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
       # notably Python's ruff (every Python project owns a hand-authored \`lint\`
-      # target). For the eslint stack the JS lint runs twice, but Nx caches the
-      # repeat instantly.
-      - run: npx nx run-many -t lint,test,build
-        name: Lint, test and build everything
+      # target). The JS lint runs twice, but Nx caches the repeat instantly.
+      #
+      # \`typecheck\` is load-bearing and not covered by \`build\`: a bundler-built
+      # project (esbuild, swc) strips types without reading them, so a workspace
+      # can build, test and lint green while carrying real type errors.
+      # --preset=ts infers a typecheck target for every project, so this costs
+      # one target name.
+      - run: npx nx run-many -t lint,typecheck,test,build
+        name: Lint, typecheck, test and build everything
 
       # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
       # target. Portable guard: skip cleanly when the workspace has no apps yet.
