@@ -38,6 +38,8 @@ mnci add node-app api --framework express  # ...or fastify | koa | nest
 mnci add node-function-app api # @nx/node + an Azure Functions v4 overlay
 mnci add npm-lib sdk           # @nx/js publishable lib -> packages/
 mnci add internal-lib utils    # @nx/js private lib -> libs/
+mnci add react-lib ui          # @nx/react publishable component lib -> packages/
+mnci add react-internal-lib design  # @nx/react private component lib -> libs/
 
 # Python (@mnci/nx-python-pip — pip + Ruff + pytest + PyPA build/twine, no uv)
 mnci add python-app svc            # app -> apps/ (wheel, zipped into the drop)

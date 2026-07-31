@@ -94,6 +94,18 @@ export default [
       // workspace fail `npm run lint` out of the box is worse than the
       // blanket disables it is trying to catch.
       'unicorn/no-abusive-eslint-disable': 'off',
+      // Pure formatting (`10000` vs `10_000`), which puts it outside this
+      // config's stated scope — ESLint here is correctness-only, Prettier owns
+      // formatting, and Prettier does not touch numeric separators. It is also
+      // not a JavaScript Standard Style rule, unlike the three stylistic
+      // exceptions in `configs/stylistic.js`, so nothing is lost by dropping it.
+      //
+      // Concretely: `@nx/react:library --bundler=rollup` emits
+      // `url({ limit: 10000 })` in the rollup config it writes, so a freshly
+      // added `react-lib`/`react-internal-lib` failed `npm run lint` on its own
+      // generated build config — the same "not earning its keep" test the two
+      // rules above are off for.
+      'unicorn/numeric-separators-style': 'off',
     },
   },
 ]

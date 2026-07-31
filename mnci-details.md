@@ -85,7 +85,7 @@ only mnci-owned files — never project source or `project.json` targets.
 
 ---
 
-## 3. The 17 project kinds
+## 3. The 19 project kinds
 
 `mnci add <kind> <name>`. The kind list is the union type `ProjectKind` in
 `packages/cli/src/commands/add.ts`; `PROJECT_KINDS` drives both the CLI
@@ -94,6 +94,8 @@ only mnci-owned files — never project source or `project.json` targets.
 | Kind                   | Lands in                 | Generator                               | Targets written                           |
 | ---------------------- | ------------------------ | --------------------------------------- | ----------------------------------------- |
 | `react-app`            | `apps/<name>`            | `@nx/react` (Vite)                      | lint, test, build (dev/uat/prod), package |
+| `react-lib`            | `packages/<name>`        | `@nx/react:library --bundler=rollup`    | lint, test, build, publish                |
+| `react-internal-lib`   | `libs/<name>`            | `@nx/react:library` (private)           | lint, test, build                         |
 | `node-app`             | `apps/<name>`            | `@nx/node` (esbuild)                    | lint, test, build, package                |
 | `node-function-app`    | `apps/<name>`            | `@nx/node` + Azure Functions v4 overlay | lint, test, build, package                |
 | `npm-lib`              | `packages/<name>`        | `@nx/js:lib --bundler=rollup`           | lint, test, build, publish                |
@@ -137,7 +139,7 @@ inferred `serve` target instead. `go-function-app` deliberately gets no
 `:start`: it writes no Azure Functions custom-handler config, so there is
 nothing for `func start` to attach to — a known gap, not an oversight.
 
-**Adding an 18th kind** requires touching, at minimum: the `ProjectKind` union,
+**Adding a 20th kind** requires touching, at minimum: the `ProjectKind` union,
 `PROJECT_KINDS`, the module import, and a `switch` case in `add.ts`. A missing
 `switch` case is a **compile-time error** (`const exhaustive: never`), so it
 cannot be half-done silently. Also update the "Next steps" hint in `new.ts`.
