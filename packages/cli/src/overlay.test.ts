@@ -807,6 +807,7 @@ describe('generatorDefaults', () => {
 describe('mnciConfig', () => {
   it('persists the full resolved overlay options — what `add` and `upgrade` each read back a slice of', () => {
     const options = {
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' } as const,
       agent: 'ubuntu-latest',
@@ -815,6 +816,7 @@ describe('mnciConfig', () => {
       stack: { testRunner: 'vitest' as const },
     }
     expect(mnciConfig(options)).toEqual({
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -853,6 +855,10 @@ describe('readMnciConfig', () => {
     })
 
     expect(readMnciConfig(workspaceRoot)).toEqual({
+      // workspaceName is persisted so `mnci upgrade` can name the
+      // `<name>.code-workspace` it rewrites; without it, upgrade wrote a file
+      // literally called `undefined.code-workspace`.
+      workspaceName: 'demo',
       scope: '@demo',
       registry: { kind: 'npm' },
       agent: 'ubuntu-latest',
@@ -1126,7 +1132,7 @@ describe('applyOverlay', () => {
     expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
   })
 
-  it('writes the whole mnci block — scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
+  it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
     applyOverlay(workspaceRoot, {
       workspaceName: 'demo',
       scope: '@demo',
@@ -1146,6 +1152,7 @@ describe('applyOverlay', () => {
       mnci: Record<string, unknown>
     }
     expect(nxJson.mnci).toEqual({
+      workspaceName: 'demo',
       scope: '@demo',
       registry: {
         kind: 'azure-artifacts',

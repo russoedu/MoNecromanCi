@@ -146,9 +146,17 @@ same options `new` would have and calls the exact same `applyOverlay` `new`
 itself calls — the one function that does every bit of `mnci`-owned file
 writing (`nx.json`'s `release`/`sync`/`generators`/`mnci` blocks, `.npmrc`,
 `eslint.config.mjs`, `.prettierrc.json`, `commitlint.config.mjs`,
-`.husky/commit-msg`, the CI pipeline file(s), and the curated root
-`package.json` scripts). Nothing else in the workspace — app/lib source,
-`project.json` targets from `mnci add` — is ever touched.
+`.husky/commit-msg`, the CI pipeline file(s), the
+`<workspace-name>.code-workspace` file, and the curated root `package.json`
+scripts). Nothing else in the workspace — app/lib source, `project.json` targets
+from `mnci add` — is ever touched, and it finishes by running Prettier over the
+result, the same way `new` and every `add` do.
+
+The `.code-workspace` file is the one partial case, and deliberately so: its
+folders, settings and extensions are regenerated, but the **`tasks` array is read
+back and carried through unchanged**. Those tasks are per-project state written by
+`mnci add`, not overlay-owned, so regenerating them wholesale would wipe every
+project's build/qa/start entry on upgrade.
 
 `upgrade` also **deletes** things, which is stronger than the overwriting it
 has always done — one more reason to run `git diff` first, as the command's own

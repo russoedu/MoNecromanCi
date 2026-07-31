@@ -186,31 +186,43 @@ Verified against a real generated workspace named `my.workspace` containing
 imports cleanly from a fresh venv with no phantom `my` package, and Go compiles.
 Flutter is covered by unit tests only — no SDK on this machine.
 
-### 17. Fix `mnci upgrade`'s three defects — P1
+### 17. Fix `mnci upgrade`'s three defects — ✅ done
 
 Found while verifying #14, all pre-existing and all in the one command whose
 whole job is carrying overlay fixes into existing workspaces:
 
-1. **It writes a file literally named `undefined.code-workspace`.**
-   `resolveOverlayOptions` (`commands/upgrade.ts:103`) is declared
-   `: OverlayOptions` but returns an object with **no `workspaceName`**, so
-   `applyOverlay` interpolates `undefined` into the filename
-   (`overlay.ts:1944`). Reproduced on a real workspace: the junk file lands
-   next to the genuine one.
-2. **So the real `.code-workspace` is never refreshed.** Since the write goes to
-   the wrong filename, an overlay improvement to that file cannot reach an
-   existing workspace — precisely the gap `upgrade` exists to close.
-3. **It never runs Prettier.** `new` and every `add` finish with
-   `runPrettier()`; `upgrade` does not, so it leaves `nx.json` mis-formatted and
-   the workspace failing its own `format:check` — now a CI gate (#2).
+1. **It wrote a file literally named `undefined.code-workspace`.**
+   `resolveOverlayOptions` was declared `: OverlayOptions` but returned an object
+   with no `workspaceName`, so `applyOverlay` interpolated `undefined` into the
+   filename.
+2. **So the real `.code-workspace` was never refreshed** — the one mnci-owned
+   file an upgrade could not carry a fix into, which is precisely the gap
+   `upgrade` exists to close.
+3. **It never ran Prettier**, unlike `new` and every `add`, so it left the
+   `nx.json` it had just rewritten mis-formatted and the workspace failing its
+   own `format:check` — now a CI gate (#2).
 
-Root cause of (1) and (2) is the same: `workspaceName` is not in the `mnci`
-block that `mnciConfig` persists (`overlay.ts:743`), so `upgrade` has nothing to
-read it back from. Either persist it, or derive it from the existing
-`*.code-workspace` filename / the root manifest name.
+`workspaceName` is now persisted in the `mnci` block, with a fallback chain for
+workspaces generated before that existed: persisted value → an existing
+`*.code-workspace` filename (skipping `undefined.code-workspace`, or a workspace
+carrying the old junk would resolve its name as the string `undefined` forever) →
+the directory basename. The root manifest name is deliberately not in the chain —
+it is `@<scope>/source`, which carries the scope, not the workspace name.
 
-- **Care:** deriving it must not resurrect the junk file on a workspace that
-  already has one from a previous buggy upgrade — clean that up too.
+**Fixing (1) exposed a fourth defect that it had been masking.** With the
+filename corrected, upgrade began rewriting the real file — and
+`vscodeWorkspace()` emits an empty `tasks` array, so it **destroyed every
+per-project VS Code task `mnci add` had registered** (verified: a real
+three-project workspace lost all five). The `tasks` array is per-project state,
+not overlay-owned, so `applyOverlay` now reads it back and carries it through
+while still regenerating the folders/settings/extensions it does own. The
+JSONC-tolerant reader both layers need moved to `util/fsx.ts` as
+`readCodeWorkspace`, replacing the private copy in `add/shared.ts`.
+
+Verified on a real workspace generated before the fix (so it exercised the
+filename fallback and carried genuine junk): the junk file is gone, the real file
+survives with its tasks intact, `workspaceName` is now persisted for future runs,
+and `format:check` passes immediately after an upgrade.
 
 ### 18. Run `typecheck` in CI — P1
 

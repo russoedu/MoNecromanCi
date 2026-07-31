@@ -1,4 +1,6 @@
-import { join } from 'node:path'
+import { readdirSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { runPrettier } from '../nx'
 import {
   applyOverlay,
   readMnciConfig,
@@ -89,10 +91,62 @@ function resolveRegistry(
 }
 
 /**
+ * The workspace's own name, for the `<name>.code-workspace` file the overlay writes.
+ *
+ * @remarks
+ * This exists because `resolveOverlayOptions` used to omit `workspaceName`
+ * entirely, so `applyOverlay` interpolated `undefined` and every `mnci upgrade`
+ * wrote a file literally named `undefined.code-workspace` — while the
+ * workspace's real one was never rewritten, making the `.code-workspace` the one
+ * mnci-owned file an upgrade could not actually carry a fix into.
+ *
+ * A fallback chain rather than a single source, because the authoritative one is
+ * only available going forward:
+ *
+ * 1. **The persisted `mnci.workspaceName`** — written by `mnciConfig` as of this
+ *    fix, so correct for anything generated or upgraded from now on.
+ * 2. **An existing `*.code-workspace` filename** — accurate for a workspace
+ *    generated before that field was persisted. `undefined.code-workspace` is
+ *    skipped explicitly: a workspace carrying junk from the old bug would
+ *    otherwise resolve its name as the string `undefined` and keep reproducing
+ *    it forever.
+ * 3. **The directory basename** — what `create-nx-workspace` names the directory,
+ *    so it is right in the ordinary case and always available.
+ *
+ * The root `package.json` name is deliberately *not* in the chain: it is
+ * `@<scope>/source`, which carries the scope rather than the workspace name, and
+ * the two differ whenever `--scope` was passed explicitly.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param persisted - Whatever `mnci new`/a previous `upgrade` persisted.
+ * @returns The workspace name.
+ * @throws Never - an unreadable directory falls through to the basename.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function resolveWorkspaceName(workspaceRoot: string, persisted: Partial<OverlayOptions>): string {
+  if (persisted.workspaceName) {
+    return persisted.workspaceName
+  }
+  try {
+    const existing = readdirSync(workspaceRoot).find(
+      file => file.endsWith('.code-workspace') && file !== 'undefined.code-workspace'
+    )
+    if (existing) {
+      return existing.replace(/\.code-workspace$/, '')
+    }
+  } catch {
+    // Fall through to the basename.
+  }
+  return basename(workspaceRoot)
+}
+
+/**
  * Resolves the full overlay options a `mnci upgrade` run applies: an
  * explicit flag wins field-by-field, otherwise the persisted `mnci` block
  * (see {@link readMnciConfig}) is the default.
  *
+ * @param workspaceRoot - Absolute path to the workspace, for
+ * {@link resolveWorkspaceName}'s filename and basename fallbacks.
  * @param options - The CLI flags.
  * @param persisted - Whatever `mnci new`/a previous `upgrade` persisted.
  * @returns The fully resolved overlay options.
@@ -101,6 +155,7 @@ function resolveRegistry(
  * @typeParam None - this function has no generic type parameters.
  */
 function resolveOverlayOptions(
+  workspaceRoot: string,
   options: UpgradeOptions,
   persisted: Partial<OverlayOptions>
 ): OverlayOptions {
@@ -131,7 +186,15 @@ function resolveOverlayOptions(
     )
   }
 
-  return { scope, registry, agent, variableGroup, ci, stack: { testRunner } }
+  return {
+    workspaceName: resolveWorkspaceName(workspaceRoot, persisted),
+    scope,
+    registry,
+    agent,
+    variableGroup,
+    ci,
+    stack: { testRunner },
+  }
 }
 
 /**
@@ -170,12 +233,18 @@ export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void
     )
   }
   const persisted = readMnciConfig(workspaceRoot)
-  const resolved = resolveOverlayOptions(options, persisted)
+  const resolved = resolveOverlayOptions(workspaceRoot, options, persisted)
 
   logger.step(
     'Re-applying the MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)'
   )
   applyOverlay(workspaceRoot, resolved)
+
+  // `new` and every `add` end this way; `upgrade` did not, so it left the
+  // `nx.json` it had just rewritten mis-formatted — which now fails the
+  // workspace's own `format:check` CI gate. Non-fatal for the same reason it is
+  // there: the overlay is already applied by this point.
+  runPrettier(workspaceRoot)
 
   logger.success('Done. Review the changes with `git diff` before committing.')
 }
