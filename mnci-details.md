@@ -270,26 +270,27 @@ tags, which have no Actions equivalent):
  3 Fetch branches and release tags
  4 Set the git identity used for release tags
  5 UseNode@1 / setup-node    ← the ONLY toolchain task
- 6 npm ci
- 7 npm audit                                  (non-blocking)
- 8 Install Python dependencies                (guard)
- 9 Install Python project dependencies        (guard) ← Python dep injection
-10 pip-audit                                  (non-blocking)
-11 Download Go module dependencies            (guard) ← Go dep injection
-12 Install golangci-lint                      (guard)
-13 Add Go tool bin to PATH                    (guard)
-14 Install the Flutter SDK (3.44.8)           (guard)
-15 Add the Flutter SDK to PATH                (guard)
-16 Resolve Dart dependencies                  (guard) ← Flutter dep injection
-17 npx nx sync:check
-18 npm run lint
-19 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
-20 npx nx run-many -t lint,typecheck,test,build   ← build alone strips types
-21 Pack all apps → dist/drop                  (main only)
-22 Publish the drop artifact                  (main only)
-23 Tag the run per app                        (main only, azure)
-24 Release — version, tag and publish         (main only)
-25 Push release tags                          (main only, non-github)
+ 6 Cache npm packages         (azure: Cache@2; github: setup-node's own `cache: npm`)
+ 7 npm ci
+ 8 npm audit                                  (non-blocking)
+ 9 Install Python dependencies                (guard)
+10 Install Python project dependencies        (guard) ← Python dep injection
+11 pip-audit                                  (non-blocking)
+12 Download Go module dependencies            (guard) ← Go dep injection
+13 Install golangci-lint                      (guard)
+14 Add Go tool bin to PATH                    (guard)
+15 Install the Flutter SDK (3.44.8)           (guard)
+16 Add the Flutter SDK to PATH                (guard)
+17 Resolve Dart dependencies                  (guard) ← Flutter dep injection
+18 npx nx sync:check
+19 npm run lint
+20 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
+21 npx nx run-many -t lint,typecheck,test,build   ← build alone strips types
+22 Pack all apps → dist/drop                  (main only)
+23 Publish the drop artifact                  (main only)
+24 Tag the run per app                        (main only, azure)
+25 Release — version, tag and publish         (main only)
+26 Push release tags                          (main only, non-github)
 ```
 
 ### Guard scripts — how conditional steps work

@@ -33,6 +33,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          # Caches ~/.npm keyed on package-lock.json, so `npm ci` restores from
+          # the local cache instead of re-downloading every tarball each run.
+          cache: npm
 
       - run: npm ci
         name: Install dependencies
@@ -145,6 +148,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          # Caches ~/.npm keyed on package-lock.json, so `npm ci` restores from
+          # the local cache instead of re-downloading every tarball each run.
+          cache: npm
 
       - run: npm ci
         name: Install dependencies

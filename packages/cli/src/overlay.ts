@@ -1330,6 +1330,12 @@ variables:
   # for an Azure Artifacts feed, or a raw npm automation token as \`NPM_TOKEN\`
   # for public npm. Mark it secret in Library. Add app build vars here too if needed.
   - group: ${variableGroup}
+  # Relocates npm's cache inside the pipeline workspace so Cache@2 can restore it
+  # (the default ~/.npm is outside the cacheable area on hosted agents). npm reads
+  # this as an ordinary env var, so it needs no config file and works on every
+  # agent OS.
+  - name: npm_config_cache
+    value: $(Pipeline.Workspace)/.npm
 
 steps:
   - checkout: self
@@ -1353,6 +1359,20 @@ steps:
   - task: UseNode@1
     inputs:
       version: 24.x
+
+  # The Azure counterpart of \`cache: npm\` on actions/setup-node: restores npm's
+  # download cache so \`npm ci\` does not re-fetch every tarball on every run.
+  # Keyed on the lockfile, so a dependency change misses and anything else hits;
+  # restoreKeys falls back to the newest cache for this OS on a miss, which still
+  # avoids a fully cold install. Agent.OS is in the key because a cached native
+  # module built for one OS is not reusable on another.
+  - task: Cache@2
+    displayName: Cache npm packages
+    inputs:
+      key: 'npm | "$(Agent.OS)" | package-lock.json'
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+      path: $(npm_config_cache)
 
   - script: npm ci
     displayName: Install dependencies
@@ -1583,6 +1603,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          # Caches ~/.npm keyed on package-lock.json, so \`npm ci\` restores from
+          # the local cache instead of re-downloading every tarball on every run.
+          # Nothing to invalidate by hand: the action keys on the lockfile, so a
+          # dependency change misses the cache and a no-op change hits it.
+          cache: npm
 
       - run: npm ci
         name: Install dependencies

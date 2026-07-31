@@ -9,8 +9,8 @@ what it _does_ come before new capability. Several entries below were found by
 running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
-**Done so far:** #2 (`format:check` in CI), #8 (`react-lib`), #14 (dots in
-names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI).
+**Done so far:** #2 (`format:check` in CI), #4 (npm cache), #8 (`react-lib`),
+#14 (dots in names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI).
 **Next up:** #1 (publish auth) is the last P1 — it needs a deliberate decision on
 scope routing, which is why it has not been picked up yet.
 
@@ -85,14 +85,14 @@ Checks worth having, all cheap and all derived from existing invariants:
 
 ## 2. CI that "just works"
 
-Four cheap wins, all verified absent:
+Four cheap wins, all originally verified absent:
 
-| Item                             | Detail                                                                                                                                                                                              | P   |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 4. `cache: npm` on `setup-node`  | `overlay.ts:1524-1526` passes only `node-version`, so every run reinstalls cold                                                                                                                     | P2  |
-| 5. Use `nx affected` for PR runs | The `affected` root script exists (`overlay.ts:635`) but CI runs `run-many` over everything on every PR — arguably the whole point of Nx on a monorepo. Needs `nrwl/nx-set-shas` for base/head SHAs | P2  |
-| 6. `concurrency` group           | Superseded PR pushes keep burning runner minutes                                                                                                                                                    | P3  |
-| 7. Deploy stage                  | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                               | P3  |
+| Item                                | Detail                                                                                                                                                                                                                                                                                                                                                                                                                       | P   |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 4. ~~`cache: npm` on `setup-node`~~ | ✅ done — both providers now cache npm downloads keyed on the lockfile. GitHub uses `setup-node`'s own `cache: npm`; Azure has no equivalent, so it gets the documented `Cache@2` pattern plus `npm_config_cache` relocating the cache into the pipeline workspace (the default `~/.npm` is outside the cacheable area). `Agent.OS` is in the key because a cached native module built for one OS is not reusable on another | —   |
+| 5. Use `nx affected` for PR runs    | The `affected` root script exists (`overlay.ts:635`) but CI runs `run-many` over everything on every PR — arguably the whole point of Nx on a monorepo. Needs `nrwl/nx-set-shas` for base/head SHAs                                                                                                                                                                                                                          | P2  |
+| 6. `concurrency` group              | Superseded PR pushes keep burning runner minutes                                                                                                                                                                                                                                                                                                                                                                             | P3  |
+| 7. Deploy stage                     | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                        | P3  |
 
 ---
 

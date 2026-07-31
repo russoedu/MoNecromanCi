@@ -323,6 +323,26 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('nx affected')
   })
 
+  it('caches npm downloads, keyed on the lockfile and the agent OS', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Azure has no `cache: npm` equivalent, so this is the documented Cache@2
+    // pattern: npm's cache is relocated into the pipeline workspace (the default
+    // ~/.npm is outside the cacheable area) and keyed on package-lock.json.
+    expect(pipeline).toContain('- name: npm_config_cache')
+    expect(pipeline).toContain('value: $(Pipeline.Workspace)/.npm')
+    expect(pipeline).toContain('task: Cache@2')
+    expect(pipeline).toContain('npm | "$(Agent.OS)" | package-lock.json')
+    // A cached native module built for one OS is not reusable on another.
+    expect(pipeline).toContain('"$(Agent.OS)"')
+  })
+
+  it('restores the cache before npm ci, or it would install cold anyway', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    expect(pipeline.indexOf('task: Cache@2')).toBeLessThan(pipeline.indexOf('script: npm ci'))
+  })
+
   it('typechecks in the run-many — build alone does not, since bundlers strip types', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -759,6 +779,13 @@ describe('githubActionsYaml', () => {
     // Same for the typecheck target, for the same reason.
     expect(github).toContain('-t lint,typecheck,test,build')
     expect(azure).toContain('-t lint,typecheck,test,build')
+
+    // Both cache npm downloads, though the mechanisms genuinely differ: GitHub's
+    // setup-node takes a `cache` input, Azure needs a separate Cache@2 task and a
+    // relocated cache directory. Asserted here so neither provider silently loses
+    // caching while the other keeps it.
+    expect(github).toContain('cache: npm')
+    expect(azure).toContain('task: Cache@2')
   })
 })
 
