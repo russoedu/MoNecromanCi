@@ -42,6 +42,11 @@ package's last release tag (enforced at commit time by commitlint's husky
 hook) — nothing is hand-edited. On `main`, CI runs the release automatically;
 `npm run release:preview` shows what would happen without changing anything.
 
+## Roadmap
+
+Open work — known gaps, planned project kinds, and CI/local-dev improvements —
+is tracked in [ROADMAP.md](ROADMAP.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
