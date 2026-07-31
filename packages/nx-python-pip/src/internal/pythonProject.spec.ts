@@ -10,7 +10,18 @@ describe('pythonModuleDirectory', () => {
     expect(pythonModuleDirectory('my-svc')).toBe('my_svc')
   })
 
-  it('leaves a name with no hyphens unchanged', () => {
+  it('replaces dots too — a dot is Python’s package separator', () => {
+    // The subtle one. A hyphen is merely an invalid identifier character, but a
+    // surviving dot would be *valid syntax* meaning something else entirely: a
+    // submodule of a package that does not exist. That lands as a wrong
+    // hatchling `packages` entry and an unimportable wheel, with no error at
+    // generation time — so this is the case worth pinning down.
+    expect(pythonModuleDirectory('my.svc')).toBe('my_svc')
+    expect(pythonModuleDirectory('api.v2')).toBe('api_v2')
+    expect(pythonModuleDirectory('my-svc.v2')).toBe('my_svc_v2')
+  })
+
+  it('leaves a name with no hyphens or dots unchanged', () => {
     expect(pythonModuleDirectory('pycore')).toBe('pycore')
   })
 })

@@ -21,6 +21,22 @@ describe('assertValidProjectName', () => {
     }
   })
 
+  it('accepts dots, a normal naming convention', () => {
+    for (const name of ['my.service', 'api.v2', 'a.b.c', 'my-app.v2']) {
+      expect(() => assertValidProjectName(name, 'Project name')).not.toThrow()
+    }
+  })
+
+  it('rejects the four dot positions that break a downstream consumer', () => {
+    // Each of these is rejected for a specific reason, not for tidiness:
+    // a leading dot makes a hidden directory; a trailing dot and a repeated dot
+    // are both illegal in a git ref, which the {projectName}@{version} release
+    // tag is; and an all-dots name has no identifier to derive at all.
+    for (const name of ['.hidden', 'trailing.', 'a..b', '..', '...']) {
+      expect(() => assertValidProjectName(name, 'Project name')).toThrow('Project name')
+    }
+  })
+
   it('rejects shell metacharacters (defense in depth alongside the cross-spawn fix)', () => {
     for (const name of ['x; touch pwned', 'a`b`', '$(whoami)', 'name with spaces']) {
       expect(() => assertValidProjectName(name, 'Project name')).toThrow('Project name')

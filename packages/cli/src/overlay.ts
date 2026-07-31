@@ -540,6 +540,16 @@ export default mnci({ workspaceRoot: import.meta.dirname })
  *
  * @remarks
  * Patterns to exclude from Prettier formatting, matching root locations.
+ *
+ * The non-JS entries are not padding. This list used to cover only the
+ * JavaScript toolchain, while mnci also generates Python and Dart projects whose
+ * tool directories land inside the workspace — and `packages/cli/README.md`
+ * explicitly tells users to create a venv there. So `npm run format:check`
+ * failed on the `site-packages` tree under `.venv` in any workspace that
+ * followed the documented Python setup, and `npm run format` would have
+ * rewritten files inside installed third-party packages. Harmless while
+ * formatting was unenforced; a hard failure now that it is a CI gate, which is
+ * how it surfaced.
  */
 export const PRETTIER_IGNORE = `node_modules
 dist
@@ -553,6 +563,12 @@ out
 tmp
 package-lock.json
 *.lock
+.venv
+venv
+__pycache__
+.pytest_cache
+.ruff_cache
+.dart_tool
 `
 
 /**

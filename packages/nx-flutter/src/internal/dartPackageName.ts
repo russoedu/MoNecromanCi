@@ -4,10 +4,11 @@
  * @remarks
  * The two naming rules genuinely differ, so this conversion is load-bearing
  * rather than cosmetic. mnci validates project names as
- * `[a-z][a-z0-9-]*` (`assertValidProjectName`), which permits hyphens; Dart
- * package names must be `lowercase_with_underscores` — a hyphen makes
- * `pub get` reject the pubspec outright. So `my-app` becomes `my_app`, and
- * the Dart `import 'package:my_app/...'` follows from that.
+ * `[a-z][a-z0-9-]*(\.[a-z0-9-]+)*` (`assertValidProjectName`), which permits
+ * hyphens **and dots**; Dart package names must be `lowercase_with_underscores`
+ * — pub requires `[a-z_][a-z0-9_]*` and rejects anything else in the pubspec
+ * outright. So `my-app` becomes `my_app`, `my.app` likewise becomes `my_app`,
+ * and the Dart `import 'package:my_app/...'` follows from that.
  *
  * The Nx project name deliberately keeps the original hyphenated form: it is
  * what `nx run <name>:build` and the release tag (`{projectName}@{version}`)
@@ -20,5 +21,5 @@
  * @typeParam None - this function has no generic type parameters.
  */
 export function dartPackageName(name: string): string {
-  return name.replaceAll('-', '_')
+  return name.replaceAll(/[-.]/g, '_')
 }

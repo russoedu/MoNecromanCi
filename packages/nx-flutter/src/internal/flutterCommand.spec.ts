@@ -29,10 +29,19 @@ describe('flutterCommand', () => {
 
 describe('dartPackageName', () => {
   it('converts mnci hyphens into Dart underscores', () => {
-    // mnci validates names as [a-z][a-z0-9-]*, but pub rejects a hyphenated
+    // mnci permits hyphens in a project name, but pub rejects a hyphenated
     // package name outright — so this conversion is load-bearing, not cosmetic.
     expect(dartPackageName('my-app')).toBe('my_app')
     expect(dartPackageName('a-b-c')).toBe('a_b_c')
+  })
+
+  it('converts dots too — pub requires [a-z_][a-z0-9_]* and rejects them', () => {
+    // mnci permits dots in a project name. Missing this would make `pub get`
+    // fail on the generated pubspec, so it fails loudly rather than subtly —
+    // but it would fail on every dotted Flutter project.
+    expect(dartPackageName('my.app')).toBe('my_app')
+    expect(dartPackageName('api.v2')).toBe('api_v2')
+    expect(dartPackageName('my-app.v2')).toBe('my_app_v2')
   })
 
   it('leaves an already-valid name alone', () => {
