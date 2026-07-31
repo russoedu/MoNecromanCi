@@ -313,15 +313,29 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
 
-  it('verifies every run linter-agnostically (npm run lint) then test+build, no affected branching', () => {
+  it('verifies every run with npm run lint then test+build, no affected branching', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    // `npm run lint` abstracts eslint-via-nx vs oxlint, so the pipeline never
-    // branches on the linter. The run-many also carries `lint` so Nx-native
-    // lint targets `npm run lint` misses (Python's ruff) still run in CI.
+    // The run-many also carries `lint` so Nx-native lint targets `npm run lint`
+    // misses (Python's ruff) still run in CI.
     expect(pipeline).toContain('npm run lint')
     expect(pipeline).toContain('npx nx run-many -t lint,test,build')
     expect(pipeline).not.toContain('nx affected')
+  })
+
+  it('gates formatting with its own format:check step, after lint', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Load-bearing, and easy to drop as redundant-looking: ESLint here is
+    // configured for correctness ONLY (eslint-config-prettier is composed last
+    // in @mnci/eslint-config), so it reports nothing whatsoever about
+    // formatting. Without this step Prettier is advisory — mnci deletes Nx's
+    // .prettierrc precisely so its own config takes effect, then nothing would
+    // ever check that it holds.
+    expect(pipeline).toContain('npm run format:check')
+    expect(pipeline.indexOf('npm run format:check')).toBeGreaterThan(
+      pipeline.indexOf('npm run lint')
+    )
   })
 
   it('checks the workspace is synced early, before lint/test/build (fails fast on a stale TS reference)', () => {
@@ -725,6 +739,12 @@ describe('githubActionsYaml', () => {
     expect(azure).toContain(`'pub','get'`)
     expect(github).toContain('No Flutter projects - skipping.')
     expect(azure).toContain('No Flutter projects - skipping.')
+
+    // Both providers gate formatting, not just one — the whole point of this
+    // test is that a step added to one provider cannot be forgotten in the
+    // other.
+    expect(github).toContain('npm run format:check')
+    expect(azure).toContain('npm run format:check')
   })
 })
 

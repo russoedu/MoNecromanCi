@@ -61,11 +61,18 @@ jobs:
       - run: npx nx sync:check
         name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-      # One verify for every run (PR and main). `npm run lint` abstracts the chosen
-      # linter (eslint via nx, or oxlint), so the workflow needs no linter branch;
-      # Nx cache makes unchanged test/build projects instant.
+      # One verify for every run (PR and main). Nx cache makes unchanged
+      # test/build projects instant.
       - run: npm run lint
         name: Lint
+
+      # Prettier owns ALL formatting in this workspace, so it needs a gate of
+      # its own: ESLint is configured for correctness only and deliberately
+      # reports nothing about formatting. Without this step the entire
+      # formatting opinion is advisory, and a workspace drifts out of
+      # compliance with no signal anywhere.
+      - run: npm run format:check
+        name: Check formatting (run 'npm run format' locally to fix)
       # `lint` here also runs any Nx lint targets `npm run lint` does not cover —
       # notably Python's ruff (every Python project owns a hand-authored `lint`
       # target). For the eslint stack the JS lint runs twice, but Nx caches the
