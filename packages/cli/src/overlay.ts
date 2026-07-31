@@ -1,6 +1,6 @@
 import { globSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { markExecutable, readJson, toJson, writeFileEnsured } from './util/fsx'
+import { markExecutable, readCodeWorkspace, readJson, toJson, writeFileEnsured } from './util/fsx'
 
 /**
  * Where a generated monorepo publishes its npm packages.
@@ -585,12 +585,27 @@ __pycache__
  * root.
  * Users open this file in VS Code (`File > Open Workspace from File`).
  *
+ * **`existingTasks` is what keeps `mnci upgrade` non-destructive**, and the need
+ * for it was masked by another bug. The overlay owns this file's folders,
+ * settings and extensions, but the `tasks` array is per-project state written by
+ * `mnci add`, not by the overlay — so regenerating the file wholesale destroys
+ * every registered task. That never surfaced only because upgrade used to write
+ * to `undefined.code-workspace` and leave the real file untouched; fixing the
+ * filename exposed it immediately (verified: a workspace with three projects lost
+ * all five of its tasks). Tasks are carried through verbatim rather than
+ * regenerated, since the overlay has no idea which projects exist.
+ *
  * @param workspaceName - The workspace name.
+ * @param existingTasks - The `tasks` object read from a file already on disk, to
+ * carry through unchanged. Omitted for a fresh `mnci new`, where there is none.
  * @returns The JSON string for a .code-workspace file.
  * @throws Never - performs pure string formatting with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function vscodeWorkspace(workspaceName: string): string {
+export function vscodeWorkspace(
+  workspaceName: string,
+  existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
+): string {
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
@@ -628,7 +643,10 @@ export function vscodeWorkspace(workspaceName: string): string {
           'firsttris.vscode-jest-runner',
         ],
       },
-      tasks: { version: '2.0.0', tasks: [] },
+      tasks: {
+        version: existingTasks?.version ?? '2.0.0',
+        tasks: existingTasks?.tasks ?? [],
+      },
     },
     null,
     2
@@ -741,6 +759,12 @@ export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
  */
 export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
   return {
+    // Persisted so `mnci upgrade` can name the `<name>.code-workspace` file it
+    // rewrites. Its absence is why upgrade used to write a file literally called
+    // `undefined.code-workspace` and therefore never refreshed the real one —
+    // see `resolveWorkspaceName` in `commands/upgrade.ts`, which still needs a
+    // fallback chain for workspaces generated before this field existed.
+    workspaceName: options.workspaceName,
     scope: options.scope,
     registry: options.registry,
     agent: options.agent,
@@ -1939,11 +1963,24 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   removeNxScaffolding(workspaceRoot)
-  // VS Code workspace file with folder structure, extensions, and settings.
-  writeFileEnsured(
-    join(workspaceRoot, `${options.workspaceName}.code-workspace`),
-    vscodeWorkspace(options.workspaceName)
-  )
+  // VS Code workspace file with folder structure, extensions, and settings. The
+  // `tasks` array is read back first and carried through: it is per-project state
+  // written by `mnci add`, not overlay-owned, so regenerating it wholesale would
+  // wipe every registered build/qa/start task on `mnci upgrade`.
+  const codeWorkspacePath = join(workspaceRoot, `${options.workspaceName}.code-workspace`)
+  const existing = readCodeWorkspace<{
+    tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+  }>(codeWorkspacePath)
+  writeFileEnsured(codeWorkspacePath, vscodeWorkspace(options.workspaceName, existing?.tasks))
+  // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
+  // no `workspaceName` at all, so this write landed on the literal filename
+  // `undefined.code-workspace` and the workspace's real one was never refreshed.
+  // Any workspace upgraded before that fix still carries the junk file, and only
+  // an upgrade can clear it. Guarded on the name so a workspace genuinely called
+  // `undefined` does not delete its own file.
+  if (options.workspaceName !== 'undefined') {
+    rmSync(join(workspaceRoot, 'undefined.code-workspace'), { force: true })
+  }
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)

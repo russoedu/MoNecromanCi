@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync, rmSync } from 'node:fs'
+import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../../nx'
-import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
+import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
 /**
@@ -253,31 +253,6 @@ function findCodeWorkspaceFile(workspaceRoot: string): string | undefined {
 }
 
 /**
- * Reads a `.code-workspace` file, tolerating trailing commas.
- *
- * @remarks
- * `.code-workspace` is VS Code's own JSONC dialect (comments and trailing
- * commas both allowed) — not strict JSON. Verified empirically: Prettier 3.9
- * has native `.code-workspace` support and reformats a single-entry array
- * with a trailing comma, which `JSON.parse` then rejects. Since
- * `npm run format` is part of mnci's own documented pre-commit routine, a
- * strict parse here would break on the very first `add` after a real
- * `format` run.
- * Comments are not stripped — mnci itself never writes one, and a workspace
- * that already contains hand-added `//` comments predates this handling
- * regardless.
- *
- * @param path - Absolute path to the `.code-workspace` file.
- * @returns The parsed JSON value.
- * @throws Propagates `fs`/`JSON.parse` errors for anything not a trailing comma.
- * @typeParam T - The expected shape of the parsed JSON.
- */
-function readCodeWorkspaceFile<T>(path: string): T {
-  const contents = readFileSync(path, 'utf8').replaceAll(/,(\s*[}\]])/g, '$1')
-  return JSON.parse(contents) as T
-}
-
-/**
  * One VS Code task for a project's script, matching its root `package.json` entry.
  *
  * @remarks
@@ -352,9 +327,10 @@ export function registerProjectCommands(
   if (!codeWorkspacePath) {
     return
   }
-  const workspaceFile = readCodeWorkspaceFile<{
-    tasks?: { version?: string; tasks?: Record<string, unknown>[] }
-  }>(codeWorkspacePath)
+  const workspaceFile =
+    readCodeWorkspace<{
+      tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+    }>(codeWorkspacePath) ?? {}
   const label = (task: Record<string, unknown>): string => (task.label as string | undefined) ?? ''
   const existingTasks = (workspaceFile.tasks?.tasks ?? []).filter(
     task => !label(task).startsWith(`${name}: `)
