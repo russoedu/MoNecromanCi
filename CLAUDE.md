@@ -443,6 +443,8 @@ so wiring it later is one line, and the generated `.npmrc` says so in a comment.
 
 ## See Also
 
+- [`ROADMAP.md`](ROADMAP.md) — open work: known gaps, planned kinds, and the
+  invariants that are documented but not yet enforced
 - [`packages/cli/README.md`](packages/cli/README.md) — detailed CLI & workflow docs
 - [`packages/nx-python-pip/README.md`](packages/nx-python-pip/README.md) — Python plugin reference
 - [`packages/nx-flutter/README.md`](packages/nx-flutter/README.md) — Flutter plugin reference
