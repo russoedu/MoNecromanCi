@@ -482,9 +482,10 @@ npx nx sync:check                # TS project references
 npx nx run-many -t lint,test,build   # everything at once
 ```
 
-Expected: **311 unit tests** — 221 (`cli`), 50 (`nx-flutter`), 40
-(`nx-python-pip`). `packages/cli` enforces an **85% coverage threshold** on
-statements/branches/functions/lines; the two plugins have no threshold.
+Expected: **363 unit tests** — 259 (`cli`), 50 (`nx-flutter`), 40
+(`nx-python-pip`), 14 (`eslint-config`). `packages/cli` enforces an **85%
+coverage threshold** on statements/branches/functions/lines; the other three
+packages have no threshold.
 
 ### The e2e suite
 
