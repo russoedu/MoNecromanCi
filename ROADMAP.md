@@ -158,34 +158,79 @@ flag rather than leaving implicit.
 
 ## 5. Naming
 
-### 14. Allow `.` in project and workspace names — P1
+### 14. Allow `.` in project and workspace names — ✅ done
 
-`assertValidProjectName` (`packages/cli/src/util/names.ts:28`) enforces
-`^[a-z][a-z0-9-]*$`, so `mnci add node-app my.service` fails outright. Dots are a
-normal, widely-used naming convention and a preferred working style here.
+`assertValidProjectName` used to enforce `^[a-z][a-z0-9-]*$`, so
+`mnci add node-app my.service` failed outright. It now accepts
+`^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*$` — dots permitted, with the four positions
+that break a downstream consumer still rejected (leading, trailing, repeated,
+and all-dots). Requiring at least one `[a-z0-9-]` after every dot rules out all
+four without a separate check per case.
 
-This is **not** just a regex widening — a name is used in several roles at once,
-and dots are safe in most but not all of them:
+A name is used in several roles at once, and dots are safe in most but not all:
 
-| Role                                   | Dot-safe?      | Action                                                                                                                                                          |
-| -------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Filesystem path (`apps/<name>`)        | Yes            | but reject `.`, `..`, and leading/trailing dots (a leading dot also makes a hidden directory)                                                                   |
-| npm package name                       | Yes            | `socket.io` and `lodash.merge` are precedent                                                                                                                    |
-| Nx project name, `nx run <name>:build` | Yes            | none                                                                                                                                                            |
-| Release tag `{projectName}@{version}`  | Mostly         | git refs forbid `..` and a trailing `.`                                                                                                                         |
-| Drop zip `<kind>-<name>.zip`           | Yes            | CI derives the build tag with `path.basename(f, '.zip')`, so it still matches the artifact                                                                      |
-| **Python module identifier**           | **No**         | a dot is the package separator. `pythonModuleName` (`nx-python-pip/src/internal/pythonProject.ts:13`) maps only `-`→`_` today and must map `.` too              |
-| **Dart package name**                  | **No**         | pub requires `[a-z_][a-z0-9_]*` and rejects the pubspec outright otherwise. `dartPackageName` (`nx-flutter/src/internal/dartPackageName.ts`) needs the same fix |
-| Go package identifier                  | Needs checking | declared in source rather than derived from the directory — confirm what `@nx-go/nx-go` emits for a dotted directory                                            |
+| Role                                   | Dot-safe? | Outcome                                                                                                                                                                                                                                  |
+| -------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filesystem path (`apps/<name>`)        | Yes       | verified — `apps/my.service` is fine                                                                                                                                                                                                     |
+| npm package name                       | Yes       | verified — `@demo/my.sdk` builds and `npm pack`s (`socket.io` is precedent)                                                                                                                                                              |
+| Nx project name, `nx run <name>:build` | Yes       | verified                                                                                                                                                                                                                                 |
+| Release tag `{projectName}@{version}`  | Yes       | verified — `nx release --dry-run` resolves `@demo/my.sdk` and `my.pysvc`, and still excludes `go-lib`                                                                                                                                    |
+| Drop zip `<kind>-<name>.zip`           | Yes       | `path.basename(f, '.zip')` still matches the artifact                                                                                                                                                                                    |
+| **Python module identifier**           | **No**    | fixed — `pythonModuleDirectory` now maps `.`→`_`. A surviving dot is _valid syntax meaning something else_ (a submodule of a package that does not exist), so it fails **quietly**: wrong hatchling `packages` entry, unimportable wheel |
+| **Dart package name**                  | **No**    | fixed — `dartPackageName` now maps `.`→`_`. pub requires `[a-z_][a-z0-9_]*` and rejects the pubspec outright, so this one fails loudly                                                                                                   |
+| Go package identifier                  | Yes       | **no change needed** — Nx's own `names()` already treats a dot as a word separator, so `@nx-go/nx-go` writes `package mygolib` for `my.golib`. Verified against the real plugin and a real `go build`/`vet`/`test`                       |
 
-So the work is: widen the charset, explicitly forbid the degenerate dot cases,
-and extend both name-transform helpers. Both already have the `-`→`_` precedent,
-so the shape of the fix is established — the risk is forgetting one of them,
-since Dart fails loudly but a wrong Python module name fails subtly (bad
-`packages` list in the wheel).
+Verified against a real generated workspace named `my.workspace` containing
+`npm-lib my.sdk`, `python-lib my.pysvc` and `go-lib my.golib`: `run-many
+-t lint,test,build` green across all three, the wheel contains `my_pysvc/` and
+imports cleanly from a fresh venv with no phantom `my` package, and Go compiles.
+Flutter is covered by unit tests only — no SDK on this machine.
 
-- **Verify:** generate `my.service` for a Python kind and a Flutter kind, then
-  build both and inspect the wheel contents and `pubspec.yaml`.
+### 17. Fix `mnci upgrade`'s three defects — P1
+
+Found while verifying #14, all pre-existing and all in the one command whose
+whole job is carrying overlay fixes into existing workspaces:
+
+1. **It writes a file literally named `undefined.code-workspace`.**
+   `resolveOverlayOptions` (`commands/upgrade.ts:103`) is declared
+   `: OverlayOptions` but returns an object with **no `workspaceName`**, so
+   `applyOverlay` interpolates `undefined` into the filename
+   (`overlay.ts:1944`). Reproduced on a real workspace: the junk file lands
+   next to the genuine one.
+2. **So the real `.code-workspace` is never refreshed.** Since the write goes to
+   the wrong filename, an overlay improvement to that file cannot reach an
+   existing workspace — precisely the gap `upgrade` exists to close.
+3. **It never runs Prettier.** `new` and every `add` finish with
+   `runPrettier()`; `upgrade` does not, so it leaves `nx.json` mis-formatted and
+   the workspace failing its own `format:check` — now a CI gate (#2).
+
+Root cause of (1) and (2) is the same: `workspaceName` is not in the `mnci`
+block that `mnciConfig` persists (`overlay.ts:743`), so `upgrade` has nothing to
+read it back from. Either persist it, or derive it from the existing
+`*.code-workspace` filename / the root manifest name.
+
+- **Care:** deriving it must not resurrect the junk file on a workspace that
+  already has one from a previous buggy upgrade — clean that up too.
+
+### 18. Run `typecheck` in CI — P1
+
+`npm run typecheck` currently reports **14 TypeScript errors on `main`**, and CI
+never notices, because the pipeline runs `lint,test,build` and `typecheck` is not
+among them. `tsup` builds with esbuild, which does no type checking, so nothing
+in the pipeline type-checks the code at all.
+
+This is not hypothetical: one of the 14 is `commands/upgrade.ts` — the exact
+missing-`workspaceName` bug in #17 above. TypeScript already knew. Adding
+`typecheck` to the target list would have prevented a real user-visible defect
+from shipping.
+
+- **Files:** the `run-many` target list in both providers (`overlay.ts`), this
+  repo's own `.github/workflows/ci.yml`, and the 14 existing errors need fixing
+  first or the step lands red.
+- **Note:** several of the 14 are in test files (`ProjectKind` not imported,
+  `OverlayOptions` fixtures missing `workspaceName`), so some may be a
+  `tsconfig.typecheck.json` include problem rather than real defects — worth
+  triaging before assuming all 14 are bugs.
 
 ---
 

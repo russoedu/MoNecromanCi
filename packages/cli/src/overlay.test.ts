@@ -1279,6 +1279,24 @@ describe('applyOverlay', () => {
     expect(prettier.trailingComma).toBe('none')
   })
 
+  it('ignores the Python and Dart tool directories, not just the JS ones', () => {
+    overlayWith(DEFAULT_STACK)
+
+    // Regression: this list was JS-only, while mnci generates Python and Dart
+    // projects whose tool directories land in the workspace — and the CLI README
+    // tells users to create a venv right there. `npm run format:check` therefore
+    // failed on .venv/**/site-packages/** in any workspace that followed the
+    // documented Python setup, and `npm run format` would have rewritten files
+    // inside installed third-party packages.
+    const ignore = readFileSync(join(workspaceRoot, '.prettierignore'), 'utf8')
+      .split('\n')
+      .map(line => line.trim())
+
+    for (const directory of ['.venv', 'venv', '__pycache__', '.dart_tool']) {
+      expect(ignore).toContain(directory)
+    }
+  })
+
   it('writes an empty .npmrc — publish auth is a deliberate deferral', () => {
     overlayWith(DEFAULT_STACK)
 

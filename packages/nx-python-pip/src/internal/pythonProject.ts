@@ -4,13 +4,21 @@
  * @remarks
  * Python identifiers cannot contain hyphens, so `my-svc` becomes `my_svc`.
  *
+ * Dots are mapped the same way, and that is not cosmetic: a dot is Python's
+ * **package separator**, so leaving `my.svc` alone would name a submodule `svc`
+ * of a package `my` that does not exist — producing a wrong
+ * `[tool.hatch.build.targets.wheel] packages` entry and an unimportable wheel.
+ * Unlike the Dart side, where pub rejects the name outright and fails loudly,
+ * this one would fail quietly, which is why it is handled here rather than left
+ * to the caller.
+ *
  * @param name - The Nx project name.
  * @returns The module directory's basename (e.g. `my_svc`).
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
 export function pythonModuleDirectory(name: string): string {
-  return name.replaceAll('-', '_')
+  return name.replaceAll(/[-.]/g, '_')
 }
 
 /**
