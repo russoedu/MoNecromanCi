@@ -175,7 +175,34 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Two Plugins Had a Fake `typecheck` Target (Latest)
+### JSX Accessibility, Vitest Globals, and Comments in `tsconfig.json` (Latest)
+
+Roadmap #19b, #19c and #19e — the rest of `@mnci/eslint-config`'s coverage gaps
+except #19d (import-graph rules).
+
+- **`eslint-plugin-jsx-a11y` (`recommended`) now covers every `.jsx`/`.tsx`.** There
+  were two React kinds and **zero** a11y rules touching JSX:
+  `@html-eslint/require-img-alt` applies to `**/*.html` only, so an `<img>` in a
+  component was checked by nothing. Verified on a real generated workspace, because
+  the risk was `recommended` failing a fresh `react-app` — Nx's `NxWelcome` is a
+  large slab of markup. It lints clean out of the box, and planted violations report
+  `alt-text`, `anchor-is-valid`, `click-events-have-key-events` and
+  `no-static-element-interactions`. This also corrects the docs' "HTML + a11y"
+  claim, which held for `.html` and not for JSX.
+- **Vitest's `vi`/`vitest` globals are declared**, and `vitest.*` config files join
+  the `jest.*` entry. Narrow — the vitest stack generates `.ts` specs and `no-undef`
+  is off for TS — but `vi.fn()` in a `.js` spec really did report `'vi' is not
+defined`.
+- **`jsonc/no-comments` is now explicitly off for the JSONC family**, and the reason
+  is worth remembering: `tsconfig*.json` was **already** listed as JSONC, yet a
+  commented one still failed. Those files also match `**/*.json`, whose block enables
+  the rule, and the JSONC preset only _omits_ it rather than setting `'off'` — so in
+  flat config the earlier `'error'` wins. Spreading a preset does not undo an earlier
+  block; only an explicit `'off'` does. `.vscode/*.json` joined the same block.
+- Both new rule blocks were mutation-tested, and the JSON relaxation is tested in
+  both directions so it cannot quietly loosen real `.json` files.
+
+### Two Plugins Had a Fake `typecheck` Target
 
 Nx **disables** an inferred `typecheck` target when a project's tsconfig sets
 `noEmit: true`, replacing the command with an `echo` that exits 0.

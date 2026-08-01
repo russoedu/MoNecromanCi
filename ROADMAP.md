@@ -15,14 +15,16 @@ those cite `file:line` so the claim can be re-checked.
 #3 (`mnci doctor`), #16 (registry resolution verified) — which closes **§1 and §2
 entirely**: every gap between what the project claimed and what it did.
 
-**#19a** (type-aware TypeScript rules, §9) and **#20** (the fake `typecheck`
-targets, §8) are also done. #20 was found _while_ doing #19a and turning its gate on
+**#19a–c and #19e** (§9) and **#20** (the fake `typecheck` targets, §8) are also
+done — the linting package now covers type-aware rules, JSX accessibility and
+Vitest's globals. #20 was found _while_ doing #19a and turning its gate on
 immediately exposed pre-existing type errors in both plugins — specs in
 `nx-flutter` and `nx-python-pip` had been type-checked by nothing at all.
 
 **Open, all P2:** #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
-#12 (multi-project `dev up`), #15 (`--preset` composition), the rest of #19 (b–e),
-and Go e2e coverage in §6. Plus #7 and #13 at P3. **No P1 is open.**
+#12 (multi-project `dev up`), #15 (`--preset` composition), #19d (import-graph rules)
+plus the leftovers under #19e, and Go e2e coverage in §6. Plus #7 and #13 at P3.
+**No P1 is open.**
 
 The remaining #19 parts keep the widest reach of anything here: the config is a
 published package, so within a minor its improvements land in existing workspaces
@@ -512,7 +514,7 @@ the target — the stub _passes_.
 
 ## 9. The linting package
 
-### 19. Make `@mnci/eslint-config` a more complete linting package — P2
+### 19. Make `@mnci/eslint-config` a more complete linting package — a, b, c, e ✅ done; d open (P2)
 
 `@mnci/eslint-config` already covers JS/TS, React, JSON/JSONC/JSON5, YAML,
 Markdown, CSS, HTML and test files as one root config, and it is the piece with
@@ -562,24 +564,30 @@ Cost, measured: whole-repo lint goes from ~5s to ~8s. It also now depends on
 project references being in order, which CI already guarantees via `nx sync:check`
 before it lints.
 
-**b. JSX accessibility — a claim the config does not currently keep.**
-There are two React kinds (`react-app`, `react-lib`), and `configs/react.js`
-contains no accessibility rules at all (verified: zero `a11y` matches).
-`@html-eslint/require-img-alt` in `configs/html.js` applies to `**/*.html` only,
-so an `<img>` in a component is unchecked. `eslint-plugin-jsx-a11y` is the
-standard answer. Note this also corrects a documentation overclaim: `CLAUDE.md`
-describes the config as covering "HTML+a11y", which is true of `.html` and not of
-JSX.
+**b. JSX accessibility — ✅ done.** `eslint-plugin-jsx-a11y` (`recommended`) now
+applies to every `.jsx`/`.tsx` file, composed in `configs/react.js`. There were two
+React project kinds and **zero** a11y rules reaching a single line of JSX:
+`@html-eslint/require-img-alt` covers `**/*.html` only, so an `<img>` inside a
+component was checked by nothing. Accessibility is a correctness concern in the same
+sense a dropped `await` is, so it belongs in this config's scope.
 
-**c. Vitest's own globals.** `configs/jest.js` deliberately serves both stacks and
-says so, and that mostly holds — `jest/no-focused-tests` is syntactic, so a
-stray `it.only` is caught under either runner. The exception is Vitest-only
-globals: `vi.fn()` in a `.js` spec reports `'vi' is not defined`, confirmed
-against the real binary. Narrow in practice, because the vitest stack generates
-`.ts` specs and `no-undef` is off for TS — but it is a real failure on a file the
-user would not expect to fail, which is the same shape as the `react-lib` and
-`node-function-app` bugs. Adding Vitest's globals (and `vitest.config.*` to the
-`files` list, alongside the `jest.*` entry already there) is cheap.
+Also corrects the docs: the coverage table said "HTML + a11y", true of `.html` and
+not of JSX. It now lists the two separately.
+
+Verified on a real generated workspace rather than fixtures alone, because the risk
+here was `recommended` failing a freshly generated `react-app` — Nx's own
+`NxWelcome` component is a large slab of markup, exactly the shape that trips a11y
+rules. It lints **clean out of the box**, and a planted `<img>` with no `alt` plus an
+anchor used as a button report four real violations (`alt-text`,
+`anchor-is-valid`, `click-events-have-key-events`,
+`no-static-element-interactions`). Mutation-tested: removing the rule spread fails
+the new test.
+
+**c. Vitest's own globals — ✅ done.** `vi` and `vitest` are now declared alongside
+Jest's globals, and `vitest.*` config files join the `jest.*` entry in the `files`
+list. Narrow in practice — the vitest stack generates `.ts` specs, and `no-undef` is
+off for TypeScript — but `vi.fn()` in a `.js` spec really did report
+`'vi' is not defined`, which is a failure on a file the user wrote normally.
 
 **d. Import-graph correctness.** Nothing currently reports an unresolved
 specifier or an import cycle _within_ a project. `@nx/enforce-module-boundaries`
@@ -588,15 +596,17 @@ intra-project gap. `eslint-plugin-import-x` is the maintained option; watch the
 peer range, since `eslint-plugin-import@2.31.0` capping at ESLint 9 is already
 one of the two reasons this stack is pinned to 9 (see `configs/base.js`).
 
-**e. Smaller additions, worth listing so they are not re-discovered.**
-`jsonc/no-comments` applies to `tsconfig.json`, which officially _does_ support
-comments — TypeScript reads it as JSONC, and Nx's own generated tsconfigs are
-candidates for explanatory comments. Hit while doing #19a: a commented
-`tsconfig.json` failed lint with 8 `jsonc/no-comments` errors. The fix is to treat
-`tsconfig*.json` (and `.vscode/*.json`, same situation) as JSONC rather than strict
-JSON. Small, and entirely a correctness question about which parser applies.
-`eslint-plugin-regexp` (catastrophic backtracking and dead alternatives are
-genuine correctness bugs, and squarely in this config's scope);
+**e. Comments in `tsconfig.json` — ✅ done, and subtler than it looked.**
+`tsconfig*.json` and `*.code-workspace` were **already** listed as JSONC, yet a
+commented `tsconfig.json` still failed with 8 `jsonc/no-comments` errors. The cause:
+those files also match `**/*.json`, whose block enables the rule, and the JSONC
+preset merely _omits_ it rather than setting it to `'off'` — so in flat config the
+earlier `'error'` survives. Fixed by switching it off explicitly, with
+`.vscode/*.json` added to the same block. Both directions are tested: comments
+allowed in the JSONC family, still an error in a plain `.json`.
+
+**Still open under e:** `eslint-plugin-regexp` (catastrophic backtracking and dead
+alternatives are genuine correctness bugs, and squarely in this config's scope);
 TOML, since mnci writes `pyproject.toml` files and no rule reads them;
 `eslint-plugin-n` is already a dependency and wired for a handful of rules, so its
 `recommended` set may be under-used.
