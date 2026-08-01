@@ -12,15 +12,23 @@ those cite `file:line` so the claim can be re-checked.
 **Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
 #5 (`nx affected` on PRs), #6 (superseded-run handling), #8 (`react-lib`),
 #14 (dots in names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI),
-#3 (`mnci doctor`), #16 (registry resolution verified) — **every P1 and P2 in the
-original list is now closed.**
+#3 (`mnci doctor`), #16 (registry resolution verified) — which closes **§1 and §2
+entirely**: every gap between what the project claimed and what it did.
 
-**Next up:** the remaining items are all new capability rather than gaps between
-claim and behaviour, so they can be picked up in any order. #19 (a fuller
-`@mnci/eslint-config`) is the one with the widest reach: the config is a published
-package, so within a minor its improvements land in existing workspaces through
-`npm update` alone, with no `mnci upgrade` and no regenerated files (see the caret
-caveat in #16).
+**Next up — #20, and it is the only P1 open.** Found while doing #19a: `nx-flutter`
+and `nx-python-pip` have a `typecheck` target that Nx has **disabled**, so it
+passes by printing a message. That makes #18 half-delivered and puts two published
+packages behind a gate that does not gate — the same shape as the `.prettierrc`
+that silently outranked `.prettierrc.json`. See §8.
+
+**Also open, all P2:** #9 (container kind), #10 (e2e test projects), #11
+(devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition), the
+rest of #19 (b–e), and Go e2e coverage in §6. Plus #7 and #13 at P3.
+
+#19a (type-aware TypeScript rules) is done — see §9. The remaining #19 parts keep
+the widest reach of anything here: the config is a published package, so within a
+minor its improvements land in existing workspaces through `npm update` alone, with
+no `mnci upgrade` and no regenerated files (see the caret caveat in #16).
 
 ---
 
@@ -427,7 +435,45 @@ workspaces through `npm update`" claim holds only within a minor.
 
 ---
 
-## 8. The linting package
+## 8. Gates that still don't gate
+
+### 20. Two packages have a fake `typecheck` target — P1
+
+Found while adding a tsconfig for #19a, and it undercuts #18. Nx **disables** an
+inferred `typecheck` target when a project's tsconfig sets `noEmit: true`, and it
+does so by replacing the command with an `echo`:
+
+```
+$ npx nx show project @mnci/nx-flutter --json
+typecheck: echo "The 'typecheck' target is disabled because one or more project
+references set 'noEmit: true' in their tsconfig. Remove this property to resolve…"
+```
+
+`@mnci/nx-flutter` and `@mnci/nx-python-pip` both set `noEmit: true`, so both have
+this stub. Their `typecheck` **passes by printing a message**. Only `@mnci/cli` has
+a real one, and only because it runs `tsc --noEmit` through a package script
+instead of the inferred target.
+
+So #18 ("run `typecheck` in CI") is half-delivered: CI does run
+`-t lint,typecheck,test,build`, and for two of four projects the typecheck step is
+theatre. Both are _published_ plugins, which makes this the highest-consequence
+open item — the same shape as the `.prettierrc` that silently outranked
+`.prettierrc.json`, and as the `@nx/eslint/plugin` check `mnci doctor` exists for.
+
+Deliberately **not** fixed inside #19a: it means changing the emit configuration
+of two published packages, which is a real build change and wants its own diff and
+its own verification, not a rider on a lint change.
+
+Fixing it means removing `noEmit` (the tsconfigs also set `emitDeclarationOnly:
+true` alongside it, which is contradictory and worth resolving at the same time)
+and then **proving** the target catches something — plant a type error, watch it
+fail, remove it. A green `typecheck` is exactly what this item shows proves
+nothing. Worth adding a `mnci doctor` check for it afterwards, since the failure is
+invisible in CI logs: the step passes.
+
+---
+
+## 9. The linting package
 
 ### 19. Make `@mnci/eslint-config` a more complete linting package — P2
 
@@ -444,19 +490,40 @@ should fail and a file that should not.
 The gaps below were each checked against the current source rather than guessed,
 so they can be picked up in any order and priced independently.
 
-**a. Type-aware TypeScript rules — the biggest single lever.**
-`configs/typescript.js` uses `tseslint.configs.recommended`, and its TSDoc gives
-the reason: type-aware linting needs a `project` pointing at every tsconfig,
-"which a generated monorepo cannot know up front (projects are added later by
-`mnci add`)". That reason predates `projectService: true`, which discovers each
-file's tsconfig itself and needs no enumerated list — so the blocker may simply
-be gone, and it is worth re-testing before anything else here. What it unlocks is
-the class of bug nothing else in the stack catches: `no-floating-promises`,
-`no-misused-promises`, `await-thenable`, `no-unnecessary-condition`. A dropped
-`await` is invisible to `tsc`, to Prettier and to every rule currently enabled.
-Cost to weigh honestly: type-aware linting needs a real TS program, so `lint`
-gets slower and starts depending on the same project references `nx sync` keeps
-in order — measure it on a multi-project workspace before committing.
+**a. Type-aware TypeScript rules — ✅ done.** The suspected-obsolete blocker was
+obsolete: `projectService: true` discovers each file's tsconfig itself, so the
+"a generated monorepo cannot know its tsconfigs up front" reason no longer
+applies. `configs/typeAware.js` now ships a **curated** set —
+`no-floating-promises`, `no-misused-promises`, `await-thenable`,
+`no-unnecessary-type-assertion`, `unbound-method` and four narrow ones.
+
+Not `recommendedTypeChecked`: measured against this monorepo it reported 67
+problems, mostly not bugs (`require-await` fires on every `nx-python-pip`
+executor, which must be `async` to satisfy Nx's contract; `no-unsafe-*` fires
+throughout the generator specs). The curated set reported 10, all real — including
+a genuine floating promise at `packages/cli/src/cli.ts`.
+
+Two decisions came out of verification rather than design:
+
+- **The rules are scoped to `{apps,libs,packages}/*/src/**`, not every `.ts`.** A
+  file in no tsconfig is not skipped by the project service — it is a **fatal
+  parse error**, which suppresses every other rule for that file _and_ fails the
+  build. Applying the rules workspace-wide made four of this package's own tests
+  report `FATAL`. `allowDefaultProject`, the documented escape hatch, fails in
+  both directions (a listed file that _is_ covered is also fatal — `*.config.ts`
+  broke `packages/cli/tsup.config.ts`), so scoping to the directories that are
+  guaranteed to have a tsconfig is the only option that cannot misfire.
+- **`no-misused-promises` needs `checksVoidReturn: { attributes: false }`.** A
+  freshly generated `react-app` with `onClick={async () => { await save() }}` —
+  the universal React idiom — failed `npm run lint` on a file the user wrote
+  normally. Found by generating a real workspace and adding a real react-app, not
+  by reading the rule docs. Only that sub-check is off; the one that catches real
+  bugs (an async callback passed to `Array.filter`) is still on, and a test proves
+  each half independently.
+
+Cost, measured: whole-repo lint goes from ~5s to ~8s. It also now depends on
+project references being in order, which CI already guarantees via `nx sync:check`
+before it lints.
 
 **b. JSX accessibility — a claim the config does not currently keep.**
 There are two React kinds (`react-app`, `react-lib`), and `configs/react.js`
@@ -485,6 +552,12 @@ peer range, since `eslint-plugin-import@2.31.0` capping at ESLint 9 is already
 one of the two reasons this stack is pinned to 9 (see `configs/base.js`).
 
 **e. Smaller additions, worth listing so they are not re-discovered.**
+`jsonc/no-comments` applies to `tsconfig.json`, which officially _does_ support
+comments — TypeScript reads it as JSONC, and Nx's own generated tsconfigs are
+candidates for explanatory comments. Hit while doing #19a: a commented
+`tsconfig.json` failed lint with 8 `jsonc/no-comments` errors. The fix is to treat
+`tsconfig*.json` (and `.vscode/*.json`, same situation) as JSONC rather than strict
+JSON. Small, and entirely a correctness question about which parser applies.
 `eslint-plugin-regexp` (catastrophic backtracking and dead alternatives are
 genuine correctness bugs, and squarely in this config's scope);
 TOML, since mnci writes `pyproject.toml` files and no rule reads them;

@@ -49,6 +49,41 @@ Correctness and code quality only. **Formatting is Prettier's job**, and
 | CSS                  | `@eslint/css`                                              |
 | HTML + a11y          | `@html-eslint/eslint-plugin`                               |
 | Tests                | `eslint-plugin-jest` (works for Vitest too — same globals) |
+| Type-aware TS        | `typescript-eslint` with `projectService` — see below      |
+
+### Type-aware rules (`configs/typeAware.js`)
+
+A small curated set that reads **types**, so it catches what nothing else in the
+stack can — most importantly a dropped `await`, which type-checks cleanly, passes
+any test that does not happen to race, and then loses an error in production:
+`no-floating-promises`, `no-misused-promises`, `await-thenable`,
+`no-unnecessary-type-assertion`, `unbound-method`, plus four narrow ones.
+
+Deliberately **not** `recommendedTypeChecked`. Measured against the mnci monorepo
+that preset reported 67 problems and most were not bugs — `require-await` fires on
+every Nx executor, which must be `async` to satisfy Nx's contract regardless of its
+body. The curated set reported 10, all real. A rule nobody can satisfy just teaches
+people to reach for `eslint-disable`.
+
+Two things about it are load-bearing:
+
+- **Scoped to `apps/*/src`, `libs/*/src`, `packages/*/src`** — not every `.ts`
+  file. A file belonging to no tsconfig is a **fatal parse error**, which
+  suppresses every other rule for that file _and_ fails the build. Restricting the
+  rules to the directories where generated projects live (all of which get a
+  tsconfig) makes that impossible rather than merely unlikely. A stray script at
+  the workspace root keeps all the non-type-aware rules instead of breaking.
+  `allowDefaultProject` is not used: it is fatal in the other direction too, so a
+  glob wide enough to catch real strays breaks properly configured files.
+- **`no-misused-promises` exempts JSX attributes, and only those.**
+  `onClick={async () => { await save() }}` is the universal React idiom while
+  React's prop types declare a void return, so the default setting fails a fresh
+  `react-app` on a file the user wrote normally. The sub-check that catches real
+  bugs — an async callback passed to `Array.filter` — stays on.
+
+Cost: roughly 5s → 8s on a whole-workspace lint, because it builds a real TS
+program. It therefore needs project references in order, which `nx sync:check`
+already guarantees in CI before the lint step.
 
 ### The stylistic exceptions
 

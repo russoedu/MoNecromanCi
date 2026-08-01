@@ -152,6 +152,12 @@ export async function main(): Promise<void> {
 }
 
 // Only self-execute when run as a binary, not when imported by tests.
+//
+// `void` rather than `await`/`.catch()`: `main` cannot reject — it wraps its whole
+// body in a try/catch that logs and sets a non-zero exit code — so there is no
+// rejection to handle, and there is nothing after this to sequence. The operator
+// states that deliberately instead of leaving a bare floating promise that reads
+// like an oversight.
 if (require.main === module) {
-  main()
+  void main()
 }
