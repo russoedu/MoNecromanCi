@@ -84,6 +84,18 @@ const FIXTURES: Record<string, string> = {
   'tsconfig.probe.json': '{\n  // a comment TypeScript accepts\n  "compilerOptions": {}\n}\n',
   'strict.json': '{\n  "a": 1\n}\n',
 
+  // Regex correctness. An unused capturing group is the cheap finding; the reason
+  // this plugin is here is `no-super-linear-backtracking`, which catches a regex
+  // that is correct but takes exponential time on a crafted input.
+  'redos.js': 'export const slow = /^(a+)+$/\nexport const ok = /^a+$/\n',
+  'group.js': "export const hit = /^x(y|z)$/.test('xy')\n",
+  // The exact pyproject.toml @mnci/nx-python-pip generates. `flat/standard` reports
+  // six array-bracket-spacing errors on this, which would have failed every Python
+  // workspace's lint out of the box — hence `flat/base` and this regression guard.
+  'pyproject.toml':
+    '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\nrequires-python = ">=3.9"\ndependencies = []\n\n[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n\n[tool.hatch.build.targets.wheel]\npackages = ["pyshared"]\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+  'malformed.toml': '[project]\nname = "broken"\nversion = \n',
+
   // Import-graph correctness, all INSIDE one project — the gap
   // @nx/enforce-module-boundaries does not cover, since it only sees edges
   // between projects. The resolver must follow an extensionless relative
@@ -359,6 +371,31 @@ describe('@mnci/eslint-config', () => {
 
   it('catches a file importing itself', () => {
     expect(rulesFor('packages/demo/src/selfish.ts')).toContain('import-x/no-self-import')
+  })
+
+  it('catches a regex that backtracks catastrophically', () => {
+    // The rule that justifies the plugin: /^(a+)+$/ is a correct regex that takes
+    // exponential time on a crafted input — a real denial of service, and invisible
+    // to review. Nothing else in this config looks inside a regex.
+    expect(rulesFor('redos.js')).toContain('regexp/no-super-linear-backtracking')
+  })
+
+  it('catches a capturing group whose value is never read', () => {
+    expect(rulesFor('group.js')).toContain('regexp/no-unused-capturing-group')
+  })
+
+  it('parses TOML and reports a malformed pyproject.toml as fatal', () => {
+    // mnci writes pyproject.toml for every Python project and nothing read them, so
+    // a syntax error surfaced much later as a confusing hatchling/pip failure.
+    expect(rulesFor('malformed.toml')).toContain('FATAL')
+  })
+
+  it('leaves the pyproject.toml mnci itself generates completely alone', () => {
+    // The regression guard that decided flat/base over flat/standard: standard
+    // reports six toml/array-bracket-spacing errors on this exact content, so every
+    // generated Python workspace would have failed `npm run lint` on a file the user
+    // never wrote — the react-lib rollup config bug all over again.
+    expect(rulesFor('pyproject.toml')).toEqual([])
   })
 
   it('omits the dependency-checks block unless a workspaceRoot is given', () => {

@@ -175,7 +175,36 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Release Steps Fired on Any Non-PR Event, and the e2e Now Runs Nightly (Latest)
+### Regex and TOML Linting, and One Preset Measured and Rejected (Latest)
+
+The rest of ROADMAP #19e, which closes #19 entirely.
+
+- **`eslint-plugin-regexp`** (`flat/recommended` minus four) for
+  `no-super-linear-backtracking` — a regex that is correct but exponential on a
+  crafted input. Three real findings here, all unused capturing groups.
+- **The four exclusions are a crash, not taste.** `no-legacy-features`,
+  `no-missing-g-flag`, `no-useless-dollar-replacements` and `no-useless-flag` reach
+  for type information and **throw** when the TS parser has no type-aware services —
+  normal for any `.ts` outside `{apps,libs,packages}/<name>/src`. A crash kills
+  linting for the whole file. An isolated test of the preset passes, because in
+  isolation there are no services to be missing; all four had to be found by
+  iterating the real lint.
+- **TOML is `flat/base`, parser only.** `flat/standard` reports **six**
+  `array-bracket-spacing` errors on the `pyproject.toml` `nx-python-pip` itself
+  generates — every Python workspace would have failed lint on a file the user never
+  wrote. A test pins the real generated content as clean. TOML formatting is
+  therefore unenforced: Prettier has no TOML support, and the alternative measured
+  worse than nothing.
+- **`eslint-plugin-n`'s fuller `recommended` set was rejected.** `no-missing-import`
+  alone gave **189** false positives — the same unbuilt-`dist` problem that forced
+  `no-unresolved` off in #19d — and a narrow subset's four findings were _all_
+  legitimate patterns (a test runner exiting non-zero, shebangs on `node` scripts).
+  Zero real bugs, so it fails the same "earns its keep" test three unicorn rules
+  already fail. Recording a rejection matters as much as recording an addition.
+- Verified on a real generated **Python** workspace: clean out of the box, a
+  malformed `pyproject.toml` caught as a parse error. Both decisions mutation-tested.
+
+### Release Steps Fired on Any Non-PR Event, and the e2e Now Runs Nightly
 
 ROADMAP #22 and half of #21. Found while trying to add a nightly schedule for the
 e2e: doing that to the workflow _as it stood_ would have started publishing packages

@@ -52,6 +52,8 @@ Correctness and code quality only. **Formatting is Prettier's job**, and
 | Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals      |
 | Type-aware TS        | `typescript-eslint` with `projectService` — see below      |
 | Import graph         | `eslint-plugin-import-x` — cycles within a project         |
+| Regular expressions  | `eslint-plugin-regexp` — incl. catastrophic backtracking   |
+| TOML                 | `eslint-plugin-toml` — **parsing only**, see below         |
 
 ### Type-aware rules (`configs/typeAware.js`)
 
@@ -116,6 +118,38 @@ until that dependency is **built** — and `lint` does not depend on `build`. Th
 preset has no tsconfig `paths` to fall back on either. So a completely correct
 cross-project import resolves to nothing on disk. `tsc` already reports unresolved
 _typed_ imports, and the workspace runs `typecheck` in CI.
+
+### Regex and TOML
+
+**`eslint-plugin-regexp`** runs `flat/recommended` minus four rules. The value is
+`no-super-linear-backtracking`: a regex can be perfectly correct and still take
+exponential time on a crafted input, which is a real denial of service in anything
+matching user data and completely invisible to review. Nothing else here looks
+inside a regex.
+
+The four exclusions are a crash, not a preference. `no-legacy-features`,
+`no-missing-g-flag`, `no-useless-dollar-replacements` and `no-useless-flag`
+opportunistically reach for TypeScript type information and **throw** when the TS
+parser is present without type-aware services — which is the normal case for any
+`.ts` file outside `{apps,libs,packages}/<name>/src`, since that is the only scope
+`configs/typeAware.js` covers. A crash takes down linting for the whole file rather
+than reporting one problem. See `configs/regexp.js` for why they are off globally
+rather than narrowing the block's scope.
+
+**`eslint-plugin-toml` is `flat/base` — the parser and no style rules.** mnci writes
+`pyproject.toml` for every Python project and nothing read those files, so a syntax
+error only surfaced later as a confusing hatchling or pip failure. `flat/base` makes
+it a fatal parse error instead.
+
+`flat/standard` was measured and rejected: it is almost entirely formatting
+(`indent`, `key-spacing`, `quoted-keys`, `array-bracket-spacing`), which is outside
+this config's scope — and it reports **six** `toml/array-bracket-spacing` errors on
+the `pyproject.toml` that `@mnci/nx-python-pip` itself generates. Every Python
+workspace would have failed `npm run lint` on a file the user never wrote. A test
+pins the generated content as clean so that cannot be reintroduced.
+
+This does mean TOML _formatting_ is unenforced. Deliberately — Prettier has no TOML
+support, and the available alternative measured worse than nothing.
 
 ### The stylistic exceptions
 

@@ -183,7 +183,7 @@ function enforceWorkspaceShape(root, stage) {
   dropSandboxInjected(root)
 
   const eslintConfigs = findFiles(root, name =>
-    /^eslint\.config\.(js|mjs|cjs|ts|mts|cts)$/.test(name)
+    /^eslint\.config\.(?:js|mjs|cjs|ts|mts|cts)$/.test(name)
   )
   enforce(
     `${stage}: exactly one eslint config, at the root`,
@@ -195,7 +195,7 @@ function enforceWorkspaceShape(root, stage) {
   // Prettier's precedence over `.prettierrc.json`, so Nx's leftover file
   // silently discarded mnci's entire formatting opinion. Asserting the count
   // is not enough — assert which one Prettier actually resolves.
-  const prettierConfigs = findFiles(root, name => /^\.prettierrc(\..+)?$/.test(name))
+  const prettierConfigs = findFiles(root, name => /^\.prettierrc(?:\..+)?$/.test(name))
   enforce(
     `${stage}: exactly one Prettier config`,
     prettierConfigs.length === 1 && prettierConfigs[0] === '.prettierrc.json',

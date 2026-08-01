@@ -500,7 +500,7 @@ function addVendorEntry(pyprojectToml: string, lib: string): string {
   if (existing.length > 0) {
     const merged = [...existing, lib].map(name => `"${name}"`).join(', ')
     return pyprojectToml.replace(
-      /^(\s*vendor\s*=\s*)\[([^\]]*)\]/m,
+      /^(\s*vendor\s*=\s*)\[[^\]]*\]/m,
       (_match, prefix: string) => `${prefix}[${merged}]`
     )
   }
