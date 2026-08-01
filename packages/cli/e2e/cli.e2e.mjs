@@ -1700,8 +1700,18 @@ if (hasGo()) {
     const AdmZipGo = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
     const goEntries = new AdmZipGo(goZipPath).getEntries()
     enforce(
+      // `goapi` OR `goapi.exe`: `go build` names the binary with the platform's
+      // executable suffix, and this suite's only CI home is windows-latest. The
+      // package target is already platform-agnostic — it zips the whole
+      // `dist/apps/<name>/` directory precisely so the name inside can differ —
+      // and this assertion has to be too, or it fails on the one machine that
+      // actually runs it.
       'go: the drop zip holds a genuinely compiled binary, not an empty shell',
-      goEntries.some(entry => entry.entryName === 'goapi' && entry.header.size > 100_000),
+      goEntries.some(
+        entry =>
+          (entry.entryName === 'goapi' || entry.entryName === 'goapi.exe') &&
+          entry.header.size > 100_000
+      ),
       goEntries.map(entry => `${entry.entryName} (${entry.header.size}b)`).join(', ')
     )
   }
