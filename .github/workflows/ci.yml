@@ -11,6 +11,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # One run at a time per ref, but `cancel-in-progress` is an expression on
+  # purpose rather than a flat `true`. A superseded PR run is pure waste, so
+  # cancel it — but a run on main publishes packages and pushes release tags, and
+  # killing it part-way can leave a tag pushed with the publish only half done, a
+  # state no rerun repairs cleanly. Those runs queue instead, which also stops two
+  # `nx release` invocations racing to create the same tag.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   # Lets the release step push the version tag nx release creates back to main.
   contents: write

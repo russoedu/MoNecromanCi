@@ -323,6 +323,15 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('nx affected')
   })
 
+  it('batches pushes to main, so two nx release runs cannot race for the same tag', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Azure's nearest YAML equivalent to a concurrency group. PR-run cancellation
+    // is a branch-policy setting with no YAML expression, so it is deliberately
+    // not faked here — see the comment in the generated file.
+    expect(pipeline).toContain('batch: true')
+  })
+
   it('caches npm downloads, keyed on the lockfile and the agent OS', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
@@ -548,6 +557,20 @@ describe('githubActionsYaml', () => {
     expect(document_.on?.pull_request).toBeTruthy()
     expect(document_.permissions?.contents).toBe('write')
     expect(Array.isArray(document_.jobs?.ci?.steps)).toBe(true)
+  })
+
+  it('cancels superseded PR runs but never a release run on main', () => {
+    const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
+      concurrency?: { group?: string; 'cancel-in-progress'?: string }
+    }
+
+    expect(document_.concurrency?.group).toBe('${{ github.workflow }}-${{ github.ref }}')
+    // An expression, deliberately, not a flat `true`. A cancelled run on main can
+    // leave a release tag pushed with the publish only half done — a state no
+    // rerun repairs, because the version is already tagged. Those runs queue.
+    expect(document_.concurrency?.['cancel-in-progress']).toBe(
+      "${{ github.event_name == 'pull_request' }}"
+    )
   })
 
   it('does not attach HEAD to a branch (actions/checkout is never detached on a push-triggered run)', () => {
