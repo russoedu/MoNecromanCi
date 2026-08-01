@@ -7,8 +7,6 @@
     "moduleResolution": "bundler",
     "target": "es2021",
     "lib": ["es2021"],
-    "noEmit": true,
-    "emitDeclarationOnly": true,
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,

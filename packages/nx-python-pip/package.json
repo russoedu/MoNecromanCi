@@ -30,6 +30,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
     "test": "jest",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint ."
   },
   "keywords": [

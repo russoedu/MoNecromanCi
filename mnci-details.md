@@ -563,12 +563,17 @@ Expected: **425 unit tests** — 313 (`cli`), 51 (`nx-flutter`), 41
 coverage threshold** on statements/branches/functions/lines; the other three
 packages have no threshold.
 
-One caveat on `typecheck`, since a passing run is currently misleading: Nx
-disables an inferred `typecheck` target when a project's tsconfig sets
-`noEmit: true`, replacing the command with an `echo`. `@mnci/nx-flutter` and
-`@mnci/nx-python-pip` both do, so their `typecheck` passes by printing a message
-rather than by checking anything. Only `@mnci/cli` has a real one. Tracked as
-ROADMAP #20.
+`typecheck` runs for **three** projects, not four: `@mnci/eslint-config` ships plain
+JavaScript, so it has no TypeScript to check. Each of the three runs
+`tsc --noEmit -p tsconfig.typecheck.json` through a package script.
+
+That indirection is load-bearing, and worth knowing before "simplifying" it away:
+Nx **disables** an inferred `typecheck` target when a project's tsconfig sets
+`noEmit: true`, replacing the command with an `echo` that passes. Both plugins used
+to do exactly that, so their typecheck was theatre until ROADMAP #20. The newer
+`lib` those specs need lives in `tsconfig.typecheck.json` rather than the base
+tsconfig on purpose — raising it in the base changes class-field emit in published
+output, and the specs that need it are excluded from the build anyway.
 
 ### The e2e suite
 

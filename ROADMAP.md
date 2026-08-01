@@ -15,20 +15,28 @@ those cite `file:line` so the claim can be re-checked.
 #3 (`mnci doctor`), #16 (registry resolution verified) — which closes **§1 and §2
 entirely**: every gap between what the project claimed and what it did.
 
-**Next up — #20, and it is the only P1 open.** Found while doing #19a: `nx-flutter`
-and `nx-python-pip` have a `typecheck` target that Nx has **disabled**, so it
-passes by printing a message. That makes #18 half-delivered and puts two published
-packages behind a gate that does not gate — the same shape as the `.prettierrc`
-that silently outranked `.prettierrc.json`. See §8.
+**#19a** (type-aware TypeScript rules, §9) and **#20** (the fake `typecheck`
+targets, §8) are also done. #20 was found _while_ doing #19a and turning its gate on
+immediately exposed pre-existing type errors in both plugins — specs in
+`nx-flutter` and `nx-python-pip` had been type-checked by nothing at all.
 
-**Also open, all P2:** #9 (container kind), #10 (e2e test projects), #11
-(devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition), the
-rest of #19 (b–e), and Go e2e coverage in §6. Plus #7 and #13 at P3.
+**Open, all P2:** #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
+#12 (multi-project `dev up`), #15 (`--preset` composition), the rest of #19 (b–e),
+and Go e2e coverage in §6. Plus #7 and #13 at P3. **No P1 is open.**
 
-#19a (type-aware TypeScript rules) is done — see §9. The remaining #19 parts keep
-the widest reach of anything here: the config is a published package, so within a
-minor its improvements land in existing workspaces through `npm update` alone, with
-no `mnci upgrade` and no regenerated files (see the caret caveat in #16).
+The remaining #19 parts keep the widest reach of anything here: the config is a
+published package, so within a minor its improvements land in existing workspaces
+through `npm update` alone, with no `mnci upgrade` and no regenerated files (see the
+caret caveat in #16).
+
+**One limitation of #5 worth knowing before picking anything up.** Nx's affected
+graph has no edge from a project to `@mnci/eslint-config`, because the lint config
+is resolved from the root `eslint.config.mjs` rather than imported by project
+source. So PR #100 — which changed the shared lint config — re-linted only
+`eslint-config` and `cli`, not `nx-flutter` or `nx-python-pip`. Bounded rather than
+dangerous: a push to `main` verifies everything, so a breakage surfaces at merge
+instead of on the PR. Worth remembering when changing anything cross-cutting that
+Nx cannot see: check locally with `nx run-many` before trusting a green PR.
 
 ---
 
@@ -437,7 +445,7 @@ workspaces through `npm update`" claim holds only within a minor.
 
 ## 8. Gates that still don't gate
 
-### 20. Two packages have a fake `typecheck` target — P1
+### 20. Two packages have a fake `typecheck` target — ✅ done
 
 Found while adding a tsconfig for #19a, and it undercuts #18. Nx **disables** an
 inferred `typecheck` target when a project's tsconfig sets `noEmit: true`, and it
@@ -460,16 +468,45 @@ theatre. Both are _published_ plugins, which makes this the highest-consequence
 open item — the same shape as the `.prettierrc` that silently outranked
 `.prettierrc.json`, and as the `@nx/eslint/plugin` check `mnci doctor` exists for.
 
-Deliberately **not** fixed inside #19a: it means changing the emit configuration
-of two published packages, which is a real build change and wants its own diff and
-its own verification, not a rider on a lint change.
+**The fix follows `@mnci/cli`'s existing pattern** rather than touching the build:
+each plugin gets a `tsconfig.typecheck.json` plus a `typecheck` package script
+(`tsc --noEmit -p tsconfig.typecheck.json`), which is exactly how `cli` already has
+a real one. `noEmit: true` and the contradictory `emitDeclarationOnly: true` are
+gone from the base tsconfig — `tsconfig.lib.json` overrode both anyway, so they
+were dead config whose only effect was setting this trap.
 
-Fixing it means removing `noEmit` (the tsconfigs also set `emitDeclarationOnly:
-true` alongside it, which is contradictory and worth resolving at the same time)
-and then **proving** the target catches something — plant a type error, watch it
-fail, remove it. A green `typecheck` is exactly what this item shows proves
-nothing. Worth adding a `mnci doctor` check for it afterwards, since the failure is
-invisible in CI logs: the step passes.
+**Turning the gate on immediately found pre-existing type errors in both
+plugins** — the proof it mattered. `tsconfig.lib.json` excludes `*.spec.ts`, so
+every spec file in both packages had been type-checked by _nothing_:
+
+- `toSorted` (ES2023) and `Object.hasOwn` (ES2022) used against `lib: es2021`,
+  cascading into `TS7006` implicit-`any` on the comparator parameters
+- five stale `as unknown as Buffer` casts in `nx-python-pip`, now
+  `as unknown as ReturnType<typeof readFileSync>` so they track `@types/node`
+  instead of going stale again
+
+**The newer `lib` went into `tsconfig.typecheck.json` only, not the base.** Bumping
+the base to `es2023` was tried first and **changed the published output**: class
+property initializers stop being downlevelled into constructor assignments and
+become native class fields, which is a `[[Set]]` → `[[Define]]` semantics change in
+a class that `extends` Nx's `VersionActions`. Almost certainly benign, but not
+worth risking in two published packages when the only driver was _spec_ files —
+which are excluded from the build. Verified by diffing `dist/` before and after:
+with the newer lib confined to the typecheck config, the emitted output is
+**byte-identical**.
+
+**Verified by planting a type error in each plugin's specs, watching typecheck
+fail, and removing it** — the practice this item exists to demand, since a green
+`typecheck` was exactly the symptom.
+
+**No `mnci doctor` check was added, and that is deliberate.** Doctor's stated bar is
+an invariant that has actually been violated in this repo _or a workspace it
+generated_, and this one cannot occur in a generated workspace: neither mnci's own
+source nor any `@nx/*` generator writes `noEmit` into a tsconfig (checked, not
+assumed). Adding a check for something unreachable is the noise that trains people
+to ignore the output. Still missing, and worth having: an automated guard that a
+`typecheck` target is not a disabled stub. CI cannot catch this class by running
+the target — the stub _passes_.
 
 ---
 

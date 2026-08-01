@@ -40,7 +40,9 @@ describe('buildExecutor', () => {
 
   it('builds straight from the project directory when pyproject.toml has no vendor entry', async () => {
     mockReadFileSync.mockReturnValue(
-      '[project]\nname = "pyshared"\ndependencies = []\n' as unknown as Buffer
+      '[project]\nname = "pyshared"\ndependencies = []\n' as unknown as ReturnType<
+        typeof readFileSync
+      >
     )
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
 
@@ -64,10 +66,14 @@ describe('buildExecutor', () => {
   it('stages a copy and vendors the internal lib when pyproject.toml declares vendor = [...]', async () => {
     mockReadFileSync
       .mockReturnValueOnce(
-        '[project]\nname = "pyshared"\n\n[tool.mnci-python-pip]\nvendor = ["pycore"]\n' as unknown as Buffer
+        '[project]\nname = "pyshared"\n\n[tool.mnci-python-pip]\nvendor = ["pycore"]\n' as unknown as ReturnType<
+          typeof readFileSync
+        >
       )
       .mockReturnValueOnce(
-        '[tool.hatch.build.targets.wheel]\npackages = ["pyshared"]\n' as unknown as Buffer
+        '[tool.hatch.build.targets.wheel]\npackages = ["pyshared"]\n' as unknown as ReturnType<
+          typeof readFileSync
+        >
       )
     mockMkdtempSync.mockReturnValue('/tmp/nx-python-pip-build-abc123')
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
@@ -113,7 +119,9 @@ describe('buildExecutor', () => {
 
   it('fails fast when a vendored project name is not registered in the workspace', async () => {
     mockReadFileSync.mockReturnValue(
-      '[tool.mnci-python-pip]\nvendor = ["does-not-exist"]\n' as unknown as Buffer
+      '[tool.mnci-python-pip]\nvendor = ["does-not-exist"]\n' as unknown as ReturnType<
+        typeof readFileSync
+      >
     )
     mockMkdtempSync.mockReturnValue('/tmp/nx-python-pip-build-abc123')
     jest.spyOn(console, 'error').mockImplementation(() => {})
@@ -131,7 +139,9 @@ describe('buildExecutor', () => {
 
   it('reports failure when python -m build exits non-zero', async () => {
     mockReadFileSync.mockReturnValue(
-      '[project]\nname = "pyshared"\ndependencies = []\n' as unknown as Buffer
+      '[project]\nname = "pyshared"\ndependencies = []\n' as unknown as ReturnType<
+        typeof readFileSync
+      >
     )
     mockSpawnSync.mockReturnValue({ status: 1 } as ReturnType<typeof spawnSync>)
 

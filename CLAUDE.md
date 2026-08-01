@@ -175,7 +175,40 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Type-Aware Lint Rules in `@mnci/eslint-config` (Latest)
+### Two Plugins Had a Fake `typecheck` Target (Latest)
+
+Nx **disables** an inferred `typecheck` target when a project's tsconfig sets
+`noEmit: true`, replacing the command with an `echo` that exits 0.
+`@mnci/nx-flutter` and `@mnci/nx-python-pip` both set it, so their typecheck passed
+by printing a message — #18's gate was theatre for two of four projects, both
+published.
+
+- **Fixed with the pattern `@mnci/cli` already used**: a `tsconfig.typecheck.json`
+  plus a `typecheck` package script, rather than touching the build. `noEmit: true`
+  and the contradictory `emitDeclarationOnly: true` are gone from the base tsconfig
+  — `tsconfig.lib.json` overrode both, so they were dead config that only set the
+  trap.
+- **Turning the gate on found real pre-existing errors**, which is the proof it
+  mattered: `tsconfig.lib.json` excludes `*.spec.ts`, so every spec in both plugins
+  was type-checked by nothing. `toSorted`/`Object.hasOwn` against `lib: es2021`, and
+  five stale `as unknown as Buffer` casts (now
+  `as unknown as ReturnType<typeof readFileSync>`, so they track `@types/node`).
+- **The newer `lib` is in `tsconfig.typecheck.json` only, never the base.** Bumping
+  the base to `es2023` was tried and **changed published output** — class property
+  initializers become native class fields, a `[[Set]]` → `[[Define]]` change in a
+  class that `extends` Nx's `VersionActions`. Confined to the typecheck config,
+  `dist/` is byte-identical (verified by diffing). Never raise `target`/`lib` in
+  these packages' base tsconfig for the sake of a spec file.
+- **Verified by planting a type error, watching typecheck fail, removing it** — the
+  only verification that means anything here, since a green typecheck was the
+  symptom.
+- **No `mnci doctor` check**, deliberately: the trap cannot occur in a generated
+  workspace (neither mnci nor any `@nx/*` generator writes `noEmit` — checked), and
+  doctor's bar is invariants that have actually been violated somewhere it runs.
+  Still missing: an automated guard that a `typecheck` target is not a stub. CI
+  cannot catch this class by running the target, because the stub passes.
+
+### Type-Aware Lint Rules in `@mnci/eslint-config`
 
 `configs/typeAware.js` adds the rules that read **types** — most importantly
 `no-floating-promises`, which catches a dropped `await` that `tsc`, Prettier and
