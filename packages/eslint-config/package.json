@@ -79,6 +79,6 @@
     "eslint": "^9.39.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.11",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
