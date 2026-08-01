@@ -175,7 +175,41 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### JSX Accessibility, Vitest Globals, and Comments in `tsconfig.json` (Latest)
+### Intra-Project Import Cycles, and Two Silent Failures (Latest)
+
+Roadmap #19d, which completes #19. `configs/importGraph.js` adds
+`import-x/no-cycle` and `no-self-import`, scoped to project source — the
+**intra-project** gap, since `@nx/enforce-module-boundaries` only sees edges
+_between_ projects.
+
+Three things here are load-bearing, and all three were found by running it:
+
+- **`settings['import-x/parsers']` is what makes `no-cycle` work at all.**
+  `languageOptions.parser` tells ESLint how to parse the file being linted; it says
+  nothing about how import-x parses the files it _follows_. Without the mapping,
+  every `.ts` dependency is unparseable, traversal stops at depth one, and the rule
+  reports **nothing, ever** — enabled and inert. `no-unresolved` does _not_ need it,
+  which is precisely why the gap is easy to miss: one rule works while the other is
+  dead. `@typescript-eslint/parser` is an explicit dependency so this never relies
+  on hoisting.
+- **The Node resolver is unusable.** With import-x's default resolver this reported
+  **179** errors on this repo, all false — Node cannot resolve an extensionless
+  relative TypeScript import. `createTypeScriptImportResolver` gets **no `project`
+  option**, so it discovers each file's nearest tsconfig itself, the same reason
+  `projectService: true` works for the type-aware block.
+- **`no-unresolved` is off, structurally rather than by preference.** A project
+  consumes an internal lib by scoped name; npm workspaces symlinks it, but the
+  manifest points at `./dist`, which does not exist until that dependency is
+  **built** — and `lint` does not depend on `build`. The `ts` preset has no tsconfig
+  `paths` either. Verified on a real generated workspace: a lib re-exporting
+  `@scope/core` reported it unresolved, a false positive on the internal-lib feature
+  central to the scaffold. Switched off explicitly with a test pinning it, so nobody
+  re-enables it in good faith. `tsc` already covers unresolved _typed_ imports.
+
+Verified on a real generated workspace after the change: cross-project import clean,
+planted intra-project cycle reported. Both traps mutation-tested.
+
+### JSX Accessibility, Vitest Globals, and Comments in `tsconfig.json`
 
 Roadmap #19b, #19c and #19e — the rest of `@mnci/eslint-config`'s coverage gaps
 except #19d (import-graph rules).
