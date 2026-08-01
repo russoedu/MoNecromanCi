@@ -284,15 +284,40 @@ tags, which have no Actions equivalent):
 16 Add the Flutter SDK to PATH                (guard)
 17 Resolve Dart dependencies                  (guard) ← Flutter dep injection
 18 npx nx sync:check
-19 npm run lint
-20 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
-21 npx nx run-many -t lint,typecheck,test,build   ← build alone strips types
-22 Pack all apps → dist/drop                  (main only)
-23 Publish the drop artifact                  (main only)
-24 Tag the run per app                        (main only, azure)
-25 Release — version, tag and publish         (main only)
-26 Push release tags                          (main only, non-github)
+19 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
+20 Verify (affected on a PR, every project on main)   (guard) ← see below
+21 Pack all apps → dist/drop                  (main only)
+22 Publish the drop artifact                  (main only)
+23 Tag the run per app                        (main only, azure)
+24 Release — version, tag and publish         (main only)
+25 Push release tags                          (main only, non-github)
 ```
+
+Step 20 is the **only** verify step. It runs
+`lint,typecheck,test,build` — `typecheck` because a bundler-built project strips
+types without reading them, so `build` passing proves nothing about type
+correctness — over the **affected** projects on a pull request and over **every**
+project on anything else. A standalone `npm run lint` step would be
+`nx run-many -t lint`, a strict subset of that list, so there deliberately isn't
+one.
+
+It is a guard script like the others, and its fallback direction is the whole
+design: a missing PR target branch, an unresolvable merge-base (shallow clone,
+absent remote branch) and any non-PR run all verify **everything**. Getting the
+base too wide costs minutes; getting it too narrow means CI runs almost nothing
+and still reports green. A push to `main` needs no special case for the same
+reason — neither provider sets a PR target branch on a push, so a release run
+always verifies in full.
+
+The base comes from `git merge-base`, not from either provider's "base SHA" field
+and not from `nrwl/nx-set-shas` (GitHub-only): one mechanism, correct in both
+providers by construction. The guard reads `GITHUB_BASE_REF` and
+`SYSTEM_PULLREQUEST_TARGETBRANCH` and strips Azure's `refs/heads/` prefix, since
+Azure sends a full ref where GitHub sends a bare branch name.
+
+Step 19 stays workspace-wide even on a pull request: `prettier --check .` is one
+invocation over the whole tree, not a per-project Nx target, so there is nothing
+to narrow and formatting is never checked in part.
 
 ### Guard scripts — how conditional steps work
 
@@ -524,8 +549,8 @@ of every generated workspace's config, and both `new` and `upgrade` call it.
 ## 10. Verification — how to check this project works
 
 ```bash
-npm run build                    # all three packages
-npm run test                     # 311 tests total
+npm run build                    # all four packages
+npm run test                     # unit tests
 npm run lint                     # ESLint (quality) — Prettier is separate
 npm run format:check             # Prettier
 npx nx sync:check                # TS project references
@@ -533,8 +558,8 @@ npm run typecheck                # tsc only — bundlers do NOT type-check
 npx nx run-many -t lint,typecheck,test,build   # everything at once
 ```
 
-Expected: **363 unit tests** — 259 (`cli`), 50 (`nx-flutter`), 40
-(`nx-python-pip`), 14 (`eslint-config`). `packages/cli` enforces an **85%
+Expected: **420 unit tests** — 313 (`cli`), 51 (`nx-flutter`), 41
+(`nx-python-pip`), 15 (`eslint-config`). `packages/cli` enforces an **85%
 coverage threshold** on statements/branches/functions/lines; the other three
 packages have no threshold.
 

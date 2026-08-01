@@ -1183,6 +1183,59 @@ const NPM_AUDIT_STEP =
   'npm audit --audit-level=high || echo npm audit found vulnerabilities, see log above - non-blocking, run npm audit locally to inspect'
 
 /**
+ * The Nx targets every CI run verifies.
+ *
+ * @remarks
+ * `typecheck` is not covered by `build`: a bundler-built project (esbuild, swc)
+ * strips types without reading them, so a workspace can be green on
+ * lint+test+build while carrying real type errors.
+ */
+const VERIFY_TARGETS = 'lint,typecheck,test,build'
+
+/**
+ * The portable `node -e` one-liner that verifies the workspace: only the
+ * **affected** projects on a pull request, **every** project otherwise.
+ *
+ * @remarks
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml},
+ * which matters more here than for the other guards: the two providers detect a
+ * pull request through different environment variables, and a mechanism that
+ * drifted would change *what CI verifies* rather than merely how it is spelled.
+ *
+ * **Every failure path falls back to `run-many`, never to nothing.** That is the
+ * whole safety design, and it is deliberate rather than defensive habit. Getting
+ * the base *too wide* costs a few minutes; getting it *too narrow* means CI runs
+ * almost nothing, passes green, and has verified nothing — a silently weakened
+ * gate, which is far worse than a slow one. So a missing target ref, an
+ * unresolvable merge-base (a shallow clone, a missing remote branch) and a
+ * non-PR run all take the full path.
+ *
+ * `main` needs no special case for the same reason: neither provider sets a
+ * pull-request target branch on a push, so a release run always verifies
+ * everything before publishing. That falls out of the fallback rather than being
+ * a second condition to keep in step.
+ *
+ * The base is a real `git merge-base`, not the provider's "base SHA" field. Both
+ * providers expose something base-ish, but those drift once the target branch
+ * moves ahead of where the PR started, and a merge-base is correct in both by
+ * construction — one mechanism instead of two.
+ *
+ * It resolves the merge-base against `origin/<target>` first and, only if that
+ * ref is absent, **fetches the target branch once** and retries against
+ * `FETCH_HEAD`. Both providers are configured for a full-depth clone, so
+ * `origin/<target>` is normally there — but if it ever is not, the bare fallback
+ * would make every run take the full path while still reporting success, so this
+ * step would look like it worked and verify nothing selectively, forever. One
+ * fetch is a cheap way to not depend on that.
+ *
+ * Uses a plain string `replace` rather than a regex for the `refs/heads/` prefix
+ * (Azure sends the full ref, GitHub the bare branch name): this whole command
+ * has to survive quoting under both `cmd.exe` and POSIX `sh`, and a regex
+ * literal would drag backslashes into that.
+ */
+const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');const T='${VERIFY_TARGETS}';const all=()=>process.exit(cp.spawnSync('npx nx run-many -t '+T,{stdio:'inherit',shell:true}).status ?? 1);const ref=process.env.GITHUB_BASE_REF||process.env.SYSTEM_PULLREQUEST_TARGETBRANCH||'';if(!ref){console.log('Not a pull request - verifying EVERY project.');all()}const target=ref.replace('refs/heads/','');const mergeBase=r=>{const o=cp.spawnSync('git',['merge-base',r,'HEAD'],{encoding:'utf8'});return o.status===0?o.stdout.trim():''};let base=mergeBase('origin/'+target);if(!base){console.log('No origin/'+target+' ref - fetching it to resolve a merge-base.');cp.spawnSync('git',['fetch','--no-tags','origin',target],{stdio:'inherit'});base=mergeBase('FETCH_HEAD')}if(!base){console.log('Could not resolve a merge-base with '+target+' - verifying EVERY project.');all()}console.log('Pull request against '+target+' - verifying projects affected since '+base);process.exit(cp.spawnSync('npx nx affected -t '+T+' --base='+base,{stdio:'inherit',shell:true}).status ?? 1)"`
+
+/**
  * The portable `node -e` one-liner that packs every app into
  * `dist/drop/<type>-<name>.zip` via each app's own `package` target.
  *
@@ -1496,27 +1549,28 @@ steps:
   - script: npx nx sync:check
     displayName: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-  # One verify for every run (PR and main). Nx cache makes unchanged test/build
-  # projects instant.
-  - script: npm run lint
-    displayName: Lint
-
   # Prettier owns ALL formatting in this workspace, so it needs a gate of its
   # own: ESLint is configured for correctness only and deliberately reports
   # nothing about formatting. Without this step the entire formatting opinion is
   # advisory, and a workspace drifts out of compliance with no signal anywhere.
+  #
+  # Stays workspace-wide even on a PR, unlike the verify step below: it is one
+  # Prettier invocation over the whole tree, not a per-project Nx target, so
+  # there is nothing to scope down and formatting is never partially checked.
   - script: npm run format:check
     displayName: Check formatting (run 'npm run format' locally to fix)
-  # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
-  # notably Python's ruff (every Python project owns a hand-authored \`lint\`
-  # target). The JS lint runs twice, but Nx caches the repeat instantly.
+
+  # The one verify step, and deliberately the only one: affected projects on a
+  # pull request, EVERY project on anything else (a push to main included, so a
+  # release is always verified in full). Every fallback — no target branch, an
+  # unresolvable merge-base — takes the full path, because a run that verifies
+  # too little still reports green.
   #
-  # \`typecheck\` is load-bearing and not covered by \`build\`: a bundler-built
-  # project (esbuild, swc) strips types without reading them, so a workspace can
-  # build, test and lint green while carrying real type errors. --preset=ts
-  # infers a typecheck target for every project, so this costs one target name.
-  - script: npx nx run-many -t lint,typecheck,test,build
-    displayName: Lint, typecheck, test and build everything
+  # 'npm run lint' is 'nx run-many -t lint', a strict subset of the targets
+  # below, so adding it back as its own step would only duplicate work — and on
+  # a pull request it would re-lint every project, discarding the point of this.
+  - script: ${AFFECTED_OR_ALL_GUARD}
+    displayName: Verify (affected on a PR, every project on main)
 
   # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
   # target. Portable guard: skip cleanly when the workspace has no apps yet.
@@ -1744,29 +1798,31 @@ jobs:
       - run: npx nx sync:check
         name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-      # One verify for every run (PR and main). Nx cache makes unchanged
-      # test/build projects instant.
-      - run: npm run lint
-        name: Lint
-
       # Prettier owns ALL formatting in this workspace, so it needs a gate of
       # its own: ESLint is configured for correctness only and deliberately
       # reports nothing about formatting. Without this step the entire
       # formatting opinion is advisory, and a workspace drifts out of
       # compliance with no signal anywhere.
+      #
+      # Stays workspace-wide even on a PR, unlike the verify step below: it is
+      # one Prettier invocation over the whole tree, not a per-project Nx
+      # target, so there is nothing to scope down and formatting is never
+      # partially checked.
       - run: npm run format:check
         name: Check formatting (run 'npm run format' locally to fix)
-      # \`lint\` here also runs any Nx lint targets \`npm run lint\` does not cover —
-      # notably Python's ruff (every Python project owns a hand-authored \`lint\`
-      # target). The JS lint runs twice, but Nx caches the repeat instantly.
+
+      # The one verify step, and deliberately the only one: affected projects on
+      # a pull request, EVERY project on anything else (a push to main included,
+      # so a release is always verified in full). Every fallback — no target
+      # branch, an unresolvable merge-base — takes the full path, because a run
+      # that verifies too little still reports green.
       #
-      # \`typecheck\` is load-bearing and not covered by \`build\`: a bundler-built
-      # project (esbuild, swc) strips types without reading them, so a workspace
-      # can build, test and lint green while carrying real type errors.
-      # --preset=ts infers a typecheck target for every project, so this costs
-      # one target name.
-      - run: npx nx run-many -t lint,typecheck,test,build
-        name: Lint, typecheck, test and build everything
+      # 'npm run lint' is 'nx run-many -t lint', a strict subset of the targets
+      # below, so adding it back as its own step would only duplicate work — and
+      # on a pull request it would re-lint every project, discarding the point
+      # of this.
+      - run: ${AFFECTED_OR_ALL_GUARD}
+        name: Verify (affected on a PR, every project on main)
 
       # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
       # target. Portable guard: skip cleanly when the workspace has no apps yet.

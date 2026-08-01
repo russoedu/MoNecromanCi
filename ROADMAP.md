@@ -10,13 +10,17 @@ running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
 **Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
-#6 (superseded-run handling), #8 (`react-lib`), #14 (dots in names),
-#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI), #3 (`mnci doctor`),
-#16 (registry resolution verified) — every P1 and P2 except #5 is closed.
-**Next up:** #5 (`nx affected` for PR runs) wants care: a misconfigured affected
-computation makes PR CI pass while broken, which is a silently weakened gate rather
-than a visible failure, so it needs verifying across real pushes rather than
-locally.
+#5 (`nx affected` on PRs), #6 (superseded-run handling), #8 (`react-lib`),
+#14 (dots in names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI),
+#3 (`mnci doctor`), #16 (registry resolution verified) — **every P1 and P2 in the
+original list is now closed.**
+
+**Next up:** the remaining items are all new capability rather than gaps between
+claim and behaviour, so they can be picked up in any order. #19 (a fuller
+`@mnci/eslint-config`) is the one with the widest reach: the config is a published
+package, so within a minor its improvements land in existing workspaces through
+`npm update` alone, with no `mnci upgrade` and no regenerated files (see the caret
+caveat in #16).
 
 ---
 
@@ -71,7 +75,8 @@ hook. So mnci deleted Nx's `.prettierrc` specifically to make its own formatting
 opinion take effect, then never checked that it held.
 
 `npm run format:check` is now a step in both generated pipelines (and in this
-repo's own workflow), placed after `Lint` and before the `run-many`. ESLint here
+repo's own workflow), placed after `nx sync:check` and before the verify step
+(#5 later removed the standalone `Lint` step it originally sat after). ESLint here
 is correctness-only — `eslint-config-prettier` is composed last in
 `@mnci/eslint-config` — so it reports nothing whatsoever about formatting, which
 is why Prettier needs a gate of its own rather than riding along with lint.
@@ -124,12 +129,61 @@ config, a stray`.prettierrc`) are both caught with their remedies.
 
 Four cheap wins, all originally verified absent:
 
-| Item                                | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | P   |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 4. ~~`cache: npm` on `setup-node`~~ | ✅ done — both providers now cache npm downloads keyed on the lockfile. GitHub uses `setup-node`'s own `cache: npm`; Azure has no equivalent, so it gets the documented `Cache@2` pattern plus `npm_config_cache` relocating the cache into the pipeline workspace (the default `~/.npm` is outside the cacheable area). `Agent.OS` is in the key because a cached native module built for one OS is not reusable on another                                                                                                                               | —   |
-| 5. Use `nx affected` for PR runs    | The `affected` root script exists (`overlay.ts:635`) but CI runs `run-many` over everything on every PR — arguably the whole point of Nx on a monorepo. Needs `nrwl/nx-set-shas` for base/head SHAs                                                                                                                                                                                                                                                                                                                                                        | P2  |
-| 6. ~~`concurrency` group~~          | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
-| 7. Deploy stage                     | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
+| Item                                 | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | P   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 4. ~~`cache: npm` on `setup-node`~~  | ✅ done — both providers now cache npm downloads keyed on the lockfile. GitHub uses `setup-node`'s own `cache: npm`; Azure has no equivalent, so it gets the documented `Cache@2` pattern plus `npm_config_cache` relocating the cache into the pipeline workspace (the default `~/.npm` is outside the cacheable area). `Agent.OS` is in the key because a cached native module built for one OS is not reusable on another                                                                                                                               | —   |
+| 5. ~~Use `nx affected` for PR runs~~ | ✅ done — see [§5 below](#5-nx-affected-for-pr-runs--done)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | —   |
+| 6. ~~`concurrency` group~~           | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
+| 7. Deploy stage                      | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
+
+### 5. `nx affected` for PR runs — ✅ done
+
+Both providers now verify **only the affected projects on a pull request, and
+every project on anything else** — one step, one shared guard
+(`AFFECTED_OR_ALL_GUARD` in `overlay.ts`), byte-identical in
+`azure-pipelines.yml` and `.github/workflows/ci.yml`.
+
+Three decisions are load-bearing:
+
+**Every failure path falls back to `run-many`, never to nothing.** This was the
+stated risk when the item was written, and it drove the design rather than being
+checked afterwards. Resolving the base too _wide_ costs a few minutes; resolving
+it too _narrow_ means CI runs almost nothing, reports green, and has verified
+nothing — a silently weakened gate, which is strictly worse than a slow one. So a
+missing target ref, an unresolvable merge-base (shallow clone, absent remote
+branch) and any non-PR run all take the full path.
+
+**`main` needs no special case.** Neither provider sets a pull-request target
+branch on a push, so a release run always verifies everything — it falls out of
+the fallback instead of being a second condition to keep in step with the first.
+
+**`git merge-base`, not `nrwl/nx-set-shas`** (which this item originally proposed).
+`nx-set-shas` is GitHub-only, so using it would have meant two different
+mechanisms deciding what CI verifies, in the one place where drift between
+providers changes the gate itself rather than its spelling. A merge-base is
+correct in both by construction, and needs no action from a marketplace. The
+guard also reads both providers' PR variables (`GITHUB_BASE_REF`,
+`SYSTEM_PULLREQUEST_TARGETBRANCH`) and strips Azure's `refs/heads/` prefix, since
+Azure sends a full ref where GitHub sends a bare branch name.
+
+`format:check` deliberately stays workspace-wide: `prettier --check .` is one
+invocation over the whole tree, not a per-project Nx target, so there is nothing
+to narrow and formatting is never checked in part. The standalone `npm run lint`
+step is gone — it was `nx run-many -t lint`, a strict subset of the verify step's
+target list, and on an affected-scoped PR it would have re-linted every project
+and discarded most of the benefit.
+
+**How it was verified.** Not by reading the generated YAML — the six new tests
+_execute_ the real guard against a real git repository with a stub `npx` on PATH
+recording which Nx command it chose, covering: not-a-PR → `run-many`; a GitHub PR
+→ `affected --base=<merge-base>`; Azure's full ref → the _same_ base; an
+unresolvable branch → `run-many`; a failing exit status propagating on both paths;
+and the command surviving YAML parsing unchanged in both providers. Both branches
+were then mutation-tested (removing the `refs/heads/` strip, and removing the
+fallback) to confirm the tests actually fail when the guard breaks. Affected
+_selection_ was checked separately on a real generated workspace: changing a
+depended-on internal lib marks it **and** its consumer, changing one project
+marks only that project, changing nothing marks nothing.
 
 ---
 
@@ -370,3 +424,81 @@ package allows `0.1.x` only, so a future `0.2.0` would **not** be picked up by
 deliberately. That is the intended behaviour for a pre-1.0 package whose minor
 bumps may break rules, but it does mean the "an upgrade reaches existing
 workspaces through `npm update`" claim holds only within a minor.
+
+---
+
+## 8. The linting package
+
+### 19. Make `@mnci/eslint-config` a more complete linting package — P2
+
+`@mnci/eslint-config` already covers JS/TS, React, JSON/JSONC/JSON5, YAML,
+Markdown, CSS, HTML and test files as one root config, and it is the piece with
+the widest reach in the whole project: it is a published package, so within a
+minor its improvements land in every existing workspace through `npm update`
+alone — no `mnci upgrade`, no regenerated files, nothing for the user to review.
+That makes it the best place to invest, and also the place where a mistake
+propagates furthest, so each addition below wants the same treatment the config
+already gets: composed, then run against the real `eslint` binary on a file that
+should fail and a file that should not.
+
+The gaps below were each checked against the current source rather than guessed,
+so they can be picked up in any order and priced independently.
+
+**a. Type-aware TypeScript rules — the biggest single lever.**
+`configs/typescript.js` uses `tseslint.configs.recommended`, and its TSDoc gives
+the reason: type-aware linting needs a `project` pointing at every tsconfig,
+"which a generated monorepo cannot know up front (projects are added later by
+`mnci add`)". That reason predates `projectService: true`, which discovers each
+file's tsconfig itself and needs no enumerated list — so the blocker may simply
+be gone, and it is worth re-testing before anything else here. What it unlocks is
+the class of bug nothing else in the stack catches: `no-floating-promises`,
+`no-misused-promises`, `await-thenable`, `no-unnecessary-condition`. A dropped
+`await` is invisible to `tsc`, to Prettier and to every rule currently enabled.
+Cost to weigh honestly: type-aware linting needs a real TS program, so `lint`
+gets slower and starts depending on the same project references `nx sync` keeps
+in order — measure it on a multi-project workspace before committing.
+
+**b. JSX accessibility — a claim the config does not currently keep.**
+There are two React kinds (`react-app`, `react-lib`), and `configs/react.js`
+contains no accessibility rules at all (verified: zero `a11y` matches).
+`@html-eslint/require-img-alt` in `configs/html.js` applies to `**/*.html` only,
+so an `<img>` in a component is unchecked. `eslint-plugin-jsx-a11y` is the
+standard answer. Note this also corrects a documentation overclaim: `CLAUDE.md`
+describes the config as covering "HTML+a11y", which is true of `.html` and not of
+JSX.
+
+**c. Vitest's own globals.** `configs/jest.js` deliberately serves both stacks and
+says so, and that mostly holds — `jest/no-focused-tests` is syntactic, so a
+stray `it.only` is caught under either runner. The exception is Vitest-only
+globals: `vi.fn()` in a `.js` spec reports `'vi' is not defined`, confirmed
+against the real binary. Narrow in practice, because the vitest stack generates
+`.ts` specs and `no-undef` is off for TS — but it is a real failure on a file the
+user would not expect to fail, which is the same shape as the `react-lib` and
+`node-function-app` bugs. Adding Vitest's globals (and `vitest.config.*` to the
+`files` list, alongside the `jest.*` entry already there) is cheap.
+
+**d. Import-graph correctness.** Nothing currently reports an unresolved
+specifier or an import cycle _within_ a project. `@nx/enforce-module-boundaries`
+covers cycles and illegal edges _between_ projects, so this is specifically the
+intra-project gap. `eslint-plugin-import-x` is the maintained option; watch the
+peer range, since `eslint-plugin-import@2.31.0` capping at ESLint 9 is already
+one of the two reasons this stack is pinned to 9 (see `configs/base.js`).
+
+**e. Smaller additions, worth listing so they are not re-discovered.**
+`eslint-plugin-regexp` (catastrophic backtracking and dead alternatives are
+genuine correctness bugs, and squarely in this config's scope);
+TOML, since mnci writes `pyproject.toml` files and no rule reads them;
+`eslint-plugin-n` is already a dependency and wired for a handful of rules, so its
+`recommended` set may be under-used.
+
+**Two constraints any addition must respect** — both already load-bearing, both
+easy to break from here:
+
+1. **Correctness only, never formatting.** `eslint-config-prettier` is composed
+   LAST and the stylistic block after it holds only rules Prettier never touches.
+   A new plugin's `recommended` set will bring formatting rules with it; they must
+   land _before_ `prettierConfig` so it can switch them off. Adding one after it
+   makes `npm run lint` and `npm run format:check` mutually unsatisfiable — the
+   exact trap `space-before-function-paren` documents.
+2. **ESLint 9, decided by the plugins.** Any candidate whose peer range excludes
+   9 is not an option yet, whatever its merits.

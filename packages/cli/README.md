@@ -365,8 +365,12 @@ default `azure`): `azure` writes `azure-pipelines.yml`, `github` writes
 GitHub-hosted repo, or `both` while migrating between the two. Whichever
 provider(s), the pipeline does the **exact same thing**: both files are built
 from the same shared guard scripts (`overlay.ts`'s `PYTHON_INSTALL_GUARD`,
-`PACK_APPS_GUARD`, `releaseGuard`), so they can never drift on what CI
-actually runs — only the provider's own syntax differs.
+`PACK_APPS_GUARD`, `releaseGuard`, `AFFECTED_OR_ALL_GUARD`), so they can never
+drift on what CI actually runs — only the provider's own syntax differs. That
+matters most for the last of those: the two providers detect a pull request
+through different environment variables, so the guard reads both, and a
+provider-specific copy would change _what CI verifies_ rather than merely how it
+is spelled.
 
 The pipeline contains **no bash and no PowerShell**: every step is a built-in
 task/action or a single-line `git`/`npm`/`npx`/`node` command that `cmd.exe`
@@ -394,8 +398,29 @@ vulnerable transitive package) is exactly what this monorepo's own
 attempts automatically.
 
 Then `nx sync:check` (fails fast and clearly if the workspace wasn't
-synced+committed locally — see above), then one `nx run-many -t
-lint,test,build`. Pushes to `main` then:
+synced+committed locally — see above), then `npm run format:check`, then **one
+verify step** running `lint,typecheck,test,build`. `typecheck` is in that list
+because a bundler-built project strips types without reading them, so `build`
+passing proves nothing about type correctness.
+
+That step verifies the **affected** projects on a pull request and **every**
+project on anything else — including a push to `main`, so a release is always
+verified in full. There is deliberately no separate `npm run lint` step: that is
+`nx run-many -t lint`, a strict subset of the list above, and on an
+affected-scoped PR it would re-lint every project and throw the benefit away.
+`format:check` does stay workspace-wide, because `prettier --check .` is one
+invocation over the whole tree rather than a per-project target, so there is
+nothing to narrow.
+
+Every fallback in that step verifies **everything**: no PR target branch, an
+unresolvable merge-base (shallow clone, absent remote branch), any non-PR run.
+That direction is deliberate — resolving the base too wide costs a few minutes,
+while resolving it too narrow means CI runs almost nothing, reports green and has
+verified nothing. The base is a `git merge-base`, not either provider's "base SHA"
+field and not the GitHub-only `nrwl/nx-set-shas`, so one mechanism serves both
+providers and is correct in each by construction.
+
+Pushes to `main` then:
 
 - **Pack all apps** — each app's `package` target zips its build output into
   `dist/drop/<type>-<name>.zip` (e.g. `node-function-app-api.zip`,
