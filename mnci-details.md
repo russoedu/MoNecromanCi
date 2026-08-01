@@ -672,9 +672,6 @@ the default PR job does not run it.
   `.npmrc` line could give it one — npmjs.org is the intended target there. Only
   the `azure-artifacts` variant routes the scope (see §9c). Publish auth itself is
   wired for both.
-- **Go has no e2e coverage.** It has real unit tests and real CI wiring, but the
-  e2e never drives it, because it needs Go on the machine. The skip mechanism
-  built for Flutter would work here but has not been applied.
 - **Flutter apps build for web only.** Android needs the Android SDK + NDK on
   every agent; iOS is impossible on Linux. Add platforms per-app with
   `flutter create --platforms=…`.

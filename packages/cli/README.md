@@ -608,11 +608,6 @@ than a surprise:
   NDK on every build agent; iOS is impossible on a Linux agent regardless. Add
   other platforms per-app with `flutter create --platforms=...` — the generated
   `build` target only knows about web.
-- **Go has no e2e coverage.** The `go-*` kinds have real unit tests and real CI
-  wiring, but the e2e suite never drives them, because it needs Go on the
-  machine. Flutter took the opposite approach — its e2e section runs when the
-  SDK is present and reports **SKIPPED** (loudly) when it is not — so the same
-  pattern could be applied to Go, but has not been.
 - Azure Functions Core Tools is only needed for **local** `func start` — never
   for `mnci add node-function-app`/`python-function-app` generation, since
   neither shells out to the `func` CLI.

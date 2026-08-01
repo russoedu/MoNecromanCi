@@ -139,7 +139,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 ### Testing & E2E
 
 - **`packages/cli/src/commands/*.test.ts`** — unit tests for each command
-- **`packages/cli/e2e/cli.e2e.mjs`** — real generation → lint/test/build/package for all kinds (JS, Python, Flutter). Gated as an Nx `e2e` target, and only run in CI by a `workflow_dispatch`-only Windows job (it takes ~25-30 min). **Go has no e2e coverage** — it was marked done but never written.
+- **`packages/cli/e2e/cli.e2e.mjs`** — real generation → lint/test/build/package for all kinds (JS, Python, **Go**, Flutter). Gated as an Nx `e2e` target, and only run in CI by a `workflow_dispatch`-only Windows job (it takes ~25-30 min). Go and Flutter are each gated on their toolchain and reported as **SKIPPED** when absent — never silently dropped, which is exactly how Go went uncovered for so long.
 - **ESLint config exception** (root `eslint.config.mjs`) — `tsdoc-require-2/require-param` and
   `require-type-param` are off for `overlay.ts`, since `rootScripts()` takes no parameters
 
@@ -175,7 +175,38 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Intra-Project Import Cycles, and Two Silent Failures (Latest)
+### Go Finally Has e2e Coverage (Latest)
+
+ROADMAP §6's oldest gap. All four Go kinds had real unit tests and real CI wiring,
+but nothing had ever driven them end to end, so every Go invariant in these docs was
+**documented and unverified**. The e2e now drives them, gated on the Go toolchain and
+reported as `SKIPPED` when absent — the Flutter pattern, and the point of it: Go went
+uncovered for so long precisely because it was silently _dropped_ rather than loudly
+skipped.
+
+What it enforces, each one an invariant that previously rested on documentation
+alone: one root `go.mod` with **no** `go.work` and zero per-project manifests; every
+target written explicitly (nothing is inferred in single-module mode, because
+`@nx-go/nx-go`'s inference keys on a per-project `go.mod`); `go-app` having a `start`
+target while `go-function-app` deliberately does not; a cross-project import
+resolving with **no** vendoring or `replace` directive; real `go build`/`go test`;
+`golangci-lint` rather than the plugin's `go fmt` default; a genuinely compiled
+binary in `dist/drop/go-app-*.zip`; and `nx release` surviving a `go-lib`.
+
+- **`golangci-lint` is gated separately from `go`.** Hosted CI images ship Go but
+  not the linter (this repo's pipeline `go install`s it), so tying the whole section
+  to it would skip the structural, build, test, package and release checks on most
+  machines. Only the lint assertion is gated.
+- **The release assertion needs a non-Go releasable package present**, which is why
+  it lives in `altWorkspace` (it already has `npm-lib sdk`). Found while verifying:
+  in a **Go-only** workspace `nx release` errors with "Release group `__default__`
+  matches no projects", because `!tag:type:go-lib` empties the scope — a different
+  failure entirely, which would have made the assertion prove nothing. The generated
+  CI's release guard already skips that case correctly.
+- The module path is **read from `go.mod`**, not hardcoded: it derives from the
+  workspace scope, so hardcoding would make the section quietly wrong on a rename.
+
+### Intra-Project Import Cycles, and Two Silent Failures
 
 Roadmap #19d, which completes #19. `configs/importGraph.js` adds
 `import-x/no-cycle` and `no-self-import`, scoped to project source — the
