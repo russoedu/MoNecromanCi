@@ -175,7 +175,38 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### One Root ESLint Config, One Prettier Config, in Generated Workspaces (Latest)
+### Generated CI Verifies Affected Projects on a PR, Everything Otherwise (Latest)
+
+Both providers now share one verify step (`AFFECTED_OR_ALL_GUARD` in `overlay.ts`),
+byte-identical between them and asserted so by the anti-drift test — which matters
+more for this guard than the others, since the two providers detect a pull request
+through **different** environment variables (`GITHUB_BASE_REF` vs
+`SYSTEM_PULLREQUEST_TARGETBRANCH`), so a provider-specific copy would change _what
+CI verifies_ rather than only how it is spelled.
+
+- **Every fallback path verifies everything, never nothing.** A missing target ref,
+  an unresolvable merge-base, any non-PR run → full `run-many`. Getting the base
+  too wide costs minutes; too narrow means CI runs almost nothing, reports green,
+  and has verified nothing. `main` therefore needs no special case — neither
+  provider sets a PR target branch on a push, so a release run always verifies in
+  full as a consequence of the fallback rather than a second condition.
+- **`git merge-base`, not `nrwl/nx-set-shas`** (GitHub-only): one mechanism for both
+  providers, correct in each by construction. Azure's `refs/heads/` prefix is
+  stripped, since Azure sends a full ref where GitHub sends a bare name.
+- **The standalone `npm run lint` step is gone** — it was `nx run-many -t lint`, a
+  strict subset of the verify target list, and on an affected-scoped PR it would
+  have re-linted every project. `format:check` deliberately stays workspace-wide:
+  `prettier --check .` is one invocation over the tree, not a per-project target.
+- **Verified by executing the guard, not by reading it.** Six tests run the real
+  emitted command against a real git repo with a stub `npx` on PATH recording which
+  Nx command it chose (not-a-PR, GitHub PR, Azure's full ref resolving to the _same_
+  base, unresolvable branch, exit-status propagation, and surviving YAML parsing
+  unchanged in both providers). Both branches were mutation-tested to confirm the
+  tests fail when the guard breaks. Affected _selection_ was checked separately on a
+  real workspace: changing a depended-on internal lib marks it and its consumer.
+  This is the practice `mnci-details.md` §9 already prescribes for guards.
+
+### One Root ESLint Config, One Prettier Config, in Generated Workspaces
 
 Eight reported problems with real generated workspaces, all traced to one pattern:
 **this repo's own root had been hand-upgraded while `overlay.ts` was never updated**, so

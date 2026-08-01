@@ -74,29 +74,37 @@ jobs:
       - run: npx nx sync:check
         name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-      # One verify for every run (PR and main). Nx cache makes unchanged
-      # test/build projects instant.
-      - run: npm run lint
-        name: Lint
-
       # Prettier owns ALL formatting in this workspace, so it needs a gate of
       # its own: ESLint is configured for correctness only and deliberately
       # reports nothing about formatting. Without this step the entire
       # formatting opinion is advisory, and a workspace drifts out of
       # compliance with no signal anywhere.
+      #
+      # Stays workspace-wide even on a PR, unlike the verify step below: it is
+      # one Prettier invocation over the whole tree, not a per-project Nx
+      # target, so there is nothing to scope down and formatting is never
+      # partially checked.
       - run: npm run format:check
         name: Check formatting (run 'npm run format' locally to fix)
-      # `lint` here also runs any Nx lint targets `npm run lint` does not cover —
-      # notably Python's ruff (every Python project owns a hand-authored `lint`
-      # target). The JS lint runs twice, but Nx caches the repeat instantly.
+
+      # The one verify step, and deliberately the only one: affected projects on
+      # a pull request, EVERY project on anything else (a push to main included,
+      # so a release is always verified in full). Every fallback — no target
+      # branch, an unresolvable merge-base — takes the full path, because a run
+      # that verifies too little still reports green.
       #
-      # `typecheck` is load-bearing and not covered by `build`: @mnci/cli builds
-      # with tsup (esbuild), which strips types without reading them. Without
-      # this step the repo could build, test and lint green while carrying real
-      # type errors — and it did: `mnci upgrade` shipped a bug TypeScript had
-      # already flagged.
-      - run: npx nx run-many -t lint,typecheck,test,build
-        name: Lint, typecheck, test and build everything
+      # 'npm run lint' is 'nx run-many -t lint', a strict subset of the targets
+      # below, so adding it back as its own step would only duplicate work — and
+      # on a pull request it would re-lint every project, discarding the point
+      # of this.
+      #
+      # 'typecheck' is load-bearing and not covered by 'build': @mnci/cli builds
+      # with tsup (esbuild), which strips types without reading them. Without it
+      # the repo could build, test and lint green while carrying real type
+      # errors — and it did: 'mnci upgrade' shipped a bug TypeScript had already
+      # flagged.
+      - run: node -e "const cp=require('node:child_process');const T='lint,typecheck,test,build';const all=()=>process.exit(cp.spawnSync('npx nx run-many -t '+T,{stdio:'inherit',shell:true}).status ?? 1);const ref=process.env.GITHUB_BASE_REF||process.env.SYSTEM_PULLREQUEST_TARGETBRANCH||'';if(!ref){console.log('Not a pull request - verifying EVERY project.');all()}const target=ref.replace('refs/heads/','');const mergeBase=r=>{const o=cp.spawnSync('git',['merge-base',r,'HEAD'],{encoding:'utf8'});return o.status===0?o.stdout.trim():''};let base=mergeBase('origin/'+target);if(!base){console.log('No origin/'+target+' ref - fetching it to resolve a merge-base.');cp.spawnSync('git',['fetch','--no-tags','origin',target],{stdio:'inherit'});base=mergeBase('FETCH_HEAD')}if(!base){console.log('Could not resolve a merge-base with '+target+' - verifying EVERY project.');all()}console.log('Pull request against '+target+' - verifying projects affected since '+base);process.exit(cp.spawnSync('npx nx affected -t '+T+' --base='+base,{stdio:'inherit',shell:true}).status ?? 1)"
+        name: Verify (affected on a PR, every project on main)
 
       # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
       # target. Portable guard: skip cleanly when the workspace has no apps yet.

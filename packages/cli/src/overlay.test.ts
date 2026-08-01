@@ -7,8 +7,9 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import yaml from 'js-yaml'
 import {
   applyOverlay,
@@ -28,6 +29,22 @@ import {
   withEslintPlugin,
   withReleaseConfig,
 } from './overlay'
+
+/**
+ * Pulls a whole `node -e "…"` guard out of a generated pipeline, so two
+ * providers' copies can be compared byte-for-byte rather than by sampling
+ * fragments of them.
+ *
+ * @param pipeline - A generated `azure-pipelines.yml` or `ci.yml`.
+ * @param marker - Any substring unique to the wanted guard.
+ * @returns The full command including `node -e` and both quotes, or `''` if no
+ * guard in `pipeline` contains `marker`.
+ */
+function extractGuard(pipeline: string, marker: string): string {
+  const guards = pipeline.match(/node -e "[^"]*"/g) ?? []
+
+  return guards.find(guard => guard.includes(marker)) ?? ''
+}
 
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
@@ -344,14 +361,23 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
 
-  it('verifies every run with npm run lint then typecheck+test+build, no affected branching', () => {
+  it('verifies affected projects on a PR and every project otherwise, in one step', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    // The run-many also carries `lint` so Nx-native lint targets `npm run lint`
-    // misses (Python's ruff) still run in CI.
-    expect(pipeline).toContain('npm run lint')
-    expect(pipeline).toContain('npx nx run-many -t lint,typecheck,test,build')
-    expect(pipeline).not.toContain('nx affected')
+    expect(pipeline).toContain('SYSTEM_PULLREQUEST_TARGETBRANCH')
+    expect(pipeline).toContain('npx nx affected -t ')
+    expect(pipeline).toContain('npx nx run-many -t ')
+    expect(pipeline).toContain('Verify (affected on a PR, every project on main)')
+  })
+
+  it('has no standalone lint step, a strict subset of the verify target list', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // `npm run lint` is `nx run-many -t lint`. Keeping it alongside a verify step
+    // that already runs `lint` only duplicates work — and worse, on an
+    // affected-scoped PR it would re-lint EVERY project, discarding most of what
+    // the affected selection buys.
+    expect(pipeline).not.toContain('script: npm run lint')
   })
 
   it('batches pushes to main, so two nx release runs cannot race for the same tag', () => {
@@ -383,17 +409,18 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline.indexOf('task: Cache@2')).toBeLessThan(pipeline.indexOf('script: npm ci'))
   })
 
-  it('typechecks in the run-many — build alone does not, since bundlers strip types', () => {
+  it('typechecks in the verify step — build alone does not, since bundlers strip types', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     // The gate that would have caught the `mnci upgrade` workspaceName bug.
     // esbuild/swc strip types without reading them, so `build` passing proves
     // nothing about type correctness — a workspace can be green on
-    // lint+test+build and still carry real errors.
-    expect(pipeline).toContain('npx nx run-many -t lint,typecheck,test,build')
+    // lint+test+build and still carry real errors. Asserted on the shared target
+    // list, so it holds on both the affected and the run-many path.
+    expect(pipeline).toContain(`const T='lint,typecheck,test,build'`)
   })
 
-  it('gates formatting with its own format:check step, after lint', () => {
+  it('gates formatting with its own step, and keeps it workspace-wide even on a PR', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     // Load-bearing, and easy to drop as redundant-looking: ESLint here is
@@ -403,20 +430,23 @@ describe('azurePipelinesYaml', () => {
     // .prettierrc precisely so its own config takes effect, then nothing would
     // ever check that it holds.
     expect(pipeline).toContain('npm run format:check')
-    expect(pipeline.indexOf('npm run format:check')).toBeGreaterThan(
-      pipeline.indexOf('npm run lint')
+    // Deliberately NOT affected-scoped: `prettier --check .` is one invocation
+    // over the whole tree, not a per-project Nx target, so there is nothing to
+    // narrow and formatting is never checked in part.
+    expect(pipeline.indexOf('npm run format:check')).toBeLessThan(
+      pipeline.indexOf('npx nx affected -t ')
     )
   })
 
-  it('checks the workspace is synced early, before lint/test/build (fails fast on a stale TS reference)', () => {
+  it('checks the workspace is synced early, before verification (fails fast on a stale TS reference)', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     const installIndex = pipeline.indexOf('npm ci')
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
-    const lintIndex = pipeline.indexOf('npm run lint')
+    const verifyIndex = pipeline.indexOf('Verify (affected on a PR')
 
     expect(syncCheckIndex).toBeGreaterThan(installIndex)
-    expect(lintIndex).toBeGreaterThan(syncCheckIndex)
+    expect(verifyIndex).toBeGreaterThan(syncCheckIndex)
   })
 
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
@@ -655,23 +685,30 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
   })
 
-  it('verifies every run with npm run lint then typecheck+test+build, no affected branching', () => {
+  it('verifies affected projects on a PR and every project otherwise, in one step', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
-    expect(workflow).toContain('npm run lint')
-    expect(workflow).toContain('npx nx run-many -t lint,typecheck,test,build')
-    expect(workflow).not.toContain('nx affected')
+    expect(workflow).toContain('GITHUB_BASE_REF')
+    expect(workflow).toContain('npx nx affected -t ')
+    expect(workflow).toContain('npx nx run-many -t ')
+    expect(workflow).toContain('Verify (affected on a PR, every project on main)')
   })
 
-  it('checks the workspace is synced early, before lint/test/build (fails fast on a stale TS reference)', () => {
+  it('has no standalone lint step, a strict subset of the verify target list', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).not.toContain('run: npm run lint')
+  })
+
+  it('checks the workspace is synced early, before verification (fails fast on a stale TS reference)', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     const installIndex = workflow.indexOf('npm ci')
     const syncCheckIndex = workflow.indexOf('nx sync:check')
-    const lintIndex = workflow.indexOf('npm run lint')
+    const verifyIndex = workflow.indexOf('Verify (affected on a PR')
 
     expect(syncCheckIndex).toBeGreaterThan(installIndex)
-    expect(lintIndex).toBeGreaterThan(syncCheckIndex)
+    expect(verifyIndex).toBeGreaterThan(syncCheckIndex)
   })
 
   it('installs every Python project editably after the fixed toolchain, before sync:check', () => {
@@ -831,8 +868,17 @@ describe('githubActionsYaml', () => {
     expect(azure).toContain('npm run format:check')
 
     // Same for the typecheck target, for the same reason.
-    expect(github).toContain('-t lint,typecheck,test,build')
-    expect(azure).toContain('-t lint,typecheck,test,build')
+    expect(github).toContain(`const T='lint,typecheck,test,build'`)
+    expect(azure).toContain(`const T='lint,typecheck,test,build'`)
+
+    // The verify guard, byte-for-byte. This one matters more than the others:
+    // the two providers detect a pull request through DIFFERENT environment
+    // variables, so the guard reads both and the shared body is what keeps
+    // "what CI verifies" from diverging between them. A provider-specific copy
+    // would change the gate itself, not just its spelling.
+    const guard = extractGuard(github, 'npx nx affected')
+    expect(guard).not.toBe('')
+    expect(azure).toContain(guard)
 
     // Both cache npm downloads, though the mechanisms genuinely differ: GitHub's
     // setup-node takes a `cache` input, Azure needs a separate Cache@2 task and a
@@ -840,6 +886,140 @@ describe('githubActionsYaml', () => {
     // caching while the other keeps it.
     expect(github).toContain('cache: npm')
     expect(azure).toContain('task: Cache@2')
+  })
+})
+
+// The verify guard decides WHAT CI checks, so asserting on its source text only
+// proves the branches were typed, not that they are reachable — and every bug this
+// project has shipped passed its unit tests. These tests therefore run the real
+// command against a real git repository, with a stub `npx` recording which Nx
+// invocation it chose.
+//
+// Skipped on Windows: the guard itself is portable (that is why it is a `node -e`
+// one-liner and not a shell script), but a PATH stub for `npx` under cmd.exe needs
+// a `.cmd` shim, and the harness is not worth duplicating for a platform whose
+// only job here runs e2e rather than unit tests.
+const describeOnPosix = process.platform === 'win32' ? describe.skip : describe
+
+describeOnPosix('the verify guard, executed', () => {
+  const guard = extractGuard(githubActionsYaml('ubuntu-latest'), 'npx nx affected')
+
+  let repo: string
+  let log: string
+
+  /** Runs the guard in the fixture repo. @param env - Extra environment.
+   * @returns The stub's recorded Nx command, plus the guard's exit status. */
+  function run(env: Record<string, string> = {}): { command: string; status: number | null } {
+    const result = spawnSync(guard, {
+      cwd: repo,
+      shell: true,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        // Emptied so the host CI's own PR variables cannot leak in and decide the
+        // branch for us — this suite runs inside exactly such a run.
+        GITHUB_BASE_REF: '',
+        SYSTEM_PULLREQUEST_TARGETBRANCH: '',
+        PATH: `${join(repo, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`,
+        ...env,
+      },
+    })
+
+    return {
+      command: existsSync(log) ? readFileSync(log, 'utf8').trim() : '',
+      status: result.status,
+    }
+  }
+
+  const git = (...args: string[]): string =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' }).stdout.trim()
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'mnci-verify-'))
+    log = join(repo, 'nx-command.log')
+
+    // A stub `npx` on PATH: records the command, then exits with STUB_EXIT so the
+    // guard's status propagation can be checked too.
+    mkdirSync(join(repo, 'stub-bin'))
+    writeFileSync(
+      join(repo, 'stub-bin/npx'),
+      `#!/bin/sh\necho "$@" > "${log}"\nexit \${STUB_EXIT:-0}\n`,
+      { mode: 0o755 }
+    )
+
+    git('init', '--initial-branch=main')
+    git('config', 'user.email', 'test@example.invalid')
+    git('config', 'user.name', 'Test')
+    writeFileSync(join(repo, 'file.txt'), 'base\n')
+    git('add', '-A')
+    git('commit', '-m', 'base')
+    // The repo is its own remote, which is all `origin/main` needs to exist.
+    git('remote', 'add', 'origin', repo)
+    git('fetch', '--quiet', 'origin')
+  })
+
+  afterEach(() => rmSync(repo, { recursive: true, force: true }))
+
+  it('verifies EVERY project when the run is not a pull request', () => {
+    expect(run().command).toBe('nx run-many -t lint,typecheck,test,build')
+  })
+
+  it('verifies only affected projects on a GitHub pull request', () => {
+    const base = git('rev-parse', 'HEAD')
+    writeFileSync(join(repo, 'file.txt'), 'changed\n')
+    git('commit', '-am', 'change')
+
+    expect(run({ GITHUB_BASE_REF: 'main' }).command).toBe(
+      `nx affected -t lint,typecheck,test,build --base=${base}`
+    )
+  })
+
+  it('reads Azure’s full ref too, resolving to the same base as GitHub’s bare name', () => {
+    const base = git('rev-parse', 'HEAD')
+    writeFileSync(join(repo, 'file.txt'), 'changed\n')
+    git('commit', '-am', 'change')
+
+    // The one place the two providers genuinely differ: Azure sends
+    // `refs/heads/main`, GitHub sends `main`. Both must land on the same base, or
+    // Azure would silently take the fallback path on every single PR.
+    expect(run({ SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main' }).command).toBe(
+      `nx affected -t lint,typecheck,test,build --base=${base}`
+    )
+  })
+
+  it('falls back to EVERY project when the target branch cannot be resolved', () => {
+    // The critical direction. Guessing the base too WIDE costs minutes; guessing
+    // it too narrow means CI runs almost nothing, reports green, and has verified
+    // nothing.
+    expect(run({ GITHUB_BASE_REF: 'no-such-branch' }).command).toBe(
+      'nx run-many -t lint,typecheck,test,build'
+    )
+  })
+
+  it('propagates a failing exit status, on both paths', () => {
+    // A verify step that swallows failures is worse than no verify step at all.
+    expect(run({ STUB_EXIT: '7' }).status).toBe(7)
+    expect(run({ GITHUB_BASE_REF: 'main', STUB_EXIT: '7' }).status).toBe(7)
+  })
+
+  it('survives YAML parsing unchanged in both providers', () => {
+    // The guard is a `node -e "…"` command sitting inside a YAML scalar, so it
+    // carries double quotes into a format that also uses them. The tests above
+    // run the string as generated; this one checks the string a CI runner would
+    // actually receive is the same one, in both providers — the step is useless
+    // if YAML re-quoting mangles it on the way through.
+    const azure = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      steps: { script?: string; displayName?: string }[]
+    }
+    const github = yaml.load(githubActionsYaml('ubuntu-latest')) as {
+      jobs: { ci: { steps: { run?: string; name?: string }[] } }
+    }
+
+    const azureStep = azure.steps.find(step => step.displayName?.startsWith('Verify (affected'))
+    const githubStep = github.jobs.ci.steps.find(step => step.name?.startsWith('Verify (affected'))
+
+    expect(azureStep?.script).toBe(guard)
+    expect(githubStep?.run).toBe(guard)
   })
 })
 
