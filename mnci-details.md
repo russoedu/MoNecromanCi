@@ -380,7 +380,7 @@ same output) and is what both `new` and `upgrade` call.
 ```
 nx.json                    (release, sync, generators, and the `mnci` block)
 package.json               (curated root scripts, dual TS compiler, ESLint toolchain)
-.npmrc                     (comment-only — publish auth is a documented deferral)
+.npmrc                     (publish auth; azure also routes @scope to the feed)
 .prettierrc.json + .prettierignore
 eslint.config.mjs          (3 lines importing @mnci/eslint-config)
 commitlint.config.mjs
@@ -425,6 +425,50 @@ in the per-npm-lib config (`NPM_LIB_ESLINT_CONFIG`, now gone) moved into
 | `format` / `format:check` | `prettier --write .` / `--check .`         |
 | `python:install`          | the same two Python guards CI runs         |
 | `prepare`                 | `husky`                                    |
+
+### 9c. `.npmrc`: two registry kinds, two different files
+
+Publish auth is wired. The variants differ because the honest answer differs.
+
+**`--registry azure-artifacts`** — scope routing plus feed credentials:
+
+```
+@<scope>:registry=https://pkgs.dev.azure.com/<org>/<proj>/_packaging/<feed>/npm/registry/
+//pkgs.dev.azure.com/.../npm/registry/:username=AzureArtifacts
+//pkgs.dev.azure.com/.../npm/registry/:_password=${PAT}
+//pkgs.dev.azure.com/.../npm/registry/:email=npm-requires-this-and-never-uses-it
+```
+
+Scope routing is **real protection** here: npm prefers a scope's registry over the
+global one when publishing a scoped package, so `@<scope>/*` cannot reach npmjs.org
+by accident. _Verified empirically_ — with only the scope line set, npm reports
+`Publishing to <feed>`, and a real generated workspace's `npm publish --dry-run`
+targets the feed rather than npmjs.org.
+
+Only the scope is routed, deliberately. A global `registry=` would send every
+install through the feed, so `npm ci` would need feed auth to fetch public
+packages. _Verified:_ with only the scope routed, installing a public dependency
+succeeds with no token present.
+
+**`--registry npm`** — the auth line only:
+
+```
+//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+No `@<scope>:registry` line, and the file says why. npmjs.org is already the
+default, so routing the scope there changes nothing — and presenting it as
+protection against an accidental public publish would be **false**, since the
+public registry is the intended target. The old file made exactly that claim in
+the README while emitting no routing line, and the test suite asserted the line's
+absence. Do not reintroduce a protection the configuration cannot give.
+
+**The one PAT, two encodings.** npm's `_password` takes the base64 value Azure's
+"Connect to feed" instructions hand you, as-is. `twine` wants the **raw** token,
+which `releaseGuard` decodes. Easy to get backwards.
+
+An unset `${PAT}`/`${NODE_AUTH_TOKEN}` breaks nothing locally — verified that
+`npm install` of a public dependency still succeeds with the variable absent.
 
 ### The `mnci` block in `nx.json`
 
@@ -586,11 +630,10 @@ the default PR job does not run it.
 
 **Real gaps:**
 
-- **The generated `.npmrc` is empty, so `npm publish` will not authenticate.** A
-  deliberate deferral. `packages/cli/README.md` used to claim scope routing made
-  accidental public publishes impossible; no `@scope:registry` line was ever
-  emitted, so that claim was false. The CI token export stays in place so wiring
-  real auth later is one line.
+- **A scoped package on public npm has no accidental-publish protection**, and no
+  `.npmrc` line could give it one — npmjs.org is the intended target there. Only
+  the `azure-artifacts` variant routes the scope (see §9c). Publish auth itself is
+  wired for both.
 - **Go has no e2e coverage.** It has real unit tests and real CI wiring, but the
   e2e never drives it, because it needs Go on the machine. The skip mechanism
   built for Flutter would work here but has not been applied.

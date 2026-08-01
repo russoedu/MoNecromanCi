@@ -108,47 +108,87 @@ export function registryUrl(registry: RegistryConfig): string | undefined {
  * Builds the `.npmrc` body for a registry configuration.
  *
  * @remarks
- * **This deliberately emits no configuration — only comments.** Publish
- * authentication is an explicitly deferred design decision, not an oversight,
- * and the file is still written so the deferral is visible in the generated
- * workspace rather than being an absence nobody notices.
+ * The two registry kinds get deliberately **different** files, because the honest
+ * answer differs. This replaced a comment-only placeholder that left
+ * `npm publish` unable to authenticate in every generated workspace, while the CI
+ * dutifully exported a token nothing consumed.
  *
- * What it used to emit was wrong in ways worth recording, since the same
- * mistakes are easy to reintroduce:
+ * **Azure Artifacts: scope routing plus auth.** `@<scope>:registry` sends both
+ * resolution *and* `npm publish` of `@<scope>/*` to the feed, because npm prefers
+ * a scope's registry over the global one when publishing a scoped package. That
+ * makes it real protection — a package named `@<scope>/x` cannot reach npmjs.org
+ * by accident. Verified against a real registry rather than read from docs: npm
+ * reports `Publishing to <feed>` with only the scope line set.
  *
- * - The public-npm variant carried no `@scope:registry` line at all, while the
- *   CLI's README claimed "scope routing makes accidental public publishes
- *   impossible" — and `overlay.test.ts` actively asserted the line's absence.
- *   The documented safety property never existed.
- * - `legacy-peer-deps=true` was added for `@nxazure/func`, a plugin removed
- *   long ago. It stayed behind and quietly weakened dependency resolution in
- *   every generated workspace.
+ * Only the scope is routed, and that is a choice. A global `registry=` would send
+ * every install through the feed too, so `npm ci` would need feed auth just to
+ * fetch public packages — verified: with only the scope routed, installing a
+ * public dependency still succeeds with no token present at all.
  *
- * **Known consequence, stated plainly:** the generated CI still exports
- * `NODE_AUTH_TOKEN` (public npm) or `PAT` (Azure Artifacts) for the release
- * step, but with an empty `.npmrc` nothing consumes them — `actions/setup-node`
- * is configured without `registry-url`, so `npm publish` will not
- * authenticate. The token wiring is intentionally left in place so completing
- * this is a one-line change once the auth design is settled. See the "Known
- * gaps" section of `packages/cli/README.md`.
+ * **Public npm: auth only, no scope routing.** npmjs.org is already the default
+ * registry, so a `@<scope>:registry` line pointing there changes nothing — and
+ * calling it protection against an accidental public publish would be false,
+ * since the public registry *is* the intended target. That specific false claim
+ * is why this function is worth reading twice: an earlier version of this file
+ * asserted exactly that safety property in the README while emitting no routing
+ * line at all, and `overlay.test.ts` asserted the line's absence. Do not
+ * reintroduce a protection that the configuration cannot provide.
  *
- * @param _registry - The monorepo's resolved registry configuration. Unused
- * while auth is deferred; the parameter is kept because the auth lines return
- * here once designed, and dropping it would churn every call site twice.
- * @param _scope - The npm scope (e.g. `@demo`). Unused, same reason.
+ * **The one PAT, two encodings.** `_password` takes the base64 value Azure
+ * Artifacts' own "Connect to feed" instructions hand you, so it is used as-is.
+ * `twine` wants the *raw* token and the release guard decodes it there
+ * ({@link releaseGuard}). Easy to get backwards; check before wiring a third
+ * protocol.
+ *
+ * An unset `${PAT}`/`${NODE_AUTH_TOKEN}` does not break anything locally —
+ * verified that `npm install` of a public dependency still succeeds with the
+ * variable absent, so a developer needs no token to work in the workspace.
+ *
+ * @param registry - The monorepo's resolved registry configuration.
+ * @param scope - The npm scope (e.g. `@demo`), used for the routing line.
  * @returns The full text of the generated `.npmrc`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function npmrcContent(_registry: RegistryConfig, _scope: string): string {
-  return `; Intentionally empty.
+export function npmrcContent(registry: RegistryConfig, scope: string): string {
+  if (registry.kind === 'npm') {
+    return `; Publish authentication for the public npm registry.
 ;
-; Publish authentication is not configured yet. The generated CI exports a
-; token for the release step (NODE_AUTH_TOKEN for public npm, PAT for Azure
-; Artifacts), but nothing here consumes it, so 'npm publish' will not
-; authenticate until this is wired up.
+; NODE_AUTH_TOKEN is exported by the generated CI's release step; an unset value
+; is harmless locally, so no token is needed for day-to-day work.
+//registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}
+
+; There is deliberately NO '${scope}:registry' line here. npmjs.org is already
+; the default registry, so routing the scope to it would change nothing — and
+; presenting that as protection against an accidental public publish would be
+; false, because the public registry is the intended target. (An earlier version
+; of this file made exactly that claim while emitting no routing line at all.)
+; To keep a scoped package off npmjs.org, use a private feed: generate with
+; --registry azure-artifacts, which does route the scope.
+`
+  }
+
+  const feedUrl = registryUrl(registry) as string
+  // npm keys per-registry credentials by the URL with the protocol stripped.
+  const feedKey = feedUrl.replace(/^https:/, '')
+  return `; Publish + resolution routing for this workspace's own scope.
 ;
-; See "Known gaps" in the @mnci/cli README.
+; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
+; feed: npm prefers a scope's registry over the global one when publishing a
+; scoped package, so a ${scope}/* package cannot reach npmjs.org by accident.
+;
+; Only the scope is routed, on purpose. A global 'registry=' would send every
+; install through the feed as well, so 'npm ci' would need feed auth just to fetch
+; public packages.
+${scope}:registry=${feedUrl}
+
+; Feed credentials. PAT is the BASE64 value Azure Artifacts' "Connect to feed"
+; instructions give you, which is exactly what _password expects, so it is used
+; as-is. (twine wants the RAW token; the CI release step decodes it there.)
+; Azure ignores the username, and npm requires an email it never uses.
+${feedKey}:username=AzureArtifacts
+${feedKey}:_password=\${PAT}
+${feedKey}:email=npm-requires-this-and-never-uses-it
 `
 }
 

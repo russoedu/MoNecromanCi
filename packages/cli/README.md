@@ -126,7 +126,7 @@ that would just fail felt worse than being upfront that it doesn't exist yet.
    is ever pushed to `main`; future runs resolve versions from tag names.
 3. Writes `eslint.config.mjs` (three lines importing `@mnci/eslint-config` —
    the whole linting opinion, in one root config), `.prettierrc.json` +
-   `.prettierignore`, `.npmrc` (comment-only — see **Known gaps** below),
+   `.prettierignore`, `.npmrc` (publish auth — see **Publish auth** below),
    `commitlint.config.mjs`, a husky `commit-msg` hook, the chosen CI provider's
    pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
@@ -404,6 +404,42 @@ lint,test,build`. Pushes to `main` then:
   _only_ configured provider, since that's the one case a `GITHUB_TOKEN` is
   guaranteed to exist.
 
+### Publish auth
+
+The generated `.npmrc` differs by registry kind, because the honest answer does.
+
+**`--registry azure-artifacts`** routes the workspace's own scope to the feed and
+supplies the feed's credentials:
+
+```ini
+@my:registry=https://pkgs.dev.azure.com/<org>/<proj>/_packaging/<feed>/npm/registry/
+//pkgs.dev.azure.com/.../npm/registry/:username=AzureArtifacts
+//pkgs.dev.azure.com/.../npm/registry/:_password=${PAT}
+```
+
+Scope routing is **real protection** here, not decoration: npm prefers a scope's
+registry over the global one when publishing a scoped package, so `@my/*` cannot
+reach npmjs.org by accident. Verified against a real registry — with only the
+scope line set, npm reports `Publishing to <feed>` — and again from a generated
+workspace, whose `npm publish --dry-run` targets the feed.
+
+Only the scope is routed, deliberately. A global `registry=` would push every
+install through the feed as well, so `npm ci` would need feed auth just to fetch
+public packages; as generated, public dependencies still come from npmjs.org and
+a developer with no `PAT` set can install normally.
+
+**`--registry npm`** gets the auth line and nothing else:
+
+```ini
+//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+There is no `@scope:registry` line, and the generated file explains why: npmjs.org
+is already the default, so routing the scope there changes nothing — and calling
+it protection against an accidental public publish would be false, because the
+public registry is the intended target. Worth stating plainly because this file
+previously claimed exactly that protection while emitting no routing line at all.
+
 **npm auth** is the base64 `PAT`, read the same way on both providers but from
 a different place: on Azure Pipelines, a **variable group**
 (`--variable-group`, default `Build`) exposes it as `$(PAT)`; on GitHub
@@ -516,13 +552,10 @@ than a surprise:
 
 ## Known gaps (accepted for the experiment)
 
-- **The generated `.npmrc` is empty (comments only), so `npm publish` will not
-  authenticate.** This is a deliberate deferral, not an oversight: the previous
-  file claimed here that scope routing made accidental public publishes
-  impossible, when in fact no `@scope:registry` line was ever emitted. Rather
-  than ship half-wired auth, the CI token export (`NODE_AUTH_TOKEN`/`PAT`) is
-  left in place so wiring it later is one line, and the generated `.npmrc`
-  carries a comment saying so. Publish-path e2e assertions are relaxed to match.
+- **A scoped package on public npm has no accidental-publish protection**, and
+  cannot: npmjs.org is the intended target there, so no `.npmrc` line could
+  prevent it. Generate with `--registry azure-artifacts` if you need a scope kept
+  off the public registry — that variant routes it (see **Publish auth** above).
 - No `doctor`/`resurrect`/`spell` — out of scope until the model is proven.
 - **Flutter apps build for web only.** Android would require the Android SDK and
   NDK on every build agent; iOS is impossible on a Linux agent regardless. Add

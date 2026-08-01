@@ -79,18 +79,60 @@ describe('npmrcContent', () => {
     artifactsFeed: 'feed',
   } as const
 
-  it('emits no configuration at all — publish auth is deliberately deferred', () => {
-    expect(directives(npmrcContent({ kind: 'npm' }, '@demo'))).toEqual([])
-    expect(directives(npmrcContent(azure, '@demo'))).toEqual([])
-  })
-
-  it('says why it is empty, so the deferral is visible in the generated workspace', () => {
-    // An absent file would be an absence nobody notices; the comments are the
-    // whole point of still writing it.
+  it('authenticates the public npm registry, and routes nothing', () => {
     const npmrc = npmrcContent({ kind: 'npm' }, '@demo')
 
-    expect(npmrc).toContain('Intentionally empty')
-    expect(npmrc).toContain('will not\n; authenticate')
+    expect(directives(npmrc)).toEqual(['//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}'])
+  })
+
+  it('deliberately omits scope routing for public npm, and says why', () => {
+    // The historical bug this guards: the README claimed scope routing made an
+    // accidental public publish impossible while no routing line was ever
+    // emitted. Routing @demo to npmjs.org would ALSO not provide that, because
+    // npmjs.org is the intended target — so the honest answer is no line plus an
+    // explanation, not a line that looks protective.
+    const npmrc = npmrcContent({ kind: 'npm' }, '@demo')
+
+    expect(npmrc).not.toContain('@demo:registry=')
+    expect(npmrc).toContain('deliberately NO')
+  })
+
+  it('routes the scope to the Azure feed — the one case where that IS protection', () => {
+    const npmrc = npmrcContent(azure, '@demo')
+    const feed = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
+
+    // npm prefers a scope's registry over the global one when publishing a scoped
+    // package, so this genuinely stops @demo/* reaching npmjs.org. Verified
+    // against a real registry: npm reports "Publishing to <feed>".
+    expect(directives(npmrc)).toContain(`@demo:registry=${feed}`)
+  })
+
+  it('routes ONLY the scope, so installing public packages needs no feed auth', () => {
+    // A global `registry=` would send every install through the feed, making
+    // `npm ci` require feed credentials just to fetch public dependencies.
+    const npmrc = npmrcContent(azure, '@demo')
+
+    expect(directives(npmrc).some(line => line.startsWith('registry='))).toBe(false)
+  })
+
+  it('supplies feed credentials keyed by the protocol-stripped feed URL', () => {
+    const npmrc = npmrcContent(azure, '@demo')
+    const key = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
+
+    expect(directives(npmrc)).toContain(`${key}:_password=\${PAT}`)
+    expect(directives(npmrc)).toContain(`${key}:username=AzureArtifacts`)
+    // npm refuses to authenticate without an email field, and never uses it.
+    expect(npmrc).toContain(`${key}:email=`)
+  })
+
+  it('uses the base64 PAT as-is for npm, unlike twine which needs it decoded', () => {
+    // The trap: the same PAT is consumed in two encodings. npm's _password wants
+    // the pre-encoded value Azure hands out; twine wants the raw token, which the
+    // CI release step decodes. Getting these backwards fails at publish time only.
+    const npmrc = npmrcContent(azure, '@demo')
+
+    expect(npmrc).toContain('_password=${PAT}')
+    expect(npmrc).not.toContain('Buffer.from')
   })
 
   it('drops legacy-peer-deps, added for a plugin removed long ago', () => {
@@ -98,17 +140,6 @@ describe('npmrcContent', () => {
     // dependency resolution in every generated workspace.
     expect(npmrcContent({ kind: 'npm' }, '@demo')).not.toContain('legacy-peer-deps')
     expect(npmrcContent(azure, '@demo')).not.toContain('legacy-peer-deps')
-  })
-
-  it('no longer claims a scope-routing guarantee it never actually provided', () => {
-    // The npm variant never emitted an @scope:registry line, while the README
-    // claimed scope routing made accidental public publishes impossible. The
-    // old test asserted the line's ABSENCE, encoding the contradiction.
-    for (const npmrc of [npmrcContent({ kind: 'npm' }, '@demo'), npmrcContent(azure, '@demo')]) {
-      expect(npmrc).not.toContain('@demo:registry')
-      expect(npmrc).not.toContain('_authToken')
-      expect(npmrc).not.toContain('_password')
-    }
   })
 })
 
@@ -1370,16 +1401,20 @@ describe('applyOverlay', () => {
     }
   })
 
-  it('writes an empty .npmrc — publish auth is a deliberate deferral', () => {
+  it('writes an .npmrc that can actually authenticate a publish', () => {
     overlayWith(DEFAULT_STACK)
 
+    // The fixture is a public-npm workspace, so this is the auth-only variant:
+    // one directive, no scope routing. It used to be comment-only, which meant
+    // every generated workspace's `npm publish` failed to authenticate while CI
+    // exported a token nothing consumed.
     const npmrc = readFileSync(join(workspaceRoot, '.npmrc'), 'utf8')
     const directives = npmrc
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0 && !line.startsWith(';'))
-    expect(directives).toEqual([])
-    expect(npmrc).toContain('Intentionally empty')
+
+    expect(directives).toEqual(['//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}'])
   })
 
   it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
