@@ -43,12 +43,13 @@ Correctness and code quality only. **Formatting is Prettier's job**, and
 | Node + promises      | `eslint-plugin-n`, `eslint-plugin-promise`                 |
 | Unused code          | `eslint-plugin-unused-imports` (auto-removes on `--fix`)   |
 | React                | `eslint-plugin-react`, `react-hooks`, `react-refresh`      |
+| JSX accessibility    | `eslint-plugin-jsx-a11y` (`recommended`)                   |
 | JSON / JSONC / JSON5 | `eslint-plugin-jsonc`                                      |
 | YAML                 | `eslint-plugin-yml`                                        |
 | Markdown             | `@eslint/markdown`                                         |
 | CSS                  | `@eslint/css`                                              |
-| HTML + a11y          | `@html-eslint/eslint-plugin`                               |
-| Tests                | `eslint-plugin-jest` (works for Vitest too — same globals) |
+| HTML                 | `@html-eslint/eslint-plugin` (incl. its a11y rules)        |
+| Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals      |
 | Type-aware TS        | `typescript-eslint` with `projectService` — see below      |
 
 ### Type-aware rules (`configs/typeAware.js`)

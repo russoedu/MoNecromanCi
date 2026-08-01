@@ -70,6 +70,19 @@ const FIXTURES: Record<string, string> = {
   // `attributes` relaxation React needs.
   'packages/demo/src/misused.ts':
     'function on (handler: () => void): void {\n  handler()\n}\n\nasync function work (): Promise<void> {\n  await Promise.resolve()\n}\n\nexport function wire (): void {\n  on(async () => {\n    await work()\n  })\n}\n',
+
+  // JSX accessibility. `@html-eslint/require-img-alt` covers `**/*.html` only, so
+  // an <img> in a component used to be checked by nothing at all.
+  'a11y.tsx': 'export const Bad = (): JSX.Element => <img src="x.png" />\n',
+  'a11y-ok.tsx': 'export const Good = (): JSX.Element => <img src="x.png" alt="a cat" />\n',
+  // Vitest's `vi` belongs to no Jest environment, so a .js spec using it reported
+  // `'vi' is not defined`.
+  'vitest.spec.js':
+    "describe('x', () => {\n  it('y', () => {\n    const spy = vi.fn()\n    expect(spy).toBeDefined()\n  })\n})\n",
+  // TypeScript and VS Code both read comments in these, so forbidding them is
+  // wrong — and they match `**/*.json` too, which is what made it happen.
+  'tsconfig.probe.json': '{\n  // a comment TypeScript accepts\n  "compilerOptions": {}\n}\n',
+  'strict.json': '{\n  "a": 1\n}\n',
 }
 
 let workspace: string
@@ -284,6 +297,33 @@ describe('@mnci/eslint-config', () => {
 
     expect(rules).not.toContain('FATAL')
     expect(rules).toContain('@typescript-eslint/no-explicit-any')
+  })
+
+  it('lints JSX accessibility, not just HTML', () => {
+    // The largest coverage hole this config had: two React project kinds and no
+    // a11y rule reaching a single line of JSX.
+    expect(rulesFor('a11y.tsx')).toContain('jsx-a11y/alt-text')
+    expect(rulesFor('a11y-ok.tsx')).toEqual([])
+  })
+
+  it("knows Vitest's `vi`, which belongs to no Jest environment", () => {
+    expect(rulesFor('vitest.spec.js')).not.toContain('no-undef')
+  })
+
+  it('allows comments in tsconfig.json, which TypeScript itself reads', () => {
+    // Subtler than it looks, and the reason this needs a test: these files were
+    // ALREADY listed as JSONC, but they also match `**/*.json`, and the JSONC
+    // preset omits `jsonc/no-comments` rather than setting it 'off' — so the
+    // strict block's 'error' survived into them.
+    expect(rulesFor('tsconfig.probe.json')).not.toContain('jsonc/no-comments')
+  })
+
+  it('still forbids comments in a plain .json file', () => {
+    // The other half: relaxing JSONC must not relax real JSON. Asserted on the
+    // resolved config, since a clean file reports nothing either way.
+    const [severity] = printConfig(workspace, 'strict.json').rules['jsonc/no-comments']
+
+    expect(severity).toBe(2)
   })
 
   it('omits the dependency-checks block unless a workspaceRoot is given', () => {

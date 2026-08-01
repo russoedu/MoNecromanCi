@@ -16,10 +16,18 @@ export default [
     files: [
       '**/*.{spec,test}.{js,mjs,cjs,jsx,ts,mts,cts,tsx}',
       '**/jest.*.{js,mjs,cjs,ts,mts,cts}',
+      '**/vitest.*.{js,mjs,cjs,ts,mts,cts}',
       '**/test-setup.{js,mjs,cjs,ts,mts,cts}',
     ],
     plugins: { jest },
-    languageOptions: { globals: { ...jest.environments.globals.globals } },
+    // Vitest's own globals go alongside Jest's. `describe`/`it`/`expect` are
+    // shared, but `vi` is Vitest-only and belongs to no Jest environment — so a
+    // `.js` spec using `vi.fn()` reported `'vi' is not defined`, confirmed against
+    // the real binary. Narrow (a `.ts` spec escapes it, since `no-undef` is off for
+    // TypeScript) but a real failure on a file the user wrote normally.
+    languageOptions: {
+      globals: { ...jest.environments.globals.globals, vi: 'readonly', vitest: 'readonly' },
+    },
     rules: {
       'jest/no-focused-tests': 'error',
       'jest/no-identical-title': 'error',
