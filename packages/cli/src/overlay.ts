@@ -1315,9 +1315,18 @@ export function azurePipelinesYaml(
 # runs unchanged on Linux, macOS and Windows agents.
 
 trigger:
+  # While a run is in progress, queue further pushes and run them together rather
+  # than concurrently. This is the closest thing Azure Pipelines YAML has to
+  # GitHub's concurrency group, and it is load-bearing on main for the same
+  # reason: two concurrent 'nx release' runs would race to create the same tag.
+  batch: true
   branches:
     include: [main]
 
+# Note: cancelling a superseded PR validation run is NOT a YAML setting on Azure
+# — it lives in the branch policy ("Build validation -> automatically cancel").
+# Nothing here can express it, so it is left to whoever configures the policy
+# rather than faked with a batch setting that would only delay PR runs.
 pr:
   branches:
     include: [main]
@@ -1579,6 +1588,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
+concurrency:
+  # One run at a time per ref, but \`cancel-in-progress\` is an **expression** on
+  # purpose rather than a flat \`true\`.
+  #
+  # A superseded PR run is pure waste, so cancel it. A run on \`main\` must never
+  # be cancelled: it publishes packages and pushes release tags, and killing it
+  # part-way can leave a tag pushed with the publish only half done — a state no
+  # rerun repairs cleanly, because the version is then already tagged. Those runs
+  # queue instead, which also stops two \`nx release\` invocations racing to create
+  # the same tag when two commits land close together.
+  group: \${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' }}
 
 permissions:
   # Lets the release step push the version tag nx release creates back to main,
