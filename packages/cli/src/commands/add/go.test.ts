@@ -37,7 +37,7 @@ function readProjectJson(relativeDirectory: string): {
 
 /** The argv of every `runNx` call, flattened for easy matching. */
 function nxCalls(): string[][] {
-  return mockRunNx.mock.calls.map(call => call[0] as string[])
+  return mockRunNx.mock.calls.map(call => call[0])
 }
 
 beforeEach(() => {

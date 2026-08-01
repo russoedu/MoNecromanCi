@@ -175,7 +175,43 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Generated CI Verifies Affected Projects on a PR, Everything Otherwise (Latest)
+### Type-Aware Lint Rules in `@mnci/eslint-config` (Latest)
+
+`configs/typeAware.js` adds the rules that read **types** — most importantly
+`no-floating-promises`, which catches a dropped `await` that `tsc`, Prettier and
+every other rule are silent about. The blocker recorded in `configs/typescript.js`
+("a generated monorepo cannot know its tsconfigs up front") was obsolete:
+`projectService: true` discovers each file's tsconfig itself.
+
+- **Curated, not `recommendedTypeChecked`.** That preset reported 67 problems on
+  this repo, mostly not bugs — `require-await` fires on every `nx-python-pip`
+  executor, which must be `async` to satisfy Nx's contract. The curated set
+  reported 10, all real, including a genuine floating promise in `cli.ts`.
+- **Scoped to `{apps,libs,packages}/*/src/**`, and that is a safety decision.** A
+  `.ts` file in no tsconfig is a **fatal parse error**, which suppresses every
+  other rule for that file _and_ fails the build. Applying the rules workspace-wide
+  made four of this package's own tests report `FATAL`. `allowDefaultProject` is
+  fatal in the other direction too (`*.config.ts` broke `packages/cli/tsup.config.ts`),
+  so scoping to directories guaranteed to have a tsconfig is the only choice that
+  cannot misfire. Widen it only with that guarantee.
+- **`no-misused-promises` sets `checksVoidReturn: { attributes: false }`.** A
+  freshly generated `react-app` with `onClick={async () => { await save() }}` — the
+  universal React idiom — failed `npm run lint` on a file the user wrote normally.
+  Found by generating a real workspace and adding a real react-app. Only that
+  sub-check is off; `Array.filter(async …)` still errors, and a test pins each half
+  so relaxing the rule wholesale cannot pass.
+- **Verified on a real generated workspace**, not just fixtures: green out of the
+  box across `npm-lib`, `internal-lib` and `react-app`, and a planted floating
+  promise reported in **both** `packages/*/src` and `libs/*/src`. Both new
+  assertions were mutation-tested in both directions.
+- **Found a separate P1 while doing this** (ROADMAP #20): `nx-flutter` and
+  `nx-python-pip` have a `typecheck` target Nx has **disabled** because their
+  tsconfigs set `noEmit: true` — it passes by printing a message. So #18's
+  `typecheck` gate is theatre for two of four projects. Deliberately not fixed here
+  (it changes two published packages' emit config), but recorded rather than left
+  for someone to rediscover.
+
+### Generated CI Verifies Affected Projects on a PR, Everything Otherwise
 
 Both providers now share one verify step (`AFFECTED_OR_ALL_GUARD` in `overlay.ts`),
 byte-identical between them and asserted so by the anti-drift test — which matters

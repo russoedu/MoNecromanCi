@@ -53,6 +53,23 @@ const FIXTURES: Record<string, string> = {
   // The exact shape `@nx/react:library --bundler=rollup` emits into the rollup
   // config it writes for every react-lib.
   'rollup.fixture.ts': 'export const options = { limit: 10000 }\n',
+
+  // A generated project's real layout, which is what the type-aware rules are
+  // scoped to: `packages/<name>/src/**` with a tsconfig covering it. Without a
+  // fixture in this exact shape, those rules could be scoped to nothing at all
+  // and every other test here would still pass.
+  'packages/demo/tsconfig.json':
+    '{\n  "compilerOptions": {\n    "target": "es2021",\n    "module": "commonjs",\n    "moduleResolution": "node",\n    "strict": true,\n    "noEmit": true\n  },\n  "include": ["src/**/*.ts"]\n}\n',
+  'packages/demo/src/floating.ts':
+    'async function work (): Promise<number> {\n  return 1\n}\n\nexport function go (): void {\n  work()\n}\n',
+  'packages/demo/src/awaited.ts':
+    'async function work (): Promise<number> {\n  return 1\n}\n\nexport async function go (): Promise<number> {\n  return await work()\n}\n',
+  // An async callback passed where a void-returning one is expected. This is the
+  // `checksVoidReturn.arguments` sub-check, which stays ON — it is where
+  // no-misused-promises earns its keep, and it must survive the narrow
+  // `attributes` relaxation React needs.
+  'packages/demo/src/misused.ts':
+    'function on (handler: () => void): void {\n  handler()\n}\n\nasync function work (): Promise<void> {\n  await Promise.resolve()\n}\n\nexport function wire (): void {\n  on(async () => {\n    await work()\n  })\n}\n',
 }
 
 let workspace: string
@@ -96,6 +113,32 @@ function lintAll(directory: string): Record<string, string[]> {
 /** The rule IDs reported for one fixture (empty when it linted clean). */
 function rulesFor(filename: string): string[] {
   return reported[filename] ?? []
+}
+
+/**
+ * The config ESLint actually resolves for one file, via `--print-config`.
+ *
+ * @remarks
+ * For asserting a rule's *options* rather than whether it fires. Still the real
+ * binary — and unlike importing `index.js`, it reports the value after every
+ * block in the array has been merged, which is the only value that matters.
+ * (Importing is also not available here: this package is ESM and Jest runs these
+ * specs as CJS — see this file's header.)
+ * @param directory - Workspace root to resolve from.
+ * @param filename - File whose resolved config is wanted, relative to `directory`.
+ * @returns The parsed config, with its `rules` map.
+ */
+function printConfig(directory: string, filename: string): { rules: Record<string, unknown[]> } {
+  const result = spawnSync(eslintBin, ['--print-config', filename], {
+    cwd: directory,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  const stdout = result.stdout?.trim()
+  if (!stdout?.startsWith('{')) {
+    throw new Error(`eslint --print-config produced no JSON.\nstderr: ${result.stderr}`)
+  }
+  return JSON.parse(stdout) as { rules: Record<string, unknown[]> }
 }
 
 beforeAll(() => {
@@ -190,6 +233,57 @@ describe('@mnci/eslint-config', () => {
 
   it('catches focused tests, which would silently skip the rest of a suite', () => {
     expect(rulesFor('focused.spec.ts')).toContain('jest/no-focused-tests')
+  })
+
+  it('catches a floating promise, which nothing else in the stack reports', () => {
+    // The whole justification for type-aware linting: a dropped `await`
+    // type-checks cleanly, so `tsc` and every non-type-aware rule stay silent,
+    // and it only surfaces as a lost error at runtime.
+    expect(rulesFor('packages/demo/src/floating.ts')).toContain(
+      '@typescript-eslint/no-floating-promises'
+    )
+  })
+
+  it('leaves a correctly awaited promise alone', () => {
+    expect(rulesFor('packages/demo/src/awaited.ts')).toEqual([])
+  })
+
+  it('still catches an async callback passed where a void return is expected', () => {
+    // The half of no-misused-promises that must survive the React relaxation
+    // below. Without this, switching `checksVoidReturn` off wholesale would look
+    // identical to switching off only `attributes`.
+    expect(rulesFor('packages/demo/src/misused.ts')).toContain(
+      '@typescript-eslint/no-misused-promises'
+    )
+  })
+
+  it('exempts JSX attributes from checksVoidReturn, and ONLY attributes', () => {
+    // `onClick={async () => { await save() }}` is the universal React idiom, but
+    // React's prop types declare a void return, so the default setting fails a
+    // freshly generated react-app on a file the user wrote normally — verified on
+    // a real generated workspace, not reasoned about.
+    //
+    // Asserted on the resolved options because reproducing the attributes case
+    // needs JSX plus React's types, which this fixture workspace has no reason to
+    // install. The sub-check that catches real bugs is covered by the test above,
+    // running the real binary.
+    const [, options] = printConfig(workspace, 'packages/demo/src/awaited.ts').rules[
+      '@typescript-eslint/no-misused-promises'
+    ]
+
+    expect(options).toEqual({ checksVoidReturn: { attributes: false } })
+  })
+
+  it('never reports a fatal parse error on a .ts file outside a project directory', () => {
+    // The safety property that decided the scoping. A file in no tsconfig is a
+    // FATAL for the type-aware parser, and a fatal suppresses every other rule
+    // for that file — so a mis-scoped config does not merely lose these rules, it
+    // stops linting the file entirely while failing the build. `bad.ts` sits at
+    // the workspace root, in no tsconfig, and must still be linted normally.
+    const rules = rulesFor('bad.ts')
+
+    expect(rules).not.toContain('FATAL')
+    expect(rules).toContain('@typescript-eslint/no-explicit-any')
   })
 
   it('omits the dependency-checks block unless a workspaceRoot is given', () => {

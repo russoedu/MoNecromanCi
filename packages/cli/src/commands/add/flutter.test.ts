@@ -19,7 +19,7 @@ let workspaceRoot: string
 
 /** The argv of every `runNx` call, flattened for easy matching. */
 function nxCalls(): string[][] {
-  return mockRunNx.mock.calls.map(call => call[0] as string[])
+  return mockRunNx.mock.calls.map(call => call[0])
 }
 
 /** Pre-creates the `project.json` the (mocked) plugin's app generator would write. */
@@ -42,7 +42,7 @@ function readProjectJson(relativeDirectory: string): {
 
 /** The command+argv of every `runShell` call. */
 function shellCalls(): string[] {
-  return mockRunShell.mock.calls.map(call => `${call[0]} ${(call[1] as string[]).join(' ')}`)
+  return mockRunShell.mock.calls.map(call => `${call[0]} ${call[1].join(' ')}`)
 }
 
 beforeEach(() => {
@@ -186,7 +186,7 @@ describe('runAdd flutter', () => {
 
   it('fails loudly when the plugin install itself fails', async () => {
     mockRunShell.mockImplementation((command, arguments_) =>
-      command === 'npm' && (arguments_ as string[]).includes('@mnci/nx-flutter') ? 1 : 0
+      command === 'npm' && arguments_.includes('@mnci/nx-flutter') ? 1 : 0
     )
 
     await expect(runAdd('flutter-lib', 'shared', {})).rejects.toThrow(

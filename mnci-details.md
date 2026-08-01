@@ -558,10 +558,17 @@ npm run typecheck                # tsc only — bundlers do NOT type-check
 npx nx run-many -t lint,typecheck,test,build   # everything at once
 ```
 
-Expected: **420 unit tests** — 313 (`cli`), 51 (`nx-flutter`), 41
-(`nx-python-pip`), 15 (`eslint-config`). `packages/cli` enforces an **85%
+Expected: **425 unit tests** — 313 (`cli`), 51 (`nx-flutter`), 41
+(`nx-python-pip`), 20 (`eslint-config`). `packages/cli` enforces an **85%
 coverage threshold** on statements/branches/functions/lines; the other three
 packages have no threshold.
+
+One caveat on `typecheck`, since a passing run is currently misleading: Nx
+disables an inferred `typecheck` target when a project's tsconfig sets
+`noEmit: true`, replacing the command with an `echo`. `@mnci/nx-flutter` and
+`@mnci/nx-python-pip` both do, so their `typecheck` passes by printing a message
+rather than by checking anything. Only `@mnci/cli` has a real one. Tracked as
+ROADMAP #20.
 
 ### The e2e suite
 
