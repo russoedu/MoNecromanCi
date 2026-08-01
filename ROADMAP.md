@@ -11,8 +11,8 @@ those cite `file:line` so the claim can be re-checked.
 
 **Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
 #6 (superseded-run handling), #8 (`react-lib`), #14 (dots in names),
-#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI), #3 (`mnci doctor`) —
-every P1 is closed.
+#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI), #3 (`mnci doctor`),
+#16 (registry resolution verified) — every P1 and P2 except #5 is closed.
 **Next up:** #5 (`nx affected` for PR runs) wants care: a misconfigured affected
 computation makes PR CI pass while broken, which is a silently weakened gate rather
 than a visible failure, so it needs verifying across real pushes rather than
@@ -346,13 +346,27 @@ _shape_ — web + api + shared lib, already wired together — instead of one `a
 at a time. That is a different value proposition from a longer kind list, and
 it's where a scaffold stops being a generator and becomes a starting point.
 
-### 16. Confirm `@mnci/eslint-config` resolves from the registry — P1, quick
+### 16. Confirm `@mnci/eslint-config` resolves from the registry — ✅ done
 
-It was first published as `0.1.2` on 2026-07-31. Before that, generating a
-workspace required packing it locally and pointing `MNCI_ESLINT_CONFIG_SPEC` at
-the tarball, or `npm install` 404'd at step one. The overlay pins `^0.1.0`
-(`ESLINT_CONFIG_VERSION`), which `0.1.2` satisfies — but **this path has never
-been exercised**, since the package didn't exist publicly until now.
+Before it was first published, generating a workspace required packing it locally
+and pointing `MNCI_ESLINT_CONFIG_SPEC` at the tarball, or `npm install` 404'd at
+step one. That made this the one path nothing had ever exercised — including every
+verification in this session, all of which used the tarball override.
 
-- **Verify:** run `mnci new` with no `MNCI_ESLINT_CONFIG_SPEC` override and
-  confirm the install resolves and the root config loads.
+Verified with the overrides explicitly unset, which is what a real user gets:
+
+- `mnci new` completes, and the generated manifest declares `^0.1.0`
+  (`ESLINT_CONFIG_VERSION`) resolving to **0.1.3 from the registry**.
+- `mnci add internal-lib` works with no override either.
+- The published config genuinely lints: a planted `const unused = 1` and
+  `const bad: any = 2` are reported as `unused-imports/no-unused-vars` and
+  `@typescript-eslint/no-explicit-any`. Resolving is not the same as loading, and
+  loading is not the same as enforcing — so all three were checked.
+- `mnci doctor` passes all seven checks on the result.
+
+Note the caret semantics, since they are easy to misread: `^0.1.0` on a `0.x`
+package allows `0.1.x` only, so a future `0.2.0` would **not** be picked up by
+`npm update` in existing workspaces and would need `ESLINT_CONFIG_VERSION` bumped
+deliberately. That is the intended behaviour for a pre-1.0 package whose minor
+bumps may break rules, but it does mean the "an upgrade reaches existing
+workspaces through `npm update`" claim holds only within a minor.
