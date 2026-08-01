@@ -3,6 +3,7 @@ import base from './configs/base.js'
 import css from './configs/css.js'
 import dependencyChecks from './configs/dependencyChecks.js'
 import html from './configs/html.js'
+import importGraph from './configs/importGraph.js'
 import jest from './configs/jest.js'
 import json from './configs/json.js'
 import markdown from './configs/markdown.js'
@@ -16,6 +17,7 @@ export { default as base } from './configs/base.js'
 export { default as css } from './configs/css.js'
 export { default as dependencyChecks } from './configs/dependencyChecks.js'
 export { default as html } from './configs/html.js'
+export { default as importGraph } from './configs/importGraph.js'
 export { default as jest } from './configs/jest.js'
 export { default as json } from './configs/json.js'
 export { default as markdown } from './configs/markdown.js'
@@ -71,6 +73,7 @@ export default function mnci(options = {}) {
     ...base,
     ...typescript,
     ...typeAware,
+    ...importGraph,
     ...react,
     ...json,
     ...yaml,

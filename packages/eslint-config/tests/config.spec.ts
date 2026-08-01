@@ -83,6 +83,17 @@ const FIXTURES: Record<string, string> = {
   // wrong — and they match `**/*.json` too, which is what made it happen.
   'tsconfig.probe.json': '{\n  // a comment TypeScript accepts\n  "compilerOptions": {}\n}\n',
   'strict.json': '{\n  "a": 1\n}\n',
+
+  // Import-graph correctness, all INSIDE one project — the gap
+  // @nx/enforce-module-boundaries does not cover, since it only sees edges
+  // between projects. The resolver must follow an extensionless relative
+  // TypeScript import, which Node's algorithm cannot: with the default resolver
+  // these three files reported false 'unresolved' errors instead.
+  'packages/demo/src/selfish.ts': "import './selfish.js'\n\nexport const s = 1\n",
+  'packages/demo/src/cycleA.ts':
+    "import { fromB } from './cycleB.js'\n\nexport function fromA (): number {\n  return fromB() + 1\n}\n",
+  'packages/demo/src/cycleB.ts':
+    "import { fromA } from './cycleA.js'\n\nexport function fromB (): number {\n  return fromA() - 1\n}\n",
 }
 
 let workspace: string
@@ -324,6 +335,30 @@ describe('@mnci/eslint-config', () => {
     const [severity] = printConfig(workspace, 'strict.json').rules['jsonc/no-comments']
 
     expect(severity).toBe(2)
+  })
+
+  it('catches an import cycle inside a single project', () => {
+    // @nx/enforce-module-boundaries sees cycles between PROJECTS; a cycle among
+    // one project's own modules was reported by nothing. It runs until it
+    // doesn't: whichever module evaluates second sees a half-built namespace.
+    expect(rulesFor('packages/demo/src/cycleA.ts')).toContain('import-x/no-cycle')
+  })
+
+  it('keeps import-x/no-unresolved OFF, which this layout requires', () => {
+    // Not a tuning choice. A project consumes an internal lib by scoped name, npm
+    // workspaces symlinks it, and its manifest points at ./dist — which does not
+    // exist until that dependency is BUILT, and `lint` does not depend on `build`.
+    // Verified on a real generated workspace: a lib re-exporting `@scope/core`
+    // reported it as unresolved. Pinned so nobody re-enables it in good faith.
+    const [severity] = printConfig(workspace, 'packages/demo/src/cycleA.ts').rules[
+      'import-x/no-unresolved'
+    ]
+
+    expect(severity).toBe(0)
+  })
+
+  it('catches a file importing itself', () => {
+    expect(rulesFor('packages/demo/src/selfish.ts')).toContain('import-x/no-self-import')
   })
 
   it('omits the dependency-checks block unless a workspaceRoot is given', () => {

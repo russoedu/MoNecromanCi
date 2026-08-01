@@ -15,21 +15,21 @@ those cite `file:line` so the claim can be re-checked.
 #3 (`mnci doctor`), #16 (registry resolution verified) — which closes **§1 and §2
 entirely**: every gap between what the project claimed and what it did.
 
-**#19a–c and #19e** (§9) and **#20** (the fake `typecheck` targets, §8) are also
-done — the linting package now covers type-aware rules, JSX accessibility and
-Vitest's globals. #20 was found _while_ doing #19a and turning its gate on
-immediately exposed pre-existing type errors in both plugins — specs in
-`nx-flutter` and `nx-python-pip` had been type-checked by nothing at all.
+**#19 (all of a–e, §9)** and **#20** (the fake `typecheck` targets, §8) are also
+done — the linting package now covers type-aware rules, JSX accessibility, Vitest's
+globals and intra-project import cycles. #20 was found _while_ doing #19a, and
+turning its gate on immediately exposed pre-existing type errors in both plugins:
+specs in `nx-flutter` and `nx-python-pip` had been type-checked by nothing at all.
 
 **Open, all P2:** #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
-#12 (multi-project `dev up`), #15 (`--preset` composition), #19d (import-graph rules)
-plus the leftovers under #19e, and Go e2e coverage in §6. Plus #7 and #13 at P3.
-**No P1 is open.**
+#12 (multi-project `dev up`), #15 (`--preset` composition), the leftovers under
+#19e (`eslint-plugin-regexp`, TOML, `eslint-plugin-n`'s fuller set), and Go e2e
+coverage in §6. Plus #7 and #13 at P3. **No P1 is open.**
 
-The remaining #19 parts keep the widest reach of anything here: the config is a
-published package, so within a minor its improvements land in existing workspaces
-through `npm update` alone, with no `mnci upgrade` and no regenerated files (see the
-caret caveat in #16).
+`@mnci/eslint-config` keeps the widest reach of anything here, which is worth
+remembering for the #19e leftovers: it is a published package, so within a minor its
+improvements land in existing workspaces through `npm update` alone, with no
+`mnci upgrade` and no regenerated files (see the caret caveat in #16).
 
 **One limitation of #5 worth knowing before picking anything up.** Nx's affected
 graph has no edge from a project to `@mnci/eslint-config`, because the lint config
@@ -514,7 +514,7 @@ the target — the stub _passes_.
 
 ## 9. The linting package
 
-### 19. Make `@mnci/eslint-config` a more complete linting package — a, b, c, e ✅ done; d open (P2)
+### 19. Make `@mnci/eslint-config` a more complete linting package — ✅ done (a–e)
 
 `@mnci/eslint-config` already covers JS/TS, React, JSON/JSONC/JSON5, YAML,
 Markdown, CSS, HTML and test files as one root config, and it is the piece with
@@ -589,12 +589,50 @@ list. Narrow in practice — the vitest stack generates `.ts` specs, and `no-und
 off for TypeScript — but `vi.fn()` in a `.js` spec really did report
 `'vi' is not defined`, which is a failure on a file the user wrote normally.
 
-**d. Import-graph correctness.** Nothing currently reports an unresolved
-specifier or an import cycle _within_ a project. `@nx/enforce-module-boundaries`
-covers cycles and illegal edges _between_ projects, so this is specifically the
-intra-project gap. `eslint-plugin-import-x` is the maintained option; watch the
-peer range, since `eslint-plugin-import@2.31.0` capping at ESLint 9 is already
-one of the two reasons this stack is pinned to 9 (see `configs/base.js`).
+**d. Import-graph correctness — ✅ done, with one rule deliberately off.**
+`eslint-plugin-import-x` (ESLint 9 compatible) now provides `no-cycle` and
+`no-self-import`, scoped to project source. This is specifically the
+**intra-project** gap: `@nx/enforce-module-boundaries` polices edges _between_
+projects, including cycles in the project graph, but nothing looked inside a
+project, so a cycle among one project's own modules was reported by nothing. It
+runs until it doesn't — whichever module evaluates second sees a half-initialised
+namespace.
+
+**Two traps found by running it, both of which would have shipped a rule that
+looks enabled and isn't:**
+
+1. **`no-cycle` needs `settings['import-x/parsers']`, and without it reports
+   nothing — ever.** `languageOptions.parser` tells ESLint how to parse the file
+   being linted; it says nothing about how import-x should parse the files it
+   _follows_. Without the mapping every `.ts` dependency is unparseable, traversal
+   stops at depth one, and the rule is silently inert. `no-unresolved` does **not**
+   need it (it resolves paths, never parses), which is exactly why the gap is easy
+   to miss: one rule works while the other is dead. `@typescript-eslint/parser` is
+   now an explicit dependency so this never depends on hoisting.
+2. **The Node resolver is unusable here.** With `import-x`'s default resolver this
+   reported **179** errors on the mnci monorepo, every one false: Node cannot
+   resolve an extensionless relative TypeScript import (`./pythonProject` →
+   `pythonProject.ts`). `createTypeScriptImportResolver` is given **no `project`
+   option**, so it discovers each file's nearest tsconfig itself — the same reason
+   `projectService: true` works in #19a, and verified the same way.
+
+**`no-unresolved` is off, and that is structural rather than a tuning choice.** In
+an mnci workspace a project consumes an internal lib by scoped name
+(`@scope/core`), npm workspaces symlinks it, and that manifest points at
+`./dist/index.js` — which does not exist until the dependency is **built**. `lint`
+does not depend on `build`, and the `ts` preset has no tsconfig `paths` to fall
+back on (cross-project imports resolve through project references, which a
+filesystem resolver cannot follow). Verified on a real generated workspace: a
+publishable lib re-exporting `@scope/core` reported it unresolved — a false
+positive on the internal-lib feature central to the whole scaffold. So the rule is
+switched **off explicitly**, and a test pins it there, rather than being left
+unconfigured for someone to enable in good faith. Little is lost: `tsc` reports an
+unresolved _typed_ import and CI runs `typecheck`; the remaining gap is a
+side-effect-only import whose file has moved.
+
+Verified on a real generated workspace after the change: the cross-project import
+lints clean, and a planted intra-project cycle is reported. Both traps are
+mutation-tested.
 
 **e. Comments in `tsconfig.json` — ✅ done, and subtler than it looked.**
 `tsconfig*.json` and `*.code-workspace` were **already** listed as JSONC, yet a

@@ -51,6 +51,7 @@ Correctness and code quality only. **Formatting is Prettier's job**, and
 | HTML                 | `@html-eslint/eslint-plugin` (incl. its a11y rules)        |
 | Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals      |
 | Type-aware TS        | `typescript-eslint` with `projectService` — see below      |
+| Import graph         | `eslint-plugin-import-x` — cycles within a project         |
 
 ### Type-aware rules (`configs/typeAware.js`)
 
@@ -85,6 +86,36 @@ Two things about it are load-bearing:
 Cost: roughly 5s → 8s on a whole-workspace lint, because it builds a real TS
 program. It therefore needs project references in order, which `nx sync:check`
 already guarantees in CI before the lint step.
+
+### Import-graph rules (`configs/importGraph.js`)
+
+`no-cycle` and `no-self-import`, scoped to project source. Specifically the
+**intra-project** gap: `@nx/enforce-module-boundaries` polices edges _between_
+projects, cycles included, but nothing looked inside a project. A cycle among one
+project's own modules runs until it doesn't — whichever module evaluates second sees
+a half-initialised namespace.
+
+Two things are load-bearing, and both fail _silently_ if changed:
+
+- **`settings['import-x/parsers']` is required for `no-cycle` to do anything at
+  all.** `languageOptions.parser` says how to parse the file being linted; it says
+  nothing about how import-x parses the files it _follows_. Without the mapping every
+  `.ts` dependency is unparseable, traversal stops at depth one, and the rule reports
+  nothing — ever. `no-unresolved` does not need it, which is why the gap is easy to
+  miss.
+- **The TypeScript resolver is not optional.** With import-x's default Node resolver
+  this reported 179 errors on the mnci monorepo, all false: Node cannot resolve an
+  extensionless relative TypeScript import. `createTypeScriptImportResolver` gets no
+  `project` option, so it finds each file's nearest tsconfig itself — a generated
+  workspace's tsconfigs cannot be enumerated up front.
+
+**`no-unresolved` is switched off deliberately**, and cannot be enabled in this
+layout. A project consumes an internal lib by scoped name (`@scope/core`); npm
+workspaces symlinks it, but its manifest points at `./dist`, which does not exist
+until that dependency is **built** — and `lint` does not depend on `build`. The `ts`
+preset has no tsconfig `paths` to fall back on either. So a completely correct
+cross-project import resolves to nothing on disk. `tsc` already reports unresolved
+_typed_ imports, and the workspace runs `typecheck` in CI.
 
 ### The stylistic exceptions
 
