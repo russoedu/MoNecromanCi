@@ -10,6 +10,15 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Nightly, purely so the e2e suite cannot rot unnoticed. It had been red since
+  # #92 — eight PRs — because a manual trigger is the only thing that ever ran it,
+  # and nobody thinks to run it. This caps the blind window at one day.
+  #
+  # Safe to add ONLY because the release steps below are gated on
+  # `event_name == 'push'`. Under the older `!= 'pull_request'` form, a scheduled
+  # run on main would have matched and started publishing packages nightly.
+  schedule:
+    - cron: '0 3 * * *'
 
 concurrency:
   # One run at a time per ref, but `cancel-in-progress` is an expression on
@@ -110,10 +119,10 @@ jobs:
       # target. Portable guard: skip cleanly when the workspace has no apps yet.
       - run: node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});if(fs.globSync('apps/*/project.json').length===0){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"
         name: Pack all apps (one zip per app -> dist/drop)
-        if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
       - uses: actions/upload-artifact@v7
-        if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
         with:
           name: drop
           path: dist/drop
@@ -126,7 +135,7 @@ jobs:
       # publish credentials are exported (raw PAT, decoded from the base64 secret).
       - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
         name: Release — version, tag and publish (npm + Python)
-        if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -137,7 +146,7 @@ jobs:
       # once tagging is guaranteed to have already happened.
       - run: git push origin --tags
         name: Push release tags (nx release's own push never runs without a remote Release configured)
-        if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
   # Real, empirical proof that mnci works on Windows, not just a static code
   # review: builds the CLI and runs the actual e2e suite (real `mnci new`/
@@ -148,15 +157,18 @@ jobs:
   # is exactly the environment that would have caught the python3-hard-coded
   # bug fixed in PR #55 before it shipped.
   #
-  # Manual-trigger only ("Run workflow" in the Actions UI, or
-  # fire_trigger/CronCreate): the real e2e suite runs ~25-30 minutes on
-  # windows-latest for every push/PR, which is slow and burns CI minutes for
-  # a check that only needs to run when Windows-sensitive code (the
-  # cross-platform guard scripts, path handling, `python`/`python3`
-  # resolution) actually changes — not on every commit.
+  # Never on a push or PR: the real e2e runs ~25-30 minutes on windows-latest,
+  # which is too slow to gate every commit for a check that only matters when
+  # Windows-sensitive code (the cross-platform guard scripts, path handling,
+  # `python`/`python3` resolution) changes.
+  #
+  # But manual-only was worse than it looked: nothing ran it, so it sat red for
+  # eight PRs. It now also runs on the nightly schedule, which costs one 30-minute
+  # job a day and means a break is noticed within a day instead of whenever
+  # somebody next remembers.
   e2e-windows:
     name: e2e (windows-latest)
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7

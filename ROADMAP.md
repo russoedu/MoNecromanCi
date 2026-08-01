@@ -24,9 +24,12 @@ specs in `nx-flutter` and `nx-python-pip` had been type-checked by nothing at al
 Go e2e coverage (§6) is done too — the suite now drives all four Go kinds, so every
 project kind mnci ships is exercised end to end on a machine with its toolchain.
 
-**Open, all P2:** #21 (the e2e is manual-only and linearly fragile — found while
-doing the Go section, and the reason a broken assertion survived eight PRs),
-#9 (container kind), #10 (e2e test projects), #11 (devcontainer), #12 (multi-project
+**#22** — release steps firing on _any_ non-PR event rather than only a push — is
+done. Found while adding #21's nightly schedule: adding that schedule to the workflow
+as it stood would have started publishing packages nightly. §8 has the detail.
+
+**Open, all P2:** #21's remaining half (a failure in one e2e section still destroys
+every later one), #9 (container kind), #10 (e2e test projects), #11 (devcontainer), #12 (multi-project
 `dev up`), #15 (`--preset` composition), and the leftovers under #19e
 (`eslint-plugin-regexp`, TOML, `eslint-plugin-n`'s fuller set). Plus #7 and #13 at
 P3. **No P1 is open.**
@@ -411,13 +414,18 @@ Carried over from `mnci-details.md` §12 so this file is the single list.
 | Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                                                                                                                                                                                                                                                    | P3  |
 | `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                                                                                                                                                                                                                                            | —   |
 
-### 21. The e2e is manual-only and linearly fragile — P2
+### 21. The e2e is manual-only and linearly fragile — half done; isolation still open (P2)
 
 Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
 rather than theorised**, and together they explain how Go went uncovered and how a
 broken assertion survived eight PRs.
 
-**It only runs on a manual `workflow_dispatch`.** Reasonable when it was written —
+**✅ The manual-only half is fixed.** A nightly `schedule` (`0 3 * * *`) now runs the
+e2e job, capping the blind window at one day instead of "until someone remembers".
+That change had a prerequisite worth knowing about, recorded as #22 below: adding a
+schedule to the workflow _as it was_ would have started publishing packages nightly.
+
+**Why it mattered.** It only ran on a manual `workflow_dispatch`. Reasonable when it was written —
 it takes ~25-30 minutes on `windows-latest` — but it means nobody notices when it
 breaks. Found while doing the Go section: the `curated root scripts` assertion had
 been **red since #92**, because roadmap #18 added `typecheck` to the `affected`
@@ -425,7 +433,7 @@ root script and updated the unit tests but not this check. Eight PRs merged over
 red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
 would cap the blind window at one day instead of "until someone remembers".
 
-**One failure destroys every later section.** `run()` throws, and the script is a
+**Still open: one failure destroys every later section.** `run()` throws, and the script is a
 single linear file, so a crash anywhere silently removes all coverage below it. This
 has now happened twice for unrelated reasons:
 
@@ -442,6 +450,41 @@ continues to the next section, then fail at the end with the full picture. The
 report machinery (`results.enforced`, the final exit) already supports this — only
 the propagation needs changing. The Flutter/Go toolchain gates show the shape: a
 section that cannot run should say so loudly and not take its neighbours with it.
+
+### 22. Release steps fired on any non-PR event, not just a push — ✅ done
+
+Found while adding #21's nightly schedule, and the reason that schedule could not
+simply be switched on. Every release-only step in both this repo's workflow and the
+generated one was gated on:
+
+```yaml
+if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+```
+
+"Anything that is not a pull request" also means **any trigger anyone adds later**.
+
+- **Generated workspaces were safe by construction, not by design.** The generated
+  workflow has exactly two triggers, `push` and `pull_request`, so the negative form
+  happened to mean `== 'push'`. Nothing said so, and adding a `workflow_dispatch` or
+  a `schedule` would silently have turned _Run workflow_ into a publish button.
+- **mnci's own workflow was already exposed.** It hand-added `workflow_dispatch` for
+  the Windows e2e job, so clicking _Run workflow_ to get that job also satisfied the
+  release condition and would have run `nx release --yes` — packing, publishing and
+  pushing tags. The e2e is exactly what a maintainer would dispatch it for.
+
+Fixed in both to the positive form, `github.event_name == 'push' && github.ref_name
+== 'main'`, which states the actual intent and cannot be widened by accident.
+Behaviour-identical for existing generated workspaces (provably: their trigger list
+has no third entry), and a real fix for this repo. Pinned by a test asserting both
+that the positive form is present and that the negative one is gone, mutation-tested.
+
+**Azure is deliberately left alone**, and this is the honest limit of the fix. Its
+condition is `ne(variables['Build.Reason'], 'PullRequest')`, and a manually queued
+run on `main` would satisfy it. The precise form would enumerate CI reasons
+(`in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')`), but no Azure pipeline
+run has ever exercised this project's release path, and changing an untested release
+trigger to guard a hypothesis is a worse trade than documenting it. Whoever first
+runs mnci on real Azure Pipelines should decide it with evidence.
 
 ---
 

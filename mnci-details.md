@@ -293,6 +293,16 @@ tags, which have no Actions equivalent):
 25 Push release tags                          (main only, non-github)
 ```
 
+"main only" means a **push** to main, gated on
+`github.event_name == 'push' && github.ref_name == 'main'` (Azure: `Build.Reason`
+is not `PullRequest` and the branch is `main`). The positive `== 'push'` form is
+deliberate: the generated workflow has exactly two triggers, so `!= 'pull_request'`
+means the same thing today — but it stops meaning that the moment anyone adds a
+`workflow_dispatch` or a `schedule`, and then clicking _Run workflow_ publishes
+packages and pushes release tags with nothing in the file hinting it could. mnci's
+own workflow hit precisely that, having hand-added `workflow_dispatch` for its
+Windows e2e job.
+
 Step 20 is the **only** verify step. It runs
 `lint,typecheck,test,build` — `typecheck` because a bundler-built project strips
 types without reading them, so `build` passing proves nothing about type
