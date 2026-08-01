@@ -320,16 +320,28 @@ enforce(
   })()
 )
 
-// Publish auth is deliberately deferred: the file exists (npm reads it) but
-// carries only comments. It previously claimed, in the README, to do scope
-// routing it never actually emitted. See the plan's ".npmrc" deferral note.
+// Publish auth. This workspace is generated with --registry npm, so the .npmrc
+// is the auth-only variant: the npmjs.org token line and NOTHING else. No
+// @scope:registry line, deliberately — npmjs.org is already the default, so
+// routing the scope there would change nothing, and presenting it as protection
+// against an accidental public publish would be the same false claim the README
+// used to make. The Azure variant DOES route the scope, which is the one case
+// where it genuinely prevents a scoped package reaching npmjs.org.
 enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
-enforce(
-  '.npmrc is comment-only — publish auth is a documented deferral, not silent config',
-  readFileSync(path.join(workspace, '.npmrc'), 'utf8')
+{
+  const npmrcDirectives = readFileSync(path.join(workspace, '.npmrc'), 'utf8')
     .split('\n')
-    .every(line => line.trim() === '' || line.trim().startsWith(';') || line.trim().startsWith('#'))
-)
+    .map(line => line.trim())
+    .filter(line => line !== '' && !line.startsWith(';') && !line.startsWith('#'))
+  enforce(
+    '.npmrc authenticates npmjs.org, so a publish can actually succeed',
+    npmrcDirectives.includes('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}')
+  )
+  enforce(
+    '.npmrc routes nothing for public npm — no scope line claiming protection it cannot give',
+    !npmrcDirectives.some(line => line.includes(':registry='))
+  )
+}
 enforce('commitlint config written', existsSync(path.join(workspace, 'commitlint.config.mjs')))
 const hookPath = path.join(workspace, '.husky/commit-msg')
 // NTFS has no POSIX exec-bit semantics — `mode & 0o111` is meaningless on

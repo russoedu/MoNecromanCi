@@ -34,7 +34,7 @@ eslint.config.mjs         # ESLint flat config — mnci-owned; 3 lines importing
 .prettierrc.json + .prettierignore   # Prettier config for code formatting (JavaScript Standard Style)
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
-.npmrc                    # comment-only — publish auth is a documented deferral (see below)
+.npmrc                    # publish auth (azure also routes @scope to the feed)
 <workspace-name>.code-workspace  # single-file VS Code workspace (folders, extensions, settings)
 package.json              # Root scripts (build, lint, test, format, release:preview, etc)
 ```
@@ -336,7 +336,7 @@ mnci worked while everything it produced did not.
 1. `nx.json` (release, sync, generators, mnci metadata)
 2. `package.json` (curated root scripts only — name, scripts, the dual TS compiler deps,
    the ESLint toolchain)
-3. `.npmrc` (comment-only — see the deferral below)
+3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
 4. `.prettierrc.json` + `.prettierignore` (formatting)
 5. `eslint.config.mjs` (three lines importing `@mnci/eslint-config`)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
@@ -368,13 +368,29 @@ Two things about it are load-bearing and easy to undo by accident:
   `function f (a)` to `function f(a)` on every run, so enabling it makes `npm run lint`
   and `npm run format:check` mutually unsatisfiable. A regression test asserts it is off.
 
-### `.npmrc` is deliberately empty
+### `.npmrc`: the two registry kinds get deliberately different files
 
-It carries comments only. The old file claimed, in `packages/cli/README.md`, that scope
-routing made accidental public publishes impossible — it never emitted a
-`@scope:registry` line at all, so that was simply false. Rather than ship half-wired
-auth, publish authentication is an explicit deferral: the CI token export stays in place
-so wiring it later is one line, and the generated `.npmrc` says so in a comment.
+Publish auth is wired, and the two variants differ because the honest answer differs.
+
+**Azure Artifacts gets `@scope:registry` routing plus feed credentials.** Scope routing
+is real protection here: npm prefers a scope's registry over the global one when
+publishing a scoped package, so a `@scope/*` package cannot reach npmjs.org by accident.
+Verified against a real registry (npm reports `Publishing to <feed>`), and again in a
+real generated workspace. Only the scope is routed — a global `registry=` would send
+every install through the feed, so `npm ci` would need feed auth just to fetch public
+packages.
+
+**Public npm gets the auth line only, no routing.** npmjs.org is already the default, so
+routing the scope there changes nothing, and calling it protection would be false — the
+public registry _is_ the intended target. This matters because the old file made exactly
+that false claim: `packages/cli/README.md` asserted scope routing made accidental public
+publishes impossible while no `@scope:registry` line was ever emitted, and
+`overlay.test.ts` asserted the line's absence. **Do not reintroduce a protection the
+configuration cannot provide** — the generated file now says why it is absent.
+
+One trap: the same `PAT` is consumed in **two encodings**. npm's `_password` takes the
+base64 value Azure hands out, as-is; `twine` wants the raw token, which the CI release
+guard decodes. Check which before wiring a third protocol.
 
 ### Tag-Only Git
 

@@ -9,36 +9,57 @@ what it _does_ come before new capability. Several entries below were found by
 running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
-**Done so far:** #2 (`format:check` in CI), #4 (npm cache), #6 (superseded-run
-handling), #8 (`react-lib`), #14 (dots in names), #17 (`mnci upgrade`'s defects),
-#18 (`typecheck` in CI).
-**Next up:** #1 (publish auth) is the last P1 — it needs a deliberate decision on
-scope routing, which is why it has not been picked up yet.
+**Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
+#6 (superseded-run handling), #8 (`react-lib`), #14 (dots in names),
+#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI) — every P1 is closed.
+**Next up:** #3 (`mnci doctor`) and #5 (`nx affected` for PR runs), both P2. #5
+wants care: a misconfigured affected computation makes PR CI pass while broken,
+which is a silently weakened gate rather than a visible failure.
 
 ---
 
 ## 1. Promises the project doesn't currently keep
 
-### 1. Wire publish authentication — P1
+### 1. Wire publish authentication — ✅ done
 
-The generated `.npmrc` is comments-only (`npmrcContent`, `overlay.ts:143`), so
-`npm publish` never authenticates in any generated workspace. This hollows out
-the headline feature: `nx release` versions and tags correctly, then cannot
-actually publish.
+The generated `.npmrc` was comments-only, so `npm publish` never authenticated in
+any generated workspace while the CI dutifully exported a token nothing consumed.
+The headline release feature stopped one step short.
 
-The asymmetry is the tell — mnci publishes _itself_ fine (this repo has a real
-root `.npmrc` with `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`), while
-nothing it generates can. The CI token export (`NODE_AUTH_TOKEN` / `PAT`) is
-already in place and the overlay's own comment says completing this is roughly a
-one-line change.
+The blocker was never difficulty — it was the scope-routing decision, because the
+wrong choice is **worse than the empty file**: a half-wired `.npmrc` looks like
+protection while providing none, which is the exact mistake this file's own
+history records. So the two registry kinds get deliberately different files.
 
-- **Files:** `packages/cli/src/overlay.ts` (`npmrcContent`), the publish-path
-  assertions in `packages/cli/e2e/cli.e2e.mjs`
-- **Care:** decide scope routing (`@scope:registry`) deliberately. The old file
-  claimed scope routing prevented accidental public publishes while emitting no
-  such line — do not reintroduce a safety property that isn't real.
-- **Verify:** a generated workspace publishes to a local Verdaccio registry
-  (already a devDependency here) end to end.
+**`azure-artifacts`: scope routing plus feed credentials.** `@<scope>:registry`
+sends both resolution and `npm publish` of `@<scope>/*` to the feed, because npm
+prefers a scope's registry over the global one when publishing a scoped package.
+That is real protection — `@<scope>/*` cannot reach npmjs.org by accident.
+
+**`npm`: the auth line only, no routing.** npmjs.org is already the default, so
+routing the scope there changes nothing, and presenting it as accidental-publish
+protection would be false — the public registry _is_ the target. The generated
+file says so, rather than carrying a line that looks protective.
+
+Only the scope is routed, never a global `registry=`, so `npm ci` does not need
+feed auth to fetch public packages.
+
+Verified against real registries rather than from docs, which mattered because the
+whole decision rests on npm's publish-registry resolution order:
+
+- With only `@demo:registry` set, a real `npm publish` reported
+  `Publishing to http://localhost:4873/` and the package landed in Verdaccio —
+  not npmjs.org. That is the protection claim, proven.
+- A generated `azure-artifacts` workspace's `npm publish --dry-run` reported
+  `Publishing to https://pkgs.dev.azure.com/.../myfeed/npm/registry/`, while
+  `npm config get registry` stayed `https://registry.npmjs.org/`.
+- With `PAT` unset, `npm install` of a public dependency still succeeded — so an
+  unresolved env var breaks nothing locally and no token is needed for daily work.
+
+Not verified, and deliberately not attempted: a real publish to npmjs.org from the
+`npm` variant. That would be an actual public release of a throwaway package. Its
+correctness rests on the token line being read (confirmed) and npmjs.org being the
+resolved target (confirmed).
 
 ### 2. Enforce Prettier somewhere automatic — ✅ done
 
