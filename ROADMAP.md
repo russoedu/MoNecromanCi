@@ -28,16 +28,16 @@ project kind mnci ships is exercised end to end on a machine with its toolchain.
 done. Found while adding #21's nightly schedule: adding that schedule to the workflow
 as it stood would have started publishing packages nightly. §8 has the detail.
 
-**Open, all P2:** #21's remaining half (a failure in one e2e section still destroys
-every later one), #9 (container kind), #10 (e2e test projects), #11 (devcontainer), #12 (multi-project
-`dev up`), #15 (`--preset` composition), and the leftovers under #19e
-(`eslint-plugin-regexp`, TOML, `eslint-plugin-n`'s fuller set). Plus #7 and #13 at
-P3. **No P1 is open.**
+**#19e is now finished too**: `eslint-plugin-regexp` and TOML parsing are in, and
+`eslint-plugin-n`'s fuller `recommended` set was measured and **rejected** — it fails
+this config's own "earns its keep" test (189 false positives from one rule). §9 has
+all three write-ups. That closes #19 completely, and with it every gap in
+`@mnci/eslint-config` this session identified.
 
-`@mnci/eslint-config` keeps the widest reach of anything here, which is worth
-remembering for the #19e leftovers: it is a published package, so within a minor its
-improvements land in existing workspaces through `npm update` alone, with no
-`mnci upgrade` and no regenerated files (see the caret caveat in #16).
+**Open, all P2:** #21's remaining half (a failure in one e2e section still destroys
+every later one), #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
+#12 (multi-project `dev up`), #15 (`--preset` composition). Plus #7 and #13 at P3.
+**No P1 is open.**
 
 **One limitation of #5 worth knowing before picking anything up.** Nx's affected
 graph has no edge from a project to `@mnci/eslint-config`, because the lint config
@@ -723,11 +723,44 @@ earlier `'error'` survives. Fixed by switching it off explicitly, with
 `.vscode/*.json` added to the same block. Both directions are tested: comments
 allowed in the JSONC family, still an error in a plain `.json`.
 
-**Still open under e:** `eslint-plugin-regexp` (catastrophic backtracking and dead
-alternatives are genuine correctness bugs, and squarely in this config's scope);
-TOML, since mnci writes `pyproject.toml` files and no rule reads them;
-`eslint-plugin-n` is already a dependency and wired for a handful of rules, so its
-`recommended` set may be under-used.
+**Also done under e: `eslint-plugin-regexp`.** `flat/recommended` minus four rules.
+Measured first: three real findings on this monorepo (capturing groups never read).
+The value is `no-super-linear-backtracking` — a regex that is correct but takes
+exponential time on a crafted input, a real DoS in anything matching user data and
+invisible to review.
+
+The four exclusions are a **crash**, not a preference: `no-legacy-features`,
+`no-missing-g-flag`, `no-useless-dollar-replacements` and `no-useless-flag` reach for
+TypeScript type information and throw (`Cannot read properties of undefined (reading
+'esTreeNodeToTSNodeMap')`) whenever the TS parser is present without type-aware
+services — the normal case for any `.ts` outside `{apps,libs,packages}/<name>/src`.
+A crash kills linting for the whole file. Found only by running the composed config
+on a real repo: an isolated test of the preset passes, because in isolation there are
+no parser services to be missing. All four were located by iterating the real lint,
+not guessed.
+
+**Also done under e: TOML, as `flat/base` only.** mnci writes `pyproject.toml` for
+every Python project and nothing read them, so a syntax error surfaced later as a
+confusing hatchling/pip failure. `flat/base` makes it a fatal parse error.
+
+`flat/standard` was measured and **rejected**: almost entirely formatting, and it
+reports six `toml/array-bracket-spacing` errors on the `pyproject.toml`
+`@mnci/nx-python-pip` itself generates — every Python workspace would have failed
+`npm run lint` on a file the user never wrote, the `react-lib` rollup bug again. A
+test pins the real generated content as clean. TOML _formatting_ is therefore
+unenforced, deliberately: Prettier has no TOML support and the alternative measured
+worse than nothing. Verified on a real generated Python workspace, both directions.
+
+**Rejected under e: `eslint-plugin-n`'s fuller `recommended` set.** It fails this
+config's own "earns its keep" test, the same one three `unicorn` rules already fail.
+`n/no-missing-import` alone produced **189** false positives on this monorepo — the
+identical unbuilt-`dist` and extensionless-TS problem that forced `no-unresolved`
+off in #19d — and `no-unsupported-features/*` added six more by keying on `engines`.
+A narrow subset (`no-process-exit`, `hashbang`, `process-exit-as-throw`) reported
+four findings, and **all four were legitimate patterns**: a test runner exiting
+non-zero, and shebangs on scripts run via `node`. Zero real bugs. The four rules
+already enabled in `configs/base.js` are the ones that pay for themselves; the rest
+are not worth the exceptions they would need.
 
 **Two constraints any addition must respect** — both already load-bearing, both
 easy to break from here:

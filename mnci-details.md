@@ -568,8 +568,8 @@ npm run typecheck                # tsc only — bundlers do NOT type-check
 npx nx run-many -t lint,typecheck,test,build   # everything at once
 ```
 
-Expected: **432 unit tests** — 313 (`cli`), 51 (`nx-flutter`), 41
-(`nx-python-pip`), 27 (`eslint-config`). `packages/cli` enforces an **85%
+Expected: **437 unit tests** — 314 (`cli`), 51 (`nx-flutter`), 41
+(`nx-python-pip`), 31 (`eslint-config`). `packages/cli` enforces an **85%
 coverage threshold** on statements/branches/functions/lines; the other three
 packages have no threshold.
 

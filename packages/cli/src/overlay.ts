@@ -1327,7 +1327,7 @@ function npmAuthEnvVariable(
  * @typeParam None - this function has no generic type parameters.
  */
 export function poolBlock(agent: string): string {
-  return /^(ubuntu|windows|macos)-/i.test(agent) ? `  vmImage: ${agent}` : `  name: ${agent}`
+  return /^(?:ubuntu|windows|macos)-/i.test(agent) ? `  vmImage: ${agent}` : `  name: ${agent}`
 }
 
 /**
