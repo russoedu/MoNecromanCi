@@ -175,7 +175,35 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Go Finally Has e2e Coverage (Latest)
+### Release Steps Fired on Any Non-PR Event, and the e2e Now Runs Nightly (Latest)
+
+ROADMAP #22 and half of #21. Found while trying to add a nightly schedule for the
+e2e: doing that to the workflow _as it stood_ would have started publishing packages
+every night.
+
+- **Every release-only step was gated on `event_name != 'pull_request' && ref_name
+== 'main'`.** "Anything that is not a PR" also means _any trigger anyone adds
+  later_. Generated workspaces were safe only **by construction** — their workflow
+  has exactly two triggers — while mnci's own workflow was already exposed, having
+  hand-added `workflow_dispatch` for the Windows e2e job: clicking _Run workflow_ to
+  get that job also satisfied the release condition and would have run
+  `nx release --yes`.
+- **Fixed to the positive form** in both, `event_name == 'push' && ref_name ==
+'main'`. Behaviour-identical for existing generated workspaces (provable — no third
+  trigger exists), a real fix here. A test asserts the positive form is present _and_
+  the negative one is gone, so it cannot come back; mutation-tested.
+- **Azure is deliberately untouched.** `ne(Build.Reason, 'PullRequest')` has the same
+  shape, and a manually queued run on `main` would satisfy it. The precise fix is
+  `in(Build.Reason, 'IndividualCI', 'BatchedCI')`, but no Azure run has ever
+  exercised this project's release path, and changing an untested release trigger to
+  guard a hypothesis is the worse trade. Documented instead — decide it with evidence.
+- **The e2e now also runs on a nightly `schedule`** (`0 3 * * *`), which is safe
+  _because_ of the gating fix. It had been red since #92 — eight PRs — since a manual
+  trigger was the only thing that ever ran it. Still open (#21): a failure in one e2e
+  section destroys every later section, which is how one bad `pip install` reported
+  nothing at all about Go or Flutter.
+
+### Go Finally Has e2e Coverage
 
 ROADMAP §6's oldest gap. All four Go kinds had real unit tests and real CI wiring,
 but nothing had ever driven them end to end, so every Go invariant in these docs was

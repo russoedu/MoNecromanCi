@@ -1660,7 +1660,18 @@ export function githubActionsYaml(
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
   ci: CiProvider = 'github'
 ): string {
-  const onMain = `github.event_name != 'pull_request' && github.ref_name == 'main'`
+  // `== 'push'`, not `!= 'pull_request'`. Identical today — the generated workflow
+  // has exactly two triggers, `push` and `pull_request` — but the negative form
+  // says "anything that is not a PR", which quietly means "and any trigger anyone
+  // adds later". Add a `workflow_dispatch` or a `schedule` to a workflow written
+  // the negative way and clicking *Run workflow* starts publishing packages and
+  // pushing release tags, with nothing in the file hinting that it would.
+  //
+  // Not hypothetical: mnci's own workflow hand-added `workflow_dispatch` for its
+  // Windows e2e job and inherited exactly that hazard. The positive form states
+  // the actual intent — release on a push to main — and cannot be widened by
+  // accident.
+  const onMain = `github.event_name == 'push' && github.ref_name == 'main'`
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(
     registryKind,
     name => `\${{ secrets.${name} }}`

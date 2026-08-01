@@ -634,6 +634,20 @@ describe('githubActionsYaml', () => {
     )
   })
 
+  it('gates every release-only step on a PUSH to main, never merely "not a PR"', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    // The positive form is load-bearing even though it is equivalent today: the
+    // generated workflow has exactly two triggers, so `!= 'pull_request'` means
+    // `== 'push'` right now. It stops meaning that the moment anyone adds a
+    // `workflow_dispatch` or a `schedule`, at which point clicking *Run workflow*
+    // would publish packages and push release tags with nothing in the file
+    // suggesting it could. mnci's own workflow hit exactly that, having hand-added
+    // `workflow_dispatch` for its Windows e2e job.
+    expect(workflow).toContain("github.event_name == 'push' && github.ref_name == 'main'")
+    expect(workflow).not.toContain("github.event_name != 'pull_request'")
+  })
+
   it('does not attach HEAD to a branch (actions/checkout is never detached on a push-triggered run)', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
     expect(workflow).toContain('actions/checkout@v4')
