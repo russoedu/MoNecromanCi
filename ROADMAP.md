@@ -11,10 +11,12 @@ those cite `file:line` so the claim can be re-checked.
 
 **Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
 #6 (superseded-run handling), #8 (`react-lib`), #14 (dots in names),
-#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI) — every P1 is closed.
-**Next up:** #3 (`mnci doctor`) and #5 (`nx affected` for PR runs), both P2. #5
-wants care: a misconfigured affected computation makes PR CI pass while broken,
-which is a silently weakened gate rather than a visible failure.
+#17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI), #3 (`mnci doctor`) —
+every P1 is closed.
+**Next up:** #5 (`nx affected` for PR runs) wants care: a misconfigured affected
+computation makes PR CI pass while broken, which is a silently weakened gate rather
+than a visible failure, so it needs verifying across real pushes rather than
+locally.
 
 ---
 
@@ -83,25 +85,38 @@ exits non-zero on a deliberately mis-formatted file, and green again after
 Still open, deliberately deferred: a `pre-commit` hook running Prettier over
 staged files. CI is the gate that matters; a local hook is convenience on top.
 
-### 3. `mnci doctor` — P2
+### 3. `mnci doctor` — ✅ done
 
-Previously parked as "out of scope until the model is proven". It's proven: the
-ESLint drift fixed in #82 was exactly this class of bug — a documented invariant
-(`pinned to ESLint 9`) that silently did not hold, because four package manifests
-still said `^10.8.0` and that is what actually resolved.
+Previously parked as "out of scope until the model is proven". This session proved
+it twice: the ESLint drift in #82 was a documented invariant that silently did not
+hold, and the `mnci upgrade` defects in #17 shipped past a type error TypeScript had
+already flagged.
 
-Checks worth having, all cheap and all derived from existing invariants:
+`mnci doctor` is **read-only** — it never edits the workspace — and every failing
+finding names the command that fixes it, usually `mnci upgrade`. It exits non-zero
+when anything failed, so it works as a CI step as well as a local command.
 
-- exactly one ESLint config, at the root; none under `{apps,libs,packages}/*`
-- no stray `.prettierrc` outranking `.prettierrc.json`
-- `@nx/eslint/plugin` registered in `nx.json`
-- resolved `eslint` major inside the supported range (the #82 bug)
-- `nx sync` clean
-- `.npmrc` consistent with the recorded registry choice
-- every publishable Dart/Python lib still carries its `versionActions` override
-  (its absence breaks release for the _whole_ workspace)
+Eight checks, each corresponding to an invariant that has **actually** been
+violated in this repo or a workspace it generated. That is the bar for adding one:
+a check nobody has ever needed is noise that trains people to ignore the output.
 
-- **Files:** new `packages/cli/src/commands/doctor.ts`, wired in `cli.ts`
+| Check                                  | Why it exists                                                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Exactly one root ESLint config         | The config fragmented twice: every `@nx/*` generator writes one                                                                       |
+| No per-project ESLint configs          | Same, from the other direction — each project lints against whichever config sits nearest                                             |
+| No stray `.prettierrc`                 | Invisible failure: it outranks `.prettierrc.json`, so the whole formatting opinion is discarded while both files look fine            |
+| `@nx/eslint/plugin` registered         | Without it `npm run lint` exits 0 while linting nothing — a green check proving nothing                                               |
+| Resolved `eslint` major                | The #82 bug exactly: manifests declared `^10` while the docs said 9, and only the **installed** version revealed it                   |
+| `.npmrc` matches the recorded registry | Meaningful now that #1 landed: the two registry kinds get different files, and an Azure workspace additionally needs its scope routed |
+| `versionActions` overrides             | Highest blast radius — its absence aborts `nx release` for the **entire** workspace, not the offending project                        |
+| `nx sync:check`                        | The one check that shells out, because only Nx can answer it                                                                          |
+
+Verified against real workspaces rather than fixtures alone. On a real generated
+workspace it found a genuine drift — an `.npmrc` predating #1, so publishing could
+not authenticate — reported `run \`mnci upgrade\``, and passed all eight after that
+upgrade was applied. Exit codes confirmed 1 then 0. An `azure-artifacts`workspace
+exercises the scope-routing branch instead, and planted faults (a per-project
+config, a stray`.prettierrc`) are both caught with their remedies.
 
 ---
 

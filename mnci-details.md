@@ -44,12 +44,13 @@ tsconfig.base.json    # shared TS config
 
 ---
 
-## 2. The three commands
+## 2. The four commands
 
 ```
 mnci new [name]      Create a monorepo (Nx TS preset + the mnci overlay)
 mnci add [kind] [name]  Add a project by delegating to a generator
 mnci upgrade         Re-apply the latest overlay to an existing workspace
+mnci doctor          Check the workspace's invariants (read-only; non-zero on failure)
 ```
 
 Running `mnci` bare enters an interactive wizard.

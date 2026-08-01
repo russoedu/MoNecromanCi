@@ -24,7 +24,7 @@ first-party (or established community) Nx equivalent:
 | Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay   |
 | doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest               |
 
-## Commands (deliberately just three)
+## Commands (deliberately just four)
 
 ```sh
 mnci new my-repo            # create a monorepo (prompts scope + registry)
@@ -61,7 +61,29 @@ mnci add flutter-internal-lib core # private shared package -> libs/
 
 mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
+
+mnci doctor                   # check this workspace's invariants (read-only)
 ```
+
+## `mnci doctor`: checking the invariants actually hold
+
+Read-only — it never edits the workspace. Every failing finding names the command
+that fixes it (usually `mnci upgrade`), and it exits non-zero when anything failed,
+so it works as a CI step as well as a local command.
+
+Every check corresponds to an invariant that has **actually** been violated, in
+this repo or in a workspace it generated. None are hypothetical; a check nobody has
+ever needed is noise that trains people to ignore the output.
+
+| Check                                                   | The failure it catches                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Exactly one root ESLint config, and no per-project ones | The config fragmenting — every `@nx/*` generator writes one, so each project ends up linting against whichever config sits nearest |
+| No stray `.prettierrc`                                  | It outranks `.prettierrc.json`, so the whole formatting opinion is silently discarded while both files look fine                   |
+| `@nx/eslint/plugin` registered in `nx.json`             | Without it `npm run lint` exits 0 while linting nothing                                                                            |
+| The **resolved** `eslint` major                         | A declared range and an installed version are different things — manifests once said `^10` while the pin said 9                    |
+| `.npmrc` matches the recorded registry                  | The two registry kinds get different files; an Azure workspace also needs its scope routed                                         |
+| `versionActions` on publishable Dart/Python packages    | Its absence aborts `nx release` for the **whole** workspace, not just that project                                                 |
+| `nx sync:check`                                         | A stale TypeScript project reference that was never committed                                                                      |
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
 each a single cross-platform command:

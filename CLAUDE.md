@@ -72,6 +72,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 - **`packages/cli/src/commands/new.ts`** — workspace generation (calls `applyOverlay`)
 - **`packages/cli/src/commands/add.ts`** — per-project scaffolding (delegates to Nx generators)
 - **`packages/cli/src/commands/upgrade.ts`** — re-apply overlay to existing workspace
+- **`packages/cli/src/commands/doctor.ts`** — read-only invariant check (`mnci doctor`); exits non-zero on any finding, and every finding names its remedy
 
 ### Core Implementation
 

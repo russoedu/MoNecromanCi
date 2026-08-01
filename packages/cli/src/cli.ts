@@ -1,5 +1,6 @@
 import { Argument, Command } from 'commander'
 import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './commands/add'
+import { runDoctor } from './commands/doctor'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
 import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
@@ -10,8 +11,8 @@ import { checkForUpdate, readCliVersion } from './util/versionChecker'
  * Builds the commander program for the CLI.
  *
  * @remarks
- * Three commands: `new`, `add`, and `upgrade` (re-applies the overlay to an
- * existing workspace — see `commands/upgrade.ts`). Everything a generated
+ * Four commands: `new`, `add`, `upgrade` (re-applies the overlay to an existing
+ * workspace) and `doctor` (read-only invariant check). Everything a generated
  * repo needs day-to-day (build/test/lint/release) is plain Nx, so the CLI
  * deliberately has no wrapper commands for those.
  *
@@ -69,6 +70,15 @@ export function buildProgram(cliVersion: string): Command {
     )
     .action((options: UpgradeOptions) => {
       runUpgrade(process.cwd(), options)
+    })
+
+  program
+    .command('doctor')
+    .description(
+      'Check this workspace against the invariants mnci maintains (one ESLint config, no stray .prettierrc, the eslint plugin registered, the resolved eslint major, .npmrc vs the recorded registry, versionActions overrides, nx sync) — read-only; exits non-zero if anything failed'
+    )
+    .action(() => {
+      runDoctor(process.cwd())
     })
 
   program
