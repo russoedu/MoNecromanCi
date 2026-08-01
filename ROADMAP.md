@@ -21,10 +21,15 @@ globals and intra-project import cycles. #20 was found _while_ doing #19a, and
 turning its gate on immediately exposed pre-existing type errors in both plugins:
 specs in `nx-flutter` and `nx-python-pip` had been type-checked by nothing at all.
 
-**Open, all P2:** #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
-#12 (multi-project `dev up`), #15 (`--preset` composition), the leftovers under
-#19e (`eslint-plugin-regexp`, TOML, `eslint-plugin-n`'s fuller set), and Go e2e
-coverage in §6. Plus #7 and #13 at P3. **No P1 is open.**
+Go e2e coverage (§6) is done too — the suite now drives all four Go kinds, so every
+project kind mnci ships is exercised end to end on a machine with its toolchain.
+
+**Open, all P2:** #21 (the e2e is manual-only and linearly fragile — found while
+doing the Go section, and the reason a broken assertion survived eight PRs),
+#9 (container kind), #10 (e2e test projects), #11 (devcontainer), #12 (multi-project
+`dev up`), #15 (`--preset` composition), and the leftovers under #19e
+(`eslint-plugin-regexp`, TOML, `eslint-plugin-n`'s fuller set). Plus #7 and #13 at
+P3. **No P1 is open.**
 
 `@mnci/eslint-config` keeps the widest reach of anything here, which is worth
 remembering for the #19e leftovers: it is a published package, so within a minor its
@@ -397,14 +402,46 @@ its TS projects; Python and Go correctly have no such target).
 
 Carried over from `mnci-details.md` §12 so this file is the single list.
 
-| Gap                                          | Note                                                                                                                                      | P   |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| **Go has no e2e coverage**                   | Real unit tests and real CI wiring, but the e2e never drives it. The Flutter section's SDK-present/`SKIPPED` pattern would work unchanged | P2  |
-| `go-function-app` has no `:start`            | Writes no `host.json`/custom-handler config, so there is nothing for `func start` to attach to                                            | P3  |
-| Function-app deployment not wired            | The drop zip is the deploy input; no `AzureFunctionApp@2`-style step                                                                      | P3  |
-| Flutter apps build web only                  | Android needs the SDK + NDK on every agent; iOS is impossible on Linux                                                                    | P3  |
-| Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                         | P3  |
-| `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                 | —   |
+| Gap                                          | Note                                                                                                                                                                                                                                                                                                                                                                 | P   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| ~~**Go has no e2e coverage**~~               | ✅ done — the e2e drives all four kinds: one root `go.mod` and no `go.work`, every target written explicitly, a cross-project import with no vendoring, real `go build`/`go test`, a `golangci-lint` run, a packaged binary in the drop zip, and `nx release` surviving a `go-lib`. Gated on the toolchain and reported `SKIPPED` when absent, exactly as Flutter is | —   |
+| `go-function-app` has no `:start`            | Writes no `host.json`/custom-handler config, so there is nothing for `func start` to attach to                                                                                                                                                                                                                                                                       | P3  |
+| Function-app deployment not wired            | The drop zip is the deploy input; no `AzureFunctionApp@2`-style step                                                                                                                                                                                                                                                                                                 | P3  |
+| Flutter apps build web only                  | Android needs the SDK + NDK on every agent; iOS is impossible on Linux                                                                                                                                                                                                                                                                                               | P3  |
+| Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                                                                                                                                                                                                                                                    | P3  |
+| `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                                                                                                                                                                                                                                            | —   |
+
+### 21. The e2e is manual-only and linearly fragile — P2
+
+Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
+rather than theorised**, and together they explain how Go went uncovered and how a
+broken assertion survived eight PRs.
+
+**It only runs on a manual `workflow_dispatch`.** Reasonable when it was written —
+it takes ~25-30 minutes on `windows-latest` — but it means nobody notices when it
+breaks. Found while doing the Go section: the `curated root scripts` assertion had
+been **red since #92**, because roadmap #18 added `typecheck` to the `affected`
+root script and updated the unit tests but not this check. Eight PRs merged over a
+red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
+would cap the blind window at one day instead of "until someone remembers".
+
+**One failure destroys every later section.** `run()` throws, and the script is a
+single linear file, so a crash anywhere silently removes all coverage below it. This
+has now happened twice for unrelated reasons:
+
+1. A removed `--linter oxlint` flag hard-crashed the suite mid-file, taking the
+   whole Python section down — recorded in the file's own header.
+2. `python3 -m pip install -r requirements-dev.txt` failed on a machine whose
+   `packaging` came from Debian (`Cannot uninstall packaging 24.0, RECORD file not
+found`), which took **Go and Flutter** down with it. That is an environment
+   problem, not an mnci bug — but the suite reporting nothing at all about Go
+   because _Python's toolchain_ could not install is the wrong failure mode.
+
+Worth fixing together: wrap each section so a failure is recorded and the run
+continues to the next section, then fail at the end with the full picture. The
+report machinery (`results.enforced`, the final exit) already supports this — only
+the propagation needs changing. The Flutter/Go toolchain gates show the shape: a
+section that cannot run should say so loudly and not take its neighbours with it.
 
 ---
 

@@ -584,11 +584,17 @@ node packages/cli/e2e/cli.e2e.mjs      # ~15-30 min, real network
 It runs the **built** CLI for real: `mnci new` (real `create-nx-workspace`, real
 npm installs), `mnci add` for each kind, then real `nx run-many -t lint,test,build`
 and a real `nx release --dry-run` inside the generated repo. Expected result:
-**115 enforced checks, exit 0, zero skips** (with the Flutter SDK on `PATH`).
+**150 enforced checks, exit 0, zero skips** (with both the Flutter SDK and the Go
+toolchain on `PATH`). Without Flutter it is **140 checks and one SKIPPED section**,
+which is the shape a Linux machine with Go but no Flutter SDK produces.
 
-**Toolchain gating.** The Flutter section is the _only_ skippable one: the SDK is
-not on a stock machine or CI image, so it runs when `flutter` is present and
-reports **SKIPPED** loudly when not. Nothing else is skippable.
+**Toolchain gating.** Two sections are skippable, **Flutter** and **Go**, because
+neither toolchain is on every machine or CI image. Each runs when its toolchain is
+present and reports **SKIPPED** loudly when not — never silently dropped, which is
+exactly how Go ended up with no coverage at all for so long. `golangci-lint` is
+gated separately from `go` inside the Go section: hosted images ship Go but not the
+linter, so only the lint assertion waits on it and the structural, build, test,
+package and release checks still run. Nothing else is skippable.
 
 In CI the e2e is **`workflow_dispatch`-only** on `windows-latest` (it is slow);
 the default PR job does not run it.
@@ -672,9 +678,6 @@ the default PR job does not run it.
   `.npmrc` line could give it one — npmjs.org is the intended target there. Only
   the `azure-artifacts` variant routes the scope (see §9c). Publish auth itself is
   wired for both.
-- **Go has no e2e coverage.** It has real unit tests and real CI wiring, but the
-  e2e never drives it, because it needs Go on the machine. The skip mechanism
-  built for Flutter would work here but has not been applied.
 - **Flutter apps build for web only.** Android needs the Android SDK + NDK on
   every agent; iOS is impossible on Linux. Add platforms per-app with
   `flutter create --platforms=…`.

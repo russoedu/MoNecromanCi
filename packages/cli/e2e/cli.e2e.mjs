@@ -232,6 +232,36 @@ function hasFlutter() {
   }
 }
 
+/** Whether the Go toolchain is available to drive the Go section. */
+function hasGo() {
+  try {
+    execSync('go version', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Whether `golangci-lint` is on the PATH.
+ *
+ * @remarks
+ * Gated separately from {@link hasGo}, on purpose. Hosted CI images ship Go but
+ * not `golangci-lint` (this repo's own pipeline `go install`s it), so tying the
+ * whole section to the linter would skip the structural, build, test, package and
+ * release checks on any machine that merely lacks it — which is most of them. The
+ * lint assertion alone is gated, so everything else still runs.
+ * @returns `true` when the linter can be invoked.
+ */
+function hasGolangciLint() {
+  try {
+    execSync('golangci-lint --version', { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const temporary = mkdtempSync(path.join(tmpdir(), 'mnci-e2e-'))
 const workspace = path.join(temporary, 'demo')
 
@@ -357,11 +387,21 @@ enforce(
   'husky + commitlint installed as devDependencies',
   Boolean(rootDevelopmentDependencies.husky && rootDevelopmentDependencies['@commitlint/cli'])
 )
+// `affected` carries `typecheck` since #92 (roadmap #18). This assertion was not
+// updated then, so the e2e has been red ever since and nobody saw it — it only runs
+// on a manual `workflow_dispatch`. Worth remembering when changing ROOT_SCRIPTS: the
+// unit tests cover the constant, but this is the only check that the value actually
+// reaches a generated workspace's manifest.
 enforce(
   'curated root scripts stamped (build/affected/prepare)',
   rootManifest.scripts?.build === 'nx run-many -t build' &&
-    rootManifest.scripts?.affected === 'nx affected -t lint,test,build' &&
-    rootManifest.scripts?.prepare === 'husky'
+    rootManifest.scripts?.affected === 'nx affected -t lint,typecheck,test,build' &&
+    rootManifest.scripts?.prepare === 'husky',
+  JSON.stringify({
+    build: rootManifest.scripts?.build,
+    affected: rootManifest.scripts?.affected,
+    prepare: rootManifest.scripts?.prepare,
+  })
 )
 // Real-execution proof, on a workspace with zero Python projects, that
 // `python:install` no-ops cleanly rather than erroring on a missing
@@ -1540,6 +1580,149 @@ enforce(
     altReleasePublishDryRun.output.includes(`[dry-run] would run: ${PYTHON} -m twine upload`),
   altReleasePublishDryRun.output
 )
+
+/* ---------------------------------------------------------------------------
+ * Go — @nx-go/nx-go, the one third-party plugin, in the single-root-`go.mod`
+ * layout mnci imposes on it.
+ *
+ * This section closes the coverage hole ROADMAP §6 recorded: all four Go kinds
+ * had real unit tests and real CI wiring, but nothing had ever driven them end to
+ * end, so every invariant below was documented and unverified. Gated on the Go
+ * toolchain the same way Flutter is gated on its SDK — reported as SKIPPED rather
+ * than silently dropped, which is precisely how Go came to have no coverage.
+ * ------------------------------------------------------------------------- */
+
+if (hasGo()) {
+  console.log('\n▸ mnci add go-app / go-internal-lib / go-lib / go-function-app')
+  run(`node ${CLI} add go-app goapi`, altWorkspace)
+  run(`node ${CLI} add go-internal-lib goutil`, altWorkspace)
+  run(`node ${CLI} add go-lib gocore`, altWorkspace)
+  run(`node ${CLI} add go-function-app gofn`, altWorkspace)
+
+  // The layout invariant, and the one with the widest blast radius if broken: a
+  // stale `go.work` `use` entry breaks the entire Nx graph, not just Go.
+  enforce(
+    'go: ONE root go.mod and NO go.work anywhere — the single-module layout',
+    existsSync(path.join(altWorkspace, 'go.mod')) &&
+      !existsSync(path.join(altWorkspace, 'go.work')) &&
+      findFiles(altWorkspace, name => name === 'go.mod').length === 1,
+    findFiles(altWorkspace, name => name === 'go.mod').join(', ')
+  )
+
+  // Read rather than hardcoded: the module path comes from the workspace scope,
+  // so hardcoding it would make this section quietly wrong on a rename.
+  const goModule = readFileSync(path.join(altWorkspace, 'go.mod'), 'utf8')
+    .split('\n')[0]
+    .replace('module ', '')
+    .trim()
+
+  // Nothing is inferred in single-module mode: @nx-go/nx-go's inference keys on a
+  // per-project go.mod, which this layout deliberately does not have, so add/go.ts
+  // writes every target explicitly. If that ever regressed, the targets would
+  // silently vanish rather than fail loudly.
+  for (const [project, directory, expected] of [
+    ['goapi', 'apps/goapi', ['build', 'test', 'lint', 'package', 'start']],
+    ['goutil', 'libs/goutil', ['test', 'lint']],
+    ['gocore', 'packages/gocore', ['test', 'lint']],
+    ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']],
+  ]) {
+    const projectJson = JSON.parse(
+      readFileSync(path.join(altWorkspace, directory, 'project.json'), 'utf8')
+    )
+    enforce(
+      `go: ${project} has every target written explicitly (${expected.join(', ')})`,
+      expected.every(target => Boolean(projectJson.targets?.[target])),
+      Object.keys(projectJson.targets ?? {}).join(', ')
+    )
+  }
+
+  // A documented, deliberate gap rather than an oversight: go-function-app writes
+  // no host.json/custom-handler config, so a `:start` script would just fail.
+  enforce(
+    'go: go-function-app deliberately has NO start target, unlike go-app',
+    !JSON.parse(readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8')).targets
+      ?.start
+  )
+
+  enforce(
+    'go: go-lib is tagged type:go-lib, which is what excludes it from the release scope',
+    JSON.parse(
+      readFileSync(path.join(altWorkspace, 'packages/gocore/project.json'), 'utf8')
+    ).tags?.includes('type:go-lib')
+  )
+
+  // THE payoff of one root module: a cross-project import needs no vendoring, no
+  // `replace` directive and no per-project manifest — just the import path.
+  writeFileSync(
+    path.join(altWorkspace, 'apps/goapi/main.go'),
+    `package main\n\nimport (\n\t"fmt"\n\n\t"${goModule}/libs/goutil"\n)\n\n// Hello delegates across a project boundary through the single root module.\nfunc Hello(name string) string {\n\treturn goutil.Goutil(name)\n}\n\nfunc main() {\n\tfmt.Println(Hello("goapi"))\n}\n`
+  )
+  writeFileSync(
+    path.join(altWorkspace, 'apps/goapi/main_test.go'),
+    'package main\n\nimport "testing"\n\nfunc TestHelloUsesTheInternalLib(t *testing.T) {\n\tif got := Hello("x"); got != "Goutil x" {\n\t\tt.Fatalf("got %q", got)\n\t}\n}\n'
+  )
+
+  const goVerify = tryRunCapture(
+    'npx nx run-many -t build,test --projects=goapi,goutil,gocore,gofn',
+    altWorkspace
+  )
+  enforce(
+    'go: real go build + go test pass for all four kinds, with goapi importing libs/goutil across projects and no vendoring step',
+    goVerify.ok,
+    goVerify.output
+  )
+
+  if (hasGolangciLint()) {
+    const goLint = tryRunCapture(
+      'npx nx run-many -t lint --projects=goapi,goutil,gocore,gofn',
+      altWorkspace
+    )
+    enforce(
+      'go: lint runs golangci-lint (not the plugin default `go fmt`, which only reformats)',
+      goLint.ok,
+      goLint.output
+    )
+  } else {
+    skip(
+      'the go lint assertion',
+      'golangci-lint is not on PATH (the rest of the Go section still ran)'
+    )
+  }
+
+  const goPackage = tryRunCapture('npx nx package goapi', altWorkspace)
+  const goZipPath = path.join(altWorkspace, 'dist/drop/go-app-goapi.zip')
+  enforce(
+    'go: package compiles a real binary and zips it to dist/drop/go-app-goapi.zip',
+    goPackage.ok && existsSync(goZipPath),
+    goPackage.output
+  )
+  if (existsSync(goZipPath)) {
+    const AdmZipGo = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
+    const goEntries = new AdmZipGo(goZipPath).getEntries()
+    enforce(
+      'go: the drop zip holds a genuinely compiled binary, not an empty shell',
+      goEntries.some(entry => entry.entryName === 'goapi' && entry.header.size > 100_000),
+      goEntries.map(entry => `${entry.entryName} (${entry.header.size}b)`).join(', ')
+    )
+  }
+
+  // The highest-consequence Go invariant. A go-lib lands in `packages/` but has no
+  // package.json, so Nx's default versionActions looks for a manifest that is not
+  // there and aborts while BUILDING THE RELEASE GRAPH — which kills `nx release`
+  // for every project in the workspace, not just this one. The `!tag:type:go-lib`
+  // exclusion is what prevents that, and this is the only test that proves it:
+  // note it needs a releasable non-Go package present (altWorkspace has npm-lib
+  // `sdk`), because a Go-only workspace has an empty release scope by design and
+  // nx release would error for a completely different reason.
+  const goRelease = tryRunCapture('npx nx release --dry-run', altWorkspace)
+  enforce(
+    'go: nx release still runs with a go-lib present — it is excluded, not aborting the whole release graph',
+    goRelease.ok && !/gocore/.test(goRelease.output),
+    goRelease.output
+  )
+} else {
+  skip('the entire Go section', 'the Go toolchain is not on PATH')
+}
 
 /* ---------------------------------------------------------------------------
  * Flutter — @mnci/nx-flutter (this monorepo's second own Nx plugin), packed
