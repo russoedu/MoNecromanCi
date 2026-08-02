@@ -37,12 +37,18 @@ all three write-ups. That closes #19 completely, and with it every gap in
 **Open — new capability (all P2):** #9 (container kind), #10 (e2e test projects),
 #11 (devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition).
 
+**#24** is done as well: a test now resolves every verify target to the shell command
+it really runs and fails on a no-op, so the stub class CI cannot catch is caught.
+Justifying its one exemption exposed another instance — `@mnci/eslint-config`'s spec
+was type-checked by nothing, because `isolatedModules: true` puts ts-jest in
+transpile-only mode. Fixed; no project is exempt from `typecheck` now.
+
 **Open — gates that still don't gate (§8):** #21's structural half (a failing e2e
 section should be _skipped_, not cascade; the one step that actually crashed the
 suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fixed
-for GitHub — a manual queue on `main` publishes), #24 (nothing guards against a
-`typecheck` target being a stub — CI cannot, since the stub passes), #25 (`nx
-affected` is blind to `@mnci/eslint-config`, P3).
+for GitHub — a manual queue on `main` publishes), #25 (`nx affected` is blind to
+`@mnci/eslint-config`, P3), #28 (no lint target covers root-level files — measured
+clean today, so a gate hole rather than a bug, P3).
 
 **Open — upgrades held back on purpose (§9):** #26 (ESLint 10 — now an
 _investigation_, not a wait: `@eslint-react/eslint-plugin` may replace the plugin
@@ -51,7 +57,7 @@ that blocks it, though `jsx-a11y` has since become a second blocker), #27
 
 Plus #7 and #13 at P3. **No P1 is open.**
 
-§8 is worth reading as a group rather than as five unrelated items: most of what this
+§8 is worth reading as a group rather than as a list of unrelated items: most of what this
 session closed were checks that looked green while verifying nothing. Anything landing
 there should be read as "the gate is the bug", not "a feature is missing".
 
@@ -643,23 +649,46 @@ project's release path, so there is nothing to verify against. Changing an untes
 release trigger to guard a hypothesis is the worse trade. Whoever first runs mnci on
 real Azure should do this with a real run in front of them.
 
-### 24. Nothing guards against a `typecheck` target being a stub — P2
+### 24. Nothing guards against a `typecheck` target being a stub — ✅ done
 
-The loose end from #20, and it is the _class_ rather than the two instances.
+The loose end from #20, closed as the _class_ rather than the two instances.
 
 Nx replaces an inferred `typecheck` target with an `echo` when the project's tsconfig
 sets `noEmit: true`. The step then **passes**, which is why two published packages
 carried a fake one for months and why #18's gate was theatre for half the workspace.
+**CI structurally cannot catch that by running the target** — the stub exits 0. The
+only thing that can is an assertion about the target's _command_.
 
-**CI structurally cannot catch this by running the target** — the stub exits 0. It
-needs something that inspects the target's _command_, e.g. a test that runs
-`nx show project <name> --json` for every project and fails when a `typecheck`
-target's command matches `/^echo /`.
+`packages/cli/src/verifyTargets.test.ts` now reads the real Nx project graph, resolves
+every verify target down to the shell command it ultimately runs, and fails when that
+command is a no-op (`echo`, `:`, `true`, `exit 0`).
+
+- **The target list is not hardcoded** — it is parsed out of this workspace's own
+  `affected` root script, the one CI runs. Add a target there and it is covered here.
+- **It follows `npm run <script> [-w <pkg>]`.** Most targets here are one hop from a
+  `package.json` script, so a stub can hide in the script rather than in the target;
+  a `"typecheck": "echo skip"` is caught the same way Nx's own stub is.
+- **A missing target is treated as the weaker gate, not the stronger one**, since
+  `nx run-many -t X` skips every project without an `X` and reports success. Absence
+  has to be a recorded decision in `ABSENT_BY_DESIGN` with a reason.
+- Mutation-tested in all three shapes: Nx's real `noEmit` stub (reproduced by
+  removing the `typecheck` script and putting `noEmit` back), an `echo` package
+  script, and an unexplained absence (by deleting an exemption entry).
+
+**Trying to justify one exemption found a real hole**, which is the argument for the
+absence rule. `@mnci/eslint-config` had no `typecheck` target, and the reason drafted
+for it — "ts-jest type-checks the specs as it runs" — is **false**:
+`tsconfig.base.json` sets `isolatedModules: true`, which puts ts-jest in
+transpile-only mode, so `const x: number = 'y'` in a spec passes jest. Its
+`tests/config.spec.ts` was type-checked by nothing at all. Fixed the same way #20
+fixed the plugins — a `tsconfig.typecheck.json` plus a `typecheck` script, clean on
+the first run — and verified real by planting a type error and watching it fail. No
+project is exempt from `typecheck` now.
 
 Not added to `mnci doctor`, deliberately: the trap cannot occur in a generated
 workspace, since neither mnci nor any `@nx/*` generator writes `noEmit` into a
 tsconfig (checked), and doctor's bar is invariants actually violated where it runs.
-This belongs in _this repo's_ test suite instead.
+This belongs in _this repo's_ test suite, and that is where it is.
 
 ### 25. `nx affected` is blind to `@mnci/eslint-config` — P3
 
@@ -677,6 +706,30 @@ Options, cheapest first: add `eslint.config.mjs` and the config package to
 `sharedGlobals` in `nx.json` so any change to them marks everything affected; or
 accept it and rely on the main run. The first is one line and costs a full verify on
 lint-config PRs only.
+
+### 28. No lint target covers root-level files — P3
+
+Found by #24's guard, which requires a reason for every absent verify target and had
+no honest one to give for the root project's missing `lint`.
+
+`npm run lint` is `nx run-many -t lint`, and every `lint` target belongs to a package:
+each runs `eslint .` with its own project as the cwd. Nothing runs ESLint at the
+workspace root, so every root-level file the shared config claims to cover is covered
+by no target — `.github/workflows/*.yml`, `.github/dependabot.yml`, `nx.json` and the
+other root JSON, `ROADMAP.md` and the other Markdown, `eslint.config.mjs`,
+`commitlint.config.mjs`, `azure-pipelines.yml`.
+
+**Measured, not assumed:** `npx eslint .` at the root lints **177 files and reports
+zero problems** today, so this is a gate hole rather than a live bug. Formatting is
+not affected — `format:check` is `prettier --check .` over the whole tree — only the
+rule-based checks (YAML, Markdown, JSON, JS) on root files.
+
+The wrinkle that keeps it P3: the root project's manifest sets `includedScripts: []`
+deliberately, because its scripts are the `nx run-many` aggregators and inferring
+targets from them would recurse. So the fix is an explicit target in the root `nx`
+block, and it needs a scope that does not simply re-lint all 177 files (each package
+already lints its own), e.g. `eslint` over the root globs only. That is a small
+decision to get right rather than a one-liner.
 
 ---
 

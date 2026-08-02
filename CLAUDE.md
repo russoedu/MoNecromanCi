@@ -175,7 +175,41 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Regex and TOML Linting, and One Preset Measured and Rejected (Latest)
+### A Guard Against Verify Targets That Verify Nothing (Latest)
+
+ROADMAP #24, the loose end from #20 — closed as the _class_ rather than the two
+instances. `packages/cli/src/verifyTargets.test.ts` reads the real Nx project graph,
+resolves every verify target down to the shell command it ultimately runs, and fails
+when that command is a no-op (`echo`, `:`, `true`, `exit 0`).
+
+- **This is the only kind of check that can catch it.** Nx _disables_ an inferred
+  target rather than dropping it: with `noEmit: true` in a tsconfig, `typecheck`
+  survives in the graph with its command replaced by `echo "The 'typecheck' target
+is disabled because …"`, so **running** it passes. CI is structurally blind to it.
+- **The target list is read from the root `affected` script**, not duplicated, so the
+  guard can never cover a narrower set than CI actually runs.
+- **It follows `npm run <script> [-w <pkg>]`**, because most targets here are one hop
+  from a `package.json` script — a `"typecheck": "echo skip"` hides in the script, not
+  in the target, and is caught identically.
+- **A missing target is the weaker gate, not the stronger one.** `nx run-many -t X`
+  skips every project without an `X` and exits 0, so absence must be a recorded
+  decision in `ABSENT_BY_DESIGN` with a reason. Mutation-tested in all three shapes:
+  Nx's real stub, an `echo` script, and an unexplained absence.
+- **Writing that exemption table found another live instance**, which is the argument
+  for the rule. The reason drafted for `@mnci/eslint-config` having no `typecheck` —
+  "ts-jest type-checks the specs as it runs" — is **false**: `tsconfig.base.json` sets
+  `isolatedModules: true`, which puts ts-jest in transpile-only mode, so
+  `const x: number = 'y'` in a spec passes jest. Its `tests/config.spec.ts` was
+  type-checked by nothing. Fixed with #20's pattern (`tsconfig.typecheck.json` + a
+  `typecheck` script), clean on the first run, and verified real by planting a type
+  error. **No project is exempt from `typecheck` now** — and none should be, since a
+  project's specs are type-checked only by that target's tsconfig.
+- Also recorded, not fixed (ROADMAP #28): no `lint` target covers root-level files.
+  Every `lint` target runs `eslint .` inside its own package, so `.github/workflows`,
+  root JSON/Markdown and the root config files are linted by nothing. Measured —
+  `eslint .` at the root is clean over 177 files — so it is a gate hole, not a bug.
+
+### Regex and TOML Linting, and One Preset Measured and Rejected
 
 The rest of ROADMAP #19e, which closes #19 entirely.
 

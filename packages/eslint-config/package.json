@@ -18,7 +18,8 @@
   ],
   "scripts": {
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json"
   },
   "keywords": [
     "eslint",
