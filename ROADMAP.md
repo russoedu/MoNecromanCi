@@ -600,11 +600,11 @@ so anything depending on it skips too.
 - **Validated by injecting failures into real runs**, not by reading the diff. Two
   runs, one per half of the behaviour:
   1. A `throw` at the very top of `js stack` — the worst case, since every other
-     section used to live below it. It was recorded as a failed expectation, and the
-     run went on to generate the `alt stack` workspace, report real passing assertions
-     there, and enter the `python` section and start building wheels. Before this
-     change that same throw produced no report at all and no Python, Go or Flutter
-     coverage whatsoever.
+     section used to live below it. The run **completed**, with `alt stack`, `python`
+     and `go` all reporting normally and Flutter skipped for its toolchain:
+     **49 passing enforced assertions, 32 of them Python's and Go's**, and exactly
+     **one** failure — the injected crash. Before this change that same throw produced
+     no report at all and zero Python, Go or Flutter coverage.
   2. Throws at the top of **both** `js stack` and `alt stack`, which resolves in
      seconds and exercises the skip path: `python` and `go` each reported
      `⊘ SKIPPED … its prerequisite section "alt stack" failed`, the report printed,
