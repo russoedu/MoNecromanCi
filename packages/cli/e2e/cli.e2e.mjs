@@ -388,6 +388,37 @@ section('js stack', [], () => {
     readFileSync(path.join(workspace, 'eslint.config.mjs'), 'utf8').includes('@mnci/eslint-config')
   )
 
+  // Root-level files used to be linted by NOTHING: every other `lint` target
+  // belongs to a project and runs `eslint .` in its own directory, so the
+  // pipeline YAML, root JSON/Markdown and the root config files were covered by
+  // no target at all. Asserted behaviourally in both directions, because a
+  // target that exists is not a target that gates.
+  const rootManifestNx =
+    JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8')).nx ?? {}
+  enforce(
+    'the root project has a lint target, with includedScripts empty so it cannot recurse',
+    Boolean(rootManifestNx.targets?.lint) &&
+      Array.isArray(rootManifestNx.includedScripts) &&
+      rootManifestNx.includedScripts.length === 0,
+    JSON.stringify(rootManifestNx)
+  )
+  const rootLintClean = tryRunCapture('npx nx run @demo/source:lint --skip-nx-cache', workspace)
+  enforce(
+    'root lint is green out of the box — nothing in a fresh workspace fails it',
+    rootLintClean.ok,
+    rootLintClean.output
+  )
+  const rootOwnedFile = path.join(workspace, 'commitlint.config.mjs')
+  const rootOwnedBefore = readFileSync(rootOwnedFile, 'utf8')
+  writeFileSync(rootOwnedFile, `${rootOwnedBefore}\nvar planted = 1\nexport { planted }\n`)
+  const rootLintPlanted = tryRunCapture('npx nx run @demo/source:lint --skip-nx-cache', workspace)
+  writeFileSync(rootOwnedFile, rootOwnedBefore)
+  enforce(
+    'root lint actually gates: a planted `var` in a root file fails it',
+    !rootLintPlanted.ok && rootLintPlanted.output.includes('no-var'),
+    rootLintPlanted.output
+  )
+
   // Standard forbids trailing commas; the old "es5" value contradicted it and
   // went unnoticed because Nx's .prettierrc was winning anyway.
   enforce(

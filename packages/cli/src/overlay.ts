@@ -579,6 +579,43 @@ export function eslintConfigSpec(): string {
 export const ESLINT_VERSION = '^10.8.0'
 
 /**
+ * The `lint` target mnci puts on a generated workspace's ROOT project.
+ *
+ * @remarks
+ * Without it, root-level files are linted by **nothing**. `npm run lint` is
+ * `nx run-many -t lint`, and every other `lint` target belongs to a project and
+ * runs `eslint .` with that project as its cwd — so `.github/workflows/*.yml`,
+ * `azure-pipelines.yml`, the root JSON and Markdown, `eslint.config.mjs` and
+ * `commitlint.config.mjs` were covered by no target at all.
+ *
+ * **The ignore patterns are CLI flags on purpose, not config `ignores`.** In flat
+ * config, `ignores` are relative to the config file, and every project's `lint`
+ * resolves this same root `eslint.config.mjs` — so ignoring `packages/**` there
+ * would switch linting off *inside* the packages too. A CLI flag applies to this
+ * invocation alone. Each project already lints its own tree, so this target adds
+ * coverage rather than duplicating it.
+ *
+ * `includedScripts: []` goes alongside it, and is load-bearing: the root manifest's
+ * scripts are the `nx run-many` aggregators, so letting Nx infer targets from them
+ * would make `lint` invoke `nx run-many -t lint` — itself.
+ */
+export const ROOT_LINT_TARGET = {
+  executor: 'nx:run-commands',
+  cache: true,
+  options: {
+    command: [
+      'eslint .',
+      '--ignore-pattern "apps/**"',
+      '--ignore-pattern "libs/**"',
+      '--ignore-pattern "packages/**"',
+      '--ignore-pattern "python-packages/**"',
+      '--ignore-pattern package-lock.json',
+    ].join(' '),
+    cwd: '.',
+  },
+} as const
+
+/**
  * npm `overrides` a generated workspace needs for its ESLint toolchain to install.
  *
  * @remarks
@@ -2211,6 +2248,18 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...(manifest.overrides as Record<string, unknown> | undefined),
     ...ESLINT_PEER_OVERRIDES,
   }
+  // The root project's own Nx config. Merged the same way, so a workspace that
+  // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
+  // `includedScripts` must stay empty.
+  const existingNx = manifest.nx as Record<string, unknown> | undefined
+  const nx = {
+    ...existingNx,
+    includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
+    targets: {
+      ...(existingNx?.targets as Record<string, unknown> | undefined),
+      lint: ROOT_LINT_TARGET,
+    },
+  }
   writeFileEnsured(
     manifestPath,
     toJson({
@@ -2219,6 +2268,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
       scripts,
       devDependencies: devDeps,
       overrides,
+      nx,
     })
   )
 

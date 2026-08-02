@@ -26,6 +26,7 @@ import {
   registryUrl,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
+  ROOT_LINT_TARGET,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
   type StackConfig,
@@ -1542,6 +1543,43 @@ describe('applyOverlay', () => {
 
     expect(overrides['left-pad']).toBe('1.0.0')
     expect(overrides).toMatchObject(ESLINT_PEER_OVERRIDES)
+  })
+
+  it('gives the root project a lint target, since nothing else lints root-level files', () => {
+    // `nx run-many -t lint` only runs targets that belong to a project, and every
+    // other `lint` target runs `eslint .` inside its own project — so .github/
+    // workflows, the pipeline YAML, root JSON/Markdown and the root config files
+    // were linted by nothing at all.
+    overlayWith(DEFAULT_STACK)
+
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { includedScripts: unknown[]; targets: Record<string, unknown> }
+    }
+
+    expect(nx.targets.lint).toEqual(ROOT_LINT_TARGET)
+    // Load-bearing: the root scripts are the `nx run-many` aggregators, so letting
+    // Nx infer targets from them would make `lint` invoke `nx run-many -t lint`.
+    expect(nx.includedScripts).toEqual([])
+    // The ignore patterns must be CLI flags — in flat config, `ignores` are
+    // relative to the config file, which every project's own lint resolves too.
+    const { command } = ROOT_LINT_TARGET.options
+    expect(command).toContain('--ignore-pattern "packages/**"')
+    expect(command).toContain('--ignore-pattern "python-packages/**"')
+  })
+
+  it("keeps a workspace's own root targets when adding the lint one", () => {
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: 'x', nx: { targets: { 'local-registry': { executor: 'x' } } } })
+    )
+    overlayWith(DEFAULT_STACK)
+
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { targets: Record<string, unknown> }
+    }
+
+    expect(nx.targets['local-registry']).toEqual({ executor: 'x' })
+    expect(nx.targets.lint).toEqual(ROOT_LINT_TARGET)
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {

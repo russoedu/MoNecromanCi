@@ -71,6 +71,15 @@ const FIXTURES: Record<string, string> = {
   'packages/demo/src/misused.ts':
     'function on (handler: () => void): void {\n  handler()\n}\n\nasync function work (): Promise<void> {\n  await Promise.resolve()\n}\n\nexport function wire (): void {\n  on(async () => {\n    await work()\n  })\n}\n',
 
+  // The exact shape Nx writes into every workspace's ROOT jest.config.ts. The
+  // rule `unicorn/no-anonymous-default-export` fails it, which is what blocked the
+  // root `lint` target from shipping to generated workspaces.
+  'jest.config.ts':
+    'export default async () => ({\n  projects: await getJestProjectsAsync(),\n})\n',
+  // A plain module with the same anonymous default export, to prove the rule is
+  // relaxed for the config family only and not switched off globally.
+  'anon-default.ts': 'export default async () => ({ a: 1 })\n',
+
   // JSX accessibility. `@html-eslint/require-img-alt` covers `**/*.html` only, so
   // an <img> in a component used to be checked by nothing at all.
   'a11y.tsx': 'export const Bad = (): JSX.Element => <img src="x.png" />\n',
@@ -331,6 +340,16 @@ describe('@mnci/eslint-config', () => {
 
     expect(rules).not.toContain('FATAL')
     expect(rules).toContain('@typescript-eslint/no-explicit-any')
+  })
+
+  it("does not fail Nx's generated root jest config over an anonymous default export", () => {
+    // Nx writes `export default async () => ({ projects: await … })` into every
+    // workspace's root jest.config.ts. Without this relaxation the root `lint`
+    // target could not ship: a fresh workspace would fail lint on a file the user
+    // never wrote. Asserted in BOTH directions so the rule cannot quietly go off
+    // for ordinary modules too.
+    expect(rulesFor('jest.config.ts')).not.toContain('unicorn/no-anonymous-default-export')
+    expect(rulesFor('anon-default.ts')).toContain('unicorn/no-anonymous-default-export')
   })
 
   it('lints JSX accessibility, not just HTML', () => {

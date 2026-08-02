@@ -218,16 +218,25 @@ root config files were covered by no target at all.
 - 19 files, zero problems, and none of the 158 inside packages are re-linted.
 - **Proven to gate**: a planted `var` in a root `.mjs` fails `@mnci/source:lint`.
   #24's `ABSENT_BY_DESIGN` entry for it is gone, so the stub guard now covers it too.
-- **Deliberately not shipped to generated workspaces**, and the first measurement of
-  that was wrong in a way worth remembering. It reported 46 errors, 45 of them in
-  `.agents/`, `.github/skills/` and `.opencode/` — read as Nx's agent scaffolding.
-  They are not: `SANDBOX_INJECTED` in `cli.e2e.mjs` names those three directories as
-  artifacts **this coding-agent sandbox injects into every cwd**, which is why the e2e
-  deletes them before any whole-workspace assertion. The real number is **one** error,
-  `unicorn/no-anonymous-default-export` on the root `jest.config.ts` Nx generates.
-  Still a blocker — lint would fail out of the box on a file the user never wrote —
-  but one known file and one known rule, not a moving target. **Measure workspace-wide
-  claims outside the sandbox**, or subtract `SANDBOX_INJECTED` first.
+- **It ships to generated workspaces too**, via `ROOT_LINT_TARGET` in `overlay.ts`,
+  written alongside `includedScripts: []` — load-bearing, since the root scripts are
+  the `nx run-many` aggregators and inferring targets from them would make `lint`
+  invoke `nx run-many -t lint`, itself. Merged, not replaced, so a workspace's own
+  root targets survive an upgrade.
+- **It nearly did not ship, on a measurement that was wrong.** The first pass reported
+  46 errors in a generated workspace, 45 in `.agents/`, `.github/skills/` and
+  `.opencode/` — read as Nx's agent scaffolding. They are not: `SANDBOX_INJECTED` in
+  `cli.e2e.mjs` names those three directories as artifacts **this coding-agent sandbox
+  injects into every cwd**, which is why the e2e deletes them before any
+  whole-workspace assertion. **Measure workspace-wide claims outside the sandbox**, or
+  subtract `SANDBOX_INJECTED` first.
+- The real blocker was **one** rule: `unicorn/no-anonymous-default-export` on the root
+  `jest.config.ts` Nx generates (`export default async () => ({ projects: … })`). It
+  is now off for the `jest.*`/`vitest.*` config family, pinned in both directions so
+  it cannot quietly go off for ordinary modules.
+- **Verified on a real generated workspace**: target present, `nx run <scope>/source:lint`
+  exits 0 out of the box, `npm run lint` runs it without recursing, and a planted `var`
+  in the generated `commitlint.config.mjs` fails it. The e2e pins all four.
 
 ### The Stack Is on ESLint 10
 
