@@ -55,11 +55,15 @@ workspaces**: the identical command reports 46 errors there, all in files Nx its
 writes (three copies of its agent-skill scripts, plus its root `jest.config.ts`), so
 shipping it would fail `npm run lint` on day one. §8 has the numbers.
 
-**Open — gates that still don't gate (§8):** #21's structural half (a failing e2e
-section should be _skipped_, not cascade; the one step that actually crashed the
-suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fixed
-for GitHub — a manual queue on `main` publishes; blocked on a real Azure run rather
-than on effort), and #28's generated-workspace half.
+**#21 is done too** — the e2e's sections are isolated now, so a crash is recorded and
+the run continues instead of silently deleting every section below it. The item's own
+sizing turned out wrong in a useful direction: it feared 94 bindings crossing section
+boundaries, and ESLint's `no-undef` proved exactly one does.
+
+**Open — gates that still don't gate (§8):** #23 (Azure's release trigger still has
+the shape #22 fixed for GitHub — a manual queue on `main` publishes; blocked on a real
+Azure run rather than on effort) and #28's generated-workspace half (measured: the
+same root lint reports 46 errors there, all in files Nx writes).
 
 **#26 is done — the stack is on ESLint 10.8.0**, with `eslint-plugin-unicorn` 72 and
 `@eslint/js` 10 (the content of Dependabot #86 and #83, both closed with reasons at
@@ -548,56 +552,67 @@ to ignore the output. Still missing, and worth having: an automated guard that a
 `typecheck` target is not a disabled stub. CI cannot catch this class by running
 the target — the stub _passes_.
 
-### 21. The e2e is manual-only and linearly fragile — schedule + the crashing step fixed; structural isolation open (P2)
+### 21. The e2e was manual-only and linearly fragile — ✅ done
 
 Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
 rather than theorised**, and together they explain how Go went uncovered and how a
 broken assertion survived eight PRs.
 
-**✅ The manual-only half is fixed.** A nightly `schedule` (`0 3 * * *`) now runs the
-e2e job, capping the blind window at one day instead of "until someone remembers".
-That change had a prerequisite worth knowing about, recorded as #22 below: adding a
-schedule to the workflow _as it was_ would have started publishing packages nightly.
+**The manual-only half.** A nightly `schedule` (`0 3 * * *`) now runs the e2e job,
+capping the blind window at one day instead of "until someone remembers". It
+previously only ran on a manual `workflow_dispatch` — reasonable when written, since
+it takes ~25-30 minutes on `windows-latest`, but it meant nobody noticed when it
+broke. Found while doing the Go section: the `curated root scripts` assertion had
+been **red since #92**, because roadmap #18 added `typecheck` to the `affected` root
+script and updated the unit tests but not this check. Eight PRs merged over a red
+suite. That change had a prerequisite worth knowing about, recorded as #22 below:
+adding a schedule to the workflow _as it was_ would have started publishing packages
+nightly.
 
-**Why it mattered.** It only ran on a manual `workflow_dispatch`. Reasonable when it was written —
-it takes ~25-30 minutes on `windows-latest` — but it means nobody notices when it
-breaks. Found while doing the Go section: the `curated root scripts` assertion had
-been **red since #92**, because roadmap #18 added `typecheck` to the `affected`
-root script and updated the unit tests but not this check. Eight PRs merged over a
-red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
-would cap the blind window at one day instead of "until someone remembers".
+**The cascade half.** `run()` throws, and the script was one linear file, so a crash
+anywhere silently removed all coverage below it. This happened twice, for unrelated
+reasons:
 
-**Partly fixed: one failure no longer _always_ destroys every later section.** The
-single step that actually caused this — installing the Python toolchain, the one
-thing here that depends on the machine rather than on anything mnci produced — is
-now `tryRunCapture` + `enforce` instead of a throwing `run()`. An unusable pip now
-costs Python's own coverage and nothing else's, where before it deleted Go's and
-Flutter's silently.
-
-**Still open: the general case.** `run()` throws, and the script is a
-single linear file, so a crash anywhere silently removes all coverage below it. This
-has now happened twice for unrelated reasons:
-
-1. A removed `--linter oxlint` flag hard-crashed the suite mid-file, taking the
-   whole Python section down — recorded in the file's own header.
+1. A removed `--linter oxlint` flag hard-crashed the suite mid-file, taking the whole
+   Python section down — recorded in the file's own header.
 2. `python3 -m pip install -r requirements-dev.txt` failed on a machine whose
    `packaging` came from Debian (`Cannot uninstall packaging 24.0, RECORD file not
-found`), which took **Go and Flutter** down with it. That is an environment
-   problem, not an mnci bug — but the suite reporting nothing at all about Go
-   because _Python's toolchain_ could not install is the wrong failure mode.
+found`), which took **Go and Flutter** down with it. An environment problem, not an
+   mnci bug — but the suite reporting nothing at all about Go because _Python's
+   toolchain_ could not install is the wrong failure mode.
 
-What remains is the structural version: wrap each section so any failure is
-recorded and the run continues, and so a section whose prerequisites failed is
-**skipped** rather than cascading into a wall of dependent assertion failures. The
-report machinery (`results.enforced`, the final exit) already supports it — only
-the propagation needs changing, and the Flutter/Go toolchain gates show the shape.
+Fixed with a `section(label, needs, body)` helper wrapping five blocks: `js stack`,
+`alt stack`, `python`, `go`, `flutter`. A section that throws is recorded as a failed
+expectation and the run continues; a section whose prerequisite failed is **skipped**
+rather than run, since its assertions would otherwise be a wall of failures all
+tracing to one cause. Skipping is transitive — a skipped section marks itself failed,
+so anything depending on it skips too.
 
-Sized honestly before being deferred: 21 section banners and **94 top-level
-`const`/`let` bindings**, many of which cross section boundaries, so a `try` block
-per section re-scopes them and needs the shared ones hoisted. That plus a
-25-minute validation run and a deliberate failure-injection test is a real piece of
-work on the project's most valuable test asset — worth doing properly rather than
-squeezing in.
+- **A crashed section is `enforce`d, not `skip`ped.** The run still exits non-zero;
+  the point was never to tolerate the failure, only to stop it being a _silent_ one
+  that deletes everything below it.
+- **The sizing in this item was wrong, and measuring beat estimating.** It predicted
+  "94 top-level bindings, many of which cross section boundaries". In fact exactly
+  **one** does: `altWorkspace`, which `python` and `go` both drive. ESLint's
+  `no-undef` proved it — wrapping the blocks reported 93 references to that one name
+  and nothing else — so the hoist is a single line, not a rewrite. Static analysis
+  was the right tool and it turned a feared refactor into a mechanical one.
+- **Validated by injecting failures into real runs**, not by reading the diff. Two
+  runs, one per half of the behaviour:
+  1. A `throw` at the very top of `js stack` — the worst case, since every other
+     section used to live below it. The run **completed**, with `alt stack`, `python`
+     and `go` all reporting normally and Flutter skipped for its toolchain:
+     **49 passing enforced assertions, 32 of them Python's and Go's**, and exactly
+     **one** failure — the injected crash. Before this change that same throw produced
+     no report at all and zero Python, Go or Flutter coverage.
+  2. Throws at the top of **both** `js stack` and `alt stack`, which resolves in
+     seconds and exercises the skip path: `python` and `go` each reported
+     `⊘ SKIPPED … its prerequisite section "alt stack" failed`, the report printed,
+     and the run exited 1 with exactly two enforced failures — the two crashes —
+     rather than a wall of dependent assertion failures.
+- Go and Flutter keep their toolchain gates, which are a different mechanism for a
+  different reason: absent tooling is `SKIPPED` and does not fail the run, whereas a
+  crash is a failure that gets reported.
 
 ### 22. Release steps fired on any non-PR event, not just a push — ✅ done
 
@@ -784,22 +799,23 @@ eslint . --ignore-pattern "apps/**" --ignore-pattern "libs/**"
   `default` inputs cover the whole tree and any source change invalidates this target.
   It is a 19-file lint; over-invalidating is the safe direction.
 
-**Deliberately NOT shipped to generated workspaces, and this is measured.** The same
-hole exists there, but the same fix would make `npm run lint` fail on day one. In a
-freshly generated workspace the identical command reports **46 errors across 7 files,
-every one written by Nx**:
+**Deliberately NOT shipped to generated workspaces — and the first measurement of
+this was wrong, which is worth recording.** Running the same command in a freshly
+generated workspace reported 46 errors across 7 files, and 45 of them were in
+`.agents/`, `.github/skills/` and `.opencode/`. Those were read as Nx's AI-agent
+scaffolding. They are not: `SANDBOX_INJECTED` in `cli.e2e.mjs` names those exact three
+directories as artifacts **this coding-agent sandbox injects into every cwd**, which is
+why the e2e deletes them before any whole-workspace assertion — "a real user never has
+them".
 
-- 45 in Nx's AI-agent skill scripts, which it scaffolds in **three** copies —
-  `.agents/`, `.github/skills/` and `.opencode/skills/` — mostly
-  `unicorn/prefer-number-properties` in `ci-poll-decide.mjs` and `ci-state-update.mjs`.
-- 1 in Nx's own root `jest.config.ts` (`unicorn/no-anonymous-default-export`).
-
-That is the react-lib rollup config bug again, and shipping it would be worse than the
-gap. Closing it for users needs two decisions rather than a one-liner: ignore patterns
-for Nx's agent scaffolding — a moving target across Nx versions, and note the agent
-directories are not even stable in name — plus something for Nx's root `jest.config.ts`,
-which no ignore of the agent dirs would cover. Left open with the numbers so whoever
-takes it starts from evidence.
+So the real number for a real user is **one error**, and it is Nx's:
+`unicorn/no-anonymous-default-export` on the root `jest.config.ts` that
+`create-nx-workspace` writes. Still a blocker — it fails `npm run lint` out of the box
+on a file the user never wrote, which is the react-lib rollup config bug again — but a
+far smaller and more tractable one than "ignore patterns for a moving target". It is
+one known file and one known rule, so the choice is narrow: a targeted override for
+Nx's generated root jest config, or leave the gap. Whoever takes it should re-measure
+outside a sandbox first, since that is precisely what went wrong here.
 
 ---
 
