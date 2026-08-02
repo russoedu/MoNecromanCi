@@ -175,7 +175,35 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Root-Level Files Now Have a Lint Target (Latest)
+### The e2e No Longer Cascades on One Failure (Latest)
+
+ROADMAP #21's structural half, which closes #21. `run()` throws and the e2e was one
+linear file, so a crash anywhere silently removed all coverage below it — which had
+happened twice, and is how the suite once reported nothing at all about Go because
+_Python's_ toolchain could not install.
+
+- **A `section(label, needs, body)` helper wraps five blocks**: `js stack`,
+  `alt stack`, `python`, `go`, `flutter`. A section that throws is recorded and the
+  run continues; a section whose prerequisite failed is **skipped**, so its assertions
+  do not become a wall of failures all tracing to one cause. Skipping is transitive.
+- **A crashed section is `enforce`d, not `skip`ped** — the run still exits non-zero.
+  The goal was never to tolerate the failure, only to stop it being a silent one.
+- **The roadmap's own sizing was wrong, and measuring beat estimating.** It predicted
+  "94 top-level bindings, many crossing section boundaries". Exactly **one** does:
+  `altWorkspace`, which `python` and `go` both drive. ESLint's `no-undef` proved it —
+  wrapping reported 93 references to that one name and nothing else — so the hoist is
+  one line. Reach for static analysis before assuming a refactor is large.
+- **Validated by injecting failures into real runs**, one per half: a `throw` atop
+  `js stack` was recorded and the run still generated the alt workspace, asserted
+  against it, and entered `python`; throws atop _both_ early sections made `python`
+  and `go` report `⊘ SKIPPED … its prerequisite section "alt stack" failed`, with the
+  report printed and exit 1 carrying exactly the two crashes. Before the change the
+  first throw alone produced no report at all.
+- Go's and Flutter's toolchain gates are deliberately a _different_ mechanism: absent
+  tooling is `SKIPPED` and does not fail the run; a crash is a failure that is
+  reported.
+
+### Root-Level Files Now Have a Lint Target
 
 ROADMAP #28, found by #24's guard: `npm run lint` is `nx run-many -t lint`, and every
 `lint` target belongs to a package and runs `eslint .` in its own directory. Nothing
@@ -190,12 +218,16 @@ root config files were covered by no target at all.
 - 19 files, zero problems, and none of the 158 inside packages are re-linted.
 - **Proven to gate**: a planted `var` in a root `.mjs` fails `@mnci/source:lint`.
   #24's `ABSENT_BY_DESIGN` entry for it is gone, so the stub guard now covers it too.
-- **Deliberately not shipped to generated workspaces.** Measured: the same command
-  reports **46 errors across 7 files there, all written by Nx** — 45 in its AI-agent
-  skill scripts (scaffolded in three copies: `.agents/`, `.github/skills/`,
-  `.opencode/skills/`) and one in its root `jest.config.ts`. That is the react-lib
-  rollup config bug again, so the gap is better than the gate until someone decides
-  the ignore patterns properly.
+- **Deliberately not shipped to generated workspaces**, and the first measurement of
+  that was wrong in a way worth remembering. It reported 46 errors, 45 of them in
+  `.agents/`, `.github/skills/` and `.opencode/` — read as Nx's agent scaffolding.
+  They are not: `SANDBOX_INJECTED` in `cli.e2e.mjs` names those three directories as
+  artifacts **this coding-agent sandbox injects into every cwd**, which is why the e2e
+  deletes them before any whole-workspace assertion. The real number is **one** error,
+  `unicorn/no-anonymous-default-export` on the root `jest.config.ts` Nx generates.
+  Still a blocker — lint would fail out of the box on a file the user never wrote —
+  but one known file and one known rule, not a moving target. **Measure workspace-wide
+  claims outside the sandbox**, or subtract `SANDBOX_INJECTED` first.
 
 ### The Stack Is on ESLint 10
 
