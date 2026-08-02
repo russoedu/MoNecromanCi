@@ -175,7 +175,29 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The Stack Is on ESLint 10 (Latest)
+### Root-Level Files Now Have a Lint Target (Latest)
+
+ROADMAP #28, found by #24's guard: `npm run lint` is `nx run-many -t lint`, and every
+`lint` target belongs to a package and runs `eslint .` in its own directory. Nothing
+ran ESLint at the workspace root, so `.github/workflows`, root JSON/Markdown and the
+root config files were covered by no target at all.
+
+- **Fixed with an explicit `lint` target on the root project**, scoped by **CLI**
+  ignore patterns (`--ignore-pattern "packages/**"` and friends) rather than config
+  `ignores`. That distinction is load-bearing: flat-config `ignores` are relative to
+  the config file, and every package's `lint` resolves that same root config, so
+  ignoring `packages/**` there would have switched linting off _inside_ the packages.
+- 19 files, zero problems, and none of the 158 inside packages are re-linted.
+- **Proven to gate**: a planted `var` in a root `.mjs` fails `@mnci/source:lint`.
+  #24's `ABSENT_BY_DESIGN` entry for it is gone, so the stub guard now covers it too.
+- **Deliberately not shipped to generated workspaces.** Measured: the same command
+  reports **46 errors across 7 files there, all written by Nx** — 45 in its AI-agent
+  skill scripts (scaffolded in three copies: `.agents/`, `.github/skills/`,
+  `.opencode/skills/`) and one in its root `jest.config.ts`. That is the react-lib
+  rollup config bug again, so the gap is better than the gate until someone decides
+  the ignore patterns properly.
+
+### The Stack Is on ESLint 10
 
 ROADMAP #26, closed. ESLint **10.8.0**, `eslint-plugin-unicorn` **72**, `@eslint/js`
 **10** — the content of Dependabot #86 and #83, both closed with reasons at the time.

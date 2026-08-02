@@ -48,11 +48,18 @@ was blind not just to the lint config but to **every** root config file, includi
 `tsconfig.base.json`. A PR touching only that verified _nothing_ and reported green.
 Fixed via `namedInputs.sharedGlobals` here **and** in every generated workspace.
 
+**#28 is done for this repo** — the root project has a `lint` target now, scoped so it
+covers the 19 root-level files without re-linting the 158 inside packages, and proven
+to fail on a planted violation. It is **deliberately not shipped to generated
+workspaces**: the identical command reports 46 errors there, all in files Nx itself
+writes (three copies of its agent-skill scripts, plus its root `jest.config.ts`), so
+shipping it would fail `npm run lint` on day one. §8 has the numbers.
+
 **Open — gates that still don't gate (§8):** #21's structural half (a failing e2e
 section should be _skipped_, not cascade; the one step that actually crashed the
 suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fixed
-for GitHub — a manual queue on `main` publishes), #28 (no lint target covers
-root-level files — measured clean today, so a gate hole rather than a bug, P3).
+for GitHub — a manual queue on `main` publishes; blocked on a real Azure run rather
+than on effort), and #28's generated-workspace half.
 
 **#26 is done — the stack is on ESLint 10.8.0**, with `eslint-plugin-unicorn` 72 and
 `@eslint/js` 10 (the content of Dependabot #86 and #83, both closed with reasons at
@@ -743,29 +750,56 @@ already references and `production` extends, so one list reaches every target.
   is consumed. Both new unit assertions were mutation-tested (dropping the
   `withSharedGlobals` call from `applyOverlay`, and dropping one entry from the list).
 
-### 28. No lint target covers root-level files — P3
+### 28. No lint target covered root-level files — ✅ done (here), and deliberately not shipped
 
 Found by #24's guard, which requires a reason for every absent verify target and had
 no honest one to give for the root project's missing `lint`.
 
 `npm run lint` is `nx run-many -t lint`, and every `lint` target belongs to a package:
-each runs `eslint .` with its own project as the cwd. Nothing runs ESLint at the
-workspace root, so every root-level file the shared config claims to cover is covered
+each runs `eslint .` with its own project as the cwd. Nothing ran ESLint at the
+workspace root, so every root-level file the shared config claims to cover was covered
 by no target — `.github/workflows/*.yml`, `.github/dependabot.yml`, `nx.json` and the
 other root JSON, `ROADMAP.md` and the other Markdown, `eslint.config.mjs`,
-`commitlint.config.mjs`, `azure-pipelines.yml`.
+`commitlint.config.mjs`, the root `jest.*.mjs` files.
 
-**Measured, not assumed:** `npx eslint .` at the root lints **177 files and reports
-zero problems** today, so this is a gate hole rather than a live bug. Formatting is
-not affected — `format:check` is `prettier --check .` over the whole tree — only the
-rule-based checks (YAML, Markdown, JSON, JS) on root files.
+**Fixed here** with an explicit `lint` target on the root project, scoped by CLI
+ignore patterns rather than by config:
 
-The wrinkle that keeps it P3: the root project's manifest sets `includedScripts: []`
-deliberately, because its scripts are the `nx run-many` aggregators and inferring
-targets from them would recurse. So the fix is an explicit target in the root `nx`
-block, and it needs a scope that does not simply re-lint all 177 files (each package
-already lints its own), e.g. `eslint` over the root globs only. That is a small
-decision to get right rather than a one-liner.
+```
+eslint . --ignore-pattern "apps/**" --ignore-pattern "libs/**"
+         --ignore-pattern "packages/**" --ignore-pattern package-lock.json
+```
+
+- **CLI patterns, not config `ignores`.** In flat config, `ignores` are relative to the
+  config file, and every package's `lint` resolves that same root config — so ignoring
+  `packages/**` there would have switched linting off inside the packages too. A CLI
+  flag applies to this invocation alone.
+- **19 files, zero problems**, and it re-lints none of the 158 inside packages, so the
+  target adds coverage rather than duplicating it.
+- **Proven to gate**, not just to exist: a planted `var` in a root `.mjs` fails
+  `nx run @mnci/source:lint` with exit 1, where previously nothing reported it.
+- #24's `ABSENT_BY_DESIGN` entry for it is gone, so the guard now resolves the root
+  `lint` command and would fail if it ever became a no-op.
+- Caching is deliberately loose: the root project's `{projectRoot}` is `.`, so
+  `default` inputs cover the whole tree and any source change invalidates this target.
+  It is a 19-file lint; over-invalidating is the safe direction.
+
+**Deliberately NOT shipped to generated workspaces, and this is measured.** The same
+hole exists there, but the same fix would make `npm run lint` fail on day one. In a
+freshly generated workspace the identical command reports **46 errors across 7 files,
+every one written by Nx**:
+
+- 45 in Nx's AI-agent skill scripts, which it scaffolds in **three** copies —
+  `.agents/`, `.github/skills/` and `.opencode/skills/` — mostly
+  `unicorn/prefer-number-properties` in `ci-poll-decide.mjs` and `ci-state-update.mjs`.
+- 1 in Nx's own root `jest.config.ts` (`unicorn/no-anonymous-default-export`).
+
+That is the react-lib rollup config bug again, and shipping it would be worse than the
+gap. Closing it for users needs two decisions rather than a one-liner: ignore patterns
+for Nx's agent scaffolding — a moving target across Nx versions, and note the agent
+directories are not even stable in name — plus something for Nx's root `jest.config.ts`,
+which no ignore of the agent dirs would cover. Left open with the numbers so whoever
+takes it starts from evidence.
 
 ---
 
