@@ -59,5 +59,24 @@ export default {
   // whose options do not apply is stricter than configured everywhere it runs,
   // not just in one file. If a third of these turns up, stop switching rules off
   // one at a time and treat option fidelity through the bridge as the bug.
-  'unicorn-js/no-array-sort': 'off'
+  'unicorn-js/no-array-sort': 'off',
+
+  // Reports twice on `packages/cli/e2e/cli.e2e.mjs`, which ESLint lints clean —
+  // and here the finding is simply wrong, which makes it the clearest of the
+  // three. The flagged call is `new AdmZip(path).readAsText(entry)`: an
+  // `adm-zip` method that has nothing to do with `FileReader#readAsText`, so
+  // `Blob#text()` is not an alternative to anything.
+  //
+  // Telling those apart needs to know the receiver's type. ESLint never reaches
+  // the file — `@mnci/eslint-config` scopes its type-aware block to
+  // `{apps,libs,packages}/*/src/**` and `e2e/` is outside it — while the bridge
+  // matches on the bare method name and fires. The lesson generalises past this
+  // one rule: a rule that wants types and does not get them is not merely less
+  // useful, it is WRONG, and a whole class of unicorn rules is in that position
+  // under the bridge.
+  //
+  // This is also the entry that corrected an overclaim. "0 findings across the
+  // monorepo" was first measured over `packages/*/src` only, which quietly
+  // excluded `packages/cli/e2e`. Measure the paths CI actually lints.
+  'unicorn-js/prefer-blob-reading-methods': 'off'
 }

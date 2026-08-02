@@ -88,13 +88,21 @@ export const jsPlugins = [
  * Composition order mirrors the ESLint config: the broad sets first, then the
  * narrower overrides, then `divergences` last so it wins over everything.
  *
- * @param options - Composition options. Pass `typeAware: false` to drop the
- * rules that need `oxlint --type-aware`; they are inert without the flag but
- * listing them makes a plain run noisier to debug.
+ * @param options - Composition options. Pass `typeAware: true` to add the rules
+ * that need `oxlint --type-aware`. **Off by default, and that is a correctness
+ * decision rather than caution.** Measured on this ESLint-clean monorepo: the
+ * default configuration reports 0 findings, while `--type-aware` reports 8 —
+ * five `no-unnecessary-type-assertion` on casts ESLint accepts (its type-aware
+ * block resolves a different tsconfig for spec files, since `tsconfig.lib.json`
+ * excludes them), two bridged `unicorn` rules on the e2e script, and one
+ * `tsconfig-error`. Every one of those is stricter than the ESLint stack, which
+ * is the one thing this package promises not to be. So the promise holds for
+ * what you get by default, and the stricter mode is a conscious opt-in with a
+ * known cost rather than a surprise.
  * @returns The oxlint config object.
  */
 export default function mnci(options = {}) {
-  const { typeAware: withTypeAware = true } = options
+  const { typeAware: withTypeAware = false } = options
 
   // The `typescript/*` rules go in a TS-scoped override rather than the base
   // rule set, mirroring `@mnci/eslint-config`, whose TypeScript block is

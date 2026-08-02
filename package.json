@@ -13,7 +13,7 @@
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
     "prepare": "husky",
-    "lint:ox": "oxlint --type-aware packages"
+    "lint:ox": "oxlint packages"
   },
   "private": true,
   "devDependencies": {

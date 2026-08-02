@@ -20,7 +20,11 @@ contract, and the direction is the whole point:
   touched.
 
 Verified the strongest way available: `oxlint` with this config reports **0
-findings** across the whole mnci monorepo, which is ESLint-clean.
+findings** across `packages/` in the mnci monorepo, which is ESLint-clean —
+every path the ESLint `lint` targets cover, e2e scripts included. (The first
+measurement of this covered `packages/*/src` only and quietly missed
+`packages/cli/e2e`, which turned up a third divergence. Measure the paths CI
+actually lints.)
 `tests/parity.spec.ts` pins it on fixtures, every one of them a pattern that has
 actually broken a generated workspace's lint at some point in this project's
 history.
@@ -80,14 +84,31 @@ them. If YAML correctness matters to you (a duplicate key silently changes a
 build), keep `@mnci/eslint-config` for those file types and use this package for
 JS/TS.
 
-### Two measured divergences
+### Three measured divergences
 
-Both are rules switched **off** with the evidence attached in
-`configs/divergences.js`: `unicorn/consistent-function-scoping` and
-`unicorn/no-array-sort` each report on files ESLint lints clean. The second is
-the more concerning kind — an _option_ (`allowExpressionStatement: true`) not
-being honoured through the bridge, which makes a rule stricter than configured
-everywhere it runs.
+All are rules switched **off** with the evidence attached in
+`configs/divergences.js`, each a different failure mode:
+
+| Rule                                  | What differs                                                                            |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| `unicorn/consistent-function-scoping` | whole-rule behaviour; only reproduces on a large real file                              |
+| `unicorn/no-array-sort`               | an **option** (`allowExpressionStatement`) ESLint honours and the bridge appears not to |
+| `unicorn/prefer-blob-reading-methods` | a plain **false positive** — flags `AdmZip#readAsText`, unrelated to `FileReader`       |
+
+The second is the most dangerous kind: a rule whose options do not apply is
+stricter than configured _everywhere_ it runs. The third generalises — a rule that
+wants type information and does not get it is not merely less useful, it is
+**wrong**, and a class of `unicorn` rules is in that position under the bridge.
+
+### Type-aware rules are opt-in, and that is a correctness decision
+
+`mnci({ typeAware: true })` adds them. Off by default because measured on this
+ESLint-clean repo they report **8 findings** — five `no-unnecessary-type-assertion`
+on casts ESLint accepts (its type-aware block resolves a different tsconfig for
+spec files, which `tsconfig.lib.json` excludes), two bridged `unicorn` rules, and
+one `tsconfig-error`. All stricter than the ESLint stack, which is the one thing
+this package promises not to be. So the promise holds for the default
+configuration, and the stricter mode is a conscious opt-in with a known cost.
 
 ## Usage
 
@@ -165,7 +186,7 @@ demanding `function f (a)` makes lint and format mutually unsatisfiable.
 | ------------------------------- | --------------------- | ------------------------------ |
 | JS/TS correctness               | 452 rules             | 206 native + 225 bridged       |
 | YAML/TOML/MD/CSS/HTML/JSON lint | yes                   | **no**                         |
-| Type-aware rules                | yes                   | yes (`--type-aware`)           |
+| Type-aware rules                | yes                   | opt-in, not yet at parity      |
 | Formatting                      | Prettier              | oxfmt (~30x faster)            |
 | Whole-repo lint, this monorepo  | ~6s                   | ~2s                            |
 | Maturity                        | stable                | oxfmt pre-1.0, JS bridge alpha |
