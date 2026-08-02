@@ -60,5 +60,22 @@ const NEEDS_TYPE_SERVICES = [
  */
 export default [
   regexp.configs['flat/recommended'],
-  { rules: Object.fromEntries(NEEDS_TYPE_SERVICES.map(rule => [rule, 'off'])) },
+  {
+    rules: {
+      ...Object.fromEntries(NEEDS_TYPE_SERVICES.map(rule => [rule, 'off'])),
+
+      // `prefer-regex-literals` is a core ESLint rule that this preset switches on,
+      // and it fails a freshly generated `react-app` on a file the user never
+      // wrote: `@nx/react` emits `expect(getByText(new RegExp('Welcome web',
+      // 'gi')))` into every `app.spec.tsx`. That shipped in #107 and broke lint in
+      // every generated React workspace — caught by the e2e, which generates real
+      // workspaces, rather than by the fixture suite.
+      //
+      // Same call as `unicorn/numeric-separators-style`, off for the same reason:
+      // generated build/test code trips it, it is a readability preference rather
+      // than a correctness rule, and `new RegExp(...)` is legitimate whenever the
+      // pattern is composed at runtime — which the rule cannot always tell.
+      'prefer-regex-literals': 'off',
+    },
+  },
 ]

@@ -89,6 +89,11 @@ const FIXTURES: Record<string, string> = {
   // that is correct but takes exponential time on a crafted input.
   'redos.js': 'export const slow = /^(a+)+$/\nexport const ok = /^a+$/\n',
   'group.js': "export const hit = /^x(y|z)$/.test('xy')\n",
+  // The exact shape @nx/react emits into every generated app.spec.tsx. The regexp
+  // preset turns on the core `prefer-regex-literals` rule, which failed this — so
+  // every generated react-app failed `npm run lint` on a file the user never wrote.
+  'nx-react.spec.tsx':
+    "it('greets', () => {\n  expect(getByText(new RegExp('Welcome web', 'gi'))).toBeTruthy()\n})\n",
   // The exact pyproject.toml @mnci/nx-python-pip generates. `flat/standard` reports
   // six array-bracket-spacing errors on this, which would have failed every Python
   // workspace's lint out of the box — hence `flat/base` and this regression guard.
@@ -371,6 +376,14 @@ describe('@mnci/eslint-config', () => {
 
   it('catches a file importing itself', () => {
     expect(rulesFor('packages/demo/src/selfish.ts')).toContain('import-x/no-self-import')
+  })
+
+  it("does not fail Nx's generated react spec over prefer-regex-literals", () => {
+    // Regression guard for #107: `regexp/flat/recommended` enables the core
+    // `prefer-regex-literals` rule, and @nx/react writes `new RegExp('Welcome web',
+    // 'gi')` into every app.spec.tsx. That broke lint in every generated React
+    // workspace, on a file the user never touched.
+    expect(rulesFor('nx-react.spec.tsx')).not.toContain('prefer-regex-literals')
   })
 
   it('catches a regex that backtracks catastrophically', () => {

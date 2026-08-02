@@ -83,7 +83,7 @@ does it too — the docs already tell users to `git diff` before committing an u
   - Exports CI YAML generators: `azurePipelinesYaml()`, `githubActionsYaml()`
   - Exports shared guard scripts (Python install, pack, release) used by both CI providers
 
-- **`packages/cli/src/overlay.test.ts`** — comprehensive overlay fixture tests (268 assertions)
+- **`packages/cli/src/overlay.test.ts`** — comprehensive overlay fixture tests (330+ assertions), including six that execute the CI verify guard against a real git repo
 
 ### CLI Plumbing
 
