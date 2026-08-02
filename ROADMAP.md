@@ -44,8 +44,10 @@ for GitHub — a manual queue on `main` publishes), #24 (nothing guards against 
 `typecheck` target being a stub — CI cannot, since the stub passes), #25 (`nx
 affected` is blind to `@mnci/eslint-config`, P3).
 
-**Open — upgrades held back on purpose (§9):** #26 (ESLint 10, blocked by
-`eslint-plugin-react`), #27 (TypeScript 7, deferred pending a proper pass).
+**Open — upgrades held back on purpose (§9):** #26 (ESLint 10 — now an
+_investigation_, not a wait: `@eslint-react/eslint-plugin` may replace the plugin
+that blocks it, though `jsx-a11y` has since become a second blocker), #27
+(TypeScript 7, deferred pending a proper pass).
 
 Plus #7 and #13 at P3. **No P1 is open.**
 
@@ -683,24 +685,60 @@ lint-config PRs only.
 Both are Dependabot PRs closed with reasons rather than merged, recorded here so the
 reasoning is not lost with the PR.
 
-### 26. ESLint 10 — blocked by the plugin ecosystem — P2
+### 26. ESLint 10 — and the `eslint-react` route that may unblock it — P2
 
-The stack is pinned to ESLint **9** and `eslint-plugin-unicorn` to **v61** because
-the plugins decide it, not preference:
+The stack is pinned to ESLint **9** and `eslint-plugin-unicorn` to **v61**. Closed on
+that basis: **#86** (unicorn 61 → 72) and **#83** (`@eslint/js` 9 → 10), neither with
+`@dependabot ignore`, so both return naturally.
 
-- `eslint-plugin-react` has **no ESLint 10 release**. On 10 it throws
-  `contextOrFilename.getFilename is not a function` loading `react/display-name`,
-  killing lint for every `.tsx` in the workspace.
-- `@nx/react`'s generator pins `eslint-plugin-import@2.31.0`, which caps at 9 — on 10
-  the install fails outright.
+**Investigate first:** <https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>
 
-Closed on that basis: **#86** (unicorn 61 → 72) and **#83** (`@eslint/js` 9 → 10).
-Neither used `@dependabot ignore`, so both return naturally.
+`@eslint-react/eslint-plugin` is a maintained rewrite of `eslint-plugin-react`, and
+its peer range is `eslint: "*"` — so it is not held back the way the incumbent is. If
+it is a workable replacement, it removes the _original_ reason for the ESLint 9 pin.
+That makes this item an investigation rather than a wait.
 
-Unblocking is a coordinated upgrade, not a bump: wait for `eslint-plugin-react` to
-ship ESLint 10 support, then move `eslint`, `unicorn` and the `@eslint/*` packages
-together, and re-add the three unicorn rules `configs/base.js` records as
-unavailable in v61.
+**The blocker list, re-checked rather than assumed** (versions as of writing):
+
+| Package                              | Peer range                   | Verdict                                |
+| ------------------------------------ | ---------------------------- | -------------------------------------- |
+| `eslint-plugin-react@7.37.5`         | no ESLint 10 release         | the original blocker                   |
+| `@eslint-react/eslint-plugin@5.18.1` | `eslint: *`, `typescript: *` | **candidate replacement**              |
+| `eslint-plugin-react-hooks@7.1.1`    | `…^9.0.0 \|\| ^10.0.0`       | **already fine** — no longer a blocker |
+| `eslint-plugin-jsx-a11y@6.10.2`      | `^3 … ^9`                    | **caps at 9 — a blocker**              |
+
+Two things that changes:
+
+- **`react-hooks` is no longer in the way.** The pinned range `^7.1.1` already allows
+  ESLint 10. The docs previously lumped it in with `eslint-plugin-react`; it should
+  not be.
+- **`jsx-a11y` is now in the way, and this session put it there.** #19b added it, and
+  its latest release caps at ESLint 9. So closing the React gap alone is no longer
+  sufficient — worth knowing before anyone starts, because it is not in the original
+  reasoning.
+
+**What the migration guide actually says** (read, not assumed): it is a rule-by-rule
+mapping, with `eslint-react.configs["disable-conflict-eslint-plugin-react"]` for
+running both during a transition, and `recommended-typescript` as the preset. Caveats
+it states plainly: not every rule has a direct equivalent and some behave differently;
+the rules it marks legacy are the class-component and `propTypes` ones, which this
+project does not generate; and some rules need **type-aware linting** to work — which
+`configs/typeAware.js` already provides, but only under
+`{apps,libs,packages}/<name>/src`, so the scope interaction needs checking.
+
+It notably does **not** state its supported ESLint versions, which is why the peer
+range above was checked against the registry instead.
+
+**Sequence, if it pans out:** replace `eslint-plugin-react` with
+`@eslint-react/eslint-plugin` under ESLint 9 first and confirm a generated `react-app`
+still lints clean — that step is independently useful and reversible. Only then take
+ESLint 10, which additionally needs `jsx-a11y` resolved and the three unicorn rules
+`configs/base.js` records as missing from v61 re-added.
+
+One more thing to verify rather than trust: `@nx/react`'s generator pins
+`eslint-plugin-import@2.31.0` (caps at 9). mnci runs those generators with
+`--linter=none` and deletes the config they write, so it may no longer bite — but it
+was a real install failure once, and it should be re-tested rather than assumed gone.
 
 ### 27. TypeScript 7 — deferred, not refused — P2
 
@@ -885,6 +923,12 @@ four findings, and **all four were legitimate patterns**: a test runner exiting
 non-zero, and shebangs on scripts run via `node`. Zero real bugs. The four rules
 already enabled in `configs/base.js` are the ones that pay for themselves; the rest
 are not worth the exceptions they would need.
+
+**Before adding anything else here, see #26.** `@eslint-react/eslint-plugin`
+(<https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>) is a candidate
+replacement for `eslint-plugin-react`, and it is the plugin whose lack of an ESLint 10
+release pins this whole config to 9. Swapping it is worth doing _before_ any further
+rule work, because it changes what the second constraint below even permits.
 
 **Two constraints any addition must respect** — both already load-bearing, both
 easy to break from here:
