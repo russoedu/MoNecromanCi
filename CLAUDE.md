@@ -242,9 +242,16 @@ hint that twenty tools are behind it.
 - The one override that cannot work — `space-before-function-paren` — is stated in the
   generated file itself, where someone would try it, rather than only in a README.
 
-Not yet done: verification on a real generated workspace. The unit and package suites
-cover the content; what remains is one `mnci new` + `mnci add react-app` cycle
-confirming the emitted config lints clean and that `--inspect-config` lists the names.
+**Verified by running the emitted files, not by reading them.** A probe workspace got
+the real `ESLINT_CONFIG` and `PRETTIER_CONFIG` output plus a node_modules symlink to the
+package: the config parses with its comment block intact and resolves **29 blocks, 0
+unnamed**; a real `.ts` lints clean; Prettier resolves through `.prettierrc.mjs` and
+applies Standard (`"double";` → `'double'`, and `function f (a)` → `function f(a)`,
+which is the `space-before-function-paren` conflict demonstrating itself); and the
+override recipe **copied verbatim out of the generated comment** silences
+`no-explicit-any` for one directory. What that still does not cover is
+`create-nx-workspace` itself — a full `mnci new` + `mnci add react-app` remains the
+stronger check, and is what the e2e does.
 
 ### Generated Workspaces Ship a Devcontainer
 
