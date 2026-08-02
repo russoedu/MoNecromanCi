@@ -110,15 +110,17 @@ describe('collectFindings', () => {
     mkdirSync(join(workspaceRoot, 'node_modules/eslint'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'node_modules/eslint/package.json'),
-      JSON.stringify({ name: 'eslint', version: '10.8.0' })
+      JSON.stringify({ name: 'eslint', version: '9.39.5' })
     )
 
     const finding = findingFor(collectFindings(workspaceRoot), 'resolved eslint')
 
-    // The real bug: manifests declared ^10 while the docs said 9, and only the
-    // INSTALLED version revealed it.
+    // The real bug: manifests declared one major while the docs said another,
+    // and only the INSTALLED version revealed it. The majors have since swapped
+    // — the stack is on 10 now — and the check follows ESLINT_VERSION rather
+    // than a literal, which is exactly why only these fixtures needed changing.
     expect(finding?.ok).toBe(false)
-    expect(finding?.detail).toContain('10.8.0')
+    expect(finding?.detail).toContain('9.39.5')
   })
 
   it('passes when the resolved eslint is the supported major', () => {
@@ -126,7 +128,7 @@ describe('collectFindings', () => {
     mkdirSync(join(workspaceRoot, 'node_modules/eslint'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'node_modules/eslint/package.json'),
-      JSON.stringify({ name: 'eslint', version: '9.39.5' })
+      JSON.stringify({ name: 'eslint', version: '10.8.0' })
     )
 
     expect(findingFor(collectFindings(workspaceRoot), 'resolved eslint')?.ok).toBe(true)

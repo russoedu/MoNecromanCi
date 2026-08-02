@@ -175,7 +175,43 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### React Rules Now Come From `@eslint-react` (Latest)
+### The Stack Is on ESLint 10 (Latest)
+
+ROADMAP #26, closed. ESLint **10.8.0**, `eslint-plugin-unicorn` **72**, `@eslint/js`
+**10** — the content of Dependabot #86 and #83, both closed with reasons at the time.
+Neither holdout survived measurement.
+
+- **`jsx-a11y`'s peer cap was stale, not real.** Its latest release peers at
+  `^3 … ^9`, so `npm install` ERESOLVEs on 10 — but with one override the plugin
+  installs and its rules still fire. `ESLINT_PEER_OVERRIDES` in `overlay.ts` writes
+  `"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }` into every
+  generated root manifest, because **npm honours `overrides` only at the root**,
+  which is why a config package cannot fix this for itself. Merged rather than
+  replaced, so a workspace's own overrides survive `mnci upgrade`. State the trade
+  when touching it: mnci deleted `legacy-peer-deps` for weakening dependency
+  resolution, and this is the same kind of decision, only far narrower — remove it
+  the moment jsx-a11y declares ESLint 10.
+- **The bump surfaced 92 problems and zero defects.** The three rules
+  `configs/base.js` predicted on v61 were the top three by count —
+  `name-replacements` (35), `no-top-level-assignment-in-function` (19),
+  `consistent-boolean-name` (13) — and the prediction was right about why. A fourth
+  joins them: `no-incorrect-template-string-interpolation` (10) reads Nx's own
+  `{workspaceRoot}` tokens as forgotten `${...}`, so it cannot be right about any
+  code that writes Nx config.
+- **The other 25 were fixed, not silenced** — the difference between adopting a rule
+  and neutering it. One was a genuine defect: core ESLint 10's `no-useless-assignment`
+  found a dead initialiser in `doctor.ts`.
+- **`--fix` was run _after_ the four disables, deliberately.** The naming rules
+  rewrite identifiers, so fixing first renames code that is about to stop being
+  linted — a 350-line diff of pointless churn, which is exactly what happened on the
+  first attempt before it was reverted.
+- **Verified on a real generated workspace**: `npm install` succeeds on ESLint 10
+  (the override's whole purpose), and the resolved tree is eslint 10.8.0 + unicorn 72
+  - jsx-a11y 6.10.2.
+- `mnci doctor`'s eslint-major check needed no code change — it derives from
+  `ESLINT_VERSION`, so only its test fixtures moved.
+
+### React Rules Now Come From `@eslint-react`
 
 ROADMAP #26 step 2, taken first on purpose: it is the one step of the ESLint 10
 upgrade that is independently useful and reversible, and isolating it keeps the

@@ -57,18 +57,26 @@ export default [
       'n/prefer-node-protocol': 'error',
 
       // Unicorn, minus the opinionated-naming and stylistic members.
-      //
-      // Pinned to v61 because that is the last line supporting ESLint 9, and
-      // ESLint 9 is where this whole stack has to sit: `eslint-plugin-react`
-      // has no ESLint 10 release at all (it throws on every .tsx file), and
-      // `@nx/react` pins `eslint-plugin-import@2.31.0`, which peer-caps at 9.
-      // On a future upgrade, expect `name-replacements`,
-      // `consistent-boolean-name` and `no-top-level-assignment-in-function` to
-      // start firing — all three are newer additions this config would want off
-      // (the first two rename a team's own vocabulary; the third condemns the
-      // standard per-test fixture idiom). They are not listed here because
-      // ESLint rejects a config that names a rule the plugin does not have.
       ...unicorn.configs.recommended.rules,
+      // The three v72 additions the v61-era comment here predicted would need
+      // switching off, now that the ESLint 10 bump has brought them in. The
+      // prediction held: on this repo alone they reported 35, 13 and 19
+      // problems, 67 of the 92 the upgrade surfaced, and not one was a defect.
+      // The first two rename a team's own vocabulary (`addChoice` must become a
+      // function, a boolean must be named `isX`); the third condemns the
+      // standard per-test fixture idiom of assigning to a module-level binding
+      // from inside `beforeEach`.
+      'unicorn/name-replacements': 'off',
+      'unicorn/consistent-boolean-name': 'off',
+      'unicorn/no-top-level-assignment-in-function': 'off',
+      // Reports `{workspaceRoot}` in a plain string as a template literal
+      // someone forgot to write `${...}` in. But `{workspaceRoot}` and
+      // `{projectRoot}` are **Nx's own interpolation tokens**, the correct
+      // content of every target's options — so the rule cannot be right about
+      // any code that writes Nx config. Ten findings on this repo, ten false,
+      // zero defects: it fails the same "earns its keep" test the rules above
+      // fail.
+      'unicorn/no-incorrect-template-string-interpolation': 'off',
       'unicorn/filename-case': 'off',
       'unicorn/prevent-abbreviations': 'off',
       'unicorn/no-null': 'off',

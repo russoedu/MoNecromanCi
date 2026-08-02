@@ -191,7 +191,7 @@ function resolveCommands(
 
 const graph = projectGraph()
 const roots = rootsByName(graph)
-const projects = Object.keys(graph).toSorted()
+const projects = Object.keys(graph).toSorted((a, b) => a.localeCompare(b))
 
 /**
  * The targets CI verifies, read from the root `affected` script rather than
@@ -241,7 +241,8 @@ describe('every verify target in this workspace runs a real command', () => {
       }
 
       expect(exemption).toBeUndefined()
-      for (const command of resolveCommands(target, graph[project].data.root, roots)) {
+      const commands = resolveCommands(target, graph[project].data.root, roots)
+      for (const command of commands) {
         // The failure this catches: `echo "The 'typecheck' target is disabled
         // because one or more project references set 'noEmit: true' …"`.
         expect(command).not.toMatch(NO_OP)

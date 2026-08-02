@@ -54,7 +54,7 @@ const ACTUAL_TYPES_PATH = './dist/index.d.ts'
 function repairTypesPath(manifestPath: string): void {
   const manifest = readJson<{
     types?: string
-    exports?: Record<string, { types?: string } | string>
+    exports?: Record<string, string | { types?: string }>
   }>(manifestPath)
 
   if (manifest.types === WRONG_TYPES_PATH) {
