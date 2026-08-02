@@ -1,7 +1,7 @@
 jest.mock('../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -102,7 +102,7 @@ describe('runAdd', () => {
         '--bundler=tsc',
         '--unitTestRunner=jest',
         '--linter=none',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )

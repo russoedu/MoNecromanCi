@@ -17,7 +17,7 @@ export default [
       '**/*.{spec,test}.{js,mjs,cjs,jsx,ts,mts,cts,tsx}',
       '**/jest.*.{js,mjs,cjs,ts,mts,cts}',
       '**/vitest.*.{js,mjs,cjs,ts,mts,cts}',
-      '**/test-setup.{js,mjs,cjs,ts,mts,cts}',
+      '**/test-setup.{js,mjs,cjs,ts,mts,cts}'
     ],
     plugins: { jest },
     // Vitest's own globals go alongside Jest's. `describe`/`it`/`expect` are
@@ -26,7 +26,7 @@ export default [
     // the real binary. Narrow (a `.ts` spec escapes it, since `no-undef` is off for
     // TypeScript) but a real failure on a file the user wrote normally.
     languageOptions: {
-      globals: { ...jest.environments.globals.globals, vi: 'readonly', vitest: 'readonly' },
+      globals: { ...jest.environments.globals.globals, vi: 'readonly', vitest: 'readonly' }
     },
     rules: {
       'jest/no-focused-tests': 'error',
@@ -50,7 +50,7 @@ export default [
       // `prefer-regex-literals` both failed. Measured: it is the ONLY root-level
       // finding in a freshly generated workspace, and switching it off here is
       // what lets the root `lint` target ship at all.
-      'unicorn/no-anonymous-default-export': 'off',
-    },
-  },
+      'unicorn/no-anonymous-default-export': 'off'
+    }
+  }
 ]

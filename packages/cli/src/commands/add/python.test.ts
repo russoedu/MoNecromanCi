@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -88,7 +88,7 @@ describe('runAdd python', () => {
     expect(project.targets.lint).toBeDefined()
     expect(project.targets.package.dependsOn).toEqual(['build'])
     expect(project.targets.package.outputs).toEqual([
-      '{workspaceRoot}/dist/drop/python-app-svc.zip',
+      '{workspaceRoot}/dist/drop/python-app-svc.zip'
     ])
     expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
     expect(project.targets.package.options.command).toContain(
@@ -103,7 +103,7 @@ describe('runAdd python', () => {
     expect(project.targets.start).toMatchObject({
       executor: 'nx:run-commands',
       continuous: true,
-      options: { command: 'python3 main.py', cwd: 'apps/svc' },
+      options: { command: 'python3 main.py', cwd: 'apps/svc' }
     })
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -129,7 +129,7 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:function-application',
         'api',
         '--directory=apps/api',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -142,7 +142,7 @@ describe('runAdd python', () => {
       targets: Record<string, { outputs?: string[]; options: { command: string } }>
     }
     expect(project.targets.package.outputs).toEqual([
-      '{workspaceRoot}/dist/drop/python-function-app-api.zip',
+      '{workspaceRoot}/dist/drop/python-function-app-api.zip'
     ])
     expect(project.targets.package.options.command).toContain(
       `addLocalFile('apps/api/function_app.py')`
@@ -159,7 +159,7 @@ describe('runAdd python', () => {
     expect(project.targets.start).toMatchObject({
       executor: 'nx:run-commands',
       continuous: true,
-      options: { command: 'func start', cwd: 'apps/api' },
+      options: { command: 'func start', cwd: 'apps/api' }
     })
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
@@ -178,7 +178,7 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:library',
         'shared',
         '--directory=python-packages/shared',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -204,7 +204,7 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:internal-library',
         'core',
         '--directory=libs/core',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )

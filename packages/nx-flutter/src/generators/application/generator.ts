@@ -29,7 +29,7 @@ export default async function appGenerator(
     directory: options.directory ?? `apps/${options.name}`,
     projectType: 'application',
     tag: 'type:flutter-app',
-    buildable: true,
+    buildable: true
   })
   await formatFiles(tree)
   return task

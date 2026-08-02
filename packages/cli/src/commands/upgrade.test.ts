@@ -22,7 +22,7 @@ const FIXTURE_OPTIONS: OverlayOptions = {
   agent: 'ubuntu-latest',
   variableGroup: 'Build',
   ci: 'github',
-  stack: DEFAULT_STACK,
+  stack: DEFAULT_STACK
 }
 
 let workspaceRoot: string
@@ -95,7 +95,7 @@ describe('runUpgrade', () => {
       JSON.stringify({
         $schema: 's',
         namedInputs: {},
-        mnci: { stack: { testRunner: 'jest' } },
+        mnci: { stack: { testRunner: 'jest' } }
       })
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source' }))
@@ -112,8 +112,8 @@ describe('runUpgrade', () => {
         mnci: {
           scope: '@demo',
           registry: { kind: 'npm' },
-          stack: { testRunner: 'jest' },
-        },
+          stack: { testRunner: 'jest' }
+        }
       })
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
@@ -138,7 +138,7 @@ describe('runUpgrade', () => {
       registry: 'azure-artifacts',
       organization: 'org',
       project: 'proj',
-      artifactsFeed: 'feed',
+      artifactsFeed: 'feed'
     })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
@@ -148,7 +148,7 @@ describe('runUpgrade', () => {
       kind: 'azure-artifacts',
       organization: 'org',
       project: 'proj',
-      artifactsFeed: 'feed',
+      artifactsFeed: 'feed'
     })
   })
 
@@ -192,8 +192,8 @@ describe('runUpgrade', () => {
           registry: { kind: 'npm' },
           agent: 'ubuntu-latest',
           ci: 'github',
-          stack: { testRunner: 'jest' },
-        },
+          stack: { testRunner: 'jest' }
+        }
       })
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
@@ -217,7 +217,7 @@ describe('runUpgrade', () => {
     }
     file.tasks.tasks = [
       { label: 'web: qa', type: 'npm', script: 'web:qa' },
-      { label: 'web: build', type: 'npm', script: 'web:build' },
+      { label: 'web: build', type: 'npm', script: 'web:build' }
     ]
     writeFileSync(path, JSON.stringify(file, undefined, 2))
 

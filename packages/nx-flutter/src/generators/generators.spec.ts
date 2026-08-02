@@ -47,7 +47,7 @@ describe('application generator', () => {
       'build',
       'lint',
       'package',
-      'test',
+      'test'
     ])
     expect(targets?.lint.executor).toBe('@mnci/nx-flutter:lint')
     expect(targets?.build.executor).toBe('@mnci/nx-flutter:build')
@@ -95,7 +95,7 @@ describe('library generator', () => {
     // Without this, nx release looks for a package.json that does not exist and
     // fails the release for the WHOLE workspace.
     expect(project.release).toEqual({
-      version: { versionActions: '@mnci/nx-flutter/release/version-actions' },
+      version: { versionActions: '@mnci/nx-flutter/release/version-actions' }
     })
   })
 
@@ -105,7 +105,7 @@ describe('library generator', () => {
     const { targets } = readProjectConfiguration(tree, 'shared')
     expect(Object.keys(targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
       'lint',
-      'test',
+      'test'
     ])
     expect(targets?.['nx-release-publish']).toBeUndefined()
   })
@@ -121,7 +121,7 @@ describe('internal-library generator', () => {
     expect(project.release).toBeUndefined()
     expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
       'lint',
-      'test',
+      'test'
     ])
   })
 })

@@ -5,7 +5,7 @@ import {
   DEFAULT_STACK,
   type CiProvider,
   type RegistryConfig,
-  type StackConfig,
+  type StackConfig
 } from '../overlay'
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
@@ -89,12 +89,12 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
 async function resolveStack(options: NewOptions): Promise<StackConfig> {
   if (options.testRunner || options.yes) {
     return {
-      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner,
+      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner
     }
   }
   const prompted = await promptStack()
   return {
-    testRunner: prompted.testRunner,
+    testRunner: prompted.testRunner
   }
 }
 
@@ -139,7 +139,7 @@ async function resolveRegistry(options: NewOptions): Promise<RegistryConfig> {
       kind: 'azure-artifacts',
       organization: options.organization ?? (await promptText('Azure DevOps organization')),
       project: options.project ?? (await promptText('Azure DevOps project')),
-      artifactsFeed: options.artifactsFeed ?? (await promptText('Artifacts feed name')),
+      artifactsFeed: options.artifactsFeed ?? (await promptText('Artifacts feed name'))
     }
   }
   if (options.registry === 'npm' || options.yes) {
@@ -209,7 +209,7 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
       '--preset=ts',
       '--pm=npm',
       nxCloud ? `--nxCloud=${nxCloudProviderValue(ci)}` : '--nxCloud=skip',
-      '--no-interactive',
+      '--no-interactive'
     ],
     process.cwd()
   )

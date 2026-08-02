@@ -18,7 +18,7 @@ export default [
       '@html-eslint/require-img-alt': 'error',
       '@html-eslint/require-lang': 'error',
       '@html-eslint/no-obsolete-tags': 'error',
-      '@html-eslint/require-doctype': 'error',
-    },
-  },
+      '@html-eslint/require-doctype': 'error'
+    }
+  }
 ]

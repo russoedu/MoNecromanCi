@@ -1,14 +1,14 @@
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runPrettier: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
-  DEFAULT_STACK: { testRunner: 'jest' },
+  DEFAULT_STACK: { testRunner: 'jest' }
 }))
 jest.mock('../prompts', () => ({
   promptCi: jest.fn(),
   promptNxCloud: jest.fn(),
   promptRegistry: jest.fn(),
   promptStack: jest.fn(),
-  promptText: jest.fn(),
+  promptText: jest.fn()
 }))
 
 import { join } from 'node:path'
@@ -53,7 +53,7 @@ describe('runNew', () => {
         '--preset=ts',
         '--pm=npm',
         '--nxCloud=skip',
-        '--no-interactive',
+        '--no-interactive'
       ],
       '/somewhere'
     )
@@ -64,7 +64,7 @@ describe('runNew', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
   })
 
@@ -75,7 +75,7 @@ describe('runNew', () => {
       expect.any(String),
       expect.objectContaining({
         agent: 'MyPool',
-        variableGroup: 'CiSecrets',
+        variableGroup: 'CiSecrets'
       })
     )
   })
@@ -203,7 +203,7 @@ describe('runNew', () => {
       scope: '@acme',
       organization: 'org',
       project: 'proj',
-      artifactsFeed: 'feed',
+      artifactsFeed: 'feed'
     })
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), {
@@ -213,12 +213,12 @@ describe('runNew', () => {
         kind: 'azure-artifacts',
         organization: 'org',
         project: 'proj',
-        artifactsFeed: 'feed',
+        artifactsFeed: 'feed'
       },
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
     expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptRegistry).not.toHaveBeenCalled()

@@ -10,7 +10,7 @@ import {
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type AddOptions,
-  type WorkspaceStack,
+  type WorkspaceStack
 } from './shared'
 
 /**
@@ -144,7 +144,7 @@ export async function addReactLib(
       `--bundler=${REACT_LIB_BUNDLER}`,
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )
@@ -193,7 +193,7 @@ export function addReactInternalLib(
       `--bundler=${REACT_LIB_BUNDLER}`,
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )

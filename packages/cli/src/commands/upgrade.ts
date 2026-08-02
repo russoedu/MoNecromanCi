@@ -7,7 +7,7 @@ import {
   type CiProvider,
   type OverlayOptions,
   type RegistryConfig,
-  type StackConfig,
+  type StackConfig
 } from '../overlay'
 import { fileExists } from '../util/fsx'
 import { logger } from '../util/logger'
@@ -193,7 +193,7 @@ function resolveOverlayOptions(
     agent,
     variableGroup,
     ci,
-    stack: { testRunner },
+    stack: { testRunner }
   }
 }
 

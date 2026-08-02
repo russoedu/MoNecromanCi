@@ -53,7 +53,7 @@ export default function dependencyChecks(workspaceRoot) {
   }
 
   const privateWorkspacePackages = globSync(['libs/*/package.json', 'packages/*/package.json'], {
-    cwd: workspaceRoot,
+    cwd: workspaceRoot
   })
     .map(manifestPath => JSON.parse(readFileSync(join(workspaceRoot, manifestPath), 'utf8')))
     .filter(manifest => manifest.private === true)
@@ -77,11 +77,11 @@ export default function dependencyChecks(workspaceRoot) {
               '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
               '{projectRoot}/jest.config.{js,ts,mjs,mts,cjs,cts}',
               '{projectRoot}/**/*.spec.{js,ts,jsx,tsx}',
-              '{projectRoot}/**/*.test.{js,ts,jsx,tsx}',
-            ],
-          },
-        ],
-      },
-    },
+              '{projectRoot}/**/*.test.{js,ts,jsx,tsx}'
+            ]
+          }
+        ]
+      }
+    }
   ]
 }

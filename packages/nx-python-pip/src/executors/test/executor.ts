@@ -34,7 +34,7 @@ export default async function testExecutor(
   if (options.installEditable !== false) {
     const install = spawnSync(pythonCommand(), ['-m', 'pip', 'install', '--quiet', '-e', '.'], {
       cwd,
-      stdio: 'inherit',
+      stdio: 'inherit'
     })
     if (install.status !== 0) {
       return { success: false }

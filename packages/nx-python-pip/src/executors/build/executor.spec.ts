@@ -9,7 +9,7 @@ jest.mock('node:fs', () => ({
   mkdtempSync: jest.fn(),
   readFileSync: jest.fn(),
   rmSync: jest.fn(),
-  writeFileSync: jest.fn(),
+  writeFileSync: jest.fn()
 }))
 
 const mockSpawnSync = jest.mocked(spawnSync)
@@ -29,9 +29,9 @@ function context(): ExecutorContext {
       version: 2,
       projects: {
         pyshared: { root: 'python-packages/pyshared' },
-        pycore: { root: 'libs/pycore' },
-      },
-    },
+        pycore: { root: 'libs/pycore' }
+      }
+    }
   } as unknown as ExecutorContext
 }
 
@@ -56,7 +56,7 @@ describe('buildExecutor', () => {
         'build',
         '--outdir',
         '/workspace/python-packages/pyshared/dist',
-        '/workspace/python-packages/pyshared',
+        '/workspace/python-packages/pyshared'
       ],
       { stdio: 'inherit' }
     )
@@ -106,14 +106,14 @@ describe('buildExecutor', () => {
         'build',
         '--outdir',
         '/workspace/python-packages/pyshared/dist',
-        '/tmp/nx-python-pip-build-abc123',
+        '/tmp/nx-python-pip-build-abc123'
       ],
       { stdio: 'inherit' }
     )
     // Always cleans up the staging directory, even on success.
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/nx-python-pip-build-abc123', {
       recursive: true,
-      force: true,
+      force: true
     })
   })
 
@@ -133,7 +133,7 @@ describe('buildExecutor', () => {
     // Still cleans up the staging directory on this early-exit path.
     expect(mockRmSync).toHaveBeenCalledWith('/tmp/nx-python-pip-build-abc123', {
       recursive: true,
-      force: true,
+      force: true
     })
   })
 

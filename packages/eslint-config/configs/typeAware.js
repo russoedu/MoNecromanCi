@@ -87,7 +87,7 @@ import tseslint from 'typescript-eslint'
 export const TYPE_AWARE_FILES = [
   'apps/*/src/**/*.{ts,mts,cts,tsx}',
   'libs/*/src/**/*.{ts,mts,cts,tsx}',
-  'packages/*/src/**/*.{ts,mts,cts,tsx}',
+  'packages/*/src/**/*.{ts,mts,cts,tsx}'
 ]
 
 export default [
@@ -96,7 +96,7 @@ export default [
     plugins: { '@typescript-eslint': tseslint.plugin },
     languageOptions: {
       parser: tseslint.parser,
-      parserOptions: { projectService: true },
+      parserOptions: { projectService: true }
     },
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
@@ -115,7 +115,7 @@ export default [
       // used directly in a condition, are real bugs rather than an idiom.
       '@typescript-eslint/no-misused-promises': [
         'error',
-        { checksVoidReturn: { attributes: false } },
+        { checksVoidReturn: { attributes: false } }
       ],
       '@typescript-eslint/await-thenable': 'error',
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
@@ -123,8 +123,8 @@ export default [
       '@typescript-eslint/no-array-delete': 'error',
       '@typescript-eslint/no-for-in-array': 'error',
       '@typescript-eslint/no-implied-eval': 'error',
-      '@typescript-eslint/no-duplicate-type-constituents': 'error',
-    },
+      '@typescript-eslint/no-duplicate-type-constituents': 'error'
+    }
   },
   {
     // Declaration files describe types rather than execute, so the promise and
@@ -134,7 +134,7 @@ export default [
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/no-misused-promises': 'off',
-      '@typescript-eslint/unbound-method': 'off',
-    },
-  },
+      '@typescript-eslint/unbound-method': 'off'
+    }
+  }
 ]

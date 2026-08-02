@@ -12,7 +12,7 @@ describe('runShell', () => {
     expect(runShell('npx', ['nx', 'graph'], '/repo')).toBe(0)
     expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'graph'], {
       stdio: 'inherit',
-      cwd: '/repo',
+      cwd: '/repo'
     })
   })
 

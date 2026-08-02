@@ -16,7 +16,7 @@ jest.mock('nx/release', () => ({
       this.projectGraphNode = projectGraphNode
       this.finalConfigForProject = finalConfigForProject
     }
-  },
+  }
 }))
 jest.mock('node:child_process', () => ({ execFileSync: jest.fn() }))
 
@@ -30,7 +30,7 @@ function fakeTree(files: Record<string, string>) {
     read: (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
     write: (path: string, content: string) => {
       files[path] = content
-    },
+    }
   } as unknown as Tree
 }
 
@@ -49,12 +49,12 @@ describe('PythonVersionActions', () => {
     it('reads the version from pyproject.toml', async () => {
       const files = {
         'python-packages/pyshared/pyproject.toml':
-          '[project]\nname = "pyshared"\nversion = "1.2.3"\n',
+          '[project]\nname = "pyshared"\nversion = "1.2.3"\n'
       }
       const result = await instance().readCurrentVersionFromSourceManifest(fakeTree(files))
       expect(result).toEqual({
         currentVersion: '1.2.3',
-        manifestPath: 'python-packages/pyshared/pyproject.toml',
+        manifestPath: 'python-packages/pyshared/pyproject.toml'
       })
     })
 
@@ -74,7 +74,7 @@ describe('PythonVersionActions', () => {
     it('writes the new version into pyproject.toml, preserving the rest', async () => {
       const files = {
         'python-packages/pyshared/pyproject.toml':
-          '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n',
+          '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n'
       }
       const tree = fakeTree(files)
       const messages = await instance().updateProjectVersion(tree, '1.1.0')
@@ -117,7 +117,7 @@ describe('PythonVersionActions', () => {
       expect(dependency).toEqual({ currentVersion: null, dependencyCollection: null })
 
       const updates = await instance().updateProjectDependencies(fakeTree({}), {} as never, {
-        pycore: '1.0.0',
+        pycore: '1.0.0'
       })
       expect(updates).toEqual([])
     })

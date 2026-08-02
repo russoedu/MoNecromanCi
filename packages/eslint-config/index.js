@@ -48,7 +48,7 @@ export const ignores = [
   // golangci-lint, flutter analyze) wired as that project's `lint` target.
   '**/.venv',
   '**/__pycache__',
-  '**/.dart_tool',
+  '**/.dart_tool'
 ]
 
 /**
@@ -90,6 +90,6 @@ export default function mnci(options = {}) {
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
     // Formatting is Prettier's job — this must stay last.
     prettierConfig,
-    ...stylistic,
+    ...stylistic
   ]
 }

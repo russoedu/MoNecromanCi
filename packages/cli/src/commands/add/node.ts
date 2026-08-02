@@ -9,7 +9,7 @@ import {
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type NodeFramework,
-  type WorkspaceStack,
+  type WorkspaceStack
 } from './shared'
 
 /**
@@ -78,7 +78,7 @@ function runNodeApp(
       '--linter=none',
       '--e2eTestRunner=none',
       `--framework=${framework}`,
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )
@@ -107,7 +107,7 @@ function nodeAppPackageTarget(name: string): Record<string, unknown> {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
     outputs: [`{workspaceRoot}/${zip}`],
-    options: { command },
+    options: { command }
   }
 }
 
@@ -138,7 +138,7 @@ export function addNodeApp(
   runNodeApp(workspaceRoot, name, stack, framework)
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
-    package: nodeAppPackageTarget(name),
+    package: nodeAppPackageTarget(name)
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
@@ -310,7 +310,7 @@ function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoo
     toJson({
       ...manifest,
       main: 'dist/main.js',
-      dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` },
+      dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` }
     })
   )
 }
@@ -343,7 +343,7 @@ function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
     outputs: [`{workspaceRoot}/${zip}`],
-    options: { command },
+    options: { command }
   }
 }
 
@@ -369,7 +369,7 @@ function nodeFunctionAppStartTarget(name: string): Record<string, unknown> {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
     continuous: true,
-    options: { command: 'func start', cwd: `apps/${name}` },
+    options: { command: 'func start', cwd: `apps/${name}` }
   }
 }
 
@@ -419,7 +419,7 @@ export function addNodeFunctionApp(
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(nodeFunctionAppRoot, 'package.json'), {
     package: nodeFunctionAppPackageTarget(name),
-    start: nodeFunctionAppStartTarget(name),
+    start: nodeFunctionAppStartTarget(name)
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })

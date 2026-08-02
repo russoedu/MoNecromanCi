@@ -46,7 +46,7 @@ describe('promptRegistry', () => {
       kind: 'azure-artifacts',
       organization: 'org',
       project: 'proj',
-      artifactsFeed: 'feed',
+      artifactsFeed: 'feed'
     })
     expect(mockInput).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'Azure DevOps organization', default: 'default-org' })

@@ -19,7 +19,7 @@ function seedHealthyWorkspace(): void {
     join(workspaceRoot, 'nx.json'),
     JSON.stringify({
       plugins: [{ plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }],
-      mnci: { registry: { kind: 'npm' }, scope: '@demo' },
+      mnci: { registry: { kind: 'npm' }, scope: '@demo' }
     })
   )
   writeFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'export default []')
@@ -161,9 +161,9 @@ describe('collectFindings', () => {
             kind: 'azure-artifacts',
             organization: 'org',
             project: 'proj',
-            artifactsFeed: 'feed',
-          },
-        },
+            artifactsFeed: 'feed'
+          }
+        }
       })
     )
     // A public-npm .npmrc in an Azure workspace: a scoped package would publish
@@ -195,7 +195,7 @@ describe('collectFindings', () => {
     writeFileSync(
       join(workspaceRoot, 'packages/shared/project.json'),
       JSON.stringify({
-        release: { version: { versionActions: '@mnci/nx-flutter/release/version-actions' } },
+        release: { version: { versionActions: '@mnci/nx-flutter/release/version-actions' } }
       })
     )
 

@@ -48,7 +48,7 @@ const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[
 function checkEslintConfigs(workspaceRoot: string): Finding[] {
   const rootConfigs = globSync('eslint.config.{js,mjs,cjs,ts,mts,cts}', { cwd: workspaceRoot })
   const projectConfigs = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
-    cwd: workspaceRoot,
+    cwd: workspaceRoot
   })
 
   return [
@@ -59,14 +59,14 @@ function checkEslintConfigs(workspaceRoot: string): Finding[] {
         rootConfigs.length === 0
           ? 'no eslint.config.* at the workspace root'
           : `${rootConfigs.length} root configs: ${rootConfigs.join(', ')}`,
-      remedy: 'run `mnci upgrade` to rewrite the root config',
+      remedy: 'run `mnci upgrade` to rewrite the root config'
     },
     {
       check: 'no per-project ESLint configs',
       ok: projectConfigs.length === 0,
       detail: `found ${projectConfigs.length}: ${projectConfigs.join(', ')}`,
-      remedy: 'run `mnci upgrade`, which sweeps {apps,libs,packages}/*/eslint.config.*',
-    },
+      remedy: 'run `mnci upgrade`, which sweeps {apps,libs,packages}/*/eslint.config.*'
+    }
   ]
 }
 
@@ -90,7 +90,7 @@ function checkPrettierConfig(workspaceRoot: string): Finding {
     check: 'Prettier config is mnci’s',
     ok: !strayExists,
     detail: '.prettierrc exists and outranks .prettierrc.json, so mnci’s config is ignored',
-    remedy: 'delete .prettierrc (or run `mnci upgrade`, which deletes it)',
+    remedy: 'delete .prettierrc (or run `mnci upgrade`, which deletes it)'
   }
 }
 
@@ -118,7 +118,7 @@ function checkEslintPlugin(nxJson: Record<string, unknown>): Finding {
     check: '@nx/eslint/plugin registered',
     ok: registered,
     detail: 'not in nx.json plugins — every project silently loses its lint target',
-    remedy: 'run `mnci upgrade`',
+    remedy: 'run `mnci upgrade`'
   }
 }
 
@@ -153,7 +153,7 @@ function checkResolvedEslint(workspaceRoot: string): Finding | undefined {
       check: `resolved eslint is ${SUPPORTED_ESLINT_MAJOR}.x`,
       ok: major === SUPPORTED_ESLINT_MAJOR,
       detail: `node_modules/eslint is ${version}, but this stack supports ${SUPPORTED_ESLINT_MAJOR}.x (eslint-plugin-react has no release beyond it)`,
-      remedy: `pin eslint to ${ESLINT_VERSION} in every package manifest, then reinstall`,
+      remedy: `pin eslint to ${ESLINT_VERSION} in every package manifest, then reinstall`
     }
   } catch {
     return undefined
@@ -191,14 +191,14 @@ function checkNpmrc(
       check: '.npmrc authenticates the public registry',
       ok: npmrc.includes('//registry.npmjs.org/:_authToken='),
       detail: 'no npmjs.org token line — `npm publish` cannot authenticate',
-      remedy: 'run `mnci upgrade`',
+      remedy: 'run `mnci upgrade`'
     }
   }
   return {
     check: '.npmrc routes the scope to the feed',
     ok: scope !== undefined && npmrc.includes(`${scope}:registry=`),
     detail: `no '${scope ?? '@scope'}:registry=' line — a scoped package could publish to npmjs.org instead of the feed`,
-    remedy: 'run `mnci upgrade`',
+    remedy: 'run `mnci upgrade`'
   }
 }
 
@@ -219,7 +219,7 @@ function checkNpmrc(
 function checkVersionActions(workspaceRoot: string): Finding[] {
   const candidates = [
     ...globSync('packages/*/pubspec.yaml', { cwd: workspaceRoot }),
-    ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot }),
+    ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot })
   ]
   return candidates.flatMap(manifest => {
     const projectRoot = manifest.slice(0, manifest.lastIndexOf('/'))
@@ -238,8 +238,8 @@ function checkVersionActions(workspaceRoot: string): Finding[] {
         check: `${projectRoot} keeps its versionActions override`,
         ok: hasOverride,
         detail: 'missing — nx release aborts for the ENTIRE workspace, not just this project',
-        remedy: `add release.version.versionActions to ${projectRoot}/project.json`,
-      },
+        remedy: `add release.version.versionActions to ${projectRoot}/project.json`
+      }
     ]
   })
 }
@@ -261,7 +261,7 @@ function checkSync(workspaceRoot: string): Finding {
     check: 'TypeScript project references synced',
     ok: runShell('npx', ['nx', 'sync:check'], workspaceRoot) === 0,
     detail: 'nx sync:check failed — a stale project reference was never committed',
-    remedy: 'run `npx nx sync` and commit the result',
+    remedy: 'run `npx nx sync` and commit the result'
   }
 }
 
@@ -301,7 +301,7 @@ export function collectFindings(workspaceRoot: string): Finding[] {
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
     ...checkVersionActions(workspaceRoot),
-    checkSync(workspaceRoot),
+    checkSync(workspaceRoot)
   ].filter((finding): finding is Finding => finding !== undefined)
 }
 

@@ -12,7 +12,7 @@ export default {
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
   coverageReporters: ['text', 'json-summary'],
   coverageThreshold: {
-    global: { statements: 85, branches: 85, functions: 85, lines: 85 },
+    global: { statements: 85, branches: 85, functions: 85, lines: 85 }
   },
-  clearMocks: true,
+  clearMocks: true
 }

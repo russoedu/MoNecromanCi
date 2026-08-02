@@ -40,7 +40,7 @@ export default async function buildExecutor(
 
   const result = spawnSync(flutterCommand(), ['build', 'web', '--output', outputPath], {
     cwd,
-    stdio: 'inherit',
+    stdio: 'inherit'
   })
   return { success: result.status === 0 }
 }

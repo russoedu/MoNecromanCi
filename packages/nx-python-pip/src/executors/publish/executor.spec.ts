@@ -14,8 +14,8 @@ function context(): ExecutorContext {
     isVerbose: false,
     projectsConfigurations: {
       version: 2,
-      projects: { shared: { root: 'python-packages/shared' } },
-    },
+      projects: { shared: { root: 'python-packages/shared' } }
+    }
   } as unknown as ExecutorContext
 }
 

@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -108,7 +108,7 @@ describe('runAdd flutter', () => {
     expect(project.targets.start).toMatchObject({
       executor: 'nx:run-commands',
       continuous: true,
-      options: { command: 'flutter run -d chrome', cwd: 'apps/web' },
+      options: { command: 'flutter run -d chrome', cwd: 'apps/web' }
     })
     // build survives from the seeded fixture — this call only adds 'start'.
     expect(project.targets.build).toBeDefined()

@@ -35,7 +35,7 @@ export default async function lintExecutor(
   const cwd = join(context.root, projectRootFrom(context))
   const result = spawnSync(flutterCommand(), ['analyze', '--fatal-infos'], {
     cwd,
-    stdio: 'inherit',
+    stdio: 'inherit'
   })
   return { success: result.status === 0 }
 }

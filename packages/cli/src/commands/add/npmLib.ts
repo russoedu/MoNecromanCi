@@ -7,7 +7,7 @@ import {
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type AddOptions,
-  type WorkspaceStack,
+  type WorkspaceStack
 } from './shared'
 
 /**
@@ -57,7 +57,7 @@ export async function addNpmLib(
       '--bundler=rollup',
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )

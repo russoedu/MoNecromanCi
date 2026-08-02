@@ -48,13 +48,13 @@ const ABSENT_BY_DESIGN: Record<string, Record<string, string>> = {
     // so inferring targets from them would recurse.
     typecheck: 'the root has no sources of its own; each package typechecks itself',
     test: 'the root has no sources of its own; each package tests itself',
-    build: 'the root has no sources of its own; each package builds itself',
+    build: 'the root has no sources of its own; each package builds itself'
   },
   '@mnci/eslint-config': {
     // Plain ESM a consumer loads directly, so there is nothing to compile —
     // and a build step would risk the published config drifting from source.
-    build: 'published as source — a build step could let dist/ drift from it',
-  },
+    build: 'published as source — a build step could let dist/ drift from it'
+  }
   // No project is exempt from `typecheck`, deliberately. `tsconfig.base.json`
   // sets `isolatedModules: true`, which puts ts-jest in transpile-only mode, so
   // jest reports no type errors at all (verified: a `const x: number = 'y'` in a
@@ -91,7 +91,7 @@ function projectGraph(): Record<string, NxNode> {
     const result = spawnSync(`npx nx graph --file "${file}"`, {
       cwd: WORKSPACE_ROOT,
       encoding: 'utf8',
-      shell: true,
+      shell: true
     })
     if (result.status !== 0 || !existsSync(file)) {
       throw new Error(
@@ -180,7 +180,7 @@ function resolveCommands(
       ...(options?.command === undefined ? [] : [options.command]),
       ...(options?.commands ?? []).map(entry =>
         typeof entry === 'string' ? entry : (entry.command ?? '')
-      ),
+      )
     ]
     if (raw.length === 0) throw new Error('nx:run-commands with no command')
     return raw.map(command => followNpmRun(command, projectRoot, roots))

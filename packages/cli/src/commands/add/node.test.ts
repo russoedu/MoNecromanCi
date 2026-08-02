@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -55,7 +55,7 @@ describe('runAdd node-app', () => {
         '--linter=none',
         '--e2eTestRunner=none',
         '--framework=none',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -82,7 +82,7 @@ describe('runAdd node-app', () => {
         name: '@demo/svc',
         version: '0.0.1',
         private: true,
-        nx: { targets: { build: {} } },
+        nx: { targets: { build: {} } }
       })
     )
 
@@ -117,7 +117,7 @@ describe('runAdd node-app', () => {
     expect(manifest.nx.targets.package).toMatchObject({
       executor: 'nx:run-commands',
       dependsOn: ['build'],
-      outputs: ['{workspaceRoot}/dist/drop/node-app-svc.zip'],
+      outputs: ['{workspaceRoot}/dist/drop/node-app-svc.zip']
     })
     expect(manifest.nx.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
     expect(manifest.nx.targets.package.options.command).toContain(
@@ -191,7 +191,7 @@ describe('runAdd node-function-app', () => {
         version: '0.0.1',
         private: true,
         nx: { targets: { build: {} } },
-        dependencies: {},
+        dependencies: {}
       })
     )
 
@@ -207,7 +207,7 @@ describe('runAdd node-function-app', () => {
         '--linter=none',
         '--e2eTestRunner=none',
         '--framework=none',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -261,7 +261,7 @@ describe('runAdd node-function-app', () => {
     expect(manifest.nx.targets.package).toMatchObject({
       executor: 'nx:run-commands',
       dependsOn: ['build'],
-      outputs: ['{workspaceRoot}/dist/drop/node-function-app-api.zip'],
+      outputs: ['{workspaceRoot}/dist/drop/node-function-app-api.zip']
     })
     const packageCommand = (manifest.nx.targets.package as { options: { command: string } }).options
       .command
@@ -275,7 +275,7 @@ describe('runAdd node-function-app', () => {
       executor: 'nx:run-commands',
       dependsOn: ['build'],
       continuous: true,
-      options: { command: 'func start', cwd: 'apps/api' },
+      options: { command: 'func start', cwd: 'apps/api' }
     })
 
     // The root package.json gets the discoverable <name>:build/:qa/:start scripts.
@@ -314,7 +314,7 @@ describe('root-only ESLint config', () => {
 
   it.each([
     ['node-app', 'svc', 'apps/svc'],
-    ['node-function-app', 'fn', 'apps/fn'],
+    ['node-function-app', 'fn', 'apps/fn']
   ])(
     'leaves no per-project eslint config behind after adding a %s',
     async (kind, name, projectRoot) => {

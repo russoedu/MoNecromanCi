@@ -76,7 +76,7 @@ function reportIfOutdated(currentVersion: string): void {
   const result = spawn.sync('npm', ['view', PACKAGE_NAME, 'version'], {
     encoding: 'utf8',
     timeout: REGISTRY_TIMEOUT_MS,
-    stdio: ['ignore', 'pipe', 'ignore'],
+    stdio: ['ignore', 'pipe', 'ignore']
   })
   if (result.error || result.status !== 0) {
     return

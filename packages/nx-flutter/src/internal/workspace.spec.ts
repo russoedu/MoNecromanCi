@@ -5,7 +5,7 @@ import {
   ensureWorkspaceRoot,
   memberAnalysisOptions,
   ROOT_ANALYSIS_OPTIONS,
-  ROOT_PUBSPEC,
+  ROOT_PUBSPEC
 } from './workspace'
 
 let tree: Tree

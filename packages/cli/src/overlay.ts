@@ -83,7 +83,7 @@ export const PRETTIER_VERSION = '^3.8.1'
  */
 export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
   '@typescript/native': 'npm:typescript@^7.0.2',
-  typescript: 'npm:@typescript/typescript6@^6.0.2',
+  typescript: 'npm:@typescript/typescript6@^6.0.2'
 }
 
 /**
@@ -306,14 +306,14 @@ export function releaseConfig(ci: CiProvider): Record<string, unknown> {
       // Set here at `new` time it wins: the generator only fills this in when
       // absent (it spreads the existing release.version over its default). Both
       // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
-      preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
+      preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*'
     },
     changelog: githubReleases
       ? {
           workspaceChangelog: false,
-          projectChangelogs: { createRelease: 'github', file: false },
+          projectChangelogs: { createRelease: 'github', file: false }
         }
-      : { workspaceChangelog: false },
+      : { workspaceChangelog: false }
   } as const
 }
 
@@ -361,7 +361,7 @@ export const SYNC_CONFIG = { applyChanges: true } as const
  */
 export const ESLINT_PLUGIN_CONFIG = {
   plugin: '@nx/eslint/plugin',
-  options: { targetName: 'lint' },
+  options: { targetName: 'lint' }
 } as const
 
 /**
@@ -426,7 +426,7 @@ export function withEslintPlugin(nxJson: Record<string, unknown>): Record<string
 export const SHARED_GLOBAL_INPUTS = [
   '{workspaceRoot}/eslint.config.mjs',
   '{workspaceRoot}/tsconfig.base.json',
-  '{workspaceRoot}/package.json',
+  '{workspaceRoot}/package.json'
 ] as const
 
 /**
@@ -452,7 +452,7 @@ export function withSharedGlobals(nxJson: Record<string, unknown>): Record<strin
   const missing = SHARED_GLOBAL_INPUTS.filter(entry => !existing.includes(entry))
   return {
     ...nxJson,
-    namedInputs: { ...namedInputs, sharedGlobals: [...existing, ...missing] },
+    namedInputs: { ...namedInputs, sharedGlobals: [...existing, ...missing] }
   }
 }
 
@@ -503,17 +503,23 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * The Prettier config written into generated workspaces.
  *
  * @remarks
- * Follows JavaScript Standard Style: no semicolons, single quotes, 2-space
- * indents, and **no trailing commas** — Standard forbids them, so `es5` (the
- * value this used to carry) was wrong.
+ * The options themselves no longer live here — they live in
+ * `@mnci/eslint-config/prettier`, and this file only re-exports them. Lint and
+ * format are one opinion, so shipping them as one package means they cannot
+ * drift into disagreeing, and a formatting fix reaches an existing workspace
+ * through `npm update` rather than needing `mnci upgrade`. The file keeps
+ * comments explaining the override path, which is why it is `.mjs` and not JSON.
  *
- * This is written as `.prettierrc.json`, and {@link removeNxScaffolding}
- * deletes the `.prettierrc` that `create-nx-workspace` leaves behind. That
- * deletion is load-bearing, not tidying: `.prettierrc` sits ABOVE
- * `.prettierrc.json` in Prettier's config precedence, so while both existed
- * every option below was silently ignored in every generated workspace and the
- * effective config was Nx's `{ "singleQuote": true }`. Verified with
- * `prettier.resolveConfig` before and after.
+ * **Written as `.prettierrc.mjs`, and both other candidates are deleted.**
+ * Prettier's precedence is `.prettierrc` → `.prettierrc.json` → … →
+ * `.prettierrc.mjs`, so a leftover file of either earlier kind wins outright and
+ * silently reinstates the old opinion. {@link removeNxScaffolding} therefore
+ * removes `.prettierrc` (which `create-nx-workspace` writes as
+ * `{ "singleQuote": true }`) **and** `.prettierrc.json` (which mnci itself wrote
+ * before this change, so an `mnci upgrade` must clear it). Getting that wrong is
+ * not hypothetical: it is exactly the bug that made every option in this file
+ * silently ignored in every generated workspace until it was found with
+ * `prettier.resolveConfig`.
  *
  * Prettier owns all formatting. The three JavaScript Standard rules Prettier
  * never touches (`spaced-comment`, `lines-between-class-members`,
@@ -522,17 +528,26 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * actively reverses it, so enabling it would make `lint` and `format:check`
  * mutually unsatisfiable.
  */
-export const PRETTIER_CONFIG = `{
-  "semi": false,
-  "singleQuote": true,
-  "trailingComma": "none",
-  "arrowParens": "avoid",
-  "printWidth": 100,
-  "tabWidth": 2,
-  "useTabs": false
-}
+export const PRETTIER_CONFIG = `// The formatting half of @mnci/eslint-config.
+//
+// Prettier's options live in the same package as the ESLint rules on purpose:
+// linting and formatting are one decision. \`eslint-config-prettier\` is composed
+// last inside that package so every formatting rule defers to these settings, and
+// splitting the two across packages means a version pair that can drift until
+// \`npm run lint\` and \`npm run format:check\` disagree with each other.
+//
+// Consuming it as a shareable config also means a formatting fix reaches this
+// workspace through \`npm update\`, the same way a rule change does, instead of
+// waiting for \`mnci upgrade\` to rewrite a file.
+//
+// TO OVERRIDE an option, spread it rather than re-exporting:
+//
+//   import mnci from '@mnci/eslint-config/prettier'
+//   export default { ...mnci, printWidth: 120 }
+//
+// TO SEE the resolved options for a file:  npx prettier --find-config-path <file>
+export { default } from '@mnci/eslint-config/prettier'
 `
-
 /**
  * The `@mnci/eslint-config` version generated workspaces depend on.
  *
@@ -621,7 +636,7 @@ export function devcontainerJson(workspaceName: string): string {
     image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
     features: {
       'ghcr.io/devcontainers/features/python:1': { version: '3.12' },
-      'ghcr.io/devcontainers/features/go:1': { version: 'latest' },
+      'ghcr.io/devcontainers/features/go:1': { version: 'latest' }
     },
     // `npm ci` first: every guard after it runs through the workspace's own
     // scripts and Nx, which do not exist until the install completes.
@@ -629,13 +644,13 @@ export function devcontainerJson(workspaceName: string): string {
       'npm ci',
       'npm run python:install',
       GOLANGCI_LINT_INSTALL_GUARD,
-      FLUTTER_SDK_INSTALL_GUARD,
+      FLUTTER_SDK_INSTALL_GUARD
     ].join(' && '),
     // The same recommendations the `.code-workspace` file carries, so opening
     // the folder in a container suggests the identical toolset.
     customizations: {
-      vscode: { extensions: [...VSCODE_RECOMMENDED_EXTENSIONS] },
-    },
+      vscode: { extensions: [...VSCODE_RECOMMENDED_EXTENSIONS] }
+    }
   })}\n`
 }
 
@@ -670,10 +685,10 @@ export const ROOT_LINT_TARGET = {
       '--ignore-pattern "libs/**"',
       '--ignore-pattern "packages/**"',
       '--ignore-pattern "python-packages/**"',
-      '--ignore-pattern package-lock.json',
+      '--ignore-pattern package-lock.json'
     ].join(' '),
-    cwd: '.',
-  },
+    cwd: '.'
+  }
 } as const
 
 /**
@@ -699,7 +714,7 @@ export const ROOT_LINT_TARGET = {
  * be removed the moment `jsx-a11y` ships a release declaring ESLint 10.
  */
 export const ESLINT_PEER_OVERRIDES = {
-  'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
+  'eslint-plugin-jsx-a11y': { eslint: '$eslint' }
 } as const
 
 /**
@@ -733,7 +748,7 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
     eslint: ESLINT_VERSION,
     '@nx/eslint': nxVersion,
     '@nx/eslint-plugin': nxVersion,
-    '@mnci/eslint-config': eslintConfigSpec(),
+    '@mnci/eslint-config': eslintConfigSpec()
   }
 }
 
@@ -807,7 +822,7 @@ export const VSCODE_RECOMMENDED_EXTENSIONS = [
   'dbaeumer.vscode-eslint',
   'esbenp.prettier-vscode',
   'nrwl.angular-console',
-  'firsttris.vscode-jest-runner',
+  'firsttris.vscode-jest-runner'
 ] as const
 
 /**
@@ -857,28 +872,28 @@ export function vscodeWorkspace(
           'json',
           'jsonc',
           'markdown',
-          'yaml',
+          'yaml'
         ],
         'editor.codeActionsOnSave': {
-          'source.fixAll.eslint': 'explicit',
+          'source.fixAll.eslint': 'explicit'
         },
         'editor.defaultFormatter': 'esbenp.prettier-vscode',
         'editor.formatOnSave': true,
         '[json]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+          'editor.defaultFormatter': 'esbenp.prettier-vscode'
         },
         '[jsonc]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode',
+          'editor.defaultFormatter': 'esbenp.prettier-vscode'
         },
         '[yaml]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode',
-        },
+          'editor.defaultFormatter': 'esbenp.prettier-vscode'
+        }
       },
       extensions: { recommendations: [...VSCODE_RECOMMENDED_EXTENSIONS] },
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
-        tasks: existingTasks?.tasks ?? [],
-      },
+        tasks: existingTasks?.tasks ?? []
+      }
     },
     null,
     2
@@ -910,7 +925,7 @@ export const ROOT_SCRIPTS = {
   affected: 'nx affected -t lint,typecheck,test,build',
   graph: 'nx graph',
   'release:preview': 'nx release --dry-run',
-  prepare: 'husky',
+  prepare: 'husky'
 } as const
 
 /**
@@ -937,7 +952,7 @@ export function rootScripts(): Record<string, string> {
     ...ROOT_SCRIPTS,
     format: 'prettier --write .',
     'format:check': 'prettier --check .',
-    'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`,
+    'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`
   }
 }
 
@@ -969,12 +984,12 @@ export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
     // `eslint-plugin-import@2.31.0`, which peer-caps at ESLint 9 and breaks the
     // install outright on this workspace's ESLint 10.
     linter: 'none',
-    unitTestRunner: stack.testRunner,
+    unitTestRunner: stack.testRunner
   }
   return {
     '@nx/react:application': shared,
     '@nx/react:library': shared,
-    '@nx/js:library': shared,
+    '@nx/js:library': shared
   }
 }
 
@@ -1011,7 +1026,7 @@ export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
     agent: options.agent,
     variableGroup: options.variableGroup,
     ci: options.ci,
-    stack: { testRunner: options.stack.testRunner },
+    stack: { testRunner: options.stack.testRunner }
   }
 }
 
@@ -2206,7 +2221,7 @@ export interface OverlayOptions {
  * Removal is idempotent and safe on a workspace where they are already gone,
  * which is what makes `mnci upgrade` able to repair an existing workspace.
  */
-const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.vscode'] as const
+const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.prettierrc.json', '.vscode'] as const
 
 /**
  * Deletes the `create-nx-workspace` scaffolding mnci replaces.
@@ -2258,7 +2273,7 @@ export function removeNxScaffolding(workspaceRoot: string): void {
  */
 export function removeProjectEslintConfigs(workspaceRoot: string): void {
   const matches = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
-    cwd: workspaceRoot,
+    cwd: workspaceRoot
   })
   for (const match of matches) {
     rmSync(join(workspaceRoot, match), { force: true })
@@ -2271,7 +2286,7 @@ export function removeProjectEslintConfigs(workspaceRoot: string): void {
  * @remarks
  * This is the ONLY file-writing this CLI does — everything else in the
  * workspace is the untouched output of Nx's own generators. Writes: the
- * `nx.json` release patch, `eslint.config.mjs`, `.prettierrc.json`,
+ * `nx.json` release patch, `eslint.config.mjs`, `.prettierrc.mjs`,
  * `.prettierignore`, `.npmrc`, `commitlint.config.mjs`, the husky
  * `commit-msg` hook, the `<workspace>.code-workspace` file and
  * the chosen CI provider's pipeline file(s) — `azure-pipelines.yml` and/or
@@ -2299,7 +2314,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = {
     ...(nxJson.generators as Record<string, unknown> | undefined),
-    ...generatorDefaults(options.stack),
+    ...generatorDefaults(options.stack)
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
@@ -2317,7 +2332,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts(),
+    ...rootScripts()
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
   const devDeps = {
@@ -2325,12 +2340,12 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...TS_COMPILER_DEPENDENCIES,
     // The preset pins `nx` itself; the ESLint plugins must match it exactly.
     ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
-    prettier: PRETTIER_VERSION,
+    prettier: PRETTIER_VERSION
   }
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
-    ...ESLINT_PEER_OVERRIDES,
+    ...ESLINT_PEER_OVERRIDES
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
@@ -2341,8 +2356,8 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
     targets: {
       ...(existingNx?.targets as Record<string, unknown> | undefined),
-      lint: ROOT_LINT_TARGET,
-    },
+      lint: ROOT_LINT_TARGET
+    }
   }
   writeFileEnsured(
     manifestPath,
@@ -2352,7 +2367,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
       scripts,
       devDependencies: devDeps,
       overrides,
-      nx,
+      nx
     })
   )
 
@@ -2365,7 +2380,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // formatting (JavaScript Standard Style). ONE ESLint config, at the root —
   // `add` deletes the per-project ones Nx generators write.
   writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
-  writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
+  writeFileEnsured(join(workspaceRoot, '.prettierrc.mjs'), PRETTIER_CONFIG)
   // Makes a local environment match the one CI verifies — see devcontainerJson.
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),

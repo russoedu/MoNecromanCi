@@ -27,7 +27,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  writeFileSync,
+  writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
@@ -69,7 +69,7 @@ function run(command, cwd) {
   execSync(command, {
     cwd,
     stdio: 'inherit',
-    env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' },
+    env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' }
   })
 }
 
@@ -91,7 +91,7 @@ function tryRunCapture(command, cwd) {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' },
+      env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' }
     })
     console.log(output)
     return { ok: true, output }
@@ -479,7 +479,7 @@ section('js stack', [], () => {
     JSON.stringify({
       build: rootManifest.scripts?.build,
       affected: rootManifest.scripts?.affected,
-      prepare: rootManifest.scripts?.prepare,
+      prepare: rootManifest.scripts?.prepare
     })
   )
   // Real-execution proof, on a workspace with zero Python projects, that
@@ -726,7 +726,7 @@ section('js stack', [], () => {
   const sdkManifestForDependency = JSON.parse(readFileSync(sdkManifestPath, 'utf8'))
   sdkManifestForDependency.dependencies = {
     ...sdkManifestForDependency.dependencies,
-    ms: `^${msVersion}`,
+    ms: `^${msVersion}`
   }
   writeFileSync(sdkManifestPath, `${JSON.stringify(sdkManifestForDependency, undefined, 2)}\n`)
   writeFileSync(
@@ -770,7 +770,7 @@ section('js stack', [], () => {
       '    <App />',
       '  </StrictMode>,',
       ');',
-      '',
+      ''
     ].join('\n')
   )
 
@@ -1353,7 +1353,7 @@ section('python', ['alt stack'], () => {
     `npm pack --silent --pack-destination "${nxPythonPipPackDirectory}"`,
     {
       cwd: nxPythonPipDirectory,
-      encoding: 'utf8',
+      encoding: 'utf8'
     }
   ).trim()
   const nxPythonPipTarball = path.join(nxPythonPipPackDirectory, packOutput.split('\n').at(-1))
@@ -1772,7 +1772,7 @@ section('go', ['alt stack'], () => {
       ['goapi', 'apps/goapi', ['build', 'test', 'lint', 'package', 'start']],
       ['goutil', 'libs/goutil', ['test', 'lint']],
       ['gocore', 'packages/gocore', ['test', 'lint']],
-      ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']],
+      ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']]
     ]) {
       const projectJson = JSON.parse(
         readFileSync(path.join(altWorkspace, directory, 'project.json'), 'utf8')
@@ -1976,7 +1976,7 @@ section('flutter', [], () => {
     const lockfiles = [
       'pubspec.lock',
       'apps/hello/pubspec.lock',
-      'packages/dartshared/pubspec.lock',
+      'packages/dartshared/pubspec.lock'
     ]
     enforce(
       'flutter: one root pub get produces ONE lockfile — pub deletes the per-package ones',

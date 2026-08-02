@@ -9,7 +9,7 @@ export default [
     rules: {
       'markdown/no-empty-links': 'error',
       'markdown/no-invalid-label-refs': 'error',
-      'markdown/no-duplicate-headings': 'off',
-    },
-  },
+      'markdown/no-duplicate-headings': 'off'
+    }
+  }
 ]

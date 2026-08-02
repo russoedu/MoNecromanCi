@@ -20,5 +20,5 @@ export const logger = {
   },
   error(message: string): void {
     console.error(`✗ ${message}`)
-  },
+  }
 }

@@ -125,7 +125,7 @@ const FIXTURES: Record<string, string> = {
   'packages/demo/src/cycleA.ts':
     "import { fromB } from './cycleB.js'\n\nexport function fromA (): number {\n  return fromB() + 1\n}\n",
   'packages/demo/src/cycleB.ts':
-    "import { fromA } from './cycleA.js'\n\nexport function fromB (): number {\n  return fromA() - 1\n}\n",
+    "import { fromA } from './cycleA.js'\n\nexport function fromB (): number {\n  return fromA() - 1\n}\n"
 }
 
 let workspace: string
@@ -147,7 +147,7 @@ function lintAll(directory: string): Record<string, string[]> {
     {
       cwd: directory,
       encoding: 'utf8',
-      shell: process.platform === 'win32',
+      shell: process.platform === 'win32'
     }
   )
   const stdout = result.stdout?.trim()
@@ -188,7 +188,7 @@ function printConfig(directory: string, filename: string): { rules: Record<strin
   const result = spawnSync(eslintBin, ['--print-config', filename], {
     cwd: directory,
     encoding: 'utf8',
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32'
   })
   const stdout = result.stdout?.trim()
   if (!stdout?.startsWith('{')) {
@@ -479,7 +479,7 @@ describe('@mnci/eslint-config', () => {
       const printed = spawnSync(eslintBin, ['--print-config', 'packages/thing/package.json'], {
         cwd: scoped,
         encoding: 'utf8',
-        shell: process.platform === 'win32',
+        shell: process.platform === 'win32'
       })
 
       expect(printed.stdout).toContain('@nx/dependency-checks')

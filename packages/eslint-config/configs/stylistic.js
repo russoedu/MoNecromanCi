@@ -41,21 +41,21 @@ export default [
           block: {
             balanced: true,
             markers: ['*package', '!', ',', ':', '::', 'flow-include'],
-            exceptions: ['*'],
-          },
-        },
+            exceptions: ['*']
+          }
+        }
       ],
       // Prettier preserves whatever blank lines are (or are not) between class
       // members; Standard requires one, except after a single-line member.
       '@stylistic/lines-between-class-members': [
         'error',
         'always',
-        { exceptAfterSingleLine: true },
+        { exceptAfterSingleLine: true }
       ],
       // A byte-order mark survives Prettier untouched and breaks shebangs,
       // diffs, and some parsers. Still a core ESLint rule — `@stylistic` never
       // adopted this one, so it carries no plugin prefix.
-      'unicode-bom': ['error', 'never'],
-    },
-  },
+      'unicode-bom': ['error', 'never']
+    }
+  }
 ]

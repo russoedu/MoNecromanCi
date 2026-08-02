@@ -14,7 +14,7 @@ import {
   addPythonFunctionApp,
   addPythonInternalLib,
   addPythonLib,
-  addPythonVendor,
+  addPythonVendor
 } from './add/python'
 import { addReactApp } from './add/reactApp'
 import { addReactInternalLib, addReactLib } from './add/reactLib'
@@ -23,7 +23,7 @@ import {
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type AddOptions,
-  type WorkspaceStack,
+  type WorkspaceStack
 } from './add/shared'
 
 export type { AddOptions } from './add/shared'
@@ -150,7 +150,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'go-internal-lib',
   'flutter-app',
   'flutter-lib',
-  'flutter-internal-lib',
+  'flutter-internal-lib'
 ]
 
 /**
@@ -194,7 +194,7 @@ export async function runAdd(
     kind ??
     (await select<ProjectKind>({
       message: 'What kind of project?',
-      choices: PROJECT_KINDS.map(value => ({ name: value, value })),
+      choices: PROJECT_KINDS.map(value => ({ name: value, value }))
     }))
   const resolvedName = name ?? (await promptText('Project name'))
   // Fails fast, before any install or generator call: the name becomes a
@@ -240,7 +240,7 @@ export async function runAdd(
           '--bundler=tsc',
           `--unitTestRunner=${stack.testRunner}`,
           '--linter=none',
-          '--no-interactive',
+          '--no-interactive'
         ],
         workspaceRoot
       )
@@ -383,6 +383,6 @@ function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
   )
   const stack = nxJson.mnci?.stack
   return {
-    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
+    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest'
   }
 }

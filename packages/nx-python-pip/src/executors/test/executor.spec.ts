@@ -14,8 +14,8 @@ function context(): ExecutorContext {
     isVerbose: false,
     projectsConfigurations: {
       version: 2,
-      projects: { svc: { root: 'apps/svc' } },
-    },
+      projects: { svc: { root: 'apps/svc' } }
+    }
   } as unknown as ExecutorContext
 }
 
@@ -36,7 +36,7 @@ describe('testExecutor', () => {
     )
     expect(mockSpawnSync).toHaveBeenNthCalledWith(2, 'python3', ['-m', 'pytest'], {
       cwd: '/workspace/apps/svc',
-      stdio: 'inherit',
+      stdio: 'inherit'
     })
   })
 
@@ -48,7 +48,7 @@ describe('testExecutor', () => {
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'pytest'], {
       cwd: '/workspace/apps/svc',
-      stdio: 'inherit',
+      stdio: 'inherit'
     })
   })
 

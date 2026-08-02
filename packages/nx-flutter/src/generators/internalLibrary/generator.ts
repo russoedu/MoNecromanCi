@@ -29,7 +29,7 @@ export default async function internalLibraryGenerator(
     name: options.name,
     directory: options.directory ?? `libs/${options.name}`,
     projectType: 'library',
-    tag: 'type:flutter-internal-lib',
+    tag: 'type:flutter-internal-lib'
   })
   await formatFiles(tree)
   return task
