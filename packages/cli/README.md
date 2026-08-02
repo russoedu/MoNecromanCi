@@ -178,7 +178,7 @@ itself calls — the one function that does every bit of `mnci`-owned file
 writing (`nx.json`'s `release`/`sync`/`generators`/`namedInputs.sharedGlobals`/
 `mnci` blocks, `.npmrc`,
 `eslint.config.mjs`, `.prettierrc.json`, `commitlint.config.mjs`,
-`.husky/commit-msg`, the CI pipeline file(s), the
+`.husky/commit-msg`, the CI pipeline file(s), `.devcontainer/devcontainer.json`, the
 `<workspace-name>.code-workspace` file, and the curated root `package.json`
 scripts). Nothing else in the workspace — app/lib source, `project.json` targets
 from `mnci add` — is ever touched, and it finishes by running Prettier over the

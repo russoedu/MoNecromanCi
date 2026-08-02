@@ -579,6 +579,67 @@ export function eslintConfigSpec(): string {
 export const ESLINT_VERSION = '^10.8.0'
 
 /**
+ * The `.devcontainer/devcontainer.json` written into generated workspaces.
+ *
+ * @remarks
+ * mnci's toolchain matrix is Node + Python + Go + Flutter, and until this existed
+ * only **CI** had all four: the pipeline installs the Flutter SDK itself and
+ * assumes CPython and Go are on the agent, while locally a contributor was on
+ * their own. A devcontainer is what makes the local environment the same one CI
+ * verifies, which is the whole "just works" promise applied to development rather
+ * than to the build.
+ *
+ * Four decisions worth keeping:
+ *
+ * - **The Node major comes from {@link NODE_VERSION}**, the same constant the
+ *   workflow's `setup-node` step reads. Hardcoding it twice is exactly the drift
+ *   this file is supposed to remove.
+ * - **`postCreateCommand` reuses the pipeline's own guards** rather than
+ *   reimplementing them — {@link PYTHON_INSTALL_GUARD} and friends via the
+ *   `python:install` root script, plus the same `golangci-lint` and Flutter SDK
+ *   one-liners the pipelines run. Each is already idempotent and already
+ *   no-ops when the workspace has no project of that kind (no `go.mod`, no
+ *   `pubspec.yaml`), so a JS-only workspace pays almost nothing and a polyglot
+ *   one gets exactly what CI gets. Reimplementing them would create a third
+ *   copy to keep in sync.
+ * - **Go and Python arrive as devcontainer *features*, not as a custom image.**
+ *   A Dockerfile would be a second thing to maintain against upstream, and
+ *   features are the mechanism the ecosystem maintains for precisely this.
+ * - **Flutter is NOT a feature**, because no maintained one exists — the same
+ *   reason `@mnci/nx-flutter` had to be written. The SDK guard clones a pinned
+ *   tag into the home directory, which is what CI does, so the version matches
+ *   by construction.
+ *
+ * @param workspaceName - The workspace name, used as the container's label.
+ * @returns The JSON string for `.devcontainer/devcontainer.json`.
+ * @throws Never - performs pure string formatting with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function devcontainerJson(workspaceName: string): string {
+  return `${toJson({
+    name: workspaceName,
+    image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
+    features: {
+      'ghcr.io/devcontainers/features/python:1': { version: '3.12' },
+      'ghcr.io/devcontainers/features/go:1': { version: 'latest' },
+    },
+    // `npm ci` first: every guard after it runs through the workspace's own
+    // scripts and Nx, which do not exist until the install completes.
+    postCreateCommand: [
+      'npm ci',
+      'npm run python:install',
+      GOLANGCI_LINT_INSTALL_GUARD,
+      FLUTTER_SDK_INSTALL_GUARD,
+    ].join(' && '),
+    // The same recommendations the `.code-workspace` file carries, so opening
+    // the folder in a container suggests the identical toolset.
+    customizations: {
+      vscode: { extensions: [...VSCODE_RECOMMENDED_EXTENSIONS] },
+    },
+  })}\n`
+}
+
+/**
  * The `lint` target mnci puts on a generated workspace's ROOT project.
  *
  * @remarks
@@ -735,6 +796,21 @@ __pycache__
 `
 
 /**
+ * The editor extensions both the `.code-workspace` file and the devcontainer
+ * recommend.
+ *
+ * @remarks
+ * Shared so the two cannot drift: opening the workspace in a container should
+ * suggest the same toolset as opening it directly.
+ */
+export const VSCODE_RECOMMENDED_EXTENSIONS = [
+  'dbaeumer.vscode-eslint',
+  'esbenp.prettier-vscode',
+  'nrwl.angular-console',
+  'firsttris.vscode-jest-runner',
+] as const
+
+/**
  * VS Code workspace file template for generated monorepos.
  *
  * @remarks
@@ -798,14 +874,7 @@ export function vscodeWorkspace(
           'editor.defaultFormatter': 'esbenp.prettier-vscode',
         },
       },
-      extensions: {
-        recommendations: [
-          'dbaeumer.vscode-eslint',
-          'esbenp.prettier-vscode',
-          'nrwl.angular-console',
-          'firsttris.vscode-jest-runner',
-        ],
-      },
+      extensions: { recommendations: [...VSCODE_RECOMMENDED_EXTENSIONS] },
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
         tasks: existingTasks?.tasks ?? [],
@@ -1174,6 +1243,21 @@ const GO_TOOL_PATH_GITHUB = `node -e "${GO_TOOL_PATH_PRELUDE}if(!process.env.GIT
  * it is a one-line change.
  */
 export const FLUTTER_SDK_VERSION = '3.44.8'
+
+/**
+ * The Node major a generated workspace is built and tested against.
+ *
+ * @remarks
+ * Read by both the GitHub workflow's `setup-node` step and the devcontainer's
+ * base image, so the environment a contributor develops in cannot silently
+ * diverge from the one CI verifies. That drift is the whole reason
+ * {@link devcontainerJson} exists, so it must not be reintroduced by hardcoding
+ * the number twice.
+ *
+ * Azure deliberately does not pin it: its pipeline uses whatever Node the agent
+ * image ships, which is the existing behaviour and outside this change's scope.
+ */
+export const NODE_VERSION = '24'
 
 /**
  * The shared expression that resolves where the Flutter SDK is installed.
@@ -1852,7 +1936,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${NODE_VERSION}
           # Caches ~/.npm keyed on package-lock.json, so \`npm ci\` restores from
           # the local cache instead of re-downloading every tarball on every run.
           # Nothing to invalidate by hand: the action keys on the lockfile, so a
@@ -2282,6 +2366,11 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // `add` deletes the per-project ones Nx generators write.
   writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
   writeFileEnsured(join(workspaceRoot, '.prettierrc.json'), PRETTIER_CONFIG)
+  // Makes a local environment match the one CI verifies — see devcontainerJson.
+  writeFileEnsured(
+    join(workspaceRoot, '.devcontainer/devcontainer.json'),
+    devcontainerJson(options.workspaceName)
+  )
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   removeNxScaffolding(workspaceRoot)
   // VS Code workspace file with folder structure, extensions, and settings. The

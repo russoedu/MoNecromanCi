@@ -24,12 +24,16 @@ import {
   pythonPublishUrl,
   readMnciConfig,
   registryUrl,
+  devcontainerJson,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
+  NODE_VERSION,
   ROOT_LINT_TARGET,
+  VSCODE_RECOMMENDED_EXTENSIONS,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
   type StackConfig,
+  vscodeWorkspace,
   withEslintPlugin,
   withReleaseConfig,
   withSharedGlobals,
@@ -1084,6 +1088,59 @@ describe('withEslintPlugin', () => {
   })
 })
 
+describe('devcontainerJson', () => {
+  type Devcontainer = {
+    name: string
+    image: string
+    features: Record<string, unknown>
+    postCreateCommand: string
+    customizations: { vscode: { extensions: string[] } }
+  }
+  const parsed = (): Devcontainer => JSON.parse(devcontainerJson('demo')) as Devcontainer
+
+  it('is valid JSON naming the workspace', () => {
+    // Written to disk verbatim, so a malformed string would break the container
+    // build with no earlier signal.
+    expect(parsed().name).toBe('demo')
+  })
+
+  it('pins the same Node major the pipeline does, from one constant', () => {
+    // The whole point of the file is that local matches CI. Hardcoding the
+    // number in two places would reintroduce exactly the drift it removes.
+    expect(parsed().image).toBe(
+      `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`
+    )
+    expect(githubActionsYaml('ubuntu-latest')).toContain(`node-version: ${NODE_VERSION}`)
+  })
+
+  it('brings Python and Go as features rather than a hand-maintained Dockerfile', () => {
+    expect(Object.keys(parsed().features)).toEqual([
+      'ghcr.io/devcontainers/features/python:1',
+      'ghcr.io/devcontainers/features/go:1',
+    ])
+  })
+
+  it("reuses the pipeline's own toolchain guards instead of a third copy", () => {
+    // Each guard is already idempotent and already no-ops when the workspace has
+    // no project of that kind, so a JS-only workspace pays almost nothing.
+    // Reimplementing them here would be a third place to keep in sync.
+    const command = parsed().postCreateCommand
+
+    expect(command.startsWith('npm ci')).toBe(true)
+    expect(command).toContain('npm run python:install')
+    expect(command).toContain('golangci-lint')
+    // Flutter has no maintained devcontainer feature — the same reason
+    // @mnci/nx-flutter exists — so the SDK arrives via the pinned clone CI uses.
+    expect(command).toContain(FLUTTER_SDK_VERSION)
+    expect(command).toContain('pubspec.yaml')
+  })
+
+  it('recommends the same extensions as the .code-workspace file', () => {
+    expect(parsed().customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
+    expect(vscodeWorkspace('demo')).toContain('dbaeumer.vscode-eslint')
+  })
+})
+
 describe('withSharedGlobals', () => {
   it('lists the root config files, so `nx affected` on a PR is not blind to them', () => {
     // Measured on a real workspace before this existed: touching
@@ -1580,6 +1637,15 @@ describe('applyOverlay', () => {
 
     expect(nx.targets['local-registry']).toEqual({ executor: 'x' })
     expect(nx.targets.lint).toEqual(ROOT_LINT_TARGET)
+  })
+
+  it('writes .devcontainer/devcontainer.json, so a local environment can match CI', () => {
+    overlayWith(DEFAULT_STACK)
+
+    const written = readFileSync(join(workspaceRoot, '.devcontainer/devcontainer.json'), 'utf8')
+
+    expect(JSON.parse(written).name).toBe('demo')
+    expect(written).toBe(devcontainerJson('demo'))
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
