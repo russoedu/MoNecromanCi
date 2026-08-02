@@ -416,7 +416,7 @@ worth re-checking on Nx upgrades.
 same output) and is what both `new` and `upgrade` call.
 
 ```
-nx.json                    (release, sync, generators, and the `mnci` block)
+nx.json                    (release, sync, generators, sharedGlobals, and the `mnci` block)
 package.json               (curated root scripts, dual TS compiler, ESLint toolchain)
 .npmrc                     (publish auth; azure also routes @scope to the feed)
 .prettierrc.json + .prettierignore

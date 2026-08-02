@@ -25,9 +25,11 @@ import {
   readMnciConfig,
   registryUrl,
   rootScripts,
+  SHARED_GLOBAL_INPUTS,
   type StackConfig,
   withEslintPlugin,
   withReleaseConfig,
+  withSharedGlobals,
 } from './overlay'
 
 /**
@@ -1079,6 +1081,75 @@ describe('withEslintPlugin', () => {
   })
 })
 
+describe('withSharedGlobals', () => {
+  it('lists the root config files, so `nx affected` on a PR is not blind to them', () => {
+    // Measured on a real workspace before this existed: touching
+    // tsconfig.base.json marked ONLY the root pseudo-project, which has no
+    // lint/typecheck/test/build target — so `nx affected -t …` verified nothing
+    // at all and CI reported green. Each of these three can change every
+    // project's result.
+    const patched = withSharedGlobals({ namedInputs: { sharedGlobals: [] } })
+
+    expect((patched.namedInputs as { sharedGlobals: string[] }).sharedGlobals).toEqual([
+      '{workspaceRoot}/eslint.config.mjs',
+      '{workspaceRoot}/tsconfig.base.json',
+      '{workspaceRoot}/package.json',
+    ])
+  })
+
+  it('leaves the rest of namedInputs exactly as the preset generated it', () => {
+    // `default` is what references sharedGlobals, and `production` extends
+    // `default`. Overwriting either would change what every target hashes.
+    const preset = {
+      default: ['{projectRoot}/**/*', 'sharedGlobals'],
+      production: ['default', '!{projectRoot}/jest.config.[jt]s'],
+      sharedGlobals: [],
+    }
+
+    expect(withSharedGlobals({ namedInputs: preset }).namedInputs).toMatchObject({
+      default: preset.default,
+      production: preset.production,
+    })
+  })
+
+  it('is idempotent, so `mnci upgrade` cannot accumulate duplicates', () => {
+    const once = withSharedGlobals({ namedInputs: { sharedGlobals: [] } })
+
+    expect(withSharedGlobals(once).namedInputs).toEqual(once.namedInputs)
+  })
+
+  it("keeps a workspace's own shared globals rather than replacing them", () => {
+    // Additive on purpose: a user who added their own entry (a shared .env, a
+    // codegen schema) would otherwise lose it on every `mnci upgrade`.
+    const patched = withSharedGlobals({
+      namedInputs: { sharedGlobals: ['{workspaceRoot}/schema.graphql'] },
+    })
+
+    expect((patched.namedInputs as { sharedGlobals: string[] }).sharedGlobals).toEqual([
+      '{workspaceRoot}/schema.graphql',
+      ...SHARED_GLOBAL_INPUTS,
+    ])
+  })
+
+  it('copes with an nx.json that has neither namedInputs nor sharedGlobals', () => {
+    expect(withSharedGlobals({}).namedInputs).toEqual({ sharedGlobals: [...SHARED_GLOBAL_INPUTS] })
+    expect(withSharedGlobals({ namedInputs: { default: [] } }).namedInputs).toEqual({
+      default: [],
+      sharedGlobals: [...SHARED_GLOBAL_INPUTS],
+    })
+  })
+
+  it('does not list .prettierrc.json or the lockfile, and the reasons differ', () => {
+    // Prettier is not a project target — the pipeline's `format:check` step runs
+    // `prettier --check .` over the whole tree on every run, so listing it would
+    // invalidate every cache and verify nothing new. The lockfile is already
+    // covered: Nx marks projects affected from it through its external-dependency
+    // nodes (verified on a real workspace — a lockfile-only edit marks all).
+    expect(SHARED_GLOBAL_INPUTS).not.toContain('{workspaceRoot}/.prettierrc.json')
+    expect(SHARED_GLOBAL_INPUTS).not.toContain('{workspaceRoot}/package-lock.json')
+  })
+})
+
 describe('generatorDefaults', () => {
   it("sets linter 'none' — the root config lints everything — and carries the testRunner", () => {
     // Not a regression: `none` stops a direct `nx g` from scaffolding a
@@ -1421,6 +1492,18 @@ describe('applyOverlay', () => {
       mnci: { stack: { testRunner: string } }
     }
     expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
+  })
+
+  it('writes the shared global inputs into nx.json, so an affected-scoped PR is not blind to the root configs', () => {
+    // The unit tests above cover the merge; this covers the wiring. Without it
+    // `withSharedGlobals` could be correct and simply never called — which is
+    // exactly how the root eslint config went unowned for so long.
+    overlayWith(DEFAULT_STACK)
+
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      namedInputs: { sharedGlobals: string[] }
+    }
+    expect(nxJson.namedInputs.sharedGlobals).toEqual([...SHARED_GLOBAL_INPUTS])
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {

@@ -29,7 +29,7 @@ libs/                     # empty (.gitkeep only) — internal libs would live h
 
 azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initial setup)
 
-nx.json                   # Nx workspace config with release, sync, generators settings
+nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
 eslint.config.mjs         # ESLint flat config — mnci-owned; 3 lines importing @mnci/eslint-config
 .prettierrc.json + .prettierignore   # Prettier config for code formatting (JavaScript Standard Style)
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
@@ -175,7 +175,38 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### A Guard Against Verify Targets That Verify Nothing (Latest)
+### `nx affected` Was Blind to Every Root Config File (Latest)
+
+ROADMAP #25, filed as "blind to `@mnci/eslint-config`". Measuring it showed the
+problem was far wider: `nx affected` walks the **project graph**, and a root config
+file lives in no project — so changing one marked only the root pseudo-project, which
+has **no verify target at all**.
+
+Measured one file at a time with `nx show projects --affected --uncommitted`:
+`eslint.config.mjs`, `tsconfig.base.json` and the root `package.json` each marked
+`@mnci/source` **and nothing else**, so the affected-scoped verify step on such a PR
+ran nothing and reported green. `nx.json` and `package-lock.json` already marked
+everything (Nx special-cases both).
+
+- **Fixed by filling in `namedInputs.sharedGlobals`**, which the preset's `default`
+  input already references and `production` extends — one list reaches every target.
+- **The fix ships to users, not just this repo.** `SHARED_GLOBAL_INPUTS` and
+  `withSharedGlobals()` in `overlay.ts` write the same three root files into every
+  generated workspace's `nx.json`, and `mnci upgrade` back-fills existing ones. The
+  merge is additive and idempotent, so a workspace's own entries survive.
+- **This repo carries three entries the generated list cannot**:
+  `packages/eslint-config/{package.json,index.js,configs/**/*.js}`. Here the lint
+  config is a workspace member; in a generated workspace it is a registry dependency,
+  so its changes arrive through `package-lock.json`, which Nx already tracks.
+- **`.prettierrc.json` is deliberately absent.** Prettier is not a project target —
+  `format:check` runs `prettier --check .` over the whole tree every run — so listing
+  it would bust every cache and verify nothing new.
+- **The e2e asserts it behaviourally**, touching each of the three files in a real
+  generated workspace and requiring real projects to be marked; the nx.json entries
+  alone would not catch Nx changing how `sharedGlobals` is consumed. Both unit
+  assertions were mutation-tested.
+
+### A Guard Against Verify Targets That Verify Nothing
 
 ROADMAP #24, the loose end from #20 — closed as the _class_ rather than the two
 instances. `packages/cli/src/verifyTargets.test.ts` reads the real Nx project graph,
@@ -617,7 +648,7 @@ mnci worked while everything it produced did not.
 
 `applyOverlay()` writes a small, fixed set of config files; Nx owns everything else:
 
-1. `nx.json` (release, sync, generators, mnci metadata)
+1. `nx.json` (release, sync, generators, `namedInputs.sharedGlobals`, mnci metadata)
 2. `package.json` (curated root scripts only — name, scripts, the dual TS compiler deps,
    the ESLint toolchain)
 3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
