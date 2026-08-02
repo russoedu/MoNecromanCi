@@ -43,12 +43,16 @@ Justifying its one exemption exposed another instance — `@mnci/eslint-config`'
 was type-checked by nothing, because `isolatedModules: true` puts ts-jest in
 transpile-only mode. Fixed; no project is exempt from `typecheck` now.
 
+**#25** is done, and measuring it made the item much bigger than filed: `nx affected`
+was blind not just to the lint config but to **every** root config file, including
+`tsconfig.base.json`. A PR touching only that verified _nothing_ and reported green.
+Fixed via `namedInputs.sharedGlobals` here **and** in every generated workspace.
+
 **Open — gates that still don't gate (§8):** #21's structural half (a failing e2e
 section should be _skipped_, not cascade; the one step that actually crashed the
 suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fixed
-for GitHub — a manual queue on `main` publishes), #25 (`nx affected` is blind to
-`@mnci/eslint-config`, P3), #28 (no lint target covers root-level files — measured
-clean today, so a gate hole rather than a bug, P3).
+for GitHub — a manual queue on `main` publishes), #28 (no lint target covers
+root-level files — measured clean today, so a gate hole rather than a bug, P3).
 
 **Open — upgrades held back on purpose (§9):** #26 (ESLint 10 — now an
 _investigation_, not a wait: `@eslint-react/eslint-plugin` may replace the plugin
@@ -690,22 +694,48 @@ workspace, since neither mnci nor any `@nx/*` generator writes `noEmit` into a
 tsconfig (checked), and doctor's bar is invariants actually violated where it runs.
 This belongs in _this repo's_ test suite, and that is where it is.
 
-### 25. `nx affected` is blind to `@mnci/eslint-config` — P3
+### 25. `nx affected` was blind to every root config file — ✅ done
 
-Changing the shared lint config does not mark the projects it lints as affected,
-because Nx sees no graph edge: the config is resolved from the root
-`eslint.config.mjs`, not imported by any project's source.
+Filed as "blind to `@mnci/eslint-config`", and measuring it found the problem was
+much wider than the lint config. `nx affected` walks the **project graph**, and a
+root config file lives in no project — so changing one marked only the root
+pseudo-project, which has **no `lint`/`typecheck`/`test`/`build` target at all**.
 
-Observed on PR #100, which changed the config and re-linted only `eslint-config` and
-`cli`, leaving `nx-flutter` and `nx-python-pip` unverified on the PR. **Bounded, not
-dangerous** — a push to `main` runs everything, so a breakage surfaces at merge rather
-than being missed entirely. But #107 proved the cost is not zero: a lint-config change
-broke generated workspaces, and the PR was green.
+Measured with `nx show projects --affected --uncommitted`, one file at a time:
 
-Options, cheapest first: add `eslint.config.mjs` and the config package to
-`sharedGlobals` in `nx.json` so any change to them marks everything affected; or
-accept it and rely on the main run. The first is one line and costs a full verify on
-lint-config PRs only.
+| touched file                | before                  | after         |
+| --------------------------- | ----------------------- | ------------- |
+| `eslint.config.mjs`         | `@mnci/source` only     | every project |
+| `tsconfig.base.json`        | `@mnci/source` only     | every project |
+| root `package.json`         | `@mnci/source` only     | every project |
+| `packages/eslint-config/**` | itself + root           | every project |
+| `nx.json`                   | every project (already) | unchanged     |
+| `package-lock.json`         | every project (already) | unchanged     |
+
+So this was never "bounded": a PR touching `tsconfig.base.json` alone — the file
+every project's tsconfig extends, and the one #20 proved can change published
+output — ran the verify step against **nothing** and reported green.
+
+Fixed by filling in `namedInputs.sharedGlobals`, which the preset's `default` input
+already references and `production` extends, so one list reaches every target.
+
+- **The fix ships to users too**, not just this repo. `SHARED_GLOBAL_INPUTS` and
+  `withSharedGlobals()` in `overlay.ts` put the same three root files into every
+  generated workspace's `nx.json`, and `mnci upgrade` back-fills existing ones. The
+  merge is additive and idempotent, so a workspace's own shared globals survive.
+- **This repo adds three entries the generated list cannot have**:
+  `packages/eslint-config/{package.json,index.js,configs/**/*.js}`. Here the lint
+  config is a workspace member; in a generated workspace it is a registry
+  dependency, so changes to it arrive through `package-lock.json` — which Nx already
+  handles via its external-dependency nodes (measured above).
+- **`.prettierrc.json` is deliberately left out.** Prettier is not a project target;
+  the pipeline runs `prettier --check .` over the whole tree on every run regardless,
+  so listing it would invalidate every cache and verify nothing new.
+- **The e2e asserts it behaviourally**, not structurally — it touches each of the
+  three files in a real generated workspace and requires real projects to be marked.
+  Asserting the nx.json entries alone would not catch Nx changing how `sharedGlobals`
+  is consumed. Both new unit assertions were mutation-tested (dropping the
+  `withSharedGlobals` call from `applyOverlay`, and dropping one entry from the list).
 
 ### 28. No lint target covers root-level files — P3
 

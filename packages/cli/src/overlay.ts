@@ -402,6 +402,61 @@ export function withEslintPlugin(nxJson: Record<string, unknown>): Record<string
 }
 
 /**
+ * The workspace-wide files every project's verification depends on.
+ *
+ * @remarks
+ * `nx affected` walks the project graph, and a root config file is in no
+ * project — so without this, changing one marks only the root pseudo-project,
+ * which has no `lint`/`typecheck`/`test`/`build` target. Measured on a real
+ * workspace before the fix: a PR touching `tsconfig.base.json` alone verified
+ * **nothing at all** and reported green.
+ *
+ * Each entry is a file that can change every project's result:
+ * `eslint.config.mjs` is the whole linting opinion, `tsconfig.base.json` is
+ * what every project's tsconfig extends, and the root `package.json` holds
+ * every devDependency version and the curated scripts.
+ *
+ * `.prettierrc.json` is deliberately absent: Prettier is not a project target,
+ * so the pipeline's `format:check` step runs `prettier --check .` over the whole
+ * tree on every run regardless. Listing it would invalidate every project's
+ * cache and verify nothing new. `package-lock.json` is absent too — Nx already
+ * marks projects affected from lockfile changes through its external-dependency
+ * nodes (verified: a lockfile-only edit marks every project).
+ */
+export const SHARED_GLOBAL_INPUTS = [
+  '{workspaceRoot}/eslint.config.mjs',
+  '{workspaceRoot}/tsconfig.base.json',
+  '{workspaceRoot}/package.json',
+] as const
+
+/**
+ * Returns a copy of an `nx.json` object whose `sharedGlobals` named input
+ * covers the mnci-owned root config files.
+ *
+ * @remarks
+ * Idempotent and additive: entries a workspace already has are kept in place
+ * and never duplicated, so `mnci upgrade` can run repeatedly and a workspace
+ * that added its own shared globals does not lose them. `sharedGlobals` is
+ * referenced by the preset's `default` input, which `production` extends, so
+ * one list reaches every target.
+ *
+ * @param nxJson - The parsed `nx.json`.
+ * @returns A new object whose `namedInputs.sharedGlobals` includes every entry
+ * of {@link SHARED_GLOBAL_INPUTS}.
+ * @throws Never - performs a pure object merge with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withSharedGlobals(nxJson: Record<string, unknown>): Record<string, unknown> {
+  const namedInputs = (nxJson.namedInputs as Record<string, unknown> | undefined) ?? {}
+  const existing = (namedInputs.sharedGlobals as unknown[] | undefined) ?? []
+  const missing = SHARED_GLOBAL_INPUTS.filter(entry => !existing.includes(entry))
+  return {
+    ...nxJson,
+    namedInputs: { ...namedInputs, sharedGlobals: [...existing, ...missing] },
+  }
+}
+
+/**
  * Returns a copy of an `nx.json` object with the release block applied.
  *
  * @remarks
@@ -2081,11 +2136,13 @@ export function removeProjectEslintConfigs(workspaceRoot: string): void {
  * @typeParam None - this function has no generic type parameters.
  */
 export function applyOverlay(workspaceRoot: string, options: OverlayOptions): void {
-  // Patch nx.json with the release opinion, the stack generator defaults, and
-  // sync.applyChanges (so a stale TS project reference — e.g. from hand-adding
-  // a cross-project import — is fixed automatically on the next build/
-  // typecheck, not just flagged with a prompt). Both `nx release` and every
-  // later `nx g`/`mnci add` see the generator defaults.
+  // Patch nx.json with the release opinion, the stack generator defaults, the
+  // shared global inputs (so `nx affected` on a PR is not blind to the root
+  // config files — see SHARED_GLOBAL_INPUTS) and sync.applyChanges (so a stale
+  // TS project reference — e.g. from hand-adding a cross-project import — is
+  // fixed automatically on the next build/typecheck, not just flagged with a
+  // prompt). Both `nx release` and every later `nx g`/`mnci add` see the
+  // generator defaults.
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = {
@@ -2094,7 +2151,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
-  const patched = withEslintPlugin(withReleaseConfig(nxJson, options.ci))
+  const patched = withSharedGlobals(withEslintPlugin(withReleaseConfig(nxJson, options.ci)))
   writeFileEnsured(nxJsonPath, toJson({ ...patched, generators, sync, mnci }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the

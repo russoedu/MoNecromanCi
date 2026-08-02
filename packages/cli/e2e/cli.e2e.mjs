@@ -1061,6 +1061,31 @@ enforce(
 )
 
 /* ---------------------------------------------------------------------------
+ * `nx affected` is not blind to the root config files
+ *
+ * The pipeline's verify step is affected-scoped on a pull request, and
+ * `nx affected` walks the PROJECT GRAPH — where a root config file lives in no
+ * project at all. Measured before `SHARED_GLOBAL_INPUTS` existed: touching
+ * `tsconfig.base.json` marked only the root pseudo-project, which has no
+ * lint/typecheck/test/build target, so the verify step ran nothing whatsoever
+ * and the run reported green. Behavioural, not structural: asserting the
+ * nx.json entries would not catch Nx changing how sharedGlobals is consumed.
+ * ------------------------------------------------------------------------- */
+
+for (const rootConfig of ['eslint.config.mjs', 'tsconfig.base.json', 'package.json']) {
+  const file = path.join(workspace, rootConfig)
+  const original = readFileSync(file, 'utf8')
+  writeFileSync(file, `${original}\n`)
+  const affected = tryRunCapture('npx nx show projects --affected --uncommitted', workspace)
+  writeFileSync(file, original)
+  enforce(
+    `affected: touching ${rootConfig} marks the real projects, not only the workspace root`,
+    affected.ok && affected.output.includes('sdk') && affected.output.includes('web'),
+    affected.output
+  )
+}
+
+/* ---------------------------------------------------------------------------
  * `mnci upgrade` resolves for real: re-applies the overlay from the
  * persisted `mnci` nx.json block alone (no flags), restoring a hand-drifted
  * file back to exactly what `overlay.ts` generates today — the whole point

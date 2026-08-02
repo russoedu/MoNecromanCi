@@ -145,7 +145,13 @@ that would just fail felt worse than being upfront that it doesn't exist yet.
 2. Patches `nx.json` with the release opinion (the only config Nx has no
    default for): independent versioning from **conventional commits**,
    `{projectName}@{version}` tags, **tag-only git** (`commit: false`) — nothing
-   is ever pushed to `main`; future runs resolve versions from tag names.
+   is ever pushed to `main`; future runs resolve versions from tag names. Also
+   fills in `namedInputs.sharedGlobals` with the root config files
+   (`eslint.config.mjs`, `tsconfig.base.json`, `package.json`), without which
+   `nx affected` on a pull request is blind to them: they live in no project, so
+   changing one marked only the root pseudo-project — which has no
+   lint/typecheck/test/build target — and the affected-scoped verify step ran
+   nothing at all while reporting green.
 3. Writes `eslint.config.mjs` (three lines importing `@mnci/eslint-config` —
    the whole linting opinion, in one root config), `.prettierrc.json` +
    `.prettierignore`, `.npmrc` (publish auth — see **Publish auth** below),
@@ -169,7 +175,8 @@ this existed; nothing let an already-generated workspace pick one up.
 `mnci upgrade`, run from the workspace root, closes that gap: it resolves the
 same options `new` would have and calls the exact same `applyOverlay` `new`
 itself calls — the one function that does every bit of `mnci`-owned file
-writing (`nx.json`'s `release`/`sync`/`generators`/`mnci` blocks, `.npmrc`,
+writing (`nx.json`'s `release`/`sync`/`generators`/`namedInputs.sharedGlobals`/
+`mnci` blocks, `.npmrc`,
 `eslint.config.mjs`, `.prettierrc.json`, `commitlint.config.mjs`,
 `.husky/commit-msg`, the CI pipeline file(s), the
 `<workspace-name>.code-workspace` file, and the curated root `package.json`

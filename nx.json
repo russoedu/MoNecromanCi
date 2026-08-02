@@ -12,7 +12,14 @@
       "!{projectRoot}/src/test-setup.[jt]s",
       "!{projectRoot}/test-setup.[jt]s"
     ],
-    "sharedGlobals": []
+    "sharedGlobals": [
+      "{workspaceRoot}/eslint.config.mjs",
+      "{workspaceRoot}/tsconfig.base.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/packages/eslint-config/package.json",
+      "{workspaceRoot}/packages/eslint-config/index.js",
+      "{workspaceRoot}/packages/eslint-config/configs/**/*.js"
+    ]
   },
   "plugins": [
     {
