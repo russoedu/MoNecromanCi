@@ -54,10 +54,12 @@ suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fi
 for GitHub — a manual queue on `main` publishes), #28 (no lint target covers
 root-level files — measured clean today, so a gate hole rather than a bug, P3).
 
-**Open — upgrades held back on purpose (§9):** #26 (ESLint 10 — now an
-_investigation_, not a wait: `@eslint-react/eslint-plugin` may replace the plugin
-that blocks it, though `jsx-a11y` has since become a second blocker), #27
-(TypeScript 7, deferred pending a proper pass).
+**Open — upgrades held back on purpose (§9):** #26's **investigation is done** — all
+30 of the lint config's dependencies were audited, ESLint 10.8.0 has exactly two
+holdouts, `@eslint-react/eslint-plugin` replaces one, and `jsx-a11y`'s cap was
+_measured_ to be stale (it works on 10 given one npm `overrides` entry). §9 has the
+five-step upgrade; performing it is what remains. #27 (TypeScript 7) is still
+deferred pending a proper pass.
 
 Plus #7 and #13 at P3. **No P1 is open.**
 
@@ -768,60 +770,82 @@ decision to get right rather than a one-liner.
 Both are Dependabot PRs closed with reasons rather than merged, recorded here so the
 reasoning is not lost with the PR.
 
-### 26. ESLint 10 — and the `eslint-react` route that may unblock it — P2
+### 26. ESLint 10 — investigation done, the route is measured — P2 (upgrade still open)
 
 The stack is pinned to ESLint **9** and `eslint-plugin-unicorn` to **v61**. Closed on
 that basis: **#86** (unicorn 61 → 72) and **#83** (`@eslint/js` 9 → 10), neither with
 `@dependabot ignore`, so both return naturally.
 
-**Investigate first:** <https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>
+The investigation this item asked for is **finished**, including
+<https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>. It changes the
+item from "wait for the ecosystem" to "a five-step upgrade with one verified
+workaround".
 
-`@eslint-react/eslint-plugin` is a maintained rewrite of `eslint-plugin-react`, and
-its peer range is `eslint: "*"` — so it is not held back the way the incumbent is. If
-it is a workable replacement, it removes the _original_ reason for the ESLint 9 pin.
-That makes this item an investigation rather than a wait.
+**All 30 of `@mnci/eslint-config`'s dependencies were audited against the registry**,
+not just the two suspected. ESLint itself is at **10.8.0**. Exactly **two** packages
+declare a range that stops at 9:
 
-**The blocker list, re-checked rather than assumed** (versions as of writing):
+| Package                              | Peer `eslint`             | Verdict                                         |
+| ------------------------------------ | ------------------------- | ----------------------------------------------- |
+| `eslint-plugin-react@7.37.5`         | `^3 … ^9.7`               | no ESLint 10 release — the original blocker     |
+| `eslint-plugin-jsx-a11y@6.10.2`      | `^3 … ^9`                 | no ESLint 10 release — **stale cap, see below** |
+| `@eslint-react/eslint-plugin@5.18.1` | `*` (and `typescript: *`) | the replacement for the first                   |
+| `eslint-plugin-unicorn@72.0.0`       | **`>=10.4`**              | gated on the bump, not independent              |
+| everything else (26 packages)        | allows `^10`              | already fine                                    |
 
-| Package                              | Peer range                   | Verdict                                |
-| ------------------------------------ | ---------------------------- | -------------------------------------- |
-| `eslint-plugin-react@7.37.5`         | no ESLint 10 release         | the original blocker                   |
-| `@eslint-react/eslint-plugin@5.18.1` | `eslint: *`, `typescript: *` | **candidate replacement**              |
-| `eslint-plugin-react-hooks@7.1.1`    | `…^9.0.0 \|\| ^10.0.0`       | **already fine** — no longer a blocker |
-| `eslint-plugin-jsx-a11y@6.10.2`      | `^3 … ^9`                    | **caps at 9 — a blocker**              |
+Three of those rows are new information:
 
-Two things that changes:
-
-- **`react-hooks` is no longer in the way.** The pinned range `^7.1.1` already allows
-  ESLint 10. The docs previously lumped it in with `eslint-plugin-react`; it should
-  not be.
-- **`jsx-a11y` is now in the way, and this session put it there.** #19b added it, and
-  its latest release caps at ESLint 9. So closing the React gap alone is no longer
-  sufficient — worth knowing before anyone starts, because it is not in the original
-  reasoning.
+- **`jsx-a11y`'s cap is stale, not a real incompatibility — measured, not assumed.**
+  A throwaway workspace on **eslint 10.8.0** with `jsx-a11y@6.10.2` installs cleanly
+  given one npm entry, `"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }`,
+  and the rules then **work**: a missing `alt` reports `jsx-a11y/alt-text` and
+  `alt="a picture"` reports `img-redundant-alt`. So this is not a blocker, it is a
+  three-line override — and mnci owns the generated root `package.json`, which is
+  where npm requires `overrides` to live.
+  **State the trade honestly when doing it:** mnci already deleted `legacy-peer-deps`
+  from the generated `.npmrc` for weakening dependency resolution. The difference is
+  scope — that flag disabled peer checking for every package, this names one package
+  with a measured justification — but it is the same _kind_ of decision, so it needs
+  the reason written next to it.
+- **`unicorn@72` requires `eslint >= 10.4`**, so 61 → 72 cannot be done separately;
+  it lands _with_ the bump, and 10.8.0 satisfies it. That also restores the three
+  rules `configs/base.js` records as absent from v61.
+- **`react-hooks` was never in the way** (`^7.1.1` already allows 10), and
+  **Nx is ready**: `@nx/eslint@23.1.0` peers `eslint: ^9.0.0 || ^10.0.0`.
+  `@nx/eslint-plugin@23.1.0` declares no `eslint` peer at all.
 
 **What the migration guide actually says** (read, not assumed): it is a rule-by-rule
 mapping, with `eslint-react.configs["disable-conflict-eslint-plugin-react"]` for
-running both during a transition, and `recommended-typescript` as the preset. Caveats
-it states plainly: not every rule has a direct equivalent and some behave differently;
-the rules it marks legacy are the class-component and `propTypes` ones, which this
-project does not generate; and some rules need **type-aware linting** to work — which
-`configs/typeAware.js` already provides, but only under
-`{apps,libs,packages}/<name>/src`, so the scope interaction needs checking.
+running both during a transition, and `recommended-typescript` as the preset. The
+rules with no equivalent are all the class-component and `propTypes` ones — 21 of
+them, and this project generates none; two (`react-in-jsx-scope`, `prop-types`) are
+already explicitly `off` in `configs/react.js`. Some rules need **type-aware
+linting**, which `configs/typeAware.js` provides but only under
+`{apps,libs,packages}/<name>/src` — a `react-app`'s sources are `apps/<name>/src/**`,
+so they are in scope, though the interaction still needs confirming on a real
+workspace. It also notes ESLint 10 tracks JSX references natively, making
+`jsx-uses-react` and friends unnecessary.
 
-It notably does **not** state its supported ESLint versions, which is why the peer
-range above was checked against the registry instead.
+**The upgrade, in order — this is what remains open:**
 
-**Sequence, if it pans out:** replace `eslint-plugin-react` with
-`@eslint-react/eslint-plugin` under ESLint 9 first and confirm a generated `react-app`
-still lints clean — that step is independently useful and reversible. Only then take
-ESLint 10, which additionally needs `jsx-a11y` resolved and the three unicorn rules
-`configs/base.js` records as missing from v61 re-added.
+1. `eslint` `^9.39` → `^10.8`, and `@eslint/js` 9 → 10 (Dependabot #83's content).
+2. Replace `eslint-plugin-react` with `@eslint-react/eslint-plugin` in
+   `configs/react.js`, scoping any type-aware preset the way `typeAware.js` is scoped.
+3. Keep `jsx-a11y`, adding the `overrides` entry above to `ROOT_SCRIPTS`' manifest
+   patch in `overlay.ts` (and to this repo's own root manifest, which already has an
+   `overrides` block).
+4. `eslint-plugin-unicorn` 61 → 72 (Dependabot #86's content), plus the three rules
+   `configs/base.js` lists as missing from v61.
+5. **Verify on a real generated workspace with a `react-app`, not only on fixtures.**
+   Non-negotiable here: React is exactly the surface changing, and #107 shipped a
+   regression that broke every generated react-app because the verification was done
+   on a Python workspace. Nx's `NxWelcome.tsx` is the fixture that matters.
 
-One more thing to verify rather than trust: `@nx/react`'s generator pins
-`eslint-plugin-import@2.31.0` (caps at 9). mnci runs those generators with
-`--linter=none` and deletes the config they write, so it may no longer bite — but it
-was a real install failure once, and it should be re-tested rather than assumed gone.
+One thing still to check rather than trust: `@nx/react`'s generator pinned
+`eslint-plugin-import@2.31.0` (caps at 9), which once broke `mnci add react-app`
+outright. It is **not installed anywhere in this repo** now, and mnci runs those
+generators with `--linter=none`, so it is probably gone — but this repo has no React
+project, so that is weak evidence. Re-test in a generated workspace during step 5.
 
 ### 27. TypeScript 7 — deferred, not refused — P2
 
