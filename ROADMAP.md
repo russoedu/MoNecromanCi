@@ -34,8 +34,13 @@ this config's own "earns its keep" test (189 false positives from one rule). §9
 all three write-ups. That closes #19 completely, and with it every gap in
 `@mnci/eslint-config` this session identified.
 
+**#11 (devcontainer) is done** — a generated workspace now carries a
+`.devcontainer/devcontainer.json` whose Node major, Python, Go and Flutter SDK all
+come from the same constants and guards the pipelines use. One caveat recorded with
+it: the container was never _built_, because this environment has no Docker daemon.
+
 **Open — new capability (all P2):** #9 (container kind), #10 (e2e test projects),
-#11 (devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition).
+#12 (multi-project `dev up`), #15 (`--preset` composition).
 
 **#24** is done as well: a test now resolves every verify target to the shell command
 it really runs and fails on a no-op, so the stub class CI cannot catch is caught.
@@ -315,13 +320,47 @@ Playwright project (via `@nx/playwright`) is the conventional pairing.
 
 ## 4. Local development
 
-### 11. Generate a devcontainer — P2
+### 11. Generate a devcontainer — ✅ done
 
 The toolchain matrix is Node + Python + Go + Flutter. CI installs the Flutter SDK
-itself (pinned, shallow clone, outside the workspace); **locally the user is on
-their own**. A generated `.devcontainer` is what makes a local environment
-actually match CI — a strong fit for the "just works" promise, and the natural
-home for the Go and Flutter toolchains too.
+itself (pinned, shallow clone, outside the workspace) and assumes CPython and Go are
+on the agent; **locally the user was on their own**. `.devcontainer/devcontainer.json`
+is now part of the overlay, so a local environment matches the one CI verifies.
+
+- **Node comes from one constant.** `NODE_VERSION` in `overlay.ts` feeds both the
+  workflow's `setup-node` step and the devcontainer's base image
+  (`typescript-node:24-bookworm`). Hardcoding it twice would reintroduce exactly the
+  drift this file exists to remove — a test asserts both read the same value, and
+  hardcoding the image tag fails it. Azure still pins no Node, which is unchanged
+  behaviour and outside this item's scope.
+- **`postCreateCommand` reuses the pipeline's own guards** rather than
+  reimplementing them: `npm ci`, the `python:install` root script, then the same
+  `golangci-lint` and Flutter SDK one-liners the pipelines run. Each is already
+  idempotent and already no-ops when there is no `go.mod` or `pubspec.yaml`, so a
+  JS-only workspace pays almost nothing and a polyglot one gets what CI gets. A
+  third copy of that logic is the thing most likely to drift, so there isn't one.
+- **Python and Go arrive as devcontainer _features_; Flutter cannot.** No maintained
+  Flutter feature exists — the same reason `@mnci/nx-flutter` had to be written — so
+  the SDK arrives via the pinned clone, which makes the version match CI by
+  construction. A Dockerfile was rejected: it would be a second thing to maintain
+  against upstream when features are the ecosystem's mechanism for this.
+- The VS Code extension list is now a shared constant, so the `.code-workspace` file
+  and the container recommend the same toolset instead of two lists drifting apart.
+
+**Verified, and the limit stated plainly.** All three registry references resolve
+(`typescript-node:24-bookworm` → 200, and both `ghcr.io/devcontainers/features`
+manifests → 200), the JSON parses, a real generated workspace gets the file, and that
+workspace's **own** `format:check` and root `lint` both accept it — the latter only
+because #28 shipped a root lint target one change earlier, which is what covers
+`.devcontainer/` at all. Three assertions were mutation-tested: hardcoding the Node
+major, dropping the Flutter guard, and not writing the file.
+
+**What was NOT verified: the container was never built.** This environment has the
+Docker client but no daemon, so "the image and features resolve and the JSON is valid"
+is the strongest claim available here — not "the container boots and the toolchains
+work". Whoever has Docker should open the folder in a container once and confirm
+`npm run lint`, `npm test` and `npm run build` pass inside it; that is the one check
+this item still deserves.
 
 ### 12. Multi-project `dev up` — P2
 
