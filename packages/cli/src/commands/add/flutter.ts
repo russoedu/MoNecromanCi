@@ -45,7 +45,7 @@ function flutterAppStartTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
-    options: { command: 'flutter run -d chrome', cwd: `apps/${name}` },
+    options: { command: 'flutter run -d chrome', cwd: `apps/${name}` }
   }
 }
 
@@ -153,7 +153,7 @@ export function addFlutterApp(workspaceRoot: string, name: string): void {
   ensureAdmZip(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:application', name, '--no-interactive'], workspaceRoot)
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
-    start: flutterAppStartTarget(name),
+    start: flutterAppStartTarget(name)
   })
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }

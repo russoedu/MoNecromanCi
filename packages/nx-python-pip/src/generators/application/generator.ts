@@ -22,7 +22,7 @@ export default async function appGenerator(tree: Tree, options: AppGeneratorSche
   generateBuildableProject(tree, {
     name: options.name,
     directory: options.directory ?? `apps/${options.name}`,
-    projectType: 'application',
+    projectType: 'application'
   })
   await formatFiles(tree)
 }

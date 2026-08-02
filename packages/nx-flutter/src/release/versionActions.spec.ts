@@ -39,7 +39,7 @@ describe('readCurrentVersionFromSourceManifest', () => {
 
     await expect(actions.readCurrentVersionFromSourceManifest(tree)).resolves.toEqual({
       currentVersion: '1.2.3',
-      manifestPath: 'packages/shared/pubspec.yaml',
+      manifestPath: 'packages/shared/pubspec.yaml'
     })
   })
 
@@ -81,7 +81,7 @@ describe('registry and dependency behaviour', () => {
   it('reports no registry version — Dart packages here are released by git tag only', async () => {
     await expect(actions.readCurrentVersionFromRegistry(tree, undefined)).resolves.toEqual({
       currentVersion: null,
-      logText: expect.stringContaining('git tag'),
+      logText: expect.stringContaining('git tag')
     })
   })
 

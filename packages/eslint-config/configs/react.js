@@ -50,16 +50,17 @@ const eslintReactRecommended = eslintReact.configs['recommended-typescript']
  */
 export default [
   {
+    name: 'mnci/react',
     files: ['**/*.{jsx,tsx}'],
     languageOptions: {
       globals: { ...globals.browser },
-      parserOptions: { ecmaFeatures: { jsx: true } },
+      parserOptions: { ecmaFeatures: { jsx: true } }
     },
     plugins: {
       ...eslintReactRecommended.plugins,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
-      'jsx-a11y': jsxA11y,
+      'jsx-a11y': jsxA11y
     },
     settings: { ...eslintReactRecommended.settings },
     rules: {
@@ -81,7 +82,7 @@ export default [
       // would make Nx's own generated `app.tsx` fail lint in a workspace the
       // user has not touched yet. Still enforced on plain `.ts`, where the
       // return type is real API surface.
-      '@typescript-eslint/explicit-function-return-type': 'off',
-    },
-  },
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  }
 ]

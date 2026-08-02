@@ -105,7 +105,7 @@ describe('checkForUpdate', () => {
       { status: 1, stdout: '' },
       { error: new Error('ETIMEDOUT'), status: null, stdout: '' },
       { status: 0, stdout: ' '.repeat(3) },
-      { status: 0, stdout: 'not-a-version' },
+      { status: 0, stdout: 'not-a-version' }
     ]) {
       mockSpawnSync.mockReturnValue(result as never)
       checkForUpdate('1.0.0')

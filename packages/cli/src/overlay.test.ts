@@ -5,7 +5,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  writeFileSync,
+  writeFileSync
 } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -25,6 +25,7 @@ import {
   readMnciConfig,
   registryUrl,
   devcontainerJson,
+  ESLINT_BLOCK_INVENTORY,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
@@ -36,7 +37,7 @@ import {
   vscodeWorkspace,
   withEslintPlugin,
   withReleaseConfig,
-  withSharedGlobals,
+  withSharedGlobals
 } from './overlay'
 
 /**
@@ -62,7 +63,7 @@ describe('registryUrl', () => {
         kind: 'azure-artifacts',
         organization: 'org',
         project: 'proj',
-        artifactsFeed: 'feed',
+        artifactsFeed: 'feed'
       })
     ).toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/')
   })
@@ -79,7 +80,7 @@ describe('pythonPublishUrl', () => {
         kind: 'azure-artifacts',
         organization: 'org',
         project: 'proj',
-        artifactsFeed: 'feed',
+        artifactsFeed: 'feed'
       })
     ).toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/')
   })
@@ -102,7 +103,7 @@ describe('npmrcContent', () => {
     kind: 'azure-artifacts',
     organization: 'org',
     project: 'proj',
-    artifactsFeed: 'feed',
+    artifactsFeed: 'feed'
   } as const
 
   it('authenticates the public npm registry, and routes nothing', () => {
@@ -174,7 +175,7 @@ describe('withReleaseConfig', () => {
     const patched = withReleaseConfig(
       {
         $schema: './node_modules/nx/schemas/nx-schema.json',
-        namedInputs: { default: [] },
+        namedInputs: { default: [] }
       },
       'azure'
     )
@@ -210,9 +211,9 @@ describe('withReleaseConfig', () => {
         fallbackCurrentVersionResolver: 'disk',
         // Releasing packages must not require building apps; both globs listed
         // (nx run-many no-ops on an empty one).
-        preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*',
+        preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*'
       },
-      changelog: { workspaceChangelog: false },
+      changelog: { workspaceChangelog: false }
     })
   })
 
@@ -220,7 +221,7 @@ describe('withReleaseConfig', () => {
     const patched = withReleaseConfig({ $schema: 'x' }, 'both')
     expect(patched.release).toMatchObject({
       git: { commit: false, tag: true, push: false },
-      changelog: { workspaceChangelog: false },
+      changelog: { workspaceChangelog: false }
     })
   })
 
@@ -237,8 +238,8 @@ describe('withReleaseConfig', () => {
         // file: false: the changelog content still flows into the GitHub
         // Release body, but no CHANGELOG.md is written — one would never get
         // committed under this tag-only model (git.commit stays false).
-        projectChangelogs: { createRelease: 'github', file: false },
-      },
+        projectChangelogs: { createRelease: 'github', file: false }
+      }
     })
   })
 })
@@ -944,13 +945,13 @@ describeOnPosix('the verify guard, executed', () => {
         GITHUB_BASE_REF: '',
         SYSTEM_PULLREQUEST_TARGETBRANCH: '',
         PATH: `${join(repo, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`,
-        ...env,
-      },
+        ...env
+      }
     })
 
     return {
       command: existsSync(log) ? readFileSync(log, 'utf8').trim() : '',
-      status: result.status,
+      status: result.status
     }
   }
 
@@ -1056,7 +1057,7 @@ describe('withEslintPlugin', () => {
 
     expect(patched.plugins).toEqual([
       { plugin: '@nx/js/typescript' },
-      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } },
+      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }
     ])
   })
 
@@ -1077,13 +1078,13 @@ describe('withEslintPlugin', () => {
 
   it('handles the bare-string plugin form Nx also accepts', () => {
     expect(withEslintPlugin({ plugins: ['@nx/eslint/plugin'] }).plugins).toEqual([
-      '@nx/eslint/plugin',
+      '@nx/eslint/plugin'
     ])
   })
 
   it('copes with an nx.json that has no plugins key at all', () => {
     expect(withEslintPlugin({}).plugins).toEqual([
-      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } },
+      { plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }
     ])
   })
 })
@@ -1116,7 +1117,7 @@ describe('devcontainerJson', () => {
   it('brings Python and Go as features rather than a hand-maintained Dockerfile', () => {
     expect(Object.keys(parsed().features)).toEqual([
       'ghcr.io/devcontainers/features/python:1',
-      'ghcr.io/devcontainers/features/go:1',
+      'ghcr.io/devcontainers/features/go:1'
     ])
   })
 
@@ -1153,7 +1154,7 @@ describe('withSharedGlobals', () => {
     expect((patched.namedInputs as { sharedGlobals: string[] }).sharedGlobals).toEqual([
       '{workspaceRoot}/eslint.config.mjs',
       '{workspaceRoot}/tsconfig.base.json',
-      '{workspaceRoot}/package.json',
+      '{workspaceRoot}/package.json'
     ])
   })
 
@@ -1163,12 +1164,12 @@ describe('withSharedGlobals', () => {
     const preset = {
       default: ['{projectRoot}/**/*', 'sharedGlobals'],
       production: ['default', '!{projectRoot}/jest.config.[jt]s'],
-      sharedGlobals: [],
+      sharedGlobals: []
     }
 
     expect(withSharedGlobals({ namedInputs: preset }).namedInputs).toMatchObject({
       default: preset.default,
-      production: preset.production,
+      production: preset.production
     })
   })
 
@@ -1182,12 +1183,12 @@ describe('withSharedGlobals', () => {
     // Additive on purpose: a user who added their own entry (a shared .env, a
     // codegen schema) would otherwise lose it on every `mnci upgrade`.
     const patched = withSharedGlobals({
-      namedInputs: { sharedGlobals: ['{workspaceRoot}/schema.graphql'] },
+      namedInputs: { sharedGlobals: ['{workspaceRoot}/schema.graphql'] }
     })
 
     expect((patched.namedInputs as { sharedGlobals: string[] }).sharedGlobals).toEqual([
       '{workspaceRoot}/schema.graphql',
-      ...SHARED_GLOBAL_INPUTS,
+      ...SHARED_GLOBAL_INPUTS
     ])
   })
 
@@ -1195,7 +1196,7 @@ describe('withSharedGlobals', () => {
     expect(withSharedGlobals({}).namedInputs).toEqual({ sharedGlobals: [...SHARED_GLOBAL_INPUTS] })
     expect(withSharedGlobals({ namedInputs: { default: [] } }).namedInputs).toEqual({
       default: [],
-      sharedGlobals: [...SHARED_GLOBAL_INPUTS],
+      sharedGlobals: [...SHARED_GLOBAL_INPUTS]
     })
   })
 
@@ -1206,6 +1207,7 @@ describe('withSharedGlobals', () => {
     // covered: Nx marks projects affected from it through its external-dependency
     // nodes (verified on a real workspace — a lockfile-only edit marks all).
     expect(SHARED_GLOBAL_INPUTS).not.toContain('{workspaceRoot}/.prettierrc.json')
+    expect(SHARED_GLOBAL_INPUTS).not.toContain('{workspaceRoot}/.prettierrc.mjs')
     expect(SHARED_GLOBAL_INPUTS).not.toContain('{workspaceRoot}/package-lock.json')
   })
 })
@@ -1233,7 +1235,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github' as const,
-      stack: { testRunner: 'vitest' as const },
+      stack: { testRunner: 'vitest' as const }
     }
     expect(mnciConfig(options)).toEqual({
       workspaceName: 'demo',
@@ -1242,7 +1244,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: { testRunner: 'vitest' },
+      stack: { testRunner: 'vitest' }
     })
   })
 })
@@ -1271,7 +1273,7 @@ describe('readMnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(readMnciConfig(workspaceRoot)).toEqual({
@@ -1284,7 +1286,7 @@ describe('readMnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
   })
 
@@ -1341,7 +1343,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack,
+      stack
     })
 
   beforeEach(() => {
@@ -1365,7 +1367,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as Record<
@@ -1395,7 +1397,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
@@ -1410,7 +1412,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(false)
@@ -1430,7 +1432,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'both',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const pipeline = readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')
@@ -1446,7 +1448,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'both',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
@@ -1461,7 +1463,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(false)
@@ -1475,7 +1477,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const dependabot = readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
@@ -1486,7 +1488,7 @@ describe('applyOverlay', () => {
       'npm',
       'github-actions',
       'pip',
-      'pub',
+      'pub'
     ])
     // pip covers wherever a Python project might later land (add python-*),
     // via directories that currently match nothing — not an error for Dependabot.
@@ -1510,7 +1512,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'both',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     expect(existsSync(join(workspaceRoot, '.github/dependabot.yml'))).toBe(true)
@@ -1524,7 +1526,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
@@ -1541,7 +1543,7 @@ describe('applyOverlay', () => {
     }
     expect(nxJson.generators['@nx/js:library']).toEqual({
       linter: 'none',
-      unitTestRunner: 'vitest',
+      unitTestRunner: 'vitest'
     })
   })
 
@@ -1656,12 +1658,12 @@ describe('applyOverlay', () => {
         kind: 'azure-artifacts',
         organization: 'org',
         project: 'proj',
-        artifactsFeed: 'feed',
+        artifactsFeed: 'feed'
       },
       agent: 'windows-latest',
       variableGroup: 'CiSecrets',
       ci: 'both',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
@@ -1674,18 +1676,18 @@ describe('applyOverlay', () => {
         kind: 'azure-artifacts',
         organization: 'org',
         project: 'proj',
-        artifactsFeed: 'feed',
+        artifactsFeed: 'feed'
       },
       agent: 'windows-latest',
       variableGroup: 'CiSecrets',
       ci: 'both',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
   })
 
   it('writes Prettier config and VS Code extensions when eslint is used', () => {
     overlayWith(DEFAULT_STACK)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
     expect(existsSync(join(workspaceRoot, '.prettierignore'))).toBe(true)
     expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
     const scripts = (
@@ -1734,16 +1736,87 @@ describe('applyOverlay', () => {
     expect(devDependencies['@mnci/eslint-config']).toBeDefined()
   })
 
-  it('deletes the .prettierrc that create-nx-workspace leaves behind', () => {
-    // Load-bearing, not tidying: .prettierrc resolves BEFORE .prettierrc.json,
-    // so while both existed every option in PRETTIER_CONFIG was ignored and the
-    // effective config in every generated workspace was Nx's {singleQuote:true}.
+  it('explains what is in the config, and how to override it', () => {
+    overlayWith(DEFAULT_STACK)
+    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
+
+    // The cost of moving the rules into a package: a three-line config gives no
+    // hint that twenty tools are behind it. The comment is what buys that back,
+    // so it is part of the deliverable rather than decoration.
+    expect(config).toContain('npx eslint --inspect-config')
+    expect(config).toContain("name: 'local/")
+    // The one override that cannot work must be stated where someone would try
+    // it, not only in the README they have not opened.
+    expect(config).toContain('space-before-function-paren')
+  })
+
+  it('names blocks in the inventory that the real config actually has', () => {
+    // A stale inventory is worse than no inventory: it sends the reader to a
+    // block that does not exist, and nothing about generating a workspace would
+    // notice. So the comment is checked against the real thing in BOTH
+    // directions — a renamed block fails, and a new block nobody documented
+    // fails too.
+    //
+    // A subprocess because @mnci/eslint-config is ESM and this spec runs as CJS
+    // under ts-jest; `import`ing it here does not parse. The workspace symlink in
+    // node_modules is what makes the bare specifier resolve.
+    const script = `
+      const mnci = (await import('@mnci/eslint-config')).default
+      const blocks = mnci({ workspaceRoot: process.cwd() })
+      process.stdout.write(JSON.stringify(blocks.map(block => block.name ?? null)))
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: join(__dirname, '..', '..', '..'),
+      encoding: 'utf8'
+    })
+    const stdout = result.stdout?.trim()
+    if (!stdout?.startsWith('[')) {
+      throw new Error(`could not resolve @mnci/eslint-config.\nstderr: ${result.stderr}`)
+    }
+    const actual = (JSON.parse(stdout) as (string | null)[]).filter(
+      (name): name is string => name !== null
+    )
+    expect(actual.length).toBeGreaterThan(20)
+
+    // The inventory documents mnci's own blocks; `typescript-eslint/*` is
+    // upstream's and is listed with a wildcard rather than enumerated.
+    const documented = ESLINT_BLOCK_INVENTORY.match(/\bmnci\/[\w/*,-]+/g) ?? []
+    const own = actual.filter(name => name.startsWith('mnci/'))
+
+    // Multi-block presets are documented as `mnci/yaml/recommended*`, since how
+    // many blocks upstream splits them into is not a user-facing fact.
+    const covers = (name: string): boolean =>
+      documented.some(entry =>
+        entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : entry === name
+      )
+    expect(own.filter(name => !covers(name))).toEqual([])
+
+    // And nothing documented that no longer exists. `mnci/json, /jsonc, /json5`
+    // is one line for three blocks, so the trailing comma is stripped and the
+    // `/jsonc` shorthand is expanded against the family it belongs to.
+    const stale = documented
+      .map(entry => entry.replace(/,$/, ''))
+      .filter(entry => !entry.endsWith('*'))
+      .filter(entry => !own.includes(entry))
+    expect(stale).toEqual([])
+  })
+
+  it('deletes both higher-precedence Prettier configs, or the shared opinion is ignored', () => {
+    // Load-bearing, not tidying. Prettier resolves .prettierrc BEFORE
+    // .prettierrc.json, and both before .prettierrc.mjs — so a leftover file of
+    // either earlier kind wins outright and silently reinstates the old opinion.
+    // .prettierrc is what create-nx-workspace writes ({singleQuote:true}, which
+    // once made every mnci option ignored in every generated workspace);
+    // .prettierrc.json is what mnci ITSELF wrote before the config moved into the
+    // package, so `mnci upgrade` has to clear it or the upgrade does nothing.
     writeFileSync(join(workspaceRoot, '.prettierrc'), '{ "singleQuote": true }\n')
+    writeFileSync(join(workspaceRoot, '.prettierrc.json'), '{ "trailingComma": "es5" }\n')
 
     overlayWith(DEFAULT_STACK)
 
     expect(existsSync(join(workspaceRoot, '.prettierrc'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
   })
 
   it('deletes the .vscode directory, whose content the .code-workspace file already carries', () => {
@@ -1790,17 +1863,25 @@ describe('applyOverlay', () => {
     expect(() => overlayWith(DEFAULT_STACK)).not.toThrow()
   })
 
-  it('formats to JavaScript Standard Style, which forbids trailing commas', () => {
+  it('delegates formatting to the shared package instead of inlining the options', () => {
+    // The options moved into @mnci/eslint-config/prettier so lint and format
+    // cannot drift apart and a fix arrives via `npm update`. What the workspace
+    // gets is a re-export plus the comments explaining how to override it —
+    // which is why the file is .mjs: JSON cannot carry those comments.
     overlayWith(DEFAULT_STACK)
 
-    const prettier = JSON.parse(
-      readFileSync(join(workspaceRoot, '.prettierrc.json'), 'utf8')
-    ) as Record<string, unknown>
-    expect(prettier.semi).toBe(false)
-    expect(prettier.singleQuote).toBe(true)
-    // Was 'es5', which contradicts Standard.
-    expect(prettier.trailingComma).toBe('none')
+    const written = readFileSync(join(workspaceRoot, '.prettierrc.mjs'), 'utf8')
+
+    expect(written).toContain("export { default } from '@mnci/eslint-config/prettier'")
+    expect(written).toContain('@mnci/eslint-config/prettier')
+    // The override recipe has to be present, not just implied.
+    expect(written).toContain('printWidth: 120')
   })
+
+  // The options themselves are asserted in @mnci/eslint-config's own suite, by
+  // running the real Prettier binary against fixtures. They cannot be asserted
+  // here: the package is ESM and these specs run as CJS under ts-jest, so
+  // importing it fails to parse — the same wall that file's header documents.
 
   it('ignores the Python and Dart tool directories, not just the JS ones', () => {
     overlayWith(DEFAULT_STACK)
@@ -1844,7 +1925,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const mode = statSync(join(workspaceRoot, '.husky/commit-msg')).mode
@@ -1856,7 +1937,7 @@ describe('applyOverlay', () => {
       join(workspaceRoot, 'package.json'),
       JSON.stringify({
         name: '@org/source',
-        devDependencies: { typescript: '~6.0.3', nx: '23.0.0' },
+        devDependencies: { typescript: '~6.0.3', nx: '23.0.0' }
       })
     )
 
@@ -1883,7 +1964,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const manifest = JSON.parse(
@@ -1903,7 +1984,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -1925,7 +2006,7 @@ describe('applyOverlay', () => {
       affected: 'nx affected -t lint,typecheck,test,build',
       graph: 'nx graph',
       'release:preview': 'nx release --dry-run',
-      prepare: 'husky',
+      prepare: 'husky'
     })
     expect(format).toBe('prettier --write .')
     expect(formatCheck).toBe('prettier --check .')
@@ -1948,7 +2029,7 @@ describe('applyOverlay', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'azure',
-      stack: DEFAULT_STACK,
+      stack: DEFAULT_STACK
     })
 
     const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {

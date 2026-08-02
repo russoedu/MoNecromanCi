@@ -13,11 +13,12 @@ import globals from 'globals'
  */
 export default [
   {
+    name: 'mnci/base',
     files: ['**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      globals: { ...globals.node, ...globals.es2024 },
+      globals: { ...globals.node, ...globals.es2024 }
     },
     plugins: { n, promise, unicorn, 'unused-imports': unusedImports },
     rules: {
@@ -40,7 +41,7 @@ export default [
       'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
         'warn',
-        { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' },
+        { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
       ],
 
       // Promise correctness — a frequent source of silent bugs.
@@ -113,7 +114,7 @@ export default [
       // added `react-lib`/`react-internal-lib` failed `npm run lint` on its own
       // generated build config — the same "not earning its keep" test the two
       // rules above are off for.
-      'unicorn/numeric-separators-style': 'off',
-    },
-  },
+      'unicorn/numeric-separators-style': 'off'
+    }
+  }
 ]

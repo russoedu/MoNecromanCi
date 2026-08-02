@@ -192,7 +192,7 @@ function pythonAppStartTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
-    options: { command: 'python3 main.py', cwd: `apps/${name}` },
+    options: { command: 'python3 main.py', cwd: `apps/${name}` }
   }
 }
 
@@ -216,7 +216,7 @@ function pythonFunctionAppStartTarget(name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
-    options: { command: 'func start', cwd: `apps/${name}` },
+    options: { command: 'func start', cwd: `apps/${name}` }
   }
 }
 
@@ -242,7 +242,7 @@ function pythonAppPackageTarget(name: string): Record<string, unknown> {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
     outputs: [`{workspaceRoot}/${zip}`],
-    options: { command },
+    options: { command }
   }
 }
 
@@ -274,7 +274,7 @@ function pythonFunctionAppPackageTarget(
   return {
     executor: 'nx:run-commands',
     outputs: [`{workspaceRoot}/${zip}`],
-    options: { command },
+    options: { command }
   }
 }
 
@@ -306,7 +306,7 @@ export function addPythonApp(workspaceRoot: string, name: string): void {
   writeFileEnsured(join(workspaceRoot, 'apps', name, 'main.py'), pythonAppMain(name))
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonAppPackageTarget(name),
-    start: pythonAppStartTarget(name),
+    start: pythonAppStartTarget(name)
   })
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
@@ -337,14 +337,14 @@ export function addPythonFunctionApp(workspaceRoot: string, name: string): void 
       '@mnci/nx-python-pip:function-application',
       name,
       `--directory=apps/${name}`,
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )
   const moduleDirectory = pythonModuleDirectory(name)
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonFunctionAppPackageTarget(name, moduleDirectory),
-    start: pythonFunctionAppStartTarget(name),
+    start: pythonFunctionAppStartTarget(name)
   })
   registerProjectCommands(workspaceRoot, name, { build: false, start: `nx run ${name}:start` })
 }
@@ -375,7 +375,7 @@ export function addPythonLib(workspaceRoot: string, name: string): void {
       '@mnci/nx-python-pip:library',
       name,
       `--directory=python-packages/${name}`,
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )
@@ -408,7 +408,7 @@ export function addPythonInternalLib(workspaceRoot: string, name: string): void 
       '@mnci/nx-python-pip:internal-library',
       name,
       `--directory=libs/${name}`,
-      '--no-interactive',
+      '--no-interactive'
     ],
     workspaceRoot
   )

@@ -16,7 +16,7 @@ describe('internalLibraryGenerator', () => {
     expect(project.root).toBe('libs/core')
     expect(Object.keys(project.targets ?? {}).toSorted((a, b) => a.localeCompare(b))).toEqual([
       'lint',
-      'test',
+      'test'
     ])
     expect(project.release).toBeUndefined()
 

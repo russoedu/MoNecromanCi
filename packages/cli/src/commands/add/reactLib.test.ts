@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -38,9 +38,9 @@ function seedProjectManifest(projectRoot: string, name: string): void {
         '.': {
           types: './dist/index.esm.d.ts',
           import: './dist/index.esm.js',
-          default: './dist/index.esm.js',
-        },
-      },
+          default: './dist/index.esm.js'
+        }
+      }
     })
   )
 }

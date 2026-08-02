@@ -14,8 +14,8 @@ function context(): ExecutorContext {
     isVerbose: false,
     projectsConfigurations: {
       version: 2,
-      projects: { svc: { root: 'apps/svc' } },
-    },
+      projects: { svc: { root: 'apps/svc' } }
+    }
   } as unknown as ExecutorContext
 }
 
@@ -30,7 +30,7 @@ describe('lintExecutor', () => {
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'ruff', 'check', '.'], {
       cwd: '/workspace/apps/svc',
-      stdio: 'inherit',
+      stdio: 'inherit'
     })
   })
 

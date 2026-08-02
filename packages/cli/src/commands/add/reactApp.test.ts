@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -50,7 +50,7 @@ describe('runAdd react-app', () => {
         '--linter=none',
         '--style=css',
         '--e2eTestRunner=none',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -119,8 +119,8 @@ describe('runAdd react-app', () => {
         executor: 'nx:run-commands',
         options: {
           command: `vite build --mode ${environment} --outDir dist-${environment}`,
-          cwd: 'apps/web',
-        },
+          cwd: 'apps/web'
+        }
       })
     }
 
@@ -130,7 +130,7 @@ describe('runAdd react-app', () => {
     expect(targets.package.outputs).toEqual([
       '{workspaceRoot}/dist/drop/react-app-web-dev.zip',
       '{workspaceRoot}/dist/drop/react-app-web-uat.zip',
-      '{workspaceRoot}/dist/drop/react-app-web-prod.zip',
+      '{workspaceRoot}/dist/drop/react-app-web-prod.zip'
     ])
     expect(targets.package.options.command).toContain(`writeZip('dist/drop/react-app-web-uat.zip')`)
   })

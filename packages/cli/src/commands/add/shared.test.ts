@@ -54,7 +54,7 @@ describe('registerProjectCommands', () => {
       join(workspaceRoot, 'package.json'),
       JSON.stringify({
         name: '@demo/source',
-        scripts: { lint: 'nx run-many -t lint', mine: 'echo hi' },
+        scripts: { lint: 'nx run-many -t lint', mine: 'echo hi' }
       })
     )
 
@@ -92,7 +92,7 @@ describe('registerProjectCommands', () => {
     expect(() => registerProjectCommands(workspaceRoot, 'web', { build: true })).not.toThrow()
     expect(tasks()).toEqual([
       { label: 'web: qa', type: 'npm', script: 'web:qa', problemMatcher: [], group: 'qa' },
-      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' },
+      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' }
     ])
   })
 
@@ -112,8 +112,8 @@ describe('registerProjectCommands', () => {
         type: 'npm',
         script: 'web:start',
         problemMatcher: [],
-        isBackground: true,
-      },
+        isBackground: true
+      }
     ])
   })
 

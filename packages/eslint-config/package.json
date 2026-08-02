@@ -2,7 +2,7 @@
   "name": "@mnci/eslint-config",
   "version": "0.1.0",
   "type": "module",
-  "description": "The shared ESLint flat config every mnci-generated monorepo uses — one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
+  "description": "The shared ESLint flat config every mnci-generated monorepo uses \u2014 one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
   "publishConfig": {
     "access": "public"
   },
@@ -10,10 +10,12 @@
   "exports": {
     ".": "./index.js",
     "./configs/*": "./configs/*.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./prettier": "./prettier.js"
   },
   "files": [
     "index.js",
+    "prettier.js",
     "configs"
   ],
   "scripts": {
@@ -71,6 +73,7 @@
     "eslint-plugin-yml": "^3.5.0",
     "globals": "^17.7.0",
     "jsonc-eslint-parser": "^3.1.0",
+    "prettier": "^3.8.1",
     "toml-eslint-parser": "^1.0.3",
     "typescript-eslint": "^8.62.0"
   },

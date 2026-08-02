@@ -80,7 +80,7 @@ export default class PythonVersionActions extends VersionActions {
     try {
       const output = execFileSync(pythonCommand(), ['-m', 'pip', 'index', 'versions', name], {
         encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'ignore']
       })
       const match = /Available versions:\s*([^\s,]+)/.exec(output)
       return { currentVersion: match ? match[1] : null, logText: 'from pip index versions' }

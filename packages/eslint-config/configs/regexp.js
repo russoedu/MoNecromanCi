@@ -1,4 +1,5 @@
 import regexp from 'eslint-plugin-regexp'
+import { named } from './named.js'
 
 /**
  * Rules that crash rather than report when the TypeScript parser is present
@@ -8,7 +9,7 @@ const NEEDS_TYPE_SERVICES = [
   'regexp/no-legacy-features',
   'regexp/no-missing-g-flag',
   'regexp/no-useless-dollar-replacements',
-  'regexp/no-useless-flag',
+  'regexp/no-useless-flag'
 ]
 
 /**
@@ -59,8 +60,9 @@ const NEEDS_TYPE_SERVICES = [
  * missing — which is exactly why this needed the real thing to surface.
  */
 export default [
-  regexp.configs['flat/recommended'],
+  ...named('mnci/regexp/recommended', [regexp.configs['flat/recommended']]),
   {
+    name: 'mnci/regexp',
     rules: {
       ...Object.fromEntries(NEEDS_TYPE_SERVICES.map(rule => [rule, 'off'])),
 
@@ -75,7 +77,7 @@ export default [
       // generated build/test code trips it, it is a readability preference rather
       // than a correctness rule, and `new RegExp(...)` is legitimate whenever the
       // pattern is composed at runtime — which the rule cannot always tell.
-      'prefer-regex-literals': 'off',
-    },
-  },
+      'prefer-regex-literals': 'off'
+    }
+  }
 ]

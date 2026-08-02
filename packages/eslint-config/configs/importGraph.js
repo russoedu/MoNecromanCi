@@ -62,10 +62,11 @@ import importX from 'eslint-plugin-import-x'
  */
 export default [
   {
+    name: 'mnci/import-graph',
     files: [
       'apps/*/src/**/*.{ts,mts,cts,tsx}',
       'libs/*/src/**/*.{ts,mts,cts,tsx}',
-      'packages/*/src/**/*.{ts,mts,cts,tsx}',
+      'packages/*/src/**/*.{ts,mts,cts,tsx}'
     ],
     plugins: { 'import-x': importX },
     settings: {
@@ -85,14 +86,14 @@ export default [
       // `no-unresolved` does NOT need this (it only resolves paths, never parses),
       // which is exactly why the gap is easy to miss — one rule works, the other
       // is silently inert.
-      'import-x/parsers': { '@typescript-eslint/parser': ['.ts', '.mts', '.cts', '.tsx'] },
+      'import-x/parsers': { '@typescript-eslint/parser': ['.ts', '.mts', '.cts', '.tsx'] }
     },
     rules: {
       // `no-unresolved` is deliberately OFF, and cannot be turned on in this
       // layout — see this module's remarks. It is not a tuning choice.
       'import-x/no-unresolved': 'off',
       'import-x/no-cycle': 'error',
-      'import-x/no-self-import': 'error',
-    },
-  },
+      'import-x/no-self-import': 'error'
+    }
+  }
 ]

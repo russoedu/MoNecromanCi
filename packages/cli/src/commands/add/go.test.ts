@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
   runPrettier: jest.fn(),
-  runShell: jest.fn(() => 0),
+  runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -111,7 +111,7 @@ describe('runAdd go', () => {
         'apps/api',
         '--name=api',
         '--tags=type:go-app',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -133,7 +133,7 @@ describe('runAdd go', () => {
     expect(targets.start).toMatchObject({
       executor: 'nx:run-commands',
       continuous: true,
-      options: { command: 'go run .', cwd: 'apps/api' },
+      options: { command: 'go run .', cwd: 'apps/api' }
     })
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -212,7 +212,7 @@ describe('runAdd go', () => {
         'packages/core',
         '--name=core',
         '--tags=type:go-lib',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )
@@ -236,7 +236,7 @@ describe('runAdd go', () => {
         'libs/util',
         '--name=util',
         '--tags=type:go-internal-lib',
-        '--no-interactive',
+        '--no-interactive'
       ],
       workspaceRoot
     )

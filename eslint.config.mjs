@@ -30,13 +30,13 @@ export default [
   {
     ...tsdocRequire.configs.tsdoc,
     files: ['**/*.{ts,mts,cts}'],
-    ignores: [...tests, '**/*.d.ts'],
+    ignores: [...tests, '**/*.d.ts']
   },
   // Validate TSDoc syntax wherever a comment already exists.
   {
     files: ['**/*.{ts,mts,cts,tsx}'],
     plugins: { tsdoc },
-    rules: { 'tsdoc/syntax': 'error' },
+    rules: { 'tsdoc/syntax': 'error' }
   },
   // overlay.ts's `rootScripts()` takes no parameters and has no type
   // parameters, so the require-* rules have nothing to match against.
@@ -44,7 +44,7 @@ export default [
     files: ['packages/cli/src/overlay.ts'],
     rules: {
       'tsdoc-require-2/require-param': 'off',
-      'tsdoc-require-2/require-type-param': 'off',
-    },
-  },
+      'tsdoc-require-2/require-type-param': 'off'
+    }
+  }
 ]

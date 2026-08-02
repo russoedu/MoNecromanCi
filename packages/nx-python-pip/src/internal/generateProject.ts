@@ -3,14 +3,14 @@ import {
   pythonModuleDirectory,
   pythonPyprojectToml,
   pythonSampleModule,
-  pythonSampleTest,
+  pythonSampleTest
 } from './pythonProject'
 
 /** The `nx-release-publish` target for a publishable Python library (twine). */
 const PUBLISH_TARGET = {
   executor: '@mnci/nx-python-pip:publish',
   dependsOn: ['build'],
-  options: {},
+  options: {}
 }
 
 /**
@@ -60,14 +60,14 @@ export function generateBuildableProject(tree: Tree, options: BuildableProjectOp
   const targets: ProjectConfiguration['targets'] = {
     lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
     test: { executor: '@mnci/nx-python-pip:test', options: {} },
-    build: { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} },
+    build: { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} }
   }
 
   const project: ProjectConfiguration = {
     root,
     projectType: options.projectType,
     sourceRoot: root,
-    targets,
+    targets
   }
 
   if (options.publishable) {

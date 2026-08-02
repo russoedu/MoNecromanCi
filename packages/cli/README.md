@@ -78,7 +78,7 @@ ever needed is noise that trains people to ignore the output.
 | Check                                                   | The failure it catches                                                                                                             |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Exactly one root ESLint config, and no per-project ones | The config fragmenting — every `@nx/*` generator writes one, so each project ends up linting against whichever config sits nearest |
-| No stray `.prettierrc`                                  | It outranks `.prettierrc.json`, so the whole formatting opinion is silently discarded while both files look fine                   |
+| No stray `.prettierrc`                                  | It outranks `.prettierrc.mjs`, so the whole formatting opinion is silently discarded while both files look fine                    |
 | `@nx/eslint/plugin` registered in `nx.json`             | Without it `npm run lint` exits 0 while linting nothing                                                                            |
 | The **resolved** `eslint` major                         | A declared range and an installed version are different things — manifests once said `^10` while the pin said 9                    |
 | `.npmrc` matches the recorded registry                  | The two registry kinds get different files; an Azure workspace also needs its scope routed                                         |
@@ -152,9 +152,11 @@ that would just fail felt worse than being upfront that it doesn't exist yet.
    changing one marked only the root pseudo-project — which has no
    lint/typecheck/test/build target — and the affected-scoped verify step ran
    nothing at all while reporting green.
-3. Writes `eslint.config.mjs` (three lines importing `@mnci/eslint-config` —
-   the whole linting opinion, in one root config), `.prettierrc.json` +
-   `.prettierignore`, `.npmrc` (publish auth — see **Publish auth** below),
+3. Writes `eslint.config.mjs` (one import from `@mnci/eslint-config` — the whole
+   linting opinion, in one root config — plus a commented inventory naming every
+   config block and how to override it), `.prettierrc.mjs` (which re-exports
+   `@mnci/eslint-config/prettier`, so lint and format ship as one package and
+   upgrade together) + `.prettierignore`, `.npmrc` (publish auth — see **Publish auth** below),
    `commitlint.config.mjs`, a husky `commit-msg` hook, the chosen CI provider's
    pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
@@ -177,7 +179,7 @@ same options `new` would have and calls the exact same `applyOverlay` `new`
 itself calls — the one function that does every bit of `mnci`-owned file
 writing (`nx.json`'s `release`/`sync`/`generators`/`namedInputs.sharedGlobals`/
 `mnci` blocks, `.npmrc`,
-`eslint.config.mjs`, `.prettierrc.json`, `commitlint.config.mjs`,
+`eslint.config.mjs`, `.prettierrc.mjs`, `commitlint.config.mjs`,
 `.husky/commit-msg`, the CI pipeline file(s), `.devcontainer/devcontainer.json`, the
 `<workspace-name>.code-workspace` file, and the curated root `package.json`
 scripts). Nothing else in the workspace — app/lib source, `project.json` targets
@@ -194,9 +196,10 @@ project's build/qa/start entry on upgrade.
 has always done — one more reason to run `git diff` first, as the command's own
 output tells you to:
 
-- `create-nx-workspace`'s `.prettierrc` and `.vscode/`, both superseded (by
-  `.prettierrc.json`, which Prettier would otherwise never reach, and by the
-  `.code-workspace` file).
+- `create-nx-workspace`'s `.prettierrc` and `.vscode/`, plus mnci's own former
+  `.prettierrc.json`. The two Prettier files are deleted for the same reason:
+  both outrank `.prettierrc.mjs`, which Prettier would otherwise never reach.
+  `.vscode/` is superseded by the `.code-workspace` file.
 - **every per-project `eslint.config.*` under `apps/`, `libs/` and
   `packages/`.** This is the migration path for a workspace generated before
   mnci owned linting: without it an upgrade would install the root config while
@@ -251,10 +254,25 @@ switch linting off workspace-wide.)
 
 ESLint handles code quality only; **Prettier owns all formatting**, configured
 for JavaScript Standard Style (no semicolons, single quotes, 2-space indents, no
-trailing commas). `mnci` runs Prettier itself at the end of `new` and every
+trailing commas). Both opinions come from the same package: `.prettierrc.mjs`
+re-exports `@mnci/eslint-config/prettier`, so a formatting fix arrives through
+`npm update` exactly as a rule fix does, and the two cannot drift into
+contradicting each other. `mnci` runs Prettier itself at the end of `new` and every
 `add`, so a generated workspace passes its own `format:check` immediately — Nx's
 generators emit semicolons and double quotes, and without that pass the first
 commit buries every real change under generator noise.
+
+**Finding and overriding a rule.** One root config importing a package is easy to
+own and hard to read: nothing in three lines says which of ~20 plugins reported
+the thing you disagree with. Every block in `@mnci/eslint-config` therefore
+carries a `name` — `mnci/base`, `mnci/react`, `mnci/type-aware`,
+`mnci/prettier-compat` — and the generated `eslint.config.mjs` ships the full list
+as a comment, next to the recipe for overriding one. `npx eslint --inspect-config`
+lists them as ESLint actually resolves them, `npx eslint --print-config <file>`
+shows the merged result for a single file, and an override is a named block
+appended after the spread, since later blocks win. Don't edit the package inside
+`node_modules`: it is a dependency, and `npm update` will replace it.
+`packages/eslint-config/README.md` has the block-by-block table.
 
 One caveat worth knowing: `space-before-function-paren`, Standard's signature
 rule, is **not** enforced. Prettier rewrites `function f (a)` to `function f(a)`

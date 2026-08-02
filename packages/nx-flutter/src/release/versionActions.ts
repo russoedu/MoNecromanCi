@@ -74,7 +74,7 @@ export default class DartVersionActions extends VersionActions {
   ): Promise<{ currentVersion: string | null; logText: string } | null> {
     return {
       currentVersion: null,
-      logText: 'Dart packages are released by git tag, not a registry',
+      logText: 'Dart packages are released by git tag, not a registry'
     }
   }
 

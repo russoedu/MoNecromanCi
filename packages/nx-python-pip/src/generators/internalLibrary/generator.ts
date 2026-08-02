@@ -3,7 +3,7 @@ import {
   pythonModuleDirectory,
   pythonPyprojectToml,
   pythonSampleModule,
-  pythonSampleTest,
+  pythonSampleTest
 } from '../../internal/pythonProject'
 import type { InternalLibraryGeneratorSchema } from './schema.d'
 
@@ -36,8 +36,8 @@ export default async function internalLibraryGenerator(
     sourceRoot: root,
     targets: {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
-      test: { executor: '@mnci/nx-python-pip:test', options: {} },
-    },
+      test: { executor: '@mnci/nx-python-pip:test', options: {} }
+    }
   })
 
   tree.write(`${root}/pyproject.toml`, pythonPyprojectToml(options.name, moduleDirectory))

@@ -5,7 +5,7 @@ import {
   addProjectConfiguration,
   type GeneratorCallback,
   type ProjectConfiguration,
-  type Tree,
+  type Tree
 } from '@nx/devkit'
 import { dartPackageName } from './dartPackageName'
 import { flutterCommand } from './flutterCommand'
@@ -88,8 +88,8 @@ function buildTarget(name: string): ProjectConfiguration['targets'] {
     build: {
       executor: '@mnci/nx-flutter:build',
       outputs: [`{workspaceRoot}/dist/apps/${name}`],
-      options: { outputPath: `dist/apps/${name}` },
-    },
+      options: { outputPath: `dist/apps/${name}` }
+    }
   }
 }
 
@@ -115,8 +115,8 @@ function packageTarget(name: string): ProjectConfiguration['targets'] {
       executor: 'nx:run-commands',
       dependsOn: ['build'],
       outputs: [`{workspaceRoot}/${zip}`],
-      options: { command },
-    },
+      options: { command }
+    }
   }
 }
 
@@ -162,7 +162,7 @@ function flutterCreateTask(
       '--project-name',
       packageName,
       ...(options.buildable ? ['--platforms', 'web'] : []),
-      options.directory,
+      options.directory
     ]
     const result = spawnSync(flutterCommand(), arguments_, { cwd: workspaceRoot, stdio: 'inherit' })
     if (result.status !== 0) {
@@ -236,8 +236,8 @@ export function generateFlutterProject(
       ...lintTarget(),
       ...testTarget(),
       ...(options.buildable && buildTarget(options.name)),
-      ...(options.buildable && packageTarget(options.name)),
-    },
+      ...(options.buildable && packageTarget(options.name))
+    }
   }
 
   if (options.publishable) {

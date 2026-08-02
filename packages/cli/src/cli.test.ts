@@ -118,7 +118,7 @@ jest.mock('./commands/upgrade', () => ({ runUpgrade: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
 jest.mock('./util/versionChecker', () => ({
   checkForUpdate: jest.fn(),
-  readCliVersion: jest.fn(() => '1.0.0'),
+  readCliVersion: jest.fn(() => '1.0.0')
 }))
 
 import { buildProgram, main } from './cli'
@@ -154,7 +154,7 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--registry',
-      'npm',
+      'npm'
     ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
@@ -170,7 +170,7 @@ describe('buildProgram', () => {
       'npm-lib',
       'sdk',
       '--scope',
-      '@acme',
+      '@acme'
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'npm-lib',
@@ -187,7 +187,7 @@ describe('buildProgram', () => {
       'node-app',
       'api',
       '--framework',
-      'fastify',
+      'fastify'
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'node-app',
@@ -204,7 +204,7 @@ describe('buildProgram', () => {
       'python-vendor',
       'svc',
       '--lib',
-      'pycore',
+      'pycore'
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'python-vendor',
@@ -221,7 +221,7 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--test-runner',
-      'vitest',
+      'vitest'
     ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
@@ -237,7 +237,7 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--ci',
-      'github',
+      'github'
     ])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })

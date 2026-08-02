@@ -14,11 +14,11 @@ export default {
   rootDir: '.',
   roots: ['<rootDir>/tests'],
   transform: {
-    '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/../../tsconfig.jest.json' }],
+    '^.+\\.[tj]sx?$': ['ts-jest', { tsconfig: '<rootDir>/../../tsconfig.jest.json' }]
   },
   moduleFileExtensions: ['ts', 'js', 'mjs', 'cjs', 'json'],
   // The config is declarative; the meaningful assertion is that ESLint loads it
   // and the rules actually fire, which the integration tests do directly.
   collectCoverage: false,
-  testTimeout: 30_000,
+  testTimeout: 30_000
 }

@@ -4,7 +4,7 @@ import {
   PYTHON_FUNCTION_APP_REQUIREMENTS,
   PYTHON_FUNCTION_APP_GREETING,
   pythonFunctionAppGreetingTest,
-  pythonFunctionAppMain,
+  pythonFunctionAppMain
 } from '../../internal/azureFunctionApp'
 import { pythonModuleDirectory } from '../../internal/pythonProject'
 import type { FunctionAppGeneratorSchema } from './schema.d'
@@ -39,8 +39,8 @@ export default async function functionAppGenerator(
     sourceRoot: root,
     targets: {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
-      test: { executor: '@mnci/nx-python-pip:test', options: { installEditable: false } },
-    },
+      test: { executor: '@mnci/nx-python-pip:test', options: { installEditable: false } }
+    }
   })
 
   tree.write(`${root}/function_app.py`, pythonFunctionAppMain(moduleDirectory))

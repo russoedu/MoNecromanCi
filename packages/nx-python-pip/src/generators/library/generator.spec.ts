@@ -19,7 +19,7 @@ describe('libraryGenerator', () => {
     expect(project.targets?.['nx-release-publish']).toEqual({
       executor: '@mnci/nx-python-pip:publish',
       dependsOn: ['build'],
-      options: {},
+      options: {}
     })
     expect(project.release?.version?.versionActions).toBe(
       '@mnci/nx-python-pip/release/version-actions'

@@ -13,14 +13,16 @@ import * as jsoncParser from 'jsonc-eslint-parser'
  */
 export default [
   {
+    name: 'mnci/json',
     files: ['**/*.json'],
     languageOptions: { parser: jsoncParser },
     plugins: { jsonc },
     rules: {
-      ...jsonc.configs['flat/recommended-with-json'].at(-1).rules,
-    },
+      ...jsonc.configs['flat/recommended-with-json'].at(-1).rules
+    }
   },
   {
+    name: 'mnci/jsonc',
     files: ['**/*.jsonc', '**/tsconfig*.json', '**/*.code-workspace', '**/.vscode/*.json'],
     languageOptions: { parser: jsoncParser },
     plugins: { jsonc },
@@ -35,15 +37,16 @@ export default [
       // `tsconfig.json` reported 8 `jsonc/no-comments` errors, even though these
       // files were already listed here as JSONC. TypeScript and VS Code both read
       // comments in them, so forbidding comments was simply wrong.
-      'jsonc/no-comments': 'off',
-    },
+      'jsonc/no-comments': 'off'
+    }
   },
   {
+    name: 'mnci/json5',
     files: ['**/*.json5'],
     languageOptions: { parser: jsoncParser },
     plugins: { jsonc },
     rules: {
-      ...jsonc.configs['flat/recommended-with-json5'].at(-1).rules,
-    },
-  },
+      ...jsonc.configs['flat/recommended-with-json5'].at(-1).rules
+    }
+  }
 ]

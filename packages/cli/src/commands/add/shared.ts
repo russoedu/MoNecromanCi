@@ -230,7 +230,7 @@ const ESLINT_CONFIG_FILENAMES = [
   'eslint.config.cjs',
   'eslint.config.ts',
   'eslint.config.mts',
-  'eslint.config.cts',
+  'eslint.config.cts'
 ] as const
 
 /**
@@ -369,7 +369,7 @@ export function registerProjectCommands(
   commands: ProjectCommands
 ): void {
   const scripts: Record<string, string> = {
-    [`${name}:qa`]: `nx run ${name}:lint && nx run ${name}:test`,
+    [`${name}:qa`]: `nx run ${name}:lint && nx run ${name}:test`
   }
   if (commands.build) {
     scripts[`${name}:build`] = `nx run ${name}:build`
@@ -401,7 +401,7 @@ export function registerProjectCommands(
   const newTasks = [
     projectTask(name, 'qa'),
     ...(commands.build ? [projectTask(name, 'build')] : []),
-    ...(commands.start ? [projectTask(name, 'start')] : []),
+    ...(commands.start ? [projectTask(name, 'start')] : [])
   ]
   writeFileEnsured(
     codeWorkspacePath,
@@ -409,8 +409,8 @@ export function registerProjectCommands(
       ...workspaceFile,
       tasks: {
         version: workspaceFile.tasks?.version ?? '2.0.0',
-        tasks: [...existingTasks, ...newTasks],
-      },
+        tasks: [...existingTasks, ...newTasks]
+      }
     })
   )
 }

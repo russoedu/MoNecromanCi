@@ -2,7 +2,7 @@ import {
   pythonModuleDirectory,
   pythonPyprojectToml,
   pythonSampleModule,
-  pythonSampleTest,
+  pythonSampleTest
 } from './pythonProject'
 
 describe('pythonModuleDirectory', () => {
