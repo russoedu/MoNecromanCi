@@ -48,22 +48,23 @@ was blind not just to the lint config but to **every** root config file, includi
 `tsconfig.base.json`. A PR touching only that verified _nothing_ and reported green.
 Fixed via `namedInputs.sharedGlobals` here **and** in every generated workspace.
 
-**#28 is done for this repo** — the root project has a `lint` target now, scoped so it
-covers the 19 root-level files without re-linting the 158 inside packages, and proven
-to fail on a planted violation. It is **deliberately not shipped to generated
-workspaces**: the identical command reports 46 errors there, all in files Nx itself
-writes (three copies of its agent-skill scripts, plus its root `jest.config.ts`), so
-shipping it would fail `npm run lint` on day one. §8 has the numbers.
+**#28 is done, here and in generated workspaces.** The root project has a `lint`
+target now, scoped so it covers root-level files without re-linting the ones inside
+packages, and proven to fail on a planted violation. It nearly did not ship to users:
+the first measurement reported 46 errors in a generated workspace, but 45 were in
+sandbox-injected directories this harness creates, not Nx output. The real blocker was
+one rule on Nx's generated root `jest.config.ts`, now relaxed for the jest/vitest
+config family and pinned in both directions.
 
 **#21 is done too** — the e2e's sections are isolated now, so a crash is recorded and
 the run continues instead of silently deleting every section below it. The item's own
 sizing turned out wrong in a useful direction: it feared 94 bindings crossing section
 boundaries, and ESLint's `no-undef` proved exactly one does.
 
-**Open — gates that still don't gate (§8):** #23 (Azure's release trigger still has
-the shape #22 fixed for GitHub — a manual queue on `main` publishes; blocked on a real
-Azure run rather than on effort) and #28's generated-workspace half (measured: the
-same root lint reports 46 errors there, all in files Nx writes).
+**Open — gates that still don't gate (§8):** just #23 (Azure's release trigger still
+has the shape #22 fixed for GitHub — a manual queue on `main` publishes), and it is
+blocked on a real Azure run rather than on effort: no Azure pipeline has ever
+exercised this project's release path, so there is nothing to verify a change against.
 
 **#26 is done — the stack is on ESLint 10.8.0**, with `eslint-plugin-unicorn` 72 and
 `@eslint/js` 10 (the content of Dependabot #86 and #83, both closed with reasons at
@@ -765,7 +766,7 @@ already references and `production` extends, so one list reaches every target.
   is consumed. Both new unit assertions were mutation-tested (dropping the
   `withSharedGlobals` call from `applyOverlay`, and dropping one entry from the list).
 
-### 28. No lint target covered root-level files — ✅ done (here), and deliberately not shipped
+### 28. No lint target covered root-level files — ✅ done
 
 Found by #24's guard, which requires a reason for every absent verify target and had
 no honest one to give for the root project's missing `lint`.
@@ -799,23 +800,40 @@ eslint . --ignore-pattern "apps/**" --ignore-pattern "libs/**"
   `default` inputs cover the whole tree and any source change invalidates this target.
   It is a 19-file lint; over-invalidating is the safe direction.
 
-**Deliberately NOT shipped to generated workspaces — and the first measurement of
-this was wrong, which is worth recording.** Running the same command in a freshly
-generated workspace reported 46 errors across 7 files, and 45 of them were in
-`.agents/`, `.github/skills/` and `.opencode/`. Those were read as Nx's AI-agent
-scaffolding. They are not: `SANDBOX_INJECTED` in `cli.e2e.mjs` names those exact three
-directories as artifacts **this coding-agent sandbox injects into every cwd**, which is
-why the e2e deletes them before any whole-workspace assertion — "a real user never has
-them".
+**Now shipped to generated workspaces too — after a wrong measurement was
+corrected.** The first pass reported 46 errors in a freshly generated workspace and
+concluded the target could not ship. 45 of those were in `.agents/`,
+`.github/skills/` and `.opencode/`, read as Nx's AI-agent scaffolding. They are not:
+`SANDBOX_INJECTED` in `cli.e2e.mjs` names those exact three directories as artifacts
+**this coding-agent sandbox injects into every cwd**, which is why the e2e deletes
+them before any whole-workspace assertion — "a real user never has them".
 
-So the real number for a real user is **one error**, and it is Nx's:
-`unicorn/no-anonymous-default-export` on the root `jest.config.ts` that
-`create-nx-workspace` writes. Still a blocker — it fails `npm run lint` out of the box
-on a file the user never wrote, which is the react-lib rollup config bug again — but a
-far smaller and more tractable one than "ignore patterns for a moving target". It is
-one known file and one known rule, so the choice is narrow: a targeted override for
-Nx's generated root jest config, or leave the gap. Whoever takes it should re-measure
-outside a sandbox first, since that is precisely what went wrong here.
+The real number was **one**: `unicorn/no-anonymous-default-export` on the root
+`jest.config.ts` `create-nx-workspace` writes, which is
+
+```ts
+export default async () => ({ projects: await getJestProjectsAsync() })
+```
+
+That rule is now off for the `jest.*`/`vitest.*` config family in
+`configs/jest.js` — the canonical shape from Nx's own generator should not fail a
+workspace's lint on a file the user never wrote, the same test the react-lib rollup
+config and `prefer-regex-literals` both failed. Pinned in **both** directions, so it
+cannot quietly go off for ordinary modules: a plain `anon-default.ts` with the same
+anonymous default export still reports it.
+
+With that gone, `ROOT_LINT_TARGET` in `overlay.ts` writes the target into every
+generated root manifest, alongside `includedScripts: []`. That second part is
+load-bearing rather than tidy: the root manifest's scripts are the `nx run-many`
+aggregators, so letting Nx infer targets from them would make `lint` invoke
+`nx run-many -t lint` — itself. Merged, not replaced, so a workspace's own root
+targets survive `mnci upgrade`.
+
+**Verified on a real generated workspace**, all four properties: the target is
+present with `includedScripts: []`; `nx run @rl/source:lint` exits 0 out of the box;
+`npm run lint` runs it without recursing; and a planted `var` in the generated
+`commitlint.config.mjs` fails it with exit 1. The e2e asserts the same four
+permanently.
 
 ---
 

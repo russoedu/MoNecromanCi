@@ -38,6 +38,19 @@ export default [
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
       'unicorn/no-useless-undefined': 'off',
+
+      // `jest.config.ts`/`vitest.config.ts` match the patterns above, and Nx
+      // writes exactly this into every workspace's root jest config:
+      //
+      //   export default async () => ({ projects: await getJestProjectsAsync() })
+      //
+      // The rule wants that arrow function named. It is the canonical shape from
+      // Nx's own generator, so a workspace would fail `npm run lint` on a file
+      // the user never wrote — the same test the react-lib rollup config and
+      // `prefer-regex-literals` both failed. Measured: it is the ONLY root-level
+      // finding in a freshly generated workspace, and switching it off here is
+      // what lets the root `lint` target ship at all.
+      'unicorn/no-anonymous-default-export': 'off',
     },
   },
 ]
