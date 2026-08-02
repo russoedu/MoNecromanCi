@@ -39,8 +39,11 @@ all three write-ups. That closes #19 completely, and with it every gap in
 come from the same constants and guards the pipelines use. One caveat recorded with
 it: the container was never _built_, because this environment has no Docker daemon.
 
-**Open — new capability (all P2):** #9 (container kind), #10 (e2e test projects),
-#12 (multi-project `dev up`), #15 (`--preset` composition).
+**Open — new capability (all P2):** #9 (container kind), #10 (e2e test projects —
+still open, but its blocking risk is now **measured away**: Nx's Playwright
+scaffolding lints clean under the shared config, so the pairing needs no rule
+relaxation; §3 lists the four decisions left), #12 (multi-project `dev up`),
+#15 (`--preset` composition).
 
 **#24** is done as well: a test now resolves every verify target to the shell command
 it really runs and fails on a no-op, so the stub class CI cannot catch is caught.
@@ -303,11 +306,42 @@ Nothing in `packages/cli/src` mentions a Dockerfile. Without one, nothing reache
 Kubernetes, Azure Container Apps, or Cloud Run — probably the single biggest kind
 gap for real deployment.
 
-### 10. e2e test projects — P2
+### 10. e2e test projects — P2, and the blocking risk is now measured away
 
-Both `reactApp.ts:174` and `node.ts:79` pass `--e2eTestRunner=none` explicitly,
-so Nx's standard paired e2e project is actively switched off. A `<name>-e2e`
-Playwright project (via `@nx/playwright`) is the conventional pairing.
+Both `reactApp.ts` and `node.ts` pass `--e2eTestRunner=none` explicitly, so Nx's
+standard paired e2e project is actively switched off. A `<name>-e2e` Playwright
+project (via `@nx/playwright`) is the conventional pairing.
+
+**The risk that would have sunk it is gone.** Every previous "generated code fails our
+own lint" trap in this project — the react-lib rollup config, `prefer-regex-literals`
+on `app.spec.tsx`, TOML `array-bracket-spacing` on `pyproject.toml`, and
+`no-anonymous-default-export` on Nx's root `jest.config.ts` — makes this the first
+thing to check, not the last. Measured on a real generated workspace: running
+`@nx/react:application … --e2eTestRunner=playwright` produces four files —
+`playwright.config.mts`, `src/example.spec.ts`, `package.json`, `tsconfig.json` — and
+`eslint apps/web-e2e` under the shared config reports **0 errors and 0 warnings**.
+
+So the conventional pairing can be adopted without relaxing a single rule, which was
+the open question.
+
+**What is still undecided, and needs deciding before implementing:**
+
+1. **Node apps get a different runner.** `@nx/node:application` offers `jest|none`,
+   not Playwright — an API e2e, not a browser one. Either accept two different
+   pairings (react → playwright, node → jest) or leave `node.ts` alone and scope this
+   item to React. The second is more honest to the word "conventional".
+2. **The e2e project's `lint`/`typecheck` will run in CI; its `e2e` target will not.**
+   The verify list is `lint,typecheck,test,build`, so the Playwright target never
+   runs in the generated pipeline — which is _correct_, since the pipeline installs no
+   browsers, but it means the scaffolding is verified only as source. Adding `e2e` to
+   verify would require a browser-install step in both providers.
+   **Only `lint` was measured above**; `typecheck` against the e2e project's own
+   tsconfig was not, and should be before shipping.
+3. **`removeGeneratedEslintConfig` must cover the new project directory**, or the
+   workspace re-fragments into per-project configs — the exact thing that function
+   exists to prevent.
+4. **`registerProjectCommands`**: `<name>-e2e` plausibly wants no `:build` and no
+   `:start`, only a `:qa`. Worth stating rather than inheriting by accident.
 
 ### Lower priority
 
