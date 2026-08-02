@@ -4,8 +4,10 @@
 > this project is, what it generates, and what must not be broken — written so an
 > AI assistant can work on it (or on a workspace it generated) without guessing.
 >
-> **Everything here was verified against the code at commit `b4de5fa`**, not
-> copied from other docs. Where the older docs are wrong, this file says so.
+> **Everything here was verified against the code as of the commits listed in
+> `CLAUDE.md`'s "Current State" section**, not copied from other docs. Where the
+> older docs are wrong, this file says so. Re-verify before trusting a specific
+> line: this file has drifted behind the code before.
 
 ---
 

@@ -34,20 +34,24 @@ this config's own "earns its keep" test (189 false positives from one rule). §9
 all three write-ups. That closes #19 completely, and with it every gap in
 `@mnci/eslint-config` this session identified.
 
-**Open, all P2:** #21's structural half (a failing section should be _skipped_, not
-cascade — the one step that actually crashed the suite is now non-fatal, but the
-general case stands), #9 (container kind), #10 (e2e test projects), #11
-(devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition). Plus #7
-and #13 at P3. **No P1 is open.**
+**Open — new capability (all P2):** #9 (container kind), #10 (e2e test projects),
+#11 (devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition).
 
-**One limitation of #5 worth knowing before picking anything up.** Nx's affected
-graph has no edge from a project to `@mnci/eslint-config`, because the lint config
-is resolved from the root `eslint.config.mjs` rather than imported by project
-source. So PR #100 — which changed the shared lint config — re-linted only
-`eslint-config` and `cli`, not `nx-flutter` or `nx-python-pip`. Bounded rather than
-dangerous: a push to `main` verifies everything, so a breakage surfaces at merge
-instead of on the PR. Worth remembering when changing anything cross-cutting that
-Nx cannot see: check locally with `nx run-many` before trusting a green PR.
+**Open — gates that still don't gate (§8):** #21's structural half (a failing e2e
+section should be _skipped_, not cascade; the one step that actually crashed the
+suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fixed
+for GitHub — a manual queue on `main` publishes), #24 (nothing guards against a
+`typecheck` target being a stub — CI cannot, since the stub passes), #25 (`nx
+affected` is blind to `@mnci/eslint-config`, P3).
+
+**Open — upgrades held back on purpose (§9):** #26 (ESLint 10, blocked by
+`eslint-plugin-react`), #27 (TypeScript 7, deferred pending a proper pass).
+
+Plus #7 and #13 at P3. **No P1 is open.**
+
+§8 is worth reading as a group rather than as five unrelated items: most of what this
+session closed were checks that looked green while verifying nothing. Anything landing
+there should be read as "the gate is the bug", not "a feature is missing".
 
 ---
 
@@ -415,92 +419,6 @@ Carried over from `mnci-details.md` §12 so this file is the single list.
 | Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                                                                                                                                                                                                                                                    | P3  |
 | `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                                                                                                                                                                                                                                            | —   |
 
-### 21. The e2e is manual-only and linearly fragile — schedule + the crashing step fixed; structural isolation open (P2)
-
-Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
-rather than theorised**, and together they explain how Go went uncovered and how a
-broken assertion survived eight PRs.
-
-**✅ The manual-only half is fixed.** A nightly `schedule` (`0 3 * * *`) now runs the
-e2e job, capping the blind window at one day instead of "until someone remembers".
-That change had a prerequisite worth knowing about, recorded as #22 below: adding a
-schedule to the workflow _as it was_ would have started publishing packages nightly.
-
-**Why it mattered.** It only ran on a manual `workflow_dispatch`. Reasonable when it was written —
-it takes ~25-30 minutes on `windows-latest` — but it means nobody notices when it
-breaks. Found while doing the Go section: the `curated root scripts` assertion had
-been **red since #92**, because roadmap #18 added `typecheck` to the `affected`
-root script and updated the unit tests but not this check. Eight PRs merged over a
-red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
-would cap the blind window at one day instead of "until someone remembers".
-
-**Partly fixed: one failure no longer _always_ destroys every later section.** The
-single step that actually caused this — installing the Python toolchain, the one
-thing here that depends on the machine rather than on anything mnci produced — is
-now `tryRunCapture` + `enforce` instead of a throwing `run()`. An unusable pip now
-costs Python's own coverage and nothing else's, where before it deleted Go's and
-Flutter's silently.
-
-**Still open: the general case.** `run()` throws, and the script is a
-single linear file, so a crash anywhere silently removes all coverage below it. This
-has now happened twice for unrelated reasons:
-
-1. A removed `--linter oxlint` flag hard-crashed the suite mid-file, taking the
-   whole Python section down — recorded in the file's own header.
-2. `python3 -m pip install -r requirements-dev.txt` failed on a machine whose
-   `packaging` came from Debian (`Cannot uninstall packaging 24.0, RECORD file not
-found`), which took **Go and Flutter** down with it. That is an environment
-   problem, not an mnci bug — but the suite reporting nothing at all about Go
-   because _Python's toolchain_ could not install is the wrong failure mode.
-
-What remains is the structural version: wrap each section so any failure is
-recorded and the run continues, and so a section whose prerequisites failed is
-**skipped** rather than cascading into a wall of dependent assertion failures. The
-report machinery (`results.enforced`, the final exit) already supports it — only
-the propagation needs changing, and the Flutter/Go toolchain gates show the shape.
-
-Sized honestly before being deferred: 21 section banners and **94 top-level
-`const`/`let` bindings**, many of which cross section boundaries, so a `try` block
-per section re-scopes them and needs the shared ones hoisted. That plus a
-25-minute validation run and a deliberate failure-injection test is a real piece of
-work on the project's most valuable test asset — worth doing properly rather than
-squeezing in.
-
-### 22. Release steps fired on any non-PR event, not just a push — ✅ done
-
-Found while adding #21's nightly schedule, and the reason that schedule could not
-simply be switched on. Every release-only step in both this repo's workflow and the
-generated one was gated on:
-
-```yaml
-if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
-```
-
-"Anything that is not a pull request" also means **any trigger anyone adds later**.
-
-- **Generated workspaces were safe by construction, not by design.** The generated
-  workflow has exactly two triggers, `push` and `pull_request`, so the negative form
-  happened to mean `== 'push'`. Nothing said so, and adding a `workflow_dispatch` or
-  a `schedule` would silently have turned _Run workflow_ into a publish button.
-- **mnci's own workflow was already exposed.** It hand-added `workflow_dispatch` for
-  the Windows e2e job, so clicking _Run workflow_ to get that job also satisfied the
-  release condition and would have run `nx release --yes` — packing, publishing and
-  pushing tags. The e2e is exactly what a maintainer would dispatch it for.
-
-Fixed in both to the positive form, `github.event_name == 'push' && github.ref_name
-== 'main'`, which states the actual intent and cannot be widened by accident.
-Behaviour-identical for existing generated workspaces (provably: their trigger list
-has no third entry), and a real fix for this repo. Pinned by a test asserting both
-that the positive form is present and that the negative one is gone, mutation-tested.
-
-**Azure is deliberately left alone**, and this is the honest limit of the fix. Its
-condition is `ne(variables['Build.Reason'], 'PullRequest')`, and a manually queued
-run on `main` would satisfy it. The precise form would enumerate CI reasons
-(`in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')`), but no Azure pipeline
-run has ever exercised this project's release path, and changing an untested release
-trigger to guard a hypothesis is a worse trade than documenting it. Whoever first
-runs mnci on real Azure Pipelines should decide it with evidence.
-
 ---
 
 ## 7. Idea-level
@@ -605,9 +523,200 @@ to ignore the output. Still missing, and worth having: an automated guard that a
 `typecheck` target is not a disabled stub. CI cannot catch this class by running
 the target — the stub _passes_.
 
+### 21. The e2e is manual-only and linearly fragile — schedule + the crashing step fixed; structural isolation open (P2)
+
+Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
+rather than theorised**, and together they explain how Go went uncovered and how a
+broken assertion survived eight PRs.
+
+**✅ The manual-only half is fixed.** A nightly `schedule` (`0 3 * * *`) now runs the
+e2e job, capping the blind window at one day instead of "until someone remembers".
+That change had a prerequisite worth knowing about, recorded as #22 below: adding a
+schedule to the workflow _as it was_ would have started publishing packages nightly.
+
+**Why it mattered.** It only ran on a manual `workflow_dispatch`. Reasonable when it was written —
+it takes ~25-30 minutes on `windows-latest` — but it means nobody notices when it
+breaks. Found while doing the Go section: the `curated root scripts` assertion had
+been **red since #92**, because roadmap #18 added `typecheck` to the `affected`
+root script and updated the unit tests but not this check. Eight PRs merged over a
+red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
+would cap the blind window at one day instead of "until someone remembers".
+
+**Partly fixed: one failure no longer _always_ destroys every later section.** The
+single step that actually caused this — installing the Python toolchain, the one
+thing here that depends on the machine rather than on anything mnci produced — is
+now `tryRunCapture` + `enforce` instead of a throwing `run()`. An unusable pip now
+costs Python's own coverage and nothing else's, where before it deleted Go's and
+Flutter's silently.
+
+**Still open: the general case.** `run()` throws, and the script is a
+single linear file, so a crash anywhere silently removes all coverage below it. This
+has now happened twice for unrelated reasons:
+
+1. A removed `--linter oxlint` flag hard-crashed the suite mid-file, taking the
+   whole Python section down — recorded in the file's own header.
+2. `python3 -m pip install -r requirements-dev.txt` failed on a machine whose
+   `packaging` came from Debian (`Cannot uninstall packaging 24.0, RECORD file not
+found`), which took **Go and Flutter** down with it. That is an environment
+   problem, not an mnci bug — but the suite reporting nothing at all about Go
+   because _Python's toolchain_ could not install is the wrong failure mode.
+
+What remains is the structural version: wrap each section so any failure is
+recorded and the run continues, and so a section whose prerequisites failed is
+**skipped** rather than cascading into a wall of dependent assertion failures. The
+report machinery (`results.enforced`, the final exit) already supports it — only
+the propagation needs changing, and the Flutter/Go toolchain gates show the shape.
+
+Sized honestly before being deferred: 21 section banners and **94 top-level
+`const`/`let` bindings**, many of which cross section boundaries, so a `try` block
+per section re-scopes them and needs the shared ones hoisted. That plus a
+25-minute validation run and a deliberate failure-injection test is a real piece of
+work on the project's most valuable test asset — worth doing properly rather than
+squeezing in.
+
+### 22. Release steps fired on any non-PR event, not just a push — ✅ done
+
+Found while adding #21's nightly schedule, and the reason that schedule could not
+simply be switched on. Every release-only step in both this repo's workflow and the
+generated one was gated on:
+
+```yaml
+if: ${{ github.event_name != 'pull_request' && github.ref_name == 'main' }}
+```
+
+"Anything that is not a pull request" also means **any trigger anyone adds later**.
+
+- **Generated workspaces were safe by construction, not by design.** The generated
+  workflow has exactly two triggers, `push` and `pull_request`, so the negative form
+  happened to mean `== 'push'`. Nothing said so, and adding a `workflow_dispatch` or
+  a `schedule` would silently have turned _Run workflow_ into a publish button.
+- **mnci's own workflow was already exposed.** It hand-added `workflow_dispatch` for
+  the Windows e2e job, so clicking _Run workflow_ to get that job also satisfied the
+  release condition and would have run `nx release --yes` — packing, publishing and
+  pushing tags. The e2e is exactly what a maintainer would dispatch it for.
+
+Fixed in both to the positive form, `github.event_name == 'push' && github.ref_name
+== 'main'`, which states the actual intent and cannot be widened by accident.
+Behaviour-identical for existing generated workspaces (provably: their trigger list
+has no third entry), and a real fix for this repo. Pinned by a test asserting both
+that the positive form is present and that the negative one is gone, mutation-tested.
+
+**Azure is deliberately left alone**, and this is the honest limit of the fix. Its
+condition is `ne(variables['Build.Reason'], 'PullRequest')`, and a manually queued
+run on `main` would satisfy it. The precise form would enumerate CI reasons
+(`in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')`), but no Azure pipeline
+run has ever exercised this project's release path, and changing an untested release
+trigger to guard a hypothesis is a worse trade than documenting it. Whoever first
+runs mnci on real Azure Pipelines should decide it with evidence.
+
 ---
 
-## 9. The linting package
+### 23. Azure's release trigger has the shape #22 fixed for GitHub — P2
+
+The other half of #22, left undone on purpose and promoted here so it is not buried
+inside a closed item.
+
+Azure gates its release steps on
+`ne(variables['Build.Reason'], 'PullRequest')` — "anything that is not a pull
+request", exactly the formulation that let a `workflow_dispatch` reach the release
+steps on GitHub. A **manually queued run on `main`** satisfies it, and manual queuing
+is a normal Azure workflow rather than an exotic one, so this is arguably more
+exposed than the GitHub version was.
+
+The precise fix is to enumerate the CI reasons instead:
+
+```yaml
+condition: and(succeeded(),
+  in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'),
+  eq(variables['Build.SourceBranchName'], 'main'))
+```
+
+`BatchedCI` matters because the generated pipeline sets `batch: true` on the main
+trigger, so a push produces `BatchedCI` rather than `IndividualCI`. Getting that
+wrong in the other direction — enumerating only `IndividualCI` — would silently stop
+releasing altogether, which is why this wants evidence rather than a careful guess.
+
+**Why it was not done with #22:** no Azure Pipelines run has ever exercised this
+project's release path, so there is nothing to verify against. Changing an untested
+release trigger to guard a hypothesis is the worse trade. Whoever first runs mnci on
+real Azure should do this with a real run in front of them.
+
+### 24. Nothing guards against a `typecheck` target being a stub — P2
+
+The loose end from #20, and it is the _class_ rather than the two instances.
+
+Nx replaces an inferred `typecheck` target with an `echo` when the project's tsconfig
+sets `noEmit: true`. The step then **passes**, which is why two published packages
+carried a fake one for months and why #18's gate was theatre for half the workspace.
+
+**CI structurally cannot catch this by running the target** — the stub exits 0. It
+needs something that inspects the target's _command_, e.g. a test that runs
+`nx show project <name> --json` for every project and fails when a `typecheck`
+target's command matches `/^echo /`.
+
+Not added to `mnci doctor`, deliberately: the trap cannot occur in a generated
+workspace, since neither mnci nor any `@nx/*` generator writes `noEmit` into a
+tsconfig (checked), and doctor's bar is invariants actually violated where it runs.
+This belongs in _this repo's_ test suite instead.
+
+### 25. `nx affected` is blind to `@mnci/eslint-config` — P3
+
+Changing the shared lint config does not mark the projects it lints as affected,
+because Nx sees no graph edge: the config is resolved from the root
+`eslint.config.mjs`, not imported by any project's source.
+
+Observed on PR #100, which changed the config and re-linted only `eslint-config` and
+`cli`, leaving `nx-flutter` and `nx-python-pip` unverified on the PR. **Bounded, not
+dangerous** — a push to `main` runs everything, so a breakage surfaces at merge rather
+than being missed entirely. But #107 proved the cost is not zero: a lint-config change
+broke generated workspaces, and the PR was green.
+
+Options, cheapest first: add `eslint.config.mjs` and the config package to
+`sharedGlobals` in `nx.json` so any change to them marks everything affected; or
+accept it and rely on the main run. The first is one line and costs a full verify on
+lint-config PRs only.
+
+---
+
+## 9. Upgrades deliberately held back
+
+Both are Dependabot PRs closed with reasons rather than merged, recorded here so the
+reasoning is not lost with the PR.
+
+### 26. ESLint 10 — blocked by the plugin ecosystem — P2
+
+The stack is pinned to ESLint **9** and `eslint-plugin-unicorn` to **v61** because
+the plugins decide it, not preference:
+
+- `eslint-plugin-react` has **no ESLint 10 release**. On 10 it throws
+  `contextOrFilename.getFilename is not a function` loading `react/display-name`,
+  killing lint for every `.tsx` in the workspace.
+- `@nx/react`'s generator pins `eslint-plugin-import@2.31.0`, which caps at 9 — on 10
+  the install fails outright.
+
+Closed on that basis: **#86** (unicorn 61 → 72) and **#83** (`@eslint/js` 9 → 10).
+Neither used `@dependabot ignore`, so both return naturally.
+
+Unblocking is a coordinated upgrade, not a bump: wait for `eslint-plugin-react` to
+ship ESLint 10 support, then move `eslint`, `unicorn` and the `@eslint/*` packages
+together, and re-add the three unicorn rules `configs/base.js` records as
+unavailable in v61.
+
+### 27. TypeScript 7 — deferred, not refused — P2
+
+**#87** (TS 6.0.3 → 7.0.2) was closed as deferred. No pin blocks it; the opposite, if
+anything — this repo already runs a dual compiler, TS 6 for the API surface and TS 7's
+`tsc` for compilation.
+
+What it needs that a bump PR cannot carry: the plugin packages' `typecheck` targets
+only became real in #20, so a TS major is now checked far more strictly than the last
+time one was attempted, and those errors want reading properly. `typescript-eslint`
+also has its own supported-TypeScript range, so this interacts with the type-aware
+rules from #19a rather than being independent of them.
+
+---
+
+## 10. The linting package
 
 ### 19. Make `@mnci/eslint-config` a more complete linting package — ✅ done (a–e)
 
