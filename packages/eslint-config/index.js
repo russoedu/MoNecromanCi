@@ -1,4 +1,5 @@
 import prettierConfig from 'eslint-config-prettier'
+import { named } from './configs/named.js'
 import base from './configs/base.js'
 import css from './configs/css.js'
 import dependencyChecks from './configs/dependencyChecks.js'
@@ -73,7 +74,7 @@ export const ignores = [
 export default function mnci(options = {}) {
   const { workspaceRoot } = options
   return [
-    { ignores },
+    { name: 'mnci/ignores', ignores },
     ...base,
     ...typescript,
     ...typeAware,
@@ -89,7 +90,7 @@ export default function mnci(options = {}) {
     ...jest,
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
     // Formatting is Prettier's job — this must stay last.
-    prettierConfig,
+    ...named('mnci/prettier-compat', [prettierConfig]),
     ...stylistic
   ]
 }

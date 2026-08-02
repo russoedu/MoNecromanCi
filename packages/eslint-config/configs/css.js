@@ -3,6 +3,7 @@ import css from '@eslint/css'
 /** CSS, via ESLint's own official CSS language plugin. */
 export default [
   {
+    name: 'mnci/css',
     files: ['**/*.css'],
     plugins: { css },
     language: 'css/css',

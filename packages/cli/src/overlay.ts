@@ -753,6 +753,66 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
 }
 
 /**
+ * The block-by-block inventory written into the generated `eslint.config.mjs`.
+ *
+ * @remarks
+ * Moving every rule into `@mnci/eslint-config` bought a generated workspace one
+ * root config and cost it discoverability: a three-line file gives no hint that
+ * twenty tools are behind it, and someone looking at a rule they disagree with
+ * has nothing to grep. This names each block, what supplies it, and what it
+ * covers — keyed by the `name` every block carries, which is what
+ * `eslint --inspect-config` reports and what an override targets.
+ *
+ * **It is not free text.** A test in `overlay.test.ts` resolves the real config
+ * and fails if a name here is missing from it, or if a block in it is missing
+ * here. A stale inventory is worse than none, since it sends the reader to a
+ * block that no longer exists — and nothing about generating a workspace would
+ * notice.
+ *
+ * A separate constant from {@link ESLINT_CONFIG} so that test can pull the
+ * `mnci/…` names out of it without also matching the override example further
+ * down, which names a `local/…` block that deliberately does not exist.
+ *
+ * Some entries end in `*`, and that is deliberate rather than lazy:
+ * `mnci/yaml/recommended` and `mnci/toml/base` are multi-block upstream presets,
+ * and `mnci/typescript`/`mnci/type-aware` each carry a `/declarations` sibling.
+ * How many blocks those split into is not a user-facing fact, so enumerating
+ * them here would make the table fail on an upstream release that changes
+ * nothing anyone cares about.
+ */
+export const ESLINT_BLOCK_INVENTORY = `// WHAT IS IN HERE. Each line is one config block, by the \`name\` it carries.
+//
+//   mnci/ignores                  paths never linted (dist, coverage, .venv, …)
+//   mnci/base                     JS/TS correctness — @eslint/js, eslint-plugin-unicorn,
+//                                 -promise, -n, -unused-imports
+//   typescript-eslint/*           typescript-eslint's own recommended blocks
+//   mnci/typescript*              TS rules on top of them, no type information needed
+//   mnci/type-aware*              the rules that DO read types (no-floating-promises and
+//                                 friends), scoped to {apps,libs,packages}/*/src
+//   mnci/import-graph             import cycles — eslint-plugin-import-x
+//   mnci/react                    JSX/TSX — @eslint-react/eslint-plugin,
+//                                 eslint-plugin-react-hooks, -react-refresh, -jsx-a11y
+//   mnci/regexp*                  regex correctness — eslint-plugin-regexp
+//   mnci/json  mnci/jsonc  mnci/json5
+//                                 eslint-plugin-jsonc — comments are allowed in .jsonc
+//                                 and tsconfig.json, forbidden in plain .json
+//   mnci/yaml*                    eslint-plugin-yml — your CI pipeline files
+//   mnci/toml/base*               eslint-plugin-toml, PARSER ONLY: a malformed
+//                                 pyproject.toml is a syntax error, nothing is styled
+//   mnci/markdown                 @eslint/markdown
+//   mnci/css                      @eslint/css
+//   mnci/html                     @html-eslint/eslint-plugin
+//   mnci/tests                    *.spec/*.test relaxations — eslint-plugin-jest
+//                                 (Vitest's globals too; the two stacks share them)
+//   mnci/nx-dependency-checks     @nx/eslint-plugin, on publishable packages' manifests
+//   mnci/prettier-compat          eslint-config-prettier — switches off every rule
+//                                 Prettier owns. Composed LAST, on purpose.
+//   mnci/stylistic                the 3 Standard rules Prettier does not touch
+//
+// To list them as ESLint actually resolves them:  npx eslint --inspect-config
+`
+
+/**
  * The root `eslint.config.mjs` written into generated workspaces.
  *
  * @remarks
@@ -761,16 +821,42 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
  * `@nx/eslint-plugin` default while the richer rules lived only in mnci's own
  * repo.
  *
- * Deliberately three lines: every rule lives in `@mnci/eslint-config`, so the
- * thirteen plugins are that package's dependencies instead of thirteen
+ * Deliberately one import: every rule lives in `@mnci/eslint-config`, so the
+ * twenty-odd plugins are that package's dependencies instead of twenty-odd
  * devDependencies in every generated workspace.
  *
  * `workspaceRoot` enables the `@nx/dependency-checks` block for `packages/*`
  * and `libs/*` — it has to scan for `private: true` manifests, which is why it
  * needs the path rather than deriving one.
+ *
+ * Everything else in the file is comment: {@link ESLINT_BLOCK_INVENTORY}, then
+ * the override recipe. Both are there because the alternative to documenting a
+ * three-line config is a user editing `node_modules`.
  */
 export const ESLINT_CONFIG = `import mnci from '@mnci/eslint-config'
 
+${ESLINT_BLOCK_INVENTORY}//
+// TO OVERRIDE a rule, append a block AFTER the spread — later blocks win, so one
+// of your own beats anything above it. Give it a name, so the inspector shows
+// where the change came from:
+//
+//   export default [
+//     ...mnci({ workspaceRoot: import.meta.dirname }),
+//     {
+//       name: 'local/legacy-app-allows-any',
+//       files: ['apps/legacy/**/*.ts'],
+//       rules: { '@typescript-eslint/no-explicit-any': 'off' }
+//     }
+//   ]
+//
+// Do NOT edit @mnci/eslint-config inside node_modules, and do not fork it: it is
+// a dependency, so \`npm update\` brings rule fixes in the way it brings any
+// other. An override here survives that; an edit to the package does not.
+//
+// One override cannot work, and it is the one people reach for first:
+// \`space-before-function-paren\`. Prettier rewrites \`f (a)\` to \`f(a)\` on every
+// run, so switching that rule on makes \`npm run lint\` and \`npm run format:check\`
+// impossible to satisfy at the same time. Formatting lives in .prettierrc.mjs.
 export default mnci({ workspaceRoot: import.meta.dirname })
 `
 

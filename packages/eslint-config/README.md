@@ -4,18 +4,19 @@
 
 # @mnci/eslint-config
 
-> The shared ESLint flat config every `mnci`-generated monorepo uses. **One
-> config, at the root, for every language in the workspace.**
+> The lint **and** format opinion every `mnci`-generated monorepo uses. **One
+> ESLint config and one Prettier config, both at the root, for every language in
+> the workspace.**
 
 ## Why this exists
 
-`mnci` generates opinionated monorepos, and linting is one of the opinions. It
-used to be delivered badly: `create-nx-workspace`'s bare `@nx/eslint-plugin`
+`mnci` generates opinionated monorepos, and code quality is one of the opinions.
+It used to be delivered badly: `create-nx-workspace`'s bare `@nx/eslint-plugin`
 default landed at the root, each `nx g` generator dropped another
 `eslint.config.mjs` into its own project, and the richer rules the project
 actually wanted lived only in mnci's own repo — never in anything it generated.
 
-This package is that opinion, packaged. A generated workspace gets:
+This package is that opinion, packaged. A generated workspace gets two files:
 
 ```js
 // eslint.config.mjs
@@ -24,36 +25,87 @@ import mnci from '@mnci/eslint-config'
 export default mnci({ workspaceRoot: import.meta.dirname })
 ```
 
+```js
+// .prettierrc.mjs
+export { default } from '@mnci/eslint-config/prettier'
+```
+
 …and nothing else. No per-project configs.
 
-Shipping it as a package rather than a template string means an upgrade reaches
+Shipping it as a package rather than as template strings means an upgrade reaches
 existing workspaces through `npm update`, the plugins are _this_ package's
-dependencies instead of a dozen devDependencies in every generated workspace,
-and the config is independently testable — which it is, against the real
-`eslint` binary.
+dependencies instead of two dozen devDependencies in every generated workspace,
+and the config is independently testable — which it is, against the real `eslint`
+and `prettier` binaries.
 
 ## What it covers
 
-Correctness and code quality only. **Formatting is Prettier's job**, and
-`eslint-config-prettier` is composed last to guarantee no rule here fights it.
+Two halves of one decision, which is why they are one package.
 
-| Area                 | Plugin                                                        |
-| -------------------- | ------------------------------------------------------------- |
-| JS/TS correctness    | `@eslint/js`, `typescript-eslint`, `eslint-plugin-unicorn`    |
-| Node + promises      | `eslint-plugin-n`, `eslint-plugin-promise`                    |
-| Unused code          | `eslint-plugin-unused-imports` (auto-removes on `--fix`)      |
-| React                | `@eslint-react/eslint-plugin`, `react-hooks`, `react-refresh` |
-| JSX accessibility    | `eslint-plugin-jsx-a11y` (`recommended`)                      |
-| JSON / JSONC / JSON5 | `eslint-plugin-jsonc`                                         |
-| YAML                 | `eslint-plugin-yml`                                           |
-| Markdown             | `@eslint/markdown`                                            |
-| CSS                  | `@eslint/css`                                                 |
-| HTML                 | `@html-eslint/eslint-plugin` (incl. its a11y rules)           |
-| Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals         |
-| Type-aware TS        | `typescript-eslint` with `projectService` — see below         |
-| Import graph         | `eslint-plugin-import-x` — cycles within a project            |
-| Regular expressions  | `eslint-plugin-regexp` — incl. catastrophic backtracking      |
-| TOML                 | `eslint-plugin-toml` — **parsing only**, see below            |
+**ESLint here is correctness and code quality only. Prettier owns every
+formatting question**, and `eslint-config-prettier` is composed last so no rule
+here can fight it. Splitting the two across packages would mean a version pair
+free to drift until `npm run lint` and `npm run format:check` contradict each
+other; keeping them together makes that impossible rather than merely unlikely.
+
+### The ESLint blocks
+
+Every block carries a `name`, which is how you find it (`eslint --inspect-config`)
+and how you override it. The generated `eslint.config.mjs` ships this same table
+as a comment, so it is readable without opening node_modules.
+
+| Block name                               | Covers                                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `mnci/ignores`                           | paths never linted — `dist`, `coverage`, `.venv`, `__pycache__`, `.dart_tool`                  |
+| `mnci/base`                              | JS/TS correctness — `@eslint/js`, `eslint-plugin-unicorn`, `-promise`, `-n`, `-unused-imports` |
+| `typescript-eslint/*`                    | `typescript-eslint`'s own recommended blocks (its names, not ours)                             |
+| `mnci/typescript`, `…/declarations`      | TS rules on top of them, no type information needed                                            |
+| `mnci/type-aware`, `…/declarations`      | the rules that DO read types — see below                                                       |
+| `mnci/import-graph`                      | import cycles — `eslint-plugin-import-x`                                                       |
+| `mnci/react`                             | JSX/TSX — `@eslint-react/eslint-plugin`, `-react-hooks`, `-react-refresh`, `-jsx-a11y`         |
+| `mnci/regexp/recommended`, `mnci/regexp` | regex correctness incl. catastrophic backtracking — `eslint-plugin-regexp`                     |
+| `mnci/json`, `mnci/jsonc`, `mnci/json5`  | `eslint-plugin-jsonc` — comments allowed in `.jsonc`/`tsconfig.json`, forbidden in `.json`     |
+| `mnci/yaml/recommended/*`, `mnci/yaml`   | `eslint-plugin-yml` — your CI pipeline files                                                   |
+| `mnci/toml/base/*`                       | `eslint-plugin-toml` — **parsing only**, see below                                             |
+| `mnci/markdown`                          | `@eslint/markdown` (GitHub-flavoured)                                                          |
+| `mnci/css`                               | `@eslint/css`                                                                                  |
+| `mnci/html`                              | `@html-eslint/eslint-plugin`, incl. its a11y rules                                             |
+| `mnci/tests`                             | `*.spec`/`*.test` relaxations — `eslint-plugin-jest`, plus Vitest's `vi`/`vitest` globals      |
+| `mnci/nx-dependency-checks`              | `@nx/eslint-plugin` on publishable packages' manifests — only when `workspaceRoot` is passed   |
+| `mnci/prettier-compat`                   | `eslint-config-prettier` — switches off every rule Prettier owns. **Composed last.**           |
+| `mnci/stylistic`                         | the three Standard rules Prettier does not touch — see below                                   |
+
+`configs/named.js` fills a name in for the blocks upstream presets ship
+anonymously, keeping any name upstream does provide. A test resolves the real
+config and fails if any block is unnamed or if two share a name; another test, in
+`@mnci/cli`, fails if the generated comment and the real config disagree.
+
+### Formatting (`prettier.js`)
+
+JavaScript Standard Style, as Prettier options: `semi: false`,
+`singleQuote: true`, `trailingComma: 'none'`, `arrowParens: 'avoid'`,
+`printWidth: 100`, `tabWidth: 2`.
+
+Consumed as a shareable config, exactly like the rules:
+
+```js
+// .prettierrc.mjs
+export { default } from '@mnci/eslint-config/prettier'
+```
+
+**`.prettierrc.mjs`, and mnci deletes `.prettierrc` and `.prettierrc.json`.**
+Prettier's precedence runs `.prettierrc` → `.prettierrc.json` → … →
+`.prettierrc.mjs`, so a leftover file of either earlier kind wins outright and
+silently reinstates whatever it says. That is not a hypothetical: mnci wrote
+`.prettierrc.json` while `create-nx-workspace` wrote `.prettierrc`, and the
+result was that mnci's entire formatting opinion was discarded in every
+generated workspace until `prettier.resolveConfig` was used to find out why.
+
+`trailingComma: 'none'` is worth calling out, because getting it wrong is quiet
+in both directions: Prettier's own default is `'all'`, and this repo itself
+carried `'es5'` in a config it never published — so mnci was formatted against an
+opinion it did not ship, across 86 files, and nothing reported it. The Prettier
+spec now pins every option by running the real binary against fixtures.
 
 ### Type-aware rules (`configs/typeAware.js`)
 
@@ -188,6 +240,7 @@ faith later.
 ## Usage
 
 ```js
+// eslint.config.mjs
 import mnci from '@mnci/eslint-config'
 
 export default mnci({ workspaceRoot: import.meta.dirname })
@@ -197,11 +250,65 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 block for `packages/*` and `libs/*`, which needs to scan for `private: true`
 manifests. Omit it in a workspace with no publishable npm packages.
 
-Individual blocks are exported too, if you need to recompose:
+```js
+// .prettierrc.mjs
+export { default } from '@mnci/eslint-config/prettier'
+```
+
+## Overriding a rule
+
+Do this in your own config. **Do not edit this package inside `node_modules`, and
+do not fork it** — it is a dependency, so `npm update` carries rule fixes in the
+way it carries any other, and an override survives that while an edit does not.
+
+Flat config is order-dependent and later blocks win, so an override is a block
+appended after the spread. Name it, so the config inspector shows where the change
+came from:
+
+```js
+import mnci from '@mnci/eslint-config'
+
+export default [
+  ...mnci({ workspaceRoot: import.meta.dirname }),
+  {
+    name: 'local/legacy-app-allows-any',
+    files: ['apps/legacy/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' }
+  }
+]
+```
+
+To find out which block turned a rule on in the first place:
+
+```bash
+npx eslint --inspect-config              # every block, by name
+npx eslint --print-config path/to/file   # the merged result for one file
+```
+
+Individual blocks are exported too, if you need to recompose rather than append:
 
 ```js
 import { base, typescript, react, ignores } from '@mnci/eslint-config'
 ```
+
+Prettier options are overridden by spreading rather than re-exporting:
+
+```js
+// .prettierrc.mjs
+import mnci from '@mnci/eslint-config/prettier'
+
+export default { ...mnci, printWidth: 120 }
+```
+
+```bash
+npx prettier --find-config-path path/to/file   # which config file applies
+```
+
+### One override that cannot work
+
+`space-before-function-paren` — see below. Prettier reverses it on every run, so
+switching it on makes `npm run lint` and `npm run format:check` impossible to
+satisfy at the same time.
 
 ## ESLint 10
 
@@ -258,7 +365,12 @@ instead of rediscovering why they suddenly fire.
 - **`@nx/eslint-plugin` is an optional peer.** Its version has to track the
   workspace's own Nx version, and the `dependency-checks` block is skipped
   entirely when it is absent — so the config still works outside Nx.
-- **Tests shell out to the real `eslint` binary.** Asserting on a flat config's
-  object shape proves nothing, because a later block can silently disable an
-  earlier rule. Every test lints a real fixture and asserts on what was actually
-  reported.
+- **Tests shell out to the real `eslint` and `prettier` binaries.** Asserting on a
+  flat config's object shape proves nothing, because a later block can silently
+  disable an earlier rule; asserting on the exported Prettier object proves nothing
+  either, because the interesting failure is a config Prettier _finds_ and then
+  ignores. Every test runs a real fixture through a real binary and asserts on what
+  came back.
+- **`prettier` is a dependency here, not a peer.** Unlike `eslint`, nothing in this
+  package extends a Prettier plugin or needs to match a consumer's major, and a
+  workspace should not have to declare a formatter to be formatted correctly.

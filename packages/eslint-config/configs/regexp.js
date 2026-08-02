@@ -1,4 +1,5 @@
 import regexp from 'eslint-plugin-regexp'
+import { named } from './named.js'
 
 /**
  * Rules that crash rather than report when the TypeScript parser is present
@@ -59,8 +60,9 @@ const NEEDS_TYPE_SERVICES = [
  * missing — which is exactly why this needed the real thing to surface.
  */
 export default [
-  regexp.configs['flat/recommended'],
+  ...named('mnci/regexp/recommended', [regexp.configs['flat/recommended']]),
   {
+    name: 'mnci/regexp',
     rules: {
       ...Object.fromEntries(NEEDS_TYPE_SERVICES.map(rule => [rule, 'off'])),
 

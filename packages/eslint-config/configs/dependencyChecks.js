@@ -61,6 +61,7 @@ export default function dependencyChecks(workspaceRoot) {
 
   return [
     {
+      name: 'mnci/nx-dependency-checks',
       files: ['packages/*/package.json', 'libs/*/package.json'],
       languageOptions: { parser: jsoncParser },
       plugins: { '@nx': nxPlugin },

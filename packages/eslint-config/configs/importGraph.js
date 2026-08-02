@@ -62,6 +62,7 @@ import importX from 'eslint-plugin-import-x'
  */
 export default [
   {
+    name: 'mnci/import-graph',
     files: [
       'apps/*/src/**/*.{ts,mts,cts,tsx}',
       'libs/*/src/**/*.{ts,mts,cts,tsx}',

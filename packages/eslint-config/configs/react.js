@@ -50,6 +50,7 @@ const eslintReactRecommended = eslintReact.configs['recommended-typescript']
  */
 export default [
   {
+    name: 'mnci/react',
     files: ['**/*.{jsx,tsx}'],
     languageOptions: {
       globals: { ...globals.browser },

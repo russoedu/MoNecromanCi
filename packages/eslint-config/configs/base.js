@@ -13,6 +13,7 @@ import globals from 'globals'
  */
 export default [
   {
+    name: 'mnci/base',
     files: ['**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
     languageOptions: {
       ecmaVersion: 'latest',

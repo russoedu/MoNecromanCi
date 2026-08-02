@@ -14,6 +14,7 @@ export default [
     files: ['**/*.{ts,mts,cts,tsx}']
   })),
   {
+    name: 'mnci/typescript',
     files: ['**/*.{ts,mts,cts,tsx}'],
     rules: {
       // The base rules misfire on TS overloads and declaration merging.
@@ -34,6 +35,7 @@ export default [
     }
   },
   {
+    name: 'mnci/typescript/declarations',
     // Declaration files legitimately re-declare and use `any` in vendor types.
     files: ['**/*.d.ts'],
     rules: {

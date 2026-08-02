@@ -14,7 +14,7 @@ This monorepo is itself an Nx monorepo, built and maintained by the CLI it ships
 ```
 packages/
 ├── cli/                  # @mnci/cli — the CLI binary (mnci new/add/upgrade)
-├── eslint-config/        # @mnci/eslint-config — the shared ESLint flat config
+├── eslint-config/        # @mnci/eslint-config — the shared ESLint + Prettier config
 ├── nx-python-pip/        # @mnci/nx-python-pip — Nx plugin for pip-native Python projects
 └── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
 
@@ -30,8 +30,10 @@ libs/                     # empty (.gitkeep only) — internal libs would live h
 azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initial setup)
 
 nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
-eslint.config.mjs         # ESLint flat config — mnci-owned; 3 lines importing @mnci/eslint-config
-.prettierrc.json + .prettierignore   # Prettier config for code formatting (JavaScript Standard Style)
+eslint.config.mjs         # ESLint flat config — mnci-owned; one import from @mnci/eslint-config,
+                          #   plus a named inventory of every block and how to override it
+.prettierrc.mjs           # re-exports @mnci/eslint-config/prettier (JavaScript Standard Style)
+.prettierignore           # paths Prettier skips
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
 .npmrc                    # publish auth (azure also routes @scope to the feed)
@@ -207,7 +209,44 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Generated Workspaces Ship a Devcontainer (Latest)
+### `@mnci/eslint-config` Owns Prettier, and Every Block Has a Name (Latest)
+
+The package held the whole linting opinion while the formatting opinion was a literal
+in `overlay.ts` — two halves of one decision, in two places, reachable by two different
+upgrade paths (`npm update` for one, `mnci upgrade` for the other). And the cost of
+having moved the rules into a package had gone unpaid: a three-line root config gives no
+hint that twenty tools are behind it.
+
+- **`prettier.js` is the new source of truth**, exported as
+  `@mnci/eslint-config/prettier`, with `prettier` moved into the package's own
+  dependencies so a workspace need not declare a formatter to be formatted correctly.
+  Generated workspaces get a `.prettierrc.mjs` that re-exports it, and `.prettierrc.json`
+  joins the files `applyOverlay()` **deletes** — mnci used to write that name, and it
+  outranks `.mjs`, so an upgrade that left it behind would do nothing at all.
+- **The 86-file reformat was a drift this uncovered, not a style change.** This repo's
+  `.prettierrc.json` said `trailingComma: "es5"` while the `PRETTIER_CONFIG` it ships
+  says `"none"`. Nothing reported it, because the check and the shipped opinion were
+  different files. `tests/prettier.spec.ts` pins every option now, through the real
+  binary, loading the config **by its bare specifier** via a node_modules symlink — the
+  spelling is the subject, since a missing `exports` entry resolves fine in-repo and
+  fails only once published.
+- **Every one of the 29 resolved blocks now has a unique `name`.** ESLint 9 added it and
+  `eslint --inspect-config` reports it, so it is the only handle a user has on "which
+  block turned this on". `configs/named.js` covers the presets that ship anonymous
+  (`eslint-plugin-yml`, `eslint-plugin-toml`, `eslint-config-prettier`) while keeping any
+  name upstream does provide — `typescript-eslint/recommended` stays itself. Asserted as
+  a property, not a list: a new block without a name fails.
+- **The generated config now carries the inventory and the override recipe**, and the
+  inventory is checked against the real config in both directions. Mutation-tested both
+  ways: renaming `mnci/import-graph` fails, and dropping `mnci/css` from the table fails.
+- The one override that cannot work — `space-before-function-paren` — is stated in the
+  generated file itself, where someone would try it, rather than only in a README.
+
+Not yet done: verification on a real generated workspace. The unit and package suites
+cover the content; what remains is one `mnci new` + `mnci add react-app` cycle
+confirming the emitted config lints clean and that `--inspect-config` lists the names.
+
+### Generated Workspaces Ship a Devcontainer
 
 ROADMAP #11. The toolchain matrix is Node + Python + Go + Flutter, and only **CI** had
 all four: the pipeline installs the Flutter SDK and assumes CPython and Go on the
@@ -842,8 +881,8 @@ mnci worked while everything it produced did not.
 2. `package.json` (curated root scripts only — name, scripts, the dual TS compiler deps,
    the ESLint toolchain)
 3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
-4. `.prettierrc.json` + `.prettierignore` (formatting)
-5. `eslint.config.mjs` (three lines importing `@mnci/eslint-config`)
+4. `.prettierrc.mjs` (re-exports `@mnci/eslint-config/prettier`) + `.prettierignore`
+5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
 7. `<workspace-name>.code-workspace` (VS Code configuration)
 8. CI pipeline file(s) (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`)
@@ -855,15 +894,42 @@ to Nx generators. There are **no** per-project ESLint configs: every `@nx/*` gen
 writes one, and `removeGeneratedEslintConfig()` (`add/shared.ts`) deletes it after every
 `add`, so the config cannot re-fragment as a workspace grows.
 
-### ESLint: one config, in a package
+### ESLint _and_ Prettier: one opinion, in one package
 
-The linting opinion is `@mnci/eslint-config` — a real package with no build step,
-whose plugins are its own dependencies rather than a dozen devDependencies in every
-generated workspace. An upgrade therefore reaches existing workspaces through
-`npm update`, and the config is independently testable (it is, against the real `eslint`
-binary).
+`@mnci/eslint-config` is a real package with no build step, whose ~20 plugins are its
+own dependencies rather than ~20 devDependencies in every generated workspace. An
+upgrade therefore reaches existing workspaces through `npm update`, and the config is
+independently testable (it is, against the real `eslint` and `prettier` binaries).
 
-Two things about it are load-bearing and easy to undo by accident:
+**It owns the formatting opinion too**, exported as `@mnci/eslint-config/prettier` and
+consumed by a generated `.prettierrc.mjs` that re-exports it. Linting and formatting are
+one decision — `eslint-config-prettier` is composed last precisely so every rule defers
+to Prettier's settings — so splitting them across two packages creates a version pair
+free to drift until `lint` and `format:check` contradict each other. Two consequences
+worth remembering:
+
+- **Precedence is a trap, and mnci has fallen into it twice.** Prettier resolves
+  `.prettierrc` → `.prettierrc.json` → … → `.prettierrc.mjs`, so `applyOverlay()`
+  deletes the first two: `.prettierrc` because `create-nx-workspace` writes it,
+  `.prettierrc.json` because **mnci itself used to**. Leave either behind and the
+  shared opinion is silently ignored.
+- **`trailingComma` is `none`, not `es5`.** This repo's own `.prettierrc.json` said
+  `es5` while `overlay.ts` shipped `none`, so mnci was formatted against an opinion it
+  did not publish — 86 files' worth, reported by nothing. `tests/prettier.spec.ts` pins
+  every option now by running the real binary.
+
+**Every config block carries a `name`** (`mnci/base`, `mnci/react`,
+`mnci/prettier-compat`, …), including ones spread from upstream presets that ship
+anonymous — `configs/named.js` fills those in while keeping any name upstream provides.
+The names are what `eslint --inspect-config` reports and what a user's override targets,
+and they are the whole reason a three-line root config is navigable at all. The
+generated `eslint.config.mjs` ships the same list as a comment plus an override recipe;
+`ESLINT_BLOCK_INVENTORY` in `overlay.ts` holds it, and an `overlay.test.ts` test fails
+in **both** directions if it and the real config disagree — a stale inventory points the
+reader at a block that does not exist, and nothing about generating a workspace would
+notice.
+
+Two more things are load-bearing and easy to undo by accident:
 
 - **`eslint-config-prettier` is composed LAST**, then the stylistic block after it.
   That block holds only rules Prettier never touches (`spaced-comment`,

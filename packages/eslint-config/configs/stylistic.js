@@ -29,6 +29,7 @@ import stylistic from '@stylistic/eslint-plugin'
  */
 export default [
   {
+    name: 'mnci/stylistic',
     files: ['**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
     plugins: { '@stylistic': stylistic },
     rules: {

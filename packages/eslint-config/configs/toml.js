@@ -1,4 +1,5 @@
 import toml from 'eslint-plugin-toml'
+import { named } from './named.js'
 
 /**
  * TOML — parsing only, deliberately.
@@ -28,4 +29,4 @@ import toml from 'eslint-plugin-toml'
  * this means TOML formatting is unenforced — deliberately, since the alternative
  * measured worse.
  */
-export default [...toml.configs['flat/base']]
+export default named('mnci/toml/base', toml.configs['flat/base'])

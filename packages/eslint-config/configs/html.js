@@ -9,6 +9,7 @@ import htmlParser from '@html-eslint/parser'
  */
 export default [
   {
+    name: 'mnci/html',
     files: ['**/*.html'],
     languageOptions: { parser: htmlParser },
     plugins: { '@html-eslint': html },

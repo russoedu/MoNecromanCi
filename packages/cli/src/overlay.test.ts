@@ -25,6 +25,7 @@ import {
   readMnciConfig,
   registryUrl,
   devcontainerJson,
+  ESLINT_BLOCK_INVENTORY,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
@@ -1733,6 +1734,71 @@ describe('applyOverlay', () => {
       }
     ).devDependencies
     expect(devDependencies['@mnci/eslint-config']).toBeDefined()
+  })
+
+  it('explains what is in the config, and how to override it', () => {
+    overlayWith(DEFAULT_STACK)
+    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
+
+    // The cost of moving the rules into a package: a three-line config gives no
+    // hint that twenty tools are behind it. The comment is what buys that back,
+    // so it is part of the deliverable rather than decoration.
+    expect(config).toContain('npx eslint --inspect-config')
+    expect(config).toContain("name: 'local/")
+    // The one override that cannot work must be stated where someone would try
+    // it, not only in the README they have not opened.
+    expect(config).toContain('space-before-function-paren')
+  })
+
+  it('names blocks in the inventory that the real config actually has', () => {
+    // A stale inventory is worse than no inventory: it sends the reader to a
+    // block that does not exist, and nothing about generating a workspace would
+    // notice. So the comment is checked against the real thing in BOTH
+    // directions — a renamed block fails, and a new block nobody documented
+    // fails too.
+    //
+    // A subprocess because @mnci/eslint-config is ESM and this spec runs as CJS
+    // under ts-jest; `import`ing it here does not parse. The workspace symlink in
+    // node_modules is what makes the bare specifier resolve.
+    const script = `
+      const mnci = (await import('@mnci/eslint-config')).default
+      const blocks = mnci({ workspaceRoot: process.cwd() })
+      process.stdout.write(JSON.stringify(blocks.map(block => block.name ?? null)))
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: join(__dirname, '..', '..', '..'),
+      encoding: 'utf8'
+    })
+    const stdout = result.stdout?.trim()
+    if (!stdout?.startsWith('[')) {
+      throw new Error(`could not resolve @mnci/eslint-config.\nstderr: ${result.stderr}`)
+    }
+    const actual = (JSON.parse(stdout) as (string | null)[]).filter(
+      (name): name is string => name !== null
+    )
+    expect(actual.length).toBeGreaterThan(20)
+
+    // The inventory documents mnci's own blocks; `typescript-eslint/*` is
+    // upstream's and is listed with a wildcard rather than enumerated.
+    const documented = ESLINT_BLOCK_INVENTORY.match(/\bmnci\/[\w/*,-]+/g) ?? []
+    const own = actual.filter(name => name.startsWith('mnci/'))
+
+    // Multi-block presets are documented as `mnci/yaml/recommended*`, since how
+    // many blocks upstream splits them into is not a user-facing fact.
+    const covers = (name: string): boolean =>
+      documented.some(entry =>
+        entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : entry === name
+      )
+    expect(own.filter(name => !covers(name))).toEqual([])
+
+    // And nothing documented that no longer exists. `mnci/json, /jsonc, /json5`
+    // is one line for three blocks, so the trailing comma is stripped and the
+    // `/jsonc` shorthand is expanded against the family it belongs to.
+    const stale = documented
+      .map(entry => entry.replace(/,$/, ''))
+      .filter(entry => !entry.endsWith('*'))
+      .filter(entry => !own.includes(entry))
+    expect(stale).toEqual([])
   })
 
   it('deletes both higher-precedence Prettier configs, or the shared opinion is ignored', () => {

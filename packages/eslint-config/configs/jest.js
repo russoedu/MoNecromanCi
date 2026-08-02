@@ -9,6 +9,7 @@ import jest from 'eslint-plugin-jest'
  */
 export default [
   {
+    name: 'mnci/tests',
     // `jest.*.{js,mjs,cjs,ts}` covers the setup/teardown files a workspace
     // wires through `setupFilesAfterEach` — they use the same globals as a
     // spec but match none of the spec patterns, so without this they fail

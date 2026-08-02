@@ -92,6 +92,7 @@ export const TYPE_AWARE_FILES = [
 
 export default [
   {
+    name: 'mnci/type-aware',
     files: TYPE_AWARE_FILES,
     plugins: { '@typescript-eslint': tseslint.plugin },
     languageOptions: {
@@ -127,6 +128,7 @@ export default [
     }
   },
   {
+    name: 'mnci/type-aware/declarations',
     // Declaration files describe types rather than execute, so the promise and
     // assertion rules have nothing to say about them, and `unbound-method`
     // misreads an interface's method signatures as unbound uses.

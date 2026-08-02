@@ -3,6 +3,7 @@ import markdown from '@eslint/markdown'
 /** Markdown, as GitHub-flavoured. Every generated workspace ships READMEs. */
 export default [
   {
+    name: 'mnci/markdown',
     files: ['**/*.md'],
     plugins: { markdown },
     language: 'markdown/gfm',
