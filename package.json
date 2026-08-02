@@ -86,6 +86,14 @@
           "config": ".verdaccio/config.yml",
           "storage": "tmp/local-registry/storage"
         }
+      },
+      "lint": {
+        "executor": "nx:run-commands",
+        "cache": true,
+        "options": {
+          "command": "eslint . --ignore-pattern \"apps/**\" --ignore-pattern \"libs/**\" --ignore-pattern \"packages/**\" --ignore-pattern package-lock.json",
+          "cwd": "."
+        }
       }
     }
   }

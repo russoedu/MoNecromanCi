@@ -46,7 +46,6 @@ const ABSENT_BY_DESIGN: Record<string, Record<string, string>> = {
     // The workspace root pseudo-project. `includedScripts: []` in the root
     // manifest is deliberate — its scripts are the aggregators (`nx run-many`),
     // so inferring targets from them would recurse.
-    lint: 'root-level files are linted by no target — recorded as roadmap #28',
     typecheck: 'the root has no sources of its own; each package typechecks itself',
     test: 'the root has no sources of its own; each package tests itself',
     build: 'the root has no sources of its own; each package builds itself',
