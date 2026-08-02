@@ -1,14 +1,40 @@
+import eslintReact from '@eslint-react/eslint-plugin'
 import jsxA11y from 'eslint-plugin-jsx-a11y'
-import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
+
+const eslintReactRecommended = eslintReact.configs['recommended-typescript']
 
 /**
  * React correctness rules for JSX/TSX, including accessibility.
  *
  * @remarks
  * Formatting stays with Prettier.
+ *
+ * **The React rules come from `@eslint-react/eslint-plugin`, not
+ * `eslint-plugin-react`.** The incumbent's latest release (7.37.5) peers on
+ * `eslint: ^3 … ^9.7` and has no ESLint 10 build at all, so it — not ESLint —
+ * is what pinned this whole config to ESLint 9. `@eslint-react` is a maintained
+ * rewrite that peers on `eslint: "*"`. Every rule it has no equivalent for is a
+ * class-component or `propTypes` rule; this project generates neither, and two
+ * of them (`react-in-jsx-scope`, `prop-types`) were already switched off here.
+ *
+ * `recommended-typescript` rather than `recommended`: it is what the migration
+ * guide prescribes, and in 5.18.1 the two resolve to an identical rule set, so
+ * the choice costs nothing today and follows upstream if they diverge. Neither
+ * needs type-aware parser services — only `recommended-type-checked` does — so
+ * this block carries none of `configs/typeAware.js`'s scoping hazard, where a
+ * file outside a tsconfig becomes a fatal parse error.
+ *
+ * **Hooks stay with the React team's own plugin.** `@eslint-react` reimplements
+ * the hooks rules and ships a config to switch `eslint-plugin-react-hooks` off
+ * in favour of them; this config does the opposite, because the canonical
+ * `rules-of-hooks` and `exhaustive-deps` should come from the people who define
+ * the rules of hooks. The two duplicated rule names are turned off on the
+ * `@eslint-react` side so one defect is never reported twice with two different
+ * messages. Its *other* hook-adjacent rules — `purity`, `set-state-in-effect`,
+ * `use-memo` and friends — have no counterpart enabled here and stay on.
  *
  * `jsx-a11y` is here rather than in `configs/html.js` because the two cover
  * genuinely different files: `@html-eslint`'s rules — `require-img-alt` and
@@ -30,23 +56,24 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: {
-      react,
+      ...eslintReactRecommended.plugins,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
       'jsx-a11y': jsxA11y,
     },
-    settings: { react: { version: 'detect' } },
+    settings: { ...eslintReactRecommended.settings },
     rules: {
-      ...react.configs.flat.recommended.rules,
-      ...react.configs.flat['jsx-runtime'].rules,
+      ...eslintReactRecommended.rules,
       ...jsxA11y.flatConfigs.recommended.rules,
 
-      // The modern JSX transform makes these obsolete.
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
-
+      // The two rules both plugins implement. See the remarks above: the React
+      // team's plugin is the authority, so `@eslint-react`'s copies go off
+      // rather than reporting the same defect twice.
+      '@eslint-react/rules-of-hooks': 'off',
+      '@eslint-react/exhaustive-deps': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
 
       // A component's return type is always JSX and TypeScript infers it
