@@ -204,7 +204,7 @@ function enforceWorkspaceShape(root, stage) {
   const resolved = tryRunCapture('npx prettier --find-config-path package.json', root)
   enforce(
     `${stage}: Prettier resolves that config, not a stray one`,
-    (resolved.output ?? '').trim().endsWith('.prettierrc.json'),
+    (resolved.output ?? '').trimEnd().endsWith('.prettierrc.json'),
     `resolved: ${(resolved.output ?? '').trim()}`
   )
 
@@ -369,7 +369,7 @@ enforce('.npmrc written', existsSync(path.join(workspace, '.npmrc')))
   )
   enforce(
     '.npmrc routes nothing for public npm — no scope line claiming protection it cannot give',
-    !npmrcDirectives.some(line => line.includes(':registry='))
+    npmrcDirectives.every(line => !line.includes(':registry='))
   )
 }
 enforce('commitlint config written', existsSync(path.join(workspace, 'commitlint.config.mjs')))
@@ -1658,7 +1658,7 @@ if (hasGo()) {
   // Read rather than hardcoded: the module path comes from the workspace scope,
   // so hardcoding it would make this section quietly wrong on a rename.
   const goModule = readFileSync(path.join(altWorkspace, 'go.mod'), 'utf8')
-    .split('\n')[0]
+    .split('\n', 1)[0]
     .replace('module ', '')
     .trim()
 
@@ -1677,24 +1677,27 @@ if (hasGo()) {
     )
     enforce(
       `go: ${project} has every target written explicitly (${expected.join(', ')})`,
-      expected.every(target => Boolean(projectJson.targets?.[target])),
+      expected.every(target => Object.hasOwn(projectJson.targets ?? {}, target)),
       Object.keys(projectJson.targets ?? {}).join(', ')
     )
   }
 
   // A documented, deliberate gap rather than an oversight: go-function-app writes
   // no host.json/custom-handler config, so a `:start` script would just fail.
+  const goFunctionAppProject = JSON.parse(
+    readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8')
+  )
   enforce(
     'go: go-function-app deliberately has NO start target, unlike go-app',
-    !JSON.parse(readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8')).targets
-      ?.start
+    !goFunctionAppProject.targets?.start
   )
 
+  const goLibProject = JSON.parse(
+    readFileSync(path.join(altWorkspace, 'packages/gocore/project.json'), 'utf8')
+  )
   enforce(
     'go: go-lib is tagged type:go-lib, which is what excludes it from the release scope',
-    JSON.parse(
-      readFileSync(path.join(altWorkspace, 'packages/gocore/project.json'), 'utf8')
-    ).tags?.includes('type:go-lib')
+    goLibProject.tags?.includes('type:go-lib')
   )
 
   // THE payoff of one root module: a cross-project import needs no vendoring, no

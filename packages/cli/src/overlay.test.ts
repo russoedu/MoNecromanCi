@@ -24,6 +24,8 @@ import {
   pythonPublishUrl,
   readMnciConfig,
   registryUrl,
+  ESLINT_PEER_OVERRIDES,
+  ESLINT_VERSION,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
   type StackConfig,
@@ -1504,6 +1506,42 @@ describe('applyOverlay', () => {
       namedInputs: { sharedGlobals: string[] }
     }
     expect(nxJson.namedInputs.sharedGlobals).toEqual([...SHARED_GLOBAL_INPUTS])
+  })
+
+  it('writes the jsx-a11y peer override, without which npm install fails on ESLint 10', () => {
+    // `eslint-plugin-jsx-a11y@6.10.2` peers at `^3 … ^9`, so npm ERESOLVEs
+    // against ESLint 10. The cap is stale, not real — measured: with this
+    // override the plugin installs and its rules still fire. npm only honours
+    // `overrides` in the ROOT manifest, which is why the config package cannot
+    // carry its own fix and mnci has to write this.
+    overlayWith(DEFAULT_STACK)
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      overrides: Record<string, unknown>
+      devDependencies: Record<string, string>
+    }
+
+    expect(manifest.overrides['eslint-plugin-jsx-a11y']).toEqual({ eslint: '$eslint' })
+    // `$eslint` is what keeps the override from pinning a version of its own, so
+    // it has to resolve against a declared `eslint` — assert both halves.
+    expect(manifest.devDependencies.eslint).toBe(ESLINT_VERSION)
+    expect(ESLINT_VERSION.startsWith('^10.')).toBe(true)
+  })
+
+  it("merges overrides rather than replacing a workspace's own", () => {
+    // A user's `overrides` block is theirs; `mnci upgrade` must not delete it.
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: 'x', overrides: { 'left-pad': '1.0.0' } })
+    )
+    overlayWith(DEFAULT_STACK)
+
+    const { overrides } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      overrides: Record<string, unknown>
+    }
+
+    expect(overrides['left-pad']).toBe('1.0.0')
+    expect(overrides).toMatchObject(ESLINT_PEER_OVERRIDES)
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {

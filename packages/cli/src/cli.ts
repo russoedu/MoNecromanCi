@@ -140,7 +140,7 @@ export async function main(): Promise<void> {
 
     const arguments_ = new Set(process.argv.slice(2))
     const requestedVersionFlag = arguments_.has('-v') || arguments_.has('--version')
-    if (process.stdout.isTTY && !requestedVersionFlag) {
+    if (!requestedVersionFlag && process.stdout.isTTY) {
       logger.info(`mnci v${cliVersion}`)
     }
 

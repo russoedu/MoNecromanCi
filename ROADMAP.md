@@ -54,12 +54,16 @@ suite is now non-fatal), #23 (Azure's release trigger still has the shape #22 fi
 for GitHub — a manual queue on `main` publishes), #28 (no lint target covers
 root-level files — measured clean today, so a gate hole rather than a bug, P3).
 
-**Open — upgrades held back on purpose (§9):** #26's **investigation is done** — all
-30 of the lint config's dependencies were audited, ESLint 10.8.0 has exactly two
-holdouts, `@eslint-react/eslint-plugin` replaces one, and `jsx-a11y`'s cap was
-_measured_ to be stale (it works on 10 given one npm `overrides` entry). §9 has the
-five-step upgrade; performing it is what remains. #27 (TypeScript 7) is still
-deferred pending a proper pass.
+**#26 is done — the stack is on ESLint 10.8.0**, with `eslint-plugin-unicorn` 72 and
+`@eslint/js` 10 (the content of Dependabot #86 and #83, both closed with reasons at
+the time). Neither holdout survived contact with measurement: `eslint-plugin-react`
+was replaced by `@eslint-react/eslint-plugin`, and `jsx-a11y`'s peer cap turned out
+to be stale — one npm `overrides` entry, and its rules still work. The bump surfaced
+92 problems and **zero defects**; four rules are off with counts as the reason, and
+the other 25 findings were fixed rather than silenced.
+
+**Open — upgrades held back on purpose (§9):** #27 (TypeScript 7), still deferred
+pending a proper pass.
 
 Plus #7 and #13 at P3. **No P1 is open.**
 
@@ -770,13 +774,14 @@ decision to get right rather than a one-liner.
 Both are Dependabot PRs closed with reasons rather than merged, recorded here so the
 reasoning is not lost with the PR.
 
-### 26. ESLint 10 — investigation done, the route is measured — P2 (upgrade still open)
+### 26. ESLint 10 — ✅ done
 
-The stack is pinned to ESLint **9** and `eslint-plugin-unicorn` to **v61**. Closed on
-that basis: **#86** (unicorn 61 → 72) and **#83** (`@eslint/js` 9 → 10), neither with
-`@dependabot ignore`, so both return naturally.
+The stack is on ESLint **10.8.0** with `eslint-plugin-unicorn` **v72** and
+`@eslint/js` **10** — which is the content of Dependabot **#86** and **#83**, both
+closed at the time with reasons rather than merged. Neither carried
+`@dependabot ignore`, so both would have returned naturally; they are now moot.
 
-The investigation this item asked for is **finished**, including
+The investigation this item asked for came first, including
 <https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>. It changes the
 item from "wait for the ecosystem" to "a five-step upgrade with one verified
 workaround".
@@ -826,22 +831,39 @@ so they are in scope, though the interaction still needs confirming on a real
 workspace. It also notes ESLint 10 tracks JSX references natively, making
 `jsx-uses-react` and friends unnecessary.
 
-**The upgrade, in order:**
+**The upgrade, in order — all five steps done:**
 
-1. `eslint` `^9.39` → `^10.8`, and `@eslint/js` 9 → 10 (Dependabot #83's content).
+1. ✅ `eslint` `^9.39` → `^10.8`, and `@eslint/js` 9 → 10 (Dependabot #83's content).
 2. ✅ **done** — `eslint-plugin-react` replaced by `@eslint-react/eslint-plugin` in
    `configs/react.js`, under ESLint 9. Taken first on purpose: it is the one step
    that is independently useful and reversible, and isolating it keeps the expensive
    real-react-app verification about React rather than about ESLint 10. Details below.
-3. Keep `jsx-a11y`, adding the `overrides` entry above to `ROOT_SCRIPTS`' manifest
-   patch in `overlay.ts` (and to this repo's own root manifest, which already has an
-   `overrides` block).
-4. `eslint-plugin-unicorn` 61 → 72 (Dependabot #86's content), plus the three rules
-   `configs/base.js` lists as missing from v61.
-5. **Verify on a real generated workspace with a `react-app`, not only on fixtures.**
-   Non-negotiable here: React is exactly the surface changing, and #107 shipped a
-   regression that broke every generated react-app because the verification was done
-   on a Python workspace. Nx's `NxWelcome.tsx` is the fixture that matters.
+3. ✅ `jsx-a11y` kept, on the measured `overrides` entry —
+   `ESLINT_PEER_OVERRIDES` in `overlay.ts` writes it into every generated root
+   manifest (npm honours `overrides` only there, which is why a config package
+   cannot fix this for itself), and this repo's own root manifest carries it too.
+   Merged rather than replaced, so a workspace's own overrides survive an upgrade.
+4. ✅ `eslint-plugin-unicorn` 61 → 72 (Dependabot #86's content).
+5. ✅ Verified on a real generated workspace with a `react-app`, twice — once for
+   the React swap and again for the bump.
+
+**What the bump actually cost: 92 problems, zero defects.** The three rules
+`configs/base.js` predicted back on v61 were the top three by count —
+`name-replacements` (35), `no-top-level-assignment-in-function` (19),
+`consistent-boolean-name` (13) — 67 of the 92, and the prediction was exactly right
+about why they had to go off: they rename a team's own vocabulary, or condemn the
+standard per-test fixture idiom. A fourth joins them:
+`no-incorrect-template-string-interpolation` (10) reads Nx's own `{workspaceRoot}`
+tokens as forgotten `${...}`, so it **cannot** be right about any code that writes
+Nx config — ten findings, ten false.
+
+The remaining 25 were **fixed rather than switched off**, which matters because it is
+the difference between adopting a rule and neutering it. Six were mechanical
+(`--fix`); the rest were real edits, including one genuine defect the core ESLint 10
+rule `no-useless-assignment` found in `doctor.ts` (a dead initialiser on every path).
+`--fix` was deliberately run _after_ the four disables, not before: the naming rules
+rewrite identifiers, so fixing first would have renamed code that was about to stop
+being linted at all.
 
 **Step 2 as built.** `recommended-typescript`, which is what the guide prescribes and
 which in 5.18.1 resolves to a rule set identical to `recommended`; neither needs

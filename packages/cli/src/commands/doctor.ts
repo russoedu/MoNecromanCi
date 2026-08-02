@@ -28,7 +28,7 @@ export interface Finding {
 }
 
 /** The ESLint major this stack supports, derived from the version mnci pins. */
-const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.')[0]
+const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[0]
 
 /**
  * Checks that the workspace has exactly one ESLint config, at the root.
@@ -109,10 +109,10 @@ function checkPrettierConfig(workspaceRoot: string): Finding {
  */
 function checkEslintPlugin(nxJson: Record<string, unknown>): Finding {
   const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
-  const registered = plugins.some(entry =>
-    typeof entry === 'string'
-      ? entry === '@nx/eslint/plugin'
-      : (entry as { plugin?: string }).plugin === '@nx/eslint/plugin'
+  const registered = plugins.some(
+    entry =>
+      (typeof entry === 'string' ? entry : (entry as { plugin?: string }).plugin) ===
+      '@nx/eslint/plugin'
   )
   return {
     check: '@nx/eslint/plugin registered',
@@ -148,7 +148,7 @@ function checkResolvedEslint(workspaceRoot: string): Finding | undefined {
   }
   try {
     const { version } = readJson<{ version: string }>(manifestPath)
-    const major = version.split('.')[0]
+    const major = version.split('.', 1)[0]
     return {
       check: `resolved eslint is ${SUPPORTED_ESLINT_MAJOR}.x`,
       ok: major === SUPPORTED_ESLINT_MAJOR,
@@ -231,7 +231,7 @@ function checkVersionActions(workspaceRoot: string): Finding[] {
       }>(projectJsonPath)
       hasOverride = Boolean(projectJson.release?.version?.versionActions)
     } catch {
-      hasOverride = false
+      // No project.json at all, so no override — the initialiser already says so.
     }
     return [
       {

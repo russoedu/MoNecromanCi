@@ -33,9 +33,9 @@ type InteractiveAction = 'new' | 'add' | 'upgrade'
  */
 export async function runInteractive(): Promise<void> {
   const inWorkspace = fileExists(join(process.cwd(), 'nx.json'))
-  const newChoice = { name: 'Create a new monorepo', value: 'new' as const }
-  const addChoice = { name: 'Add a project to this workspace', value: 'add' as const }
-  const upgradeChoice = {
+  const choiceNew = { name: 'Create a new monorepo', value: 'new' as const }
+  const choiceAdd = { name: 'Add a project to this workspace', value: 'add' as const }
+  const choiceUpgrade = {
     name: 'Upgrade this workspace (re-apply the latest overlay)',
     value: 'upgrade' as const,
   }
@@ -43,8 +43,8 @@ export async function runInteractive(): Promise<void> {
   const action = await select<InteractiveAction>({
     message: 'What would you like to do?',
     choices: inWorkspace
-      ? [addChoice, upgradeChoice, newChoice]
-      : [newChoice, addChoice, upgradeChoice],
+      ? [choiceAdd, choiceUpgrade, choiceNew]
+      : [choiceNew, choiceAdd, choiceUpgrade],
   })
 
   if (action === 'new') {

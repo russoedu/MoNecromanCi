@@ -203,36 +203,46 @@ Individual blocks are exported too, if you need to recompose:
 import { base, typescript, react, ignores } from '@mnci/eslint-config'
 ```
 
-## ESLint 9, deliberately — but one holdout fewer
+## ESLint 10
 
-The stack is pinned to ESLint **9**, and `eslint-plugin-unicorn` to **v61**
-(the last line supporting it). Not conservatism — the plugins decide.
+The stack is on ESLint **10** and `eslint-plugin-unicorn` **v72**. Getting there
+was never about ESLint — it was about two plugins, and both were resolved by
+measurement rather than by waiting.
 
-The plugin that decided it, `eslint-plugin-react`, is **gone**: React
-correctness now comes from `@eslint-react/eslint-plugin`, a maintained rewrite
-whose peer range is `eslint: "*"`. The incumbent had no ESLint 10 release at
-all — its peer range stopped at `^9.7`, and on 10 it threw
-`contextOrFilename.getFilename is not a function` while loading
-`react/display-name`, killing linting for every `.tsx` file in the workspace.
+**`eslint-plugin-react` is gone.** React correctness comes from
+`@eslint-react/eslint-plugin`, a maintained rewrite whose peer range is
+`eslint: "*"`. The incumbent had no ESLint 10 release at all: its peer range
+stopped at `^9.7`, and on 10 it threw `contextOrFilename.getFilename is not a
+function` while loading `react/display-name`, killing linting for every `.tsx`
+file in the workspace.
 
 Hooks stay with `eslint-plugin-react-hooks`. `@eslint-react` reimplements them
 and ships a config to switch the React team's plugin off in favour of its own;
 this config does the reverse, and switches off the two `@eslint-react` rules
 that duplicate it so a single defect is never reported twice.
 
-What still holds ESLint 9 in place, both measured against the registry rather
-than assumed:
+**`eslint-plugin-jsx-a11y` stays, on a peer override.** Its latest release
+(6.10.2) peers at `^3 … ^9`, so `npm install` ERESOLVEs on ESLint 10 — but the
+cap is **stale, not a real incompatibility**. Measured on `eslint@10.8.0`: with
 
-- `eslint-plugin-jsx-a11y` peers at `^3 … ^9` — but that cap is **stale**, not a
-  real incompatibility. On `eslint@10.8.0` it installs given one npm entry,
-  `"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }`, and its
-  rules then work.
-- `eslint-plugin-unicorn@72` requires `eslint >= 10.4`, so the unicorn bump and
-  the ESLint bump are one change, not two.
+```json
+"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }
+```
 
-Everything else — `typescript-eslint`, `import-x`, `promise`, `jest`,
-`stylistic`, `jsonc`, `yml`, `toml`, `regexp`, `react-hooks`, and `@nx/eslint`
-itself — already allows `^10`.
+in the **root** manifest (npm ignores `overrides` anywhere else, which is why a
+config package cannot fix this for itself and mnci writes it), the plugin
+installs and its rules still fire. `mnci` generates that entry; remove it the
+moment jsx-a11y ships a release declaring ESLint 10.
+
+**Four unicorn v72 rules are off, and the reasons are counts, not taste.** The
+upgrade surfaced 92 problems on this repo and not one was a defect:
+`name-replacements` (35), `no-top-level-assignment-in-function` (19) and
+`consistent-boolean-name` (13) rename a team's own vocabulary or condemn the
+standard per-test fixture idiom — all three were predicted in `configs/base.js`
+before they could fire. `no-incorrect-template-string-interpolation` (10) reads
+Nx's own `{workspaceRoot}` tokens as forgotten `${...}`, so it cannot be right
+about any code that writes Nx config. The remaining 25 findings were **fixed**,
+not switched off.
 
 Three unicorn rules this config would otherwise switch off —
 `name-replacements`, `consistent-boolean-name` and

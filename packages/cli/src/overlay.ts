@@ -570,8 +570,39 @@ export function eslintConfigSpec(): string {
  *
  * @remarks
  * `@mnci/eslint-config` peers on `eslint`, so it never installs one itself.
+ *
+ * ESLint **10**. What held the stack at 9 was never ESLint — it was
+ * `eslint-plugin-react`, which has no 10 release at all and has since been
+ * replaced by `@eslint-react/eslint-plugin`. See
+ * {@link ESLINT_PEER_OVERRIDES} for the one holdout that remains.
  */
-export const ESLINT_VERSION = '^9.39.0'
+export const ESLINT_VERSION = '^10.8.0'
+
+/**
+ * npm `overrides` a generated workspace needs for its ESLint toolchain to install.
+ *
+ * @remarks
+ * `eslint-plugin-jsx-a11y@6.10.2` — the latest release — peers on
+ * `eslint: ^3 … ^9`, so `npm install` fails outright with `ERESOLVE` on ESLint
+ * 10. That cap is **stale rather than real**, and this was measured, not
+ * assumed: with this override in place on `eslint@10.8.0`, the plugin installs
+ * and its rules work — a missing `alt` reports `jsx-a11y/alt-text`, and
+ * `alt="a picture"` reports `img-redundant-alt`.
+ *
+ * `overrides` has to live in the **root** manifest; npm ignores it anywhere
+ * else, which is why a config package cannot carry its own fix and mnci writes
+ * this instead. `$eslint` resolves to the workspace's own `eslint` spec, so the
+ * override never pins a version of its own.
+ *
+ * The trade, stated rather than glossed: mnci deleted `legacy-peer-deps` from
+ * the generated `.npmrc` precisely for weakening dependency resolution. This is
+ * far narrower — one named package, one peer, with evidence that the real
+ * constraint is satisfied — but it is the same kind of decision, so it should
+ * be removed the moment `jsx-a11y` ships a release declaring ESLint 10.
+ */
+export const ESLINT_PEER_OVERRIDES = {
+  'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
+} as const
 
 /**
  * The ESLint toolchain a generated workspace needs as real devDependencies.
@@ -2175,9 +2206,20 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
     prettier: PRETTIER_VERSION,
   }
+  // Merged, never replaced: a workspace's own overrides must survive an upgrade.
+  const overrides = {
+    ...(manifest.overrides as Record<string, unknown> | undefined),
+    ...ESLINT_PEER_OVERRIDES,
+  }
   writeFileEnsured(
     manifestPath,
-    toJson({ ...manifest, name: `${options.scope}/source`, scripts, devDependencies: devDeps })
+    toJson({
+      ...manifest,
+      name: `${options.scope}/source`,
+      scripts,
+      devDependencies: devDeps,
+      overrides,
+    })
   )
 
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
