@@ -596,8 +596,8 @@ node packages/cli/e2e/cli.e2e.mjs      # ~15-30 min, real network
 It runs the **built** CLI for real: `mnci new` (real `create-nx-workspace`, real
 npm installs), `mnci add` for each kind, then real `nx run-many -t lint,test,build`
 and a real `nx release --dry-run` inside the generated repo. Expected result:
-**152 enforced checks, exit 0, zero skips** (with both the Flutter SDK and the Go
-toolchain on `PATH`). Without Flutter it is **142 checks and one SKIPPED section**,
+**151 enforced checks, exit 0, zero skips** (with both the Flutter SDK and the Go
+toolchain on `PATH`). Without Flutter it is **141 checks and one SKIPPED section**,
 which is the shape a Linux machine with Go but no Flutter SDK produces.
 
 **Toolchain gating.** Two sections are skippable, **Flutter** and **Go**, because
