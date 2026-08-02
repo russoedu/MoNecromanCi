@@ -826,11 +826,13 @@ so they are in scope, though the interaction still needs confirming on a real
 workspace. It also notes ESLint 10 tracks JSX references natively, making
 `jsx-uses-react` and friends unnecessary.
 
-**The upgrade, in order — this is what remains open:**
+**The upgrade, in order:**
 
 1. `eslint` `^9.39` → `^10.8`, and `@eslint/js` 9 → 10 (Dependabot #83's content).
-2. Replace `eslint-plugin-react` with `@eslint-react/eslint-plugin` in
-   `configs/react.js`, scoping any type-aware preset the way `typeAware.js` is scoped.
+2. ✅ **done** — `eslint-plugin-react` replaced by `@eslint-react/eslint-plugin` in
+   `configs/react.js`, under ESLint 9. Taken first on purpose: it is the one step
+   that is independently useful and reversible, and isolating it keeps the expensive
+   real-react-app verification about React rather than about ESLint 10. Details below.
 3. Keep `jsx-a11y`, adding the `overrides` entry above to `ROOT_SCRIPTS`' manifest
    patch in `overlay.ts` (and to this repo's own root manifest, which already has an
    `overrides` block).
@@ -840,6 +842,33 @@ workspace. It also notes ESLint 10 tracks JSX references natively, making
    Non-negotiable here: React is exactly the surface changing, and #107 shipped a
    regression that broke every generated react-app because the verification was done
    on a Python workspace. Nx's `NxWelcome.tsx` is the fixture that matters.
+
+**Step 2 as built.** `recommended-typescript`, which is what the guide prescribes and
+which in 5.18.1 resolves to a rule set identical to `recommended`; neither needs
+type-aware parser services (only `recommended-type-checked` does), so the block
+carries none of `typeAware.js`'s scoping hazard. Hooks deliberately stay with
+`eslint-plugin-react-hooks`: `@eslint-react` reimplements them and ships a config to
+switch the React team's plugin off in favour of its own, and this config does the
+reverse, switching off the two `@eslint-react` rules that duplicate it so one defect
+is never reported twice. Its other hook-adjacent rules — `purity`,
+`set-state-in-effect`, `use-memo` — have no counterpart enabled here and are new
+coverage.
+
+**Verified the way step 5 demands, and it found something.** A real `mnci new` plus
+`mnci add react-app`, with the config installed from a locally packed tarball:
+
+- `npm run lint` **exits 0** on the fresh workspace, and a planted list rendered
+  without a `key` reports `@eslint-react/no-missing-key` as an error (exit 1). Both
+  halves, on real generated code.
+- **One new warning appears on a file the user never wrote**:
+  `@eslint-react/dom-no-dangerously-set-innerhtml` on Nx's `nx-welcome.tsx`, which
+  uses `dangerouslySetInnerHTML` for an inline `<style>` block.
+  **Kept, deliberately.** It is a `warning`, no `--max-warnings` is set anywhere, so
+  lint still exits 0 and CI stays green — unlike the react-lib rollup config and
+  `prefer-regex-literals` precedents, which were hard failures. Switching off a
+  security-relevant rule to quiet one throwaway Nx boilerplate file is the worse
+  trade. Recorded rather than hidden, so nobody has to rediscover where it comes
+  from.
 
 One thing still to check rather than trust: `@nx/react`'s generator pinned
 `eslint-plugin-import@2.31.0` (caps at 9), which once broke `mnci add react-app`

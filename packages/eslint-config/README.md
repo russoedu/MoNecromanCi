@@ -37,23 +37,23 @@ and the config is independently testable — which it is, against the real
 Correctness and code quality only. **Formatting is Prettier's job**, and
 `eslint-config-prettier` is composed last to guarantee no rule here fights it.
 
-| Area                 | Plugin                                                     |
-| -------------------- | ---------------------------------------------------------- |
-| JS/TS correctness    | `@eslint/js`, `typescript-eslint`, `eslint-plugin-unicorn` |
-| Node + promises      | `eslint-plugin-n`, `eslint-plugin-promise`                 |
-| Unused code          | `eslint-plugin-unused-imports` (auto-removes on `--fix`)   |
-| React                | `eslint-plugin-react`, `react-hooks`, `react-refresh`      |
-| JSX accessibility    | `eslint-plugin-jsx-a11y` (`recommended`)                   |
-| JSON / JSONC / JSON5 | `eslint-plugin-jsonc`                                      |
-| YAML                 | `eslint-plugin-yml`                                        |
-| Markdown             | `@eslint/markdown`                                         |
-| CSS                  | `@eslint/css`                                              |
-| HTML                 | `@html-eslint/eslint-plugin` (incl. its a11y rules)        |
-| Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals      |
-| Type-aware TS        | `typescript-eslint` with `projectService` — see below      |
-| Import graph         | `eslint-plugin-import-x` — cycles within a project         |
-| Regular expressions  | `eslint-plugin-regexp` — incl. catastrophic backtracking   |
-| TOML                 | `eslint-plugin-toml` — **parsing only**, see below         |
+| Area                 | Plugin                                                        |
+| -------------------- | ------------------------------------------------------------- |
+| JS/TS correctness    | `@eslint/js`, `typescript-eslint`, `eslint-plugin-unicorn`    |
+| Node + promises      | `eslint-plugin-n`, `eslint-plugin-promise`                    |
+| Unused code          | `eslint-plugin-unused-imports` (auto-removes on `--fix`)      |
+| React                | `@eslint-react/eslint-plugin`, `react-hooks`, `react-refresh` |
+| JSX accessibility    | `eslint-plugin-jsx-a11y` (`recommended`)                      |
+| JSON / JSONC / JSON5 | `eslint-plugin-jsonc`                                         |
+| YAML                 | `eslint-plugin-yml`                                           |
+| Markdown             | `@eslint/markdown`                                            |
+| CSS                  | `@eslint/css`                                                 |
+| HTML                 | `@html-eslint/eslint-plugin` (incl. its a11y rules)           |
+| Tests                | `eslint-plugin-jest` + Vitest's `vi`/`vitest` globals         |
+| Type-aware TS        | `typescript-eslint` with `projectService` — see below         |
+| Import graph         | `eslint-plugin-import-x` — cycles within a project            |
+| Regular expressions  | `eslint-plugin-regexp` — incl. catastrophic backtracking      |
+| TOML                 | `eslint-plugin-toml` — **parsing only**, see below            |
 
 ### Type-aware rules (`configs/typeAware.js`)
 
@@ -203,17 +203,36 @@ Individual blocks are exported too, if you need to recompose:
 import { base, typescript, react, ignores } from '@mnci/eslint-config'
 ```
 
-## ESLint 9, deliberately
+## ESLint 9, deliberately — but one holdout fewer
 
 The stack is pinned to ESLint **9**, and `eslint-plugin-unicorn` to **v61**
-(the last line supporting it). Not conservatism — the plugins decide:
+(the last line supporting it). Not conservatism — the plugins decide.
 
-- `eslint-plugin-react` has no ESLint 10 release. Its latest peer range stops
-  at `^9.7`, and on 10 it throws `contextOrFilename.getFilename is not a
-function` while loading `react/display-name`, which kills linting for every
-  `.tsx` file in the workspace.
-- `@nx/react`'s generator pins `eslint-plugin-import@2.31.0`, which caps at 9
-  too — on 10 the install fails outright.
+The plugin that decided it, `eslint-plugin-react`, is **gone**: React
+correctness now comes from `@eslint-react/eslint-plugin`, a maintained rewrite
+whose peer range is `eslint: "*"`. The incumbent had no ESLint 10 release at
+all — its peer range stopped at `^9.7`, and on 10 it threw
+`contextOrFilename.getFilename is not a function` while loading
+`react/display-name`, killing linting for every `.tsx` file in the workspace.
+
+Hooks stay with `eslint-plugin-react-hooks`. `@eslint-react` reimplements them
+and ships a config to switch the React team's plugin off in favour of its own;
+this config does the reverse, and switches off the two `@eslint-react` rules
+that duplicate it so a single defect is never reported twice.
+
+What still holds ESLint 9 in place, both measured against the registry rather
+than assumed:
+
+- `eslint-plugin-jsx-a11y` peers at `^3 … ^9` — but that cap is **stale**, not a
+  real incompatibility. On `eslint@10.8.0` it installs given one npm entry,
+  `"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }`, and its
+  rules then work.
+- `eslint-plugin-unicorn@72` requires `eslint >= 10.4`, so the unicorn bump and
+  the ESLint bump are one change, not two.
+
+Everything else — `typescript-eslint`, `import-x`, `promise`, `jest`,
+`stylistic`, `jsonc`, `yml`, `toml`, `regexp`, `react-hooks`, and `@nx/eslint`
+itself — already allows `^10`.
 
 Three unicorn rules this config would otherwise switch off —
 `name-replacements`, `consistent-boolean-name` and

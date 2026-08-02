@@ -175,7 +175,37 @@ npm run release:preview  # dry-run what nx release would do
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### `nx affected` Was Blind to Every Root Config File (Latest)
+### React Rules Now Come From `@eslint-react` (Latest)
+
+ROADMAP #26 step 2, taken first on purpose: it is the one step of the ESLint 10
+upgrade that is independently useful and reversible, and isolating it keeps the
+expensive real-react-app verification about React rather than about ESLint 10.
+
+- **`eslint-plugin-react` is gone.** Its latest release peers on `eslint: ^3 … ^9.7`
+  with no ESLint 10 build at all, so it — not ESLint — is what pinned this config to 9. `@eslint-react/eslint-plugin` is a maintained rewrite peering on `eslint: "*"`.
+  Every rule it has no equivalent for is a class-component or `propTypes` rule; this
+  project generates neither, and two of them were already switched off here.
+- **`recommended-typescript`, and it needs no type services.** Only
+  `recommended-type-checked` does, so this block carries none of `typeAware.js`'s
+  scoping hazard, where a file outside a tsconfig becomes a fatal parse error. In
+  5.18.1 `recommended` and `recommended-typescript` resolve to an identical rule set.
+- **Hooks stay with the React team's plugin.** `@eslint-react` reimplements them and
+  ships a config to switch `eslint-plugin-react-hooks` off in favour of its own; this
+  config does the reverse and switches off the two `@eslint-react` rules that
+  duplicate it, so one defect is never reported twice with two different messages.
+  Its other hook-adjacent rules (`purity`, `set-state-in-effect`, `use-memo`) are new
+  coverage and stay on. A test pins both halves, so flipping the pair cannot pass.
+- **Verified on a real generated workspace with a real `react-app`**, not on fixtures
+  — the exact step #107 skipped. `npm run lint` exits 0 on the fresh workspace, and a
+  planted keyless list reports `@eslint-react/no-missing-key` as an error.
+- **It found one new warning on a file the user never wrote**:
+  `dom-no-dangerously-set-innerhtml` on Nx's `nx-welcome.tsx`. **Kept deliberately** —
+  it is a `warning`, nothing sets `--max-warnings`, so lint still exits 0, unlike the
+  react-lib rollup and `prefer-regex-literals` precedents which were hard failures.
+  Switching off a security-relevant rule to quiet one piece of Nx boilerplate is the
+  worse trade.
+
+### `nx affected` Was Blind to Every Root Config File
 
 ROADMAP #25, filed as "blind to `@mnci/eslint-config`". Measuring it showed the
 problem was far wider: `nx affected` walks the **project graph**, and a root config
@@ -525,13 +555,14 @@ mnci worked while everything it produced did not.
   owns that too. A latent oddity goes with it: `npm run lint` previously worked
   in a fresh workspace only by accident.
 - **The stack is ESLint 9, not 10** — decided by the plugins, not the version
-  number. `eslint-plugin-react` has no ESLint 10 release at all (it throws while
-  loading `react/display-name`, killing lint for every `.tsx` file), and
-  `@nx/react` pins `eslint-plugin-import@2.31.0`, which caps at 9. So:
-  `eslint ^9.39` and `eslint-plugin-unicorn` pinned to `^61`, the last line
-  supporting 9. Three unicorn rules this config would want off don't exist in
-  v61 and so aren't listed — ESLint rejects a config naming a rule its plugin
-  lacks. `configs/base.js` records which ones, for whoever upgrades next.
+  number. So: `eslint ^9.39` and `eslint-plugin-unicorn` pinned to `^61`, the
+  last line supporting 9. Three unicorn rules this config would want off don't
+  exist in v61 and so aren't listed — ESLint rejects a config naming a rule its
+  plugin lacks. `configs/base.js` records which ones, for whoever upgrades next.
+  The plugin that originally decided it, `eslint-plugin-react`, has since been
+  replaced by `@eslint-react/eslint-plugin` (see the entry at the top of this
+  section); what remains is `jsx-a11y`'s stale peer cap and unicorn 72's
+  `>=10.4` floor, both written up in ROADMAP #26.
 - **This repo now lints itself with the config it ships** (`eslint.config.mjs` is the same
   three-line import), which is what makes the original drift impossible to reintroduce.
   TSDoc enforcement stays a root-only extra block — an mnci-authoring standard, not

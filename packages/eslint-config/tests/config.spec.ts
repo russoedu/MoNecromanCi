@@ -75,6 +75,12 @@ const FIXTURES: Record<string, string> = {
   // an <img> in a component used to be checked by nothing at all.
   'a11y.tsx': 'export const Bad = (): JSX.Element => <img src="x.png" />\n',
   'a11y-ok.tsx': 'export const Good = (): JSX.Element => <img src="x.png" alt="a cat" />\n',
+  // React correctness, now from @eslint-react rather than eslint-plugin-react.
+  // A list rendered without a key is the canonical example, and it is a real
+  // defect: React reconciles by position instead of identity and silently
+  // corrupts component state on reorder.
+  'react-key.tsx':
+    "export const List = (): JSX.Element => (\n  <ul>\n    {['a', 'b'].map(item => (\n      <li>{item}</li>\n    ))}\n  </ul>\n)\n",
   // Vitest's `vi` belongs to no Jest environment, so a .js spec using it reported
   // `'vi' is not defined`.
   'vitest.spec.js':
@@ -332,6 +338,31 @@ describe('@mnci/eslint-config', () => {
     // a11y rule reaching a single line of JSX.
     expect(rulesFor('a11y.tsx')).toContain('jsx-a11y/alt-text')
     expect(rulesFor('a11y-ok.tsx')).toEqual([])
+  })
+
+  it('enforces React correctness through @eslint-react, and leaves clean JSX alone', () => {
+    // The replacement for `eslint-plugin-react`, which has no ESLint 10 release
+    // and was therefore the thing pinning this config to ESLint 9. Asserted by
+    // running the binary rather than by inspecting the config: a rule can be
+    // present in the array and switched off again by a later block, which is the
+    // whole reason these tests are integration tests.
+    expect(rulesFor('react-key.tsx')).toContain('@eslint-react/no-missing-key')
+    expect(rulesFor('a11y-ok.tsx')).toEqual([])
+  })
+
+  it('keeps the hooks rules with the React team, not with @eslint-react', () => {
+    // Both plugins implement `rules-of-hooks` and `exhaustive-deps`. Without
+    // this, one defect is reported twice with two different messages. The
+    // direction matters: `eslint-plugin-react-hooks` is the canonical source, so
+    // @eslint-react's copies are the ones switched off — and this asserts both
+    // halves, so flipping the pair cannot pass.
+    // `--print-config` normalises severities to numbers: 0 off, 1 warn, 2 error.
+    const { rules } = printConfig(workspace, 'a11y-ok.tsx')
+
+    expect(rules['@eslint-react/rules-of-hooks']).toEqual([0])
+    expect(rules['@eslint-react/exhaustive-deps']).toEqual([0])
+    expect(rules['react-hooks/rules-of-hooks'][0]).toBe(2)
+    expect(rules['react-hooks/exhaustive-deps'][0]).toBe(1)
   })
 
   it("knows Vitest's `vi`, which belongs to no Jest environment", () => {
