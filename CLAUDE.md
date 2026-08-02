@@ -165,11 +165,42 @@ npm run release:preview  # dry-run what nx release would do
 - **`git diff`** before pushing — review what `mnci upgrade` or any overlay change actually touches
 - **No breaking of tools** — the CLI is dogfooded; if a change breaks the e2e or generated workspace lint/test/build, the CI will catch it
 
+### Merge Strategy: merge commits, NOT squash
+
+**Merge pull requests with a merge commit.** Do not squash-merge, and do not
+rebase-merge.
+
+The reason is branch hygiene, and it is not a matter of taste. A squash merge puts a
+**brand-new commit** on `main` whose content matches the branch but whose SHA is
+unrelated to it, so the branch's tip is never an ancestor of `main`. That breaks
+`git branch --merged`, which tests ancestry rather than content — and it breaks it
+_permanently_. This repo squash-merged ~90 PRs, and the result is that
+`git branch -r --merged origin/main` reports **nothing at all**, so telling a
+finished branch from an abandoned one requires checking each PR's `merged_at` by
+hand. Two of the eight branches left behind that way (`dev`, `badges`) look
+identical to git as the merged ones, while actually holding unmerged work.
+
+Rebase-merging has the same defect for the same reason: replayed commits get new
+SHAs. Merge commits are the only one of the three strategies that keeps ancestry
+intact.
+
+The trade, stated: `main` gains a merge commit per PR plus the branch's individual
+commits, so a branch with `wip`/`fix typo` commits now shows them in changelogs.
+Keep branch history tidy rather than relying on a squash to hide it. GitHub's
+`Merge pull request #N from …` message is not a conventional commit, which is
+harmless — conventional-commit parsers skip non-conforming messages when computing
+version bumps, and commitlint only runs on local commits via the husky hook.
+
+Enforce it in **Settings → General → Pull Requests**: allow merge commits, disable
+squash and rebase merging. Until that is set, nothing stops a merge from silently
+being a squash again.
+
 ### Release Model
 
 - Versions come from **Conventional Commits** enforced by commitlint at commit time
 - `nx release --dry-run` (or `npm run release:preview`) shows what would happen without changes
 - On push to `main`, CI runs `nx release --yes` → bumps versions → tags → publishes to npm
+- Merge strategy interacts with this directly — see "Merge Strategy" above
 
 ## Current State & Recent Changes
 
