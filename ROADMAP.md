@@ -34,10 +34,11 @@ this config's own "earns its keep" test (189 false positives from one rule). §9
 all three write-ups. That closes #19 completely, and with it every gap in
 `@mnci/eslint-config` this session identified.
 
-**Open, all P2:** #21's remaining half (a failure in one e2e section still destroys
-every later one), #9 (container kind), #10 (e2e test projects), #11 (devcontainer),
-#12 (multi-project `dev up`), #15 (`--preset` composition). Plus #7 and #13 at P3.
-**No P1 is open.**
+**Open, all P2:** #21's structural half (a failing section should be _skipped_, not
+cascade — the one step that actually crashed the suite is now non-fatal, but the
+general case stands), #9 (container kind), #10 (e2e test projects), #11
+(devcontainer), #12 (multi-project `dev up`), #15 (`--preset` composition). Plus #7
+and #13 at P3. **No P1 is open.**
 
 **One limitation of #5 worth knowing before picking anything up.** Nx's affected
 graph has no edge from a project to `@mnci/eslint-config`, because the lint config
@@ -414,7 +415,7 @@ Carried over from `mnci-details.md` §12 so this file is the single list.
 | Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                                                                                                                                                                                                                                                    | P3  |
 | `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                                                                                                                                                                                                                                            | —   |
 
-### 21. The e2e is manual-only and linearly fragile — half done; isolation still open (P2)
+### 21. The e2e is manual-only and linearly fragile — schedule + the crashing step fixed; structural isolation open (P2)
 
 Two structural problems in `packages/cli/e2e/cli.e2e.mjs`, both **demonstrated
 rather than theorised**, and together they explain how Go went uncovered and how a
@@ -433,7 +434,14 @@ root script and updated the unit tests but not this check. Eight PRs merged over
 red suite. A nightly (or weekly) schedule would cost nothing anybody waits for and
 would cap the blind window at one day instead of "until someone remembers".
 
-**Still open: one failure destroys every later section.** `run()` throws, and the script is a
+**Partly fixed: one failure no longer _always_ destroys every later section.** The
+single step that actually caused this — installing the Python toolchain, the one
+thing here that depends on the machine rather than on anything mnci produced — is
+now `tryRunCapture` + `enforce` instead of a throwing `run()`. An unusable pip now
+costs Python's own coverage and nothing else's, where before it deleted Go's and
+Flutter's silently.
+
+**Still open: the general case.** `run()` throws, and the script is a
 single linear file, so a crash anywhere silently removes all coverage below it. This
 has now happened twice for unrelated reasons:
 
@@ -445,11 +453,18 @@ found`), which took **Go and Flutter** down with it. That is an environment
    problem, not an mnci bug — but the suite reporting nothing at all about Go
    because _Python's toolchain_ could not install is the wrong failure mode.
 
-Worth fixing together: wrap each section so a failure is recorded and the run
-continues to the next section, then fail at the end with the full picture. The
-report machinery (`results.enforced`, the final exit) already supports this — only
-the propagation needs changing. The Flutter/Go toolchain gates show the shape: a
-section that cannot run should say so loudly and not take its neighbours with it.
+What remains is the structural version: wrap each section so any failure is
+recorded and the run continues, and so a section whose prerequisites failed is
+**skipped** rather than cascading into a wall of dependent assertion failures. The
+report machinery (`results.enforced`, the final exit) already supports it — only
+the propagation needs changing, and the Flutter/Go toolchain gates show the shape.
+
+Sized honestly before being deferred: 21 section banners and **94 top-level
+`const`/`let` bindings**, many of which cross section boundaries, so a `try` block
+per section re-scopes them and needs the shared ones hoisted. That plus a
+25-minute validation run and a deliberate failure-injection test is a real piece of
+work on the project's most valuable test asset — worth doing properly rather than
+squeezing in.
 
 ### 22. Release steps fired on any non-PR event, not just a push — ✅ done
 

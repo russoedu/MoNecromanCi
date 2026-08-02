@@ -1252,7 +1252,28 @@ enforce(
     existsSync(path.join(altWorkspace, 'requirements-dev.txt')) &&
     !existsSync(path.join(altWorkspace, 'tools/python-build.js'))
 )
-run(`${PYTHON} -m pip install --quiet -r requirements-dev.txt`, altWorkspace)
+// Deliberately non-throwing, unlike the `run()` this used to be. Installing the
+// Python toolchain is the one step here that depends on the *machine* rather than
+// on anything mnci produced, and when it failed it took the whole suite down with
+// it — `run()` throws, the script is linear, so Go and Flutter (which come after)
+// reported nothing at all. That happened for a reason entirely outside this
+// project: a Debian-owned `packaging` that pip refuses to replace
+// (`Cannot uninstall packaging 24.0, RECORD file not found`).
+//
+// Recording it as a normal failure keeps every later section running, so one
+// unusable toolchain costs its own coverage and nothing else's. This is the
+// narrow version of ROADMAP #21 — full per-section isolation, where a broken
+// Python section would be *skipped* rather than cascade into failed assertions
+// below, is still open.
+const pythonToolchainInstall = tryRunCapture(
+  `${PYTHON} -m pip install --quiet -r requirements-dev.txt`,
+  altWorkspace
+)
+enforce(
+  'python: the fixed toolchain (ruff/pytest/build/twine) installs from the generated requirements-dev.txt',
+  pythonToolchainInstall.ok,
+  pythonToolchainInstall.output
+)
 
 const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
 const pysharedProject = existsSync(pysharedProjectPath)
