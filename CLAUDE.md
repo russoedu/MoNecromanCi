@@ -210,7 +210,49 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### A Second Linting Package: `@mnci/oxlint-config` (Latest)
+### The CLI Offers a Linter Choice (Latest)
+
+`mnci new --linter=eslint|oxlint`, also a prompt and an `mnci upgrade` override,
+persisted in `nx.json`'s `mnci` block. Default stays `eslint`, so nothing changes
+for an existing workspace or a flagless run.
+
+- **The oxlint option is a HYBRID, and calling it a swap would be a lie about what
+  the workspace gets.** oxlint parses JS/TS/JSX/Vue and nothing else, so a pure
+  swap would leave a duplicate key in a CI pipeline, a malformed `pyproject.toml`
+  and a publishable package's wrong manifest all reported by nothing.
+  `@mnci/eslint-config`'s new `nonJs()` export keeps YAML/TOML/MD/CSS/HTML/JSON and
+  `@nx/dependency-checks`, composed from the same block modules `mnci()` uses so
+  the two modes cannot drift.
+- **`rootLintTarget()` is what actually runs oxlint, and the first pass forgot it.**
+  Every per-project `lint` target comes from `@nx/eslint/plugin` and runs ESLint
+  alone, so an oxlint workspace had a valid `oxlint.config.ts`, a green
+  `npm run lint`, and never invoked oxlint once. Found while writing the e2e
+  assertion that would have "passed" — the gate-that-verifies-nothing class again.
+  oxlint sweeps the WHOLE workspace (no `--ignore-pattern` scoping) precisely
+  because no per-project target covers it.
+- **Switching modes deletes the mode you left.** Two formatter configs is the
+  `.prettierrc` precedence bug in a new costume: both files valid, CLI picks one,
+  editor picks the other, gates disagree silently.
+- **Format-on-save was broken for `.ts`, and it was mnci's fault.** The
+  `.code-workspace` set a global `editor.defaultFormatter` plus `[json]`/`[jsonc]`/
+  `[yaml]` only. VS Code resolves a language-specific setting ahead of a general
+  one and does so BEFORE scope, so any user-level `[typescript]` block outranked
+  it. Reported from a real workspace where `.json` formatted and `.ts` did not.
+  `FORMATTED_LANGUAGES` now pins all nine.
+- **Generated workspaces never declared `prettier`** — it arrived only as a
+  transitive dependency of `@mnci/eslint-config`, so `npx prettier` worked while
+  the VS Code extension, which resolves prettier from the PROJECT's dependencies
+  and silently falls back to its bundled copy, could get a different one. `oxfmt`
+  and `oxlint` are declared for the same reason.
+- **`oxc.oxc-vscode` is one extension covering oxlint AND oxfmt** (verified on the
+  Marketplace), so an oxlint workspace needs no formatter extension —
+  and `dbaeumer.vscode-eslint` stays in BOTH lists, because the hybrid still lints
+  YAML there.
+- **The e2e's `alt` workspace is now the oxlint half of the matrix**, pairing with
+  `demo` (jest + eslint) instead of adding a third workspace and another ~8 minutes
+  of real installs.
+
+### A Second Linting Package: `@mnci/oxlint-config`
 
 The same lint and style opinion on the Rust toolchain — oxlint + oxfmt — as an
 alternative to `@mnci/eslint-config`, not a replacement. **Not yet wired into the

@@ -26,6 +26,7 @@ import {
   registryUrl,
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
+  FORMATTED_LANGUAGES,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
@@ -1801,6 +1802,125 @@ describe('applyOverlay', () => {
     expect(stale).toEqual([])
   })
 
+  it('actually runs oxlint, which no other target does', () => {
+    // The hole this closes is silent: every per-project `lint` target comes from
+    // @nx/eslint/plugin and runs ESLint alone, so an oxlint workspace could have a
+    // valid oxlint.config.ts, a green `npm run lint`, and never invoke oxlint once.
+    // A first pass shipped exactly that.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { targets: { lint: { options: { commands: string[] } } } }
+    }
+    const commands = nx.targets.lint.options.commands
+    expect(commands.some(command => command.startsWith('oxlint '))).toBe(true)
+    // And ESLint still runs, for the file types oxlint cannot parse.
+    expect(commands.some(command => command.startsWith('eslint '))).toBe(true)
+  })
+
+  it('sweeps the whole workspace with oxlint, not just the root', () => {
+    // ESLint's root invocation is scoped away from apps/libs/packages because each
+    // project lints its own tree. oxlint has no per-project target at all, so the
+    // same scoping would leave JS/TS linted by nothing.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { targets: { lint: { options: { commands: string[] } } } }
+    }
+    const oxlintCommand = nx.targets.lint.options.commands.find(command =>
+      command.startsWith('oxlint ')
+    )
+    expect(oxlintCommand).not.toContain('--ignore-pattern')
+  })
+
+  it('writes the oxlint pair and no Prettier config when oxlint is chosen', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(true)
+    // Two formatter configs would mean the editor and CI can disagree about which
+    // applies — the same silent failure shape as the `.prettierrc` precedence bug.
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(false)
+  })
+
+  it('keeps an ESLint config under oxlint, trimmed to what oxlint cannot parse', () => {
+    // The hybrid's whole point. Without this a workspace that chose oxlint would
+    // lint its CI YAML, its pyproject.toml and its publishable manifests with
+    // nothing at all.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
+    expect(config).toContain("import { nonJs } from '@mnci/eslint-config'")
+    // NOT the full config: composing both would report one defect twice.
+    expect(config).not.toContain("import mnci from '@mnci/eslint-config'")
+  })
+
+  it('removes the oxlint pair when the workspace switches back to eslint', () => {
+    // `mnci upgrade` runs this same code path, so switching modes has to be one
+    // command rather than a manual cleanup. Asserted by switching for real.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
+
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
+  })
+
+  it('points the format scripts at the formatter the workspace actually has', () => {
+    for (const [linter, tool] of [
+      ['eslint', 'prettier'],
+      ['oxlint', 'oxfmt']
+    ] as const) {
+      overlayWith({ testRunner: 'jest', linter })
+      const scripts = (
+        JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+          scripts: Record<string, string>
+        }
+      ).scripts
+      expect(scripts.format).toContain(tool)
+      expect(scripts['format:check']).toContain(tool)
+    }
+  })
+
+  it('declares the formatter it formats with, rather than relying on hoisting', () => {
+    // `@mnci/eslint-config` depends on prettier, so `npx prettier` works either
+    // way — but the VS Code extension resolves prettier from the PROJECT's
+    // dependencies and silently falls back to its bundled copy when it finds
+    // none. Reported from a real workspace.
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    const devDeps = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(devDeps.prettier).toBeDefined()
+  })
+
+  it('declares the whole oxlint toolchain, ESLint included', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const devDeps = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+
+    for (const dependency of ['oxlint', 'oxfmt', '@mnci/oxlint-config']) {
+      expect(devDeps[dependency]).toBeDefined()
+    }
+    // ON TOP OF the ESLint set, not instead of it: the hybrid still lints YAML,
+    // TOML, Markdown, CSS, HTML and JSON with ESLint.
+    expect(devDeps.eslint).toBeDefined()
+    expect(devDeps['@mnci/eslint-config']).toBeDefined()
+  })
+
+  it('persists the linter so mnci upgrade does not revert it', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      mnci: { stack: { linter: string } }
+    }
+    expect(nxJson.mnci.stack.linter).toBe('oxlint')
+  })
+
   it('recommends the ESLint + Prettier extensions for an eslint workspace', () => {
     const workspace = vscodeWorkspace('demo', 'eslint')
     expect(workspace).toContain('dbaeumer.vscode-eslint')
@@ -1836,6 +1956,35 @@ describe('applyOverlay', () => {
     expect(vscodeWorkspace('demo', 'oxlint')).toContain(
       '"editor.defaultFormatter": "oxc.oxc-vscode"'
     )
+  })
+
+  it('pins the formatter for EVERY language, not just the global default', () => {
+    // The bug this fixes, reported from a real workspace: `.ts` files were not
+    // formatted on save while `.json`/`.jsonc`/`.yaml` were — the three that had
+    // explicit entries. VS Code resolves a language-specific setting ahead of a
+    // general one, and does so BEFORE scope, so a `[typescript]` block in the
+    // user's own settings outranks this file's global `editor.defaultFormatter`.
+    // Nothing reports it: Prettier is installed, the config resolves, and
+    // `format:check` still finds the unformatted files.
+    for (const linter of ['eslint', 'oxlint'] as const) {
+      const settings = JSON.parse(vscodeWorkspace('demo', linter)).settings as Record<
+        string,
+        { 'editor.defaultFormatter'?: string }
+      >
+      const expected = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
+      for (const language of FORMATTED_LANGUAGES) {
+        expect(settings[`[${language}]`]).toEqual({ 'editor.defaultFormatter': expected })
+      }
+    }
+  })
+
+  it('covers the languages that actually matter, TypeScript included', () => {
+    // Asserted by name rather than only through the loop above, because the loop
+    // would still pass if someone shortened FORMATTED_LANGUAGES back to the three
+    // it started as — which is exactly how the reported bug existed.
+    for (const language of ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']) {
+      expect(FORMATTED_LANGUAGES).toContain(language)
+    }
   })
 
   it('narrows eslint.validate to what ESLint still owns under oxlint', () => {

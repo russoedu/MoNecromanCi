@@ -785,8 +785,126 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
     eslint: ESLINT_VERSION,
     '@nx/eslint': nxVersion,
     '@nx/eslint-plugin': nxVersion,
-    '@mnci/eslint-config': eslintConfigSpec()
+    '@mnci/eslint-config': eslintConfigSpec(),
+    // Declared rather than left to hoisting. `@mnci/eslint-config` depends on
+    // prettier, so `npx prettier` works either way — but the VS Code extension
+    // resolves prettier from the PROJECT's dependencies and silently falls back
+    // to its own bundled copy when it finds none. A workspace should declare the
+    // formatter it formats with instead of relying on npm flattening someone
+    // else's transitive dependency to the root.
+    prettier: PRETTIER_VERSION
   }
+}
+
+/**
+ * The root `lint` target for one linter choice.
+ *
+ * @remarks
+ * **This is what actually runs oxlint.** Nothing else does, and that gap is worth
+ * spelling out because it is invisible: an oxlint workspace can have a valid
+ * `oxlint.config.ts`, a green `npm run lint`, and never invoke oxlint once —
+ * every per-project `lint` target comes from `@nx/eslint/plugin` and runs ESLint
+ * alone. A first pass shipped exactly that, and the e2e assertion "lint runs
+ * green" passed while verifying nothing about the JS/TS half.
+ *
+ * So under oxlint the root target runs both, in the order they matter:
+ *
+ * 1. `oxlint .` over the **whole** workspace. Unlike ESLint's root invocation
+ *    this is deliberately not scoped away from `apps/`, `libs/` and `packages/`:
+ *    oxlint is designed to sweep a repo in one pass, and no per-project target
+ *    covers it, so scoping here would leave JS/TS linted by nothing.
+ * 2. `eslint .` on root files only, exactly as the eslint path does — the
+ *    per-project ESLint targets already cover the project trees.
+ *
+ * `parallel: false` so a failure names which linter failed rather than
+ * interleaving two outputs.
+ *
+ * @param linter - The workspace's linter choice.
+ * @returns The `lint` target for the root project.
+ * @throws Never - performs pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function rootLintTarget(linter: LinterChoice): Record<string, unknown> {
+  if (linter !== 'oxlint') return ROOT_LINT_TARGET
+  return {
+    executor: 'nx:run-commands',
+    cache: true,
+    options: {
+      commands: ['oxlint .', ROOT_LINT_TARGET.options.command],
+      parallel: false,
+      cwd: '.'
+    }
+  }
+}
+
+/**
+ * The `oxlint` version generated workspaces declare.
+ *
+ * @remarks
+ * Declared by the workspace because `@mnci/oxlint-config` peers on it, the same
+ * arrangement `eslint` has — the config cannot pick the binary's version for you.
+ */
+export const OXLINT_VERSION = '^1.76.0'
+
+/**
+ * The `oxfmt` version generated workspaces declare.
+ *
+ * @remarks
+ * Pre-1.0, and pinned by caret deliberately: it is the one part of the oxlint
+ * stack whose output could change between minors, and a test diffs it against
+ * Prettier so a drift is reported rather than silently reformatting a repo.
+ */
+export const OXFMT_VERSION = '^0.61.0'
+
+/**
+ * The extra dependencies an **oxlint** workspace needs on top of the ESLint set.
+ *
+ * @remarks
+ * On top of, not instead of: the hybrid keeps ESLint for the file types oxlint
+ * cannot parse, so `eslintToolchainDependencies` still applies in full.
+ *
+ * `oxlint` is a peer of `@mnci/oxlint-config` rather than a dependency, so the
+ * workspace has to declare it — the same reason `eslint` is declared. `oxfmt` is
+ * declared for the reason `prettier` is: the editor extension resolves the
+ * formatter from the project, not from a transitive dependency.
+ *
+ * @returns The oxlint-specific devDependencies.
+ * @throws Never - returns a literal.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function oxlintToolchainDependencies(): Record<string, string> {
+  return {
+    '@mnci/oxlint-config': oxlintConfigSpec(),
+    oxlint: OXLINT_VERSION,
+    oxfmt: OXFMT_VERSION
+  }
+}
+
+/**
+ * The `@mnci/oxlint-config` version generated workspaces depend on.
+ *
+ * @remarks
+ * A caret range, so `npm update` carries rule fixes into existing workspaces
+ * without an `mnci upgrade` — the same reason the ESLint config ships as a
+ * package rather than as a template string.
+ */
+export const OXLINT_CONFIG_VERSION = '^0.1.0'
+
+/**
+ * The `@mnci/oxlint-config` spec to write into a generated workspace's manifest.
+ *
+ * @remarks
+ * Reads `MNCI_OXLINT_CONFIG_SPEC` so the e2e can point this at a locally packed
+ * tarball instead of the registry, the same escape hatch
+ * {@link eslintConfigSpec} uses — without it, `npm install` in a freshly
+ * generated oxlint workspace 404s until the package has been published once.
+ *
+ * @returns The dependency spec (a semver range, or a path/URL when overridden).
+ * @throws Never - reads an environment variable.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function oxlintConfigSpec(): string {
+  return process.env.MNCI_OXLINT_CONFIG_SPEC ?? OXLINT_CONFIG_VERSION
 }
 
 /**
@@ -898,6 +1016,91 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 `
 
 /**
+ * The root `eslint.config.mjs` for an **oxlint** workspace.
+ *
+ * @remarks
+ * The hybrid's ESLint half. oxlint reads JS/TS/JSX/Vue and nothing else, so
+ * without this a workspace that chose oxlint would lint its CI YAML, its
+ * `pyproject.toml`, its Markdown, CSS, HTML and JSON with nothing at all — and
+ * would lose `@nx/dependency-checks`, the only thing stopping a publishable
+ * package's manifest from declaring the wrong dependencies.
+ *
+ * `nonJs()` composes exactly those blocks from the same modules the full config
+ * uses, so a rule added to `configs/yaml.js` reaches both modes.
+ */
+export const ESLINT_CONFIG_NON_JS = `import { nonJs } from '@mnci/eslint-config'
+
+// This workspace lints JS/TS with oxlint (see oxlint.config.ts). ESLint keeps
+// the file types oxlint cannot parse at all — YAML, TOML, Markdown, CSS, HTML,
+// JSON — plus @nx/dependency-checks on publishable manifests.
+//
+// The JS/TS rule blocks are deliberately NOT composed here. Running both linters
+// over the same file would report one defect twice under two different names.
+//
+// TO OVERRIDE, append a named block after the spread, exactly as the full config
+// documents. To change a JS/TS rule, edit oxlint.config.ts instead — this file
+// does not lint JS/TS.
+export default [...nonJs({ workspaceRoot: import.meta.dirname })]
+`
+
+/**
+ * The root `oxlint.config.ts` written into oxlint workspaces.
+ *
+ * @remarks
+ * `oxlint.config.ts`, not `.oxlintrc.json`, and that is forced rather than
+ * preferred: `.oxlintrc`'s `extends` takes **paths** resolved relative to the
+ * config file, so `extends: ["@mnci/oxlint-config"]` fails with
+ * `No such file or directory`. `defineConfig` is the only shareable-config route
+ * oxlint offers. Verified both ways.
+ */
+export const OXLINT_CONFIG = `import { defineConfig } from 'oxlint'
+import mnci from '@mnci/oxlint-config'
+
+// oxlint owns JS/TS/JSX here; eslint.config.mjs keeps everything oxlint cannot
+// parse. The contract @mnci/oxlint-config holds itself to: anything
+// @mnci/eslint-config accepts must pass oxlint, so switching linters never turns
+// a green codebase red.
+//
+// oxlint.config.ts, not .oxlintrc.json, and that is not a preference: .oxlintrc's
+// \`extends\` takes PATHS relative to the config file, so
+// \`extends: ["@mnci/oxlint-config"]\` fails with "No such file or directory".
+// defineConfig is the only shareable-config route oxlint offers.
+//
+// Type-aware rules (no-floating-promises and friends) are opt-in — pass
+// { typeAware: true } AND run oxlint with --type-aware. They report findings the
+// ESLint stack accepts, so they are off by default to keep the contract above.
+export default defineConfig({ extends: [mnci()] })
+`
+
+/**
+ * The `.oxfmtrc.json` written into oxlint workspaces.
+ *
+ * @remarks
+ * Inlined rather than re-exported from `@mnci/oxlint-config/oxfmt`, unlike the
+ * Prettier config's `.prettierrc.mjs`. oxfmt's config is JSON only — it has no
+ * `.mjs` form to import a package from — so the options are duplicated here and
+ * `tests/oxfmt.spec.ts` asserts the package's option set equals the ESLint
+ * package's, which is what keeps all three in step.
+ *
+ * The `$schema` entry is what gives an editor completion and validation on the
+ * file, and costs nothing.
+ */
+export const OXFMT_CONFIG = `${JSON.stringify(
+  {
+    $schema: './node_modules/oxfmt/configuration_schema.json',
+    semi: false,
+    singleQuote: true,
+    trailingComma: 'none',
+    arrowParens: 'avoid',
+    printWidth: 100,
+    tabWidth: 2,
+    useTabs: false
+  },
+  null,
+  2
+)}\n`
+
+/**
  * The .prettierignore written into generated workspaces.
  *
  * @remarks
@@ -985,6 +1188,31 @@ export const SHARED_VSCODE_EXTENSIONS = [
 ] as const
 
 /**
+ * Every language whose formatter mnci pins explicitly.
+ *
+ * @remarks
+ * Not a convenience list — see {@link vscodeSettings} for why the general
+ * `editor.defaultFormatter` cannot be relied on. The set is "everything the
+ * chosen formatter actually handles": both Prettier and oxfmt format all of
+ * these, verified byte-identical on JSON/YAML/Markdown/CSS/TS samples when
+ * oxfmt was adopted.
+ *
+ * `typescript` and `typescriptreact` are the two that matter most and were the
+ * two missing.
+ */
+export const FORMATTED_LANGUAGES = [
+  'javascript',
+  'javascriptreact',
+  'typescript',
+  'typescriptreact',
+  'json',
+  'jsonc',
+  'yaml',
+  'markdown',
+  'css'
+] as const
+
+/**
  * The extension list for one linter choice.
  *
  * @remarks
@@ -1043,9 +1271,26 @@ export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
     },
     'editor.defaultFormatter': formatter,
     'editor.formatOnSave': true,
-    '[json]': { 'editor.defaultFormatter': formatter },
-    '[jsonc]': { 'editor.defaultFormatter': formatter },
-    '[yaml]': { 'editor.defaultFormatter': formatter }
+    // Every language spelled out, and the global default above is NOT enough on
+    // its own — which is the bug this fixes rather than a belt-and-braces habit.
+    //
+    // VS Code resolves a language-specific setting ahead of a general one, and it
+    // does that comparison BEFORE scope. So a `[typescript]` block in someone's
+    // USER settings — left over from any other project — outranks this file's
+    // workspace-level `editor.defaultFormatter`, and format-on-save quietly uses
+    // that other formatter instead. Nothing reports it: Prettier is installed,
+    // the config resolves, `npm run format:check` still finds the 68 unformatted
+    // files, and the editor simply never applies it.
+    //
+    // Reported from a real workspace where `.ts` files were not being formatted
+    // while `.json`/`.jsonc`/`.yaml` were — exactly the three that had explicit
+    // entries here and nothing else did.
+    ...Object.fromEntries(
+      FORMATTED_LANGUAGES.map(language => [
+        `[${language}]`,
+        { 'editor.defaultFormatter': formatter }
+      ])
+    )
   }
 }
 
@@ -1147,11 +1392,15 @@ export const ROOT_SCRIPTS = {
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
  */
-export function rootScripts(): Record<string, string> {
+export function rootScripts(linter: LinterChoice = 'eslint'): Record<string, string> {
+  // oxfmt reads `.gitignore` and `.prettierignore` by default, so the same
+  // `.prettierignore` mnci already writes governs both formatters and there is no
+  // second ignore file to keep in sync. Verified against oxfmt's own CLI docs.
+  const formatter = linter === 'oxlint' ? 'oxfmt' : 'prettier'
   return {
     ...ROOT_SCRIPTS,
-    format: 'prettier --write .',
-    'format:check': 'prettier --check .',
+    format: linter === 'oxlint' ? 'oxfmt .' : 'prettier --write .',
+    'format:check': `${formatter} --check .`,
     'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`
   }
 }
@@ -2444,6 +2693,28 @@ export function removeNxScaffolding(workspaceRoot: string): void {
 }
 
 /**
+ * Deletes one path if it exists, quietly.
+ *
+ * @remarks
+ * For the config files that belong to the linter mode the workspace did **not**
+ * choose. Leaving them behind is not cosmetic: two formatter configs means the
+ * editor and CI can disagree about which one applies, which is the same class of
+ * silent failure as the `.prettierrc` precedence bug — a config that is present,
+ * valid, and ignored.
+ *
+ * `force: true` makes a missing path a no-op, which is the common case: a fresh
+ * `mnci new` has neither mode's files yet.
+ *
+ * @param path - Absolute path to remove.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeIfPresent(path: string): void {
+  rmSync(path, { recursive: true, force: true })
+}
+
+/**
  * Deletes every per-project ESLint config in the workspace.
  *
  * @remarks
@@ -2532,7 +2803,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts()
+    ...rootScripts(options.stack.linter)
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
   const devDeps = {
@@ -2540,6 +2811,9 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...TS_COMPILER_DEPENDENCIES,
     // The preset pins `nx` itself; the ESLint plugins must match it exactly.
     ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
+    // Additive, not a replacement: the hybrid keeps the whole ESLint toolchain
+    // for the file types oxlint cannot parse.
+    ...(options.stack.linter === 'oxlint' && oxlintToolchainDependencies()),
     prettier: PRETTIER_VERSION
   }
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
@@ -2556,7 +2830,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
     targets: {
       ...(existingNx?.targets as Record<string, unknown> | undefined),
-      lint: ROOT_LINT_TARGET
+      lint: rootLintTarget(options.stack.linter)
     }
   }
   writeFileEnsured(
@@ -2579,8 +2853,23 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // ESLint handles code quality and correctness rules; Prettier handles all
   // formatting (JavaScript Standard Style). ONE ESLint config, at the root —
   // `add` deletes the per-project ones Nx generators write.
-  writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
-  writeFileEnsured(join(workspaceRoot, '.prettierrc.mjs'), PRETTIER_CONFIG)
+  // The linter choice decides which config files exist, and just as importantly
+  // which do NOT: switching a workspace between modes has to remove the previous
+  // mode's files, or both formatters end up configured and whichever the editor
+  // picks wins. `mnci upgrade` runs this same code path, so a switch is a
+  // one-command operation rather than a manual cleanup.
+  if (options.stack.linter === 'oxlint') {
+    writeFileEnsured(join(workspaceRoot, 'oxlint.config.ts'), OXLINT_CONFIG)
+    writeFileEnsured(join(workspaceRoot, '.oxfmtrc.json'), OXFMT_CONFIG)
+    // ESLint stays, trimmed to what oxlint cannot parse. See ESLINT_CONFIG_NON_JS.
+    writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG_NON_JS)
+    removeIfPresent(join(workspaceRoot, '.prettierrc.mjs'))
+  } else {
+    writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
+    writeFileEnsured(join(workspaceRoot, '.prettierrc.mjs'), PRETTIER_CONFIG)
+    removeIfPresent(join(workspaceRoot, 'oxlint.config.ts'))
+    removeIfPresent(join(workspaceRoot, '.oxfmtrc.json'))
+  }
   // Makes a local environment match the one CI verifies — see devcontainerJson.
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),
