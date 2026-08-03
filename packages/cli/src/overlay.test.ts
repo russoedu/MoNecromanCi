@@ -26,6 +26,7 @@ import {
   registryUrl,
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
+  FORMATTED_LANGUAGES,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
@@ -1836,6 +1837,35 @@ describe('applyOverlay', () => {
     expect(vscodeWorkspace('demo', 'oxlint')).toContain(
       '"editor.defaultFormatter": "oxc.oxc-vscode"'
     )
+  })
+
+  it('pins the formatter for EVERY language, not just the global default', () => {
+    // The bug this fixes, reported from a real workspace: `.ts` files were not
+    // formatted on save while `.json`/`.jsonc`/`.yaml` were — the three that had
+    // explicit entries. VS Code resolves a language-specific setting ahead of a
+    // general one, and does so BEFORE scope, so a `[typescript]` block in the
+    // user's own settings outranks this file's global `editor.defaultFormatter`.
+    // Nothing reports it: Prettier is installed, the config resolves, and
+    // `format:check` still finds the unformatted files.
+    for (const linter of ['eslint', 'oxlint'] as const) {
+      const settings = JSON.parse(vscodeWorkspace('demo', linter)).settings as Record<
+        string,
+        { 'editor.defaultFormatter'?: string }
+      >
+      const expected = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
+      for (const language of FORMATTED_LANGUAGES) {
+        expect(settings[`[${language}]`]).toEqual({ 'editor.defaultFormatter': expected })
+      }
+    }
+  })
+
+  it('covers the languages that actually matter, TypeScript included', () => {
+    // Asserted by name rather than only through the loop above, because the loop
+    // would still pass if someone shortened FORMATTED_LANGUAGES back to the three
+    // it started as — which is exactly how the reported bug existed.
+    for (const language of ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']) {
+      expect(FORMATTED_LANGUAGES).toContain(language)
+    }
   })
 
   it('narrows eslint.validate to what ESLint still owns under oxlint', () => {

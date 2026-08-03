@@ -985,6 +985,31 @@ export const SHARED_VSCODE_EXTENSIONS = [
 ] as const
 
 /**
+ * Every language whose formatter mnci pins explicitly.
+ *
+ * @remarks
+ * Not a convenience list — see {@link vscodeSettings} for why the general
+ * `editor.defaultFormatter` cannot be relied on. The set is "everything the
+ * chosen formatter actually handles": both Prettier and oxfmt format all of
+ * these, verified byte-identical on JSON/YAML/Markdown/CSS/TS samples when
+ * oxfmt was adopted.
+ *
+ * `typescript` and `typescriptreact` are the two that matter most and were the
+ * two missing.
+ */
+export const FORMATTED_LANGUAGES = [
+  'javascript',
+  'javascriptreact',
+  'typescript',
+  'typescriptreact',
+  'json',
+  'jsonc',
+  'yaml',
+  'markdown',
+  'css'
+] as const
+
+/**
  * The extension list for one linter choice.
  *
  * @remarks
@@ -1043,9 +1068,26 @@ export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
     },
     'editor.defaultFormatter': formatter,
     'editor.formatOnSave': true,
-    '[json]': { 'editor.defaultFormatter': formatter },
-    '[jsonc]': { 'editor.defaultFormatter': formatter },
-    '[yaml]': { 'editor.defaultFormatter': formatter }
+    // Every language spelled out, and the global default above is NOT enough on
+    // its own — which is the bug this fixes rather than a belt-and-braces habit.
+    //
+    // VS Code resolves a language-specific setting ahead of a general one, and it
+    // does that comparison BEFORE scope. So a `[typescript]` block in someone's
+    // USER settings — left over from any other project — outranks this file's
+    // workspace-level `editor.defaultFormatter`, and format-on-save quietly uses
+    // that other formatter instead. Nothing reports it: Prettier is installed,
+    // the config resolves, `npm run format:check` still finds the 68 unformatted
+    // files, and the editor simply never applies it.
+    //
+    // Reported from a real workspace where `.ts` files were not being formatted
+    // while `.json`/`.jsonc`/`.yaml` were — exactly the three that had explicit
+    // entries here and nothing else did.
+    ...Object.fromEntries(
+      FORMATTED_LANGUAGES.map(language => [
+        `[${language}]`,
+        { 'editor.defaultFormatter': formatter }
+      ])
+    )
   }
 }
 
