@@ -101,3 +101,48 @@ export default function mnci(options = {}) {
     ...stylistic
   ]
 }
+
+/**
+ * The blocks covering **only** the languages oxlint cannot parse.
+ *
+ * @remarks
+ * For a workspace that has chosen oxlint. oxlint reads JS/TS/JSX/Vue and
+ * nothing else, so on its own it leaves YAML, TOML, Markdown, CSS, HTML and
+ * JSON linted by **nothing** — and drops `@nx/dependency-checks`, which is what
+ * stops a publishable package's manifest from declaring the wrong dependencies.
+ * In a scaffold whose point is publishable packages, losing that silently is
+ * the worse trade, so `mnci new --linter=oxlint` writes an ESLint config built
+ * from this instead of no ESLint config at all.
+ *
+ * **Composed from the same block modules `mnci()` uses**, not a parallel copy.
+ * That is the whole reason this lives in the package rather than being
+ * hand-assembled in the CLI's template string: a rule added to `configs/yaml.js`
+ * reaches both modes, and there is no second list to forget.
+ *
+ * Deliberately absent, and each for a reason worth stating:
+ *
+ * - `base`, `typescript`, `typeAware`, `importGraph`, `react`, `regexp`, `jest`
+ *   — oxlint owns JS/TS here. Including them would double-report every finding.
+ * - `prettierConfig` and `stylistic` — both exist to reconcile ESLint with
+ *   **Prettier**, and an oxlint workspace formats with oxfmt. None of the
+ *   remaining blocks contain formatting rules for `eslint-config-prettier` to
+ *   switch off (`configs/toml.js` is parser-only for exactly this reason), so
+ *   composing it here would be inert. `stylistic` is JS-only.
+ *
+ * @param options - Composition options. Pass `workspaceRoot` to enable the
+ * `@nx/dependency-checks` block, which scans for `private: true` manifests.
+ * @returns The flat config array for the non-JavaScript half.
+ */
+export function nonJs(options = {}) {
+  const { workspaceRoot } = options
+  return [
+    { name: 'mnci/ignores', ignores },
+    ...json,
+    ...yaml,
+    ...toml,
+    ...markdown,
+    ...css,
+    ...html,
+    ...(workspaceRoot ? dependencyChecks(workspaceRoot) : [])
+  ]
+}
