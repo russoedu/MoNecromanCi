@@ -280,7 +280,8 @@ config (`@mnci/eslint-config`'s `nonJs()`) for the file types oxlint cannot read
 | JS/TS lint                      | ESLint, 452 rules                      | oxlint, 206 native + 225 bridged                         |
 | YAML/TOML/MD/CSS/HTML/JSON lint | ESLint                                 | **ESLint** (unchanged)                                   |
 | `@nx/dependency-checks`         | yes                                    | **yes** (unchanged)                                      |
-| Formatter                       | Prettier                               | oxfmt (~30x faster)                                      |
+| Formatter                       | Prettier                               | oxfmt (~6x faster on this repo)                          |
+| Formats `.toml`                 | no — Prettier has no TOML parser       | **yes**                                                  |
 | Config files                    | `eslint.config.mjs`, `.prettierrc.mjs` | `oxlint.config.ts`, `.oxfmtrc.json`, `eslint.config.mjs` |
 | VS Code extension               | ESLint + Prettier                      | Oxc (covers both) + ESLint                               |
 
@@ -289,6 +290,27 @@ pipeline, a malformed `pyproject.toml`, and a publishable package's wrong manife
 all reported by nothing. Switching modes with `mnci upgrade --linter=<other>`
 rewrites the config files **and deletes the mode you left**, so a workspace never
 carries two formatter configs.
+
+**Exactly one formatter is declared, and that is a fix rather than tidiness.**
+`prettier` under `eslint`, `oxfmt` under `oxlint`, and switching modes drops the
+other from `devDependencies`. prettier stays in `node_modules` either way, since
+`@mnci/eslint-config` depends on it — so what matters is the _declaration_:
+`esbenp.prettier-vscode` resolves the formatter from the **project's**
+dependencies, so an oxlint workspace that still declared prettier is one where a
+globally installed Prettier extension reformats on save against the opinion oxfmt
+is not applying, while `npm run format:check` (oxfmt) reports the result as
+unformatted. Both configs valid, both binaries resolvable, neither one wrong on
+its own — the `.prettierrc` precedence bug in another costume. `mnci doctor`
+checks it.
+
+**oxfmt formats `.toml`; Prettier cannot.** `prettier` on a `.toml` exits with
+`No parser could be inferred for file`, so an oxlint workspace gets a formatted
+`pyproject.toml` and the default cannot — the one gap
+`@mnci/eslint-config`'s parser-only TOML block has always documented as
+unenforceable. It is the only file type where the two formatters differ in what
+they can parse, which is why `[toml]` is pinned for format-on-save under `oxlint`
+only: pinning it under `eslint` would route the file to a formatter that errors
+on it.
 
 **Finding and overriding a rule.** One root config importing a package is easy to
 own and hard to read: nothing in three lines says which of ~20 plugins reported

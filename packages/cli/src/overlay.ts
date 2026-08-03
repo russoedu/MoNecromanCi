@@ -775,6 +775,12 @@ export const ESLINT_PEER_OVERRIDES = {
  * `@nx/eslint-plugin` (the `@nx/dependency-checks` rule) are pinned to the
  * workspace's own Nx version — a mismatched pair breaks target inference.
  *
+ * **The formatter is deliberately not here.** Every entry above is shared by
+ * both linter modes — the hybrid keeps ESLint for the file types oxlint cannot
+ * parse — whereas the formatter is exactly what the choice swaps. It is picked
+ * in one place, at the call site, next to {@link oxlintToolchainDependencies}
+ * and {@link LINTER_ONLY_DEPENDENCIES}.
+ *
  * @param nxVersion - The `nx` version already in the workspace manifest.
  * @returns The devDependency entries to merge in.
  * @throws Never - pure object construction.
@@ -785,15 +791,55 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
     eslint: ESLINT_VERSION,
     '@nx/eslint': nxVersion,
     '@nx/eslint-plugin': nxVersion,
-    '@mnci/eslint-config': eslintConfigSpec(),
-    // Declared rather than left to hoisting. `@mnci/eslint-config` depends on
-    // prettier, so `npx prettier` works either way — but the VS Code extension
-    // resolves prettier from the PROJECT's dependencies and silently falls back
-    // to its own bundled copy when it finds none. A workspace should declare the
-    // formatter it formats with instead of relying on npm flattening someone
-    // else's transitive dependency to the root.
-    prettier: PRETTIER_VERSION
+    '@mnci/eslint-config': eslintConfigSpec()
   }
+}
+
+/**
+ * The devDependencies that belong to exactly one linter mode.
+ *
+ * @remarks
+ * Read as "declared by this mode, and stale in the other one". Everything
+ * absent from both lists — `eslint`, `@nx/eslint`, `@nx/eslint-plugin`,
+ * `@mnci/eslint-config` — is shared, because the hybrid runs ESLint in both
+ * modes and pruning one of those would break the mode being switched *to*.
+ *
+ * `prettier` is on the `eslint` side even though `@mnci/eslint-config` depends
+ * on it outright, so it stays in `node_modules` regardless. The declaration is
+ * what matters: the VS Code extension resolves the formatter from the
+ * **project's** dependencies, so declaring prettier in an oxlint workspace is
+ * what lets a globally installed `esbenp.prettier-vscode` reformat a file on
+ * save against the opinion oxfmt is not applying. Two formatters, both
+ * resolvable, disagreeing silently — the `.prettierrc` precedence bug's exact
+ * shape, which is why the fix is symmetric with deleting the other mode's
+ * config file rather than merely not writing this one.
+ */
+export const LINTER_ONLY_DEPENDENCIES = {
+  eslint: ['prettier'],
+  oxlint: ['@mnci/oxlint-config', 'oxlint', 'oxfmt']
+} as const
+
+/**
+ * Drops the devDependencies belonging to the linter mode the workspace left.
+ *
+ * @remarks
+ * Only `mnci upgrade --linter=<other>` reaches this with anything to remove; on
+ * `mnci new` the manifest has neither set yet. Without it a switched workspace
+ * keeps declaring the formatter it no longer runs, since the merge starts from
+ * the existing `devDependencies` and a spread can only add.
+ *
+ * @param devDeps - The merged devDependency set.
+ * @param linter - The linter the workspace is being written for.
+ * @returns The same set, minus the other mode's entries.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withoutStaleLinterDependencies(
+  devDeps: Record<string, string>,
+  linter: LinterChoice
+): Record<string, string> {
+  const stale = new Set<string>(LINTER_ONLY_DEPENDENCIES[linter === 'oxlint' ? 'eslint' : 'oxlint'])
+  return Object.fromEntries(Object.entries(devDeps).filter(([name]) => !stale.has(name)))
 }
 
 /**
@@ -1188,17 +1234,21 @@ export const SHARED_VSCODE_EXTENSIONS = [
 ] as const
 
 /**
- * Every language whose formatter mnci pins explicitly.
+ * Every language **both** formatters handle, and whose formatter mnci pins.
  *
  * @remarks
  * Not a convenience list — see {@link vscodeSettings} for why the general
  * `editor.defaultFormatter` cannot be relied on. The set is "everything the
- * chosen formatter actually handles": both Prettier and oxfmt format all of
- * these, verified byte-identical on JSON/YAML/Markdown/CSS/TS samples when
- * oxfmt was adopted.
+ * chosen formatter actually handles", so it is measured against the real
+ * binaries rather than assumed: each entry below is a file type Prettier 3.8
+ * *and* oxfmt 0.61 both reformat.
  *
  * `typescript` and `typescriptreact` are the two that matter most and were the
- * two missing.
+ * two missing. `html` was missing too — both formatters have always handled it,
+ * and the claim in this comment was simply not checked when it was written.
+ *
+ * See {@link OXFMT_ONLY_LANGUAGES} for the one file type where the two
+ * formatters differ in what they can parse at all.
  */
 export const FORMATTED_LANGUAGES = [
   'javascript',
@@ -1209,8 +1259,47 @@ export const FORMATTED_LANGUAGES = [
   'jsonc',
   'yaml',
   'markdown',
-  'css'
+  'css',
+  'html'
 ] as const
+
+/**
+ * Languages only oxfmt can format, pinned in oxlint workspaces alone.
+ *
+ * @remarks
+ * TOML, and it is a capability difference rather than a preference: `prettier`
+ * on a `.toml` exits with `No parser could be inferred for file`, while oxfmt
+ * reformats it (`name  =  "x"` → `name = "x"`, `[ 1,2 ]` → `[1, 2]`). Measured
+ * against both binaries.
+ *
+ * So an oxlint workspace gets something the default cannot have: a formatted
+ * `pyproject.toml`. `configs/toml.js` in `@mnci/eslint-config` is parser-only
+ * *because* Prettier has no TOML support — the one style rule tried there
+ * reported six errors on the `pyproject.toml` `@mnci/nx-python-pip` itself
+ * generates. Nothing here re-opens that: `nx-python-pip` writes the file, oxfmt
+ * reformats it on save, and no lint rule has an opinion either way.
+ *
+ * Pinning it under `eslint` would be worse than useless — VS Code would route
+ * `.toml` to a formatter that errors on it.
+ */
+export const OXFMT_ONLY_LANGUAGES = ['toml'] as const
+
+/**
+ * The languages to pin a formatter for, for one linter choice.
+ *
+ * @remarks
+ * {@link FORMATTED_LANGUAGES} plus {@link OXFMT_ONLY_LANGUAGES} under `oxlint`.
+ * A function rather than two exported constants at the call site, so the one
+ * place that needs the union cannot forget half of it.
+ *
+ * @param linter - The workspace's linter choice.
+ * @returns The language identifiers, in a stable order.
+ * @throws Never - pure array construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function formattedLanguages(linter: LinterChoice): string[] {
+  return [...FORMATTED_LANGUAGES, ...(linter === 'oxlint' ? OXFMT_ONLY_LANGUAGES : [])]
+}
 
 /**
  * The extension list for one linter choice.
@@ -1286,7 +1375,7 @@ export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
     // while `.json`/`.jsonc`/`.yaml` were — exactly the three that had explicit
     // entries here and nothing else did.
     ...Object.fromEntries(
-      FORMATTED_LANGUAGES.map(language => [
+      formattedLanguages(linter).map(language => [
         `[${language}]`,
         { 'editor.defaultFormatter': formatter }
       ])
@@ -2806,16 +2895,22 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     ...rootScripts(options.stack.linter)
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
-  const devDeps = {
-    ...existingDevDeps,
-    ...TS_COMPILER_DEPENDENCIES,
-    // The preset pins `nx` itself; the ESLint plugins must match it exactly.
-    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
-    // Additive, not a replacement: the hybrid keeps the whole ESLint toolchain
-    // for the file types oxlint cannot parse.
-    ...(options.stack.linter === 'oxlint' && oxlintToolchainDependencies()),
-    prettier: PRETTIER_VERSION
-  }
+  const devDeps = withoutStaleLinterDependencies(
+    {
+      ...existingDevDeps,
+      ...TS_COMPILER_DEPENDENCIES,
+      // The preset pins `nx` itself; the ESLint plugins must match it exactly.
+      ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
+      // Additive for the linter, exclusive for the formatter: the hybrid keeps
+      // the whole ESLint toolchain for the file types oxlint cannot parse, but
+      // exactly one of prettier/oxfmt formats the workspace. Declaring both is
+      // how an editor ends up applying the one CI does not check.
+      ...(options.stack.linter === 'oxlint'
+        ? oxlintToolchainDependencies()
+        : { prettier: PRETTIER_VERSION })
+    },
+    options.stack.linter
+  )
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),

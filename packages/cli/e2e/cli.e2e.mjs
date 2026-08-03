@@ -461,6 +461,36 @@ section('js stack', [], () => {
   )
   rmSync(standardProbe, { force: true })
 
+  // The eslint half of the formatter assertions the alt workspace makes for
+  // oxlint. Both halves matter, and for different reasons: prettier must be
+  // DECLARED here (prettier-vscode resolves the formatter from the project's
+  // dependencies and silently falls back to its bundled copy otherwise), and
+  // `[toml]` must NOT be pinned, because routing a `.toml` to Prettier gives
+  // "No parser could be inferred for file" — worse than leaving it unpinned.
+  {
+    const manifest = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
+    enforce(
+      'prettier is declared, not left to hoisting through @mnci/eslint-config',
+      manifest.devDependencies?.prettier !== undefined
+    )
+    enforce(
+      'and NO oxfmt — exactly one formatter is resolvable in either mode',
+      manifest.devDependencies?.oxfmt === undefined
+    )
+    const codeWorkspace = JSON.parse(
+      readFileSync(path.join(workspace, 'demo.code-workspace'), 'utf8')
+    )
+    enforce(
+      'format-on-save pinned for .ts — the reported bug was a missing [typescript]',
+      codeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] ===
+        'esbenp.prettier-vscode'
+    )
+    enforce(
+      'no [toml] entry under eslint — Prettier cannot parse TOML at all',
+      codeWorkspace.settings?.['[toml]'] === undefined
+    )
+  }
+
   // Publish auth. This workspace is generated with --registry npm, so the .npmrc
   // is the auth-only variant: the npmjs.org token line and NOTHING else. No
   // @scope:registry line, deliberately — npmjs.org is already the default, so
@@ -1322,6 +1352,46 @@ section('alt stack', [], () => {
     ),
     `devDependencies: ${JSON.stringify(altManifest.devDependencies)}`
   )
+  // Additive for the LINTER, exclusive for the FORMATTER. prettier is still in
+  // node_modules here — `@mnci/eslint-config` depends on it — and that is the
+  // point of asserting the DECLARATION: prettier-vscode resolves the formatter
+  // from the project's dependencies, so a declared prettier is what lets a
+  // globally installed prettier extension reformat on save against the opinion
+  // oxfmt is not applying, while `format:check` reports the result as
+  // unformatted. Only a real install can tell the two apart.
+  enforce(
+    'alt: prettier is NOT declared, so exactly one formatter is resolvable',
+    altManifest.devDependencies?.prettier === undefined,
+    `devDependencies: ${JSON.stringify(altManifest.devDependencies)}`
+  )
+  const altCodeWorkspace = JSON.parse(
+    readFileSync(path.join(altWorkspace, 'alt.code-workspace'), 'utf8')
+  )
+  // TOML is a capability difference, not a preference: `prettier` on a `.toml`
+  // exits with "No parser could be inferred for file", oxfmt reformats it. So an
+  // oxlint workspace can have a formatted pyproject.toml and the default cannot.
+  enforce(
+    'alt: format-on-save pinned for .toml, which only oxfmt can parse',
+    altCodeWorkspace.settings?.['[toml]']?.['editor.defaultFormatter'] === 'oxc.oxc-vscode',
+    `settings: ${JSON.stringify(altCodeWorkspace.settings?.['[toml]'])}`
+  )
+  enforce(
+    'alt: and for .ts — the format-on-save bug was a missing [typescript] entry',
+    altCodeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] === 'oxc.oxc-vscode'
+  )
+  // oxfmt genuinely reformats a TOML file, verified through the real binary
+  // rather than from its docs. Measured on the way in: `name  =  "x"` becomes
+  // `name = "x"` and `[ 1,2 ]` becomes `[1, 2]`.
+  const tomlProbe = path.join(altWorkspace, 'oxfmt-probe.toml')
+  writeFileSync(tomlProbe, '[tool]\nname  =  "x"\narr = [ 1,2 ]\n')
+  tryRunCapture('npx oxfmt oxfmt-probe.toml', altWorkspace)
+  const formattedToml = readFileSync(tomlProbe, 'utf8')
+  enforce(
+    'alt: oxfmt actually formats TOML, which Prettier cannot parse at all',
+    formattedToml.includes('name = "x"') && formattedToml.includes('arr = [1, 2]'),
+    `oxfmt produced: ${JSON.stringify(formattedToml)}`
+  )
+  rmSync(tomlProbe, { force: true })
 
   run(`node ${CLI} add npm-lib sdk`, altWorkspace)
   run(`node ${CLI} add react-app web`, altWorkspace)
