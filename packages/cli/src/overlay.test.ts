@@ -1097,7 +1097,7 @@ describe('devcontainerJson', () => {
     postCreateCommand: string
     customizations: { vscode: { extensions: string[] } }
   }
-  const parsed = (): Devcontainer => JSON.parse(devcontainerJson('demo')) as Devcontainer
+  const parsed = (): Devcontainer => JSON.parse(devcontainerJson('demo', 'eslint')) as Devcontainer
 
   it('is valid JSON naming the workspace', () => {
     // Written to disk verbatim, so a malformed string would break the container
@@ -1138,7 +1138,7 @@ describe('devcontainerJson', () => {
 
   it('recommends the same extensions as the .code-workspace file', () => {
     expect(parsed().customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
-    expect(vscodeWorkspace('demo')).toContain('dbaeumer.vscode-eslint')
+    expect(vscodeWorkspace('demo', 'eslint')).toContain('dbaeumer.vscode-eslint')
   })
 })
 
@@ -1217,7 +1217,7 @@ describe('generatorDefaults', () => {
     // Not a regression: `none` stops a direct `nx g` from scaffolding a
     // per-project config that would compete with the workspace's single root
     // one. `@nx/eslint/plugin` still gives the project its `lint` target.
-    const defaults = generatorDefaults({ testRunner: 'jest' }) as Record<
+    const defaults = generatorDefaults({ testRunner: 'jest', linter: 'eslint' }) as Record<
       string,
       { linter: string; unitTestRunner: string }
     >
@@ -1235,7 +1235,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github' as const,
-      stack: { testRunner: 'vitest' as const }
+      stack: { testRunner: 'vitest' as const, linter: 'eslint' as const }
     }
     expect(mnciConfig(options)).toEqual({
       workspaceName: 'demo',
@@ -1244,7 +1244,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: { testRunner: 'vitest' }
+      stack: { testRunner: 'vitest', linter: 'eslint' }
     })
   })
 })
@@ -1536,7 +1536,7 @@ describe('applyOverlay', () => {
   })
 
   it("writes the stack as nx.json generator defaults (for a user's own direct `nx g`)", () => {
-    overlayWith({ testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest', linter: 'eslint' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       generators: Record<string, { linter: string; unitTestRunner: string }>
@@ -1548,12 +1548,12 @@ describe('applyOverlay', () => {
   })
 
   it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
-    overlayWith({ testRunner: 'vitest' })
+    overlayWith({ testRunner: 'vitest', linter: 'eslint' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       mnci: { stack: { testRunner: string } }
     }
-    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
+    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest', linter: 'eslint' })
   })
 
   it('writes the shared global inputs into nx.json, so an affected-scoped PR is not blind to the root configs', () => {
@@ -1647,7 +1647,7 @@ describe('applyOverlay', () => {
     const written = readFileSync(join(workspaceRoot, '.devcontainer/devcontainer.json'), 'utf8')
 
     expect(JSON.parse(written).name).toBe('demo')
-    expect(written).toBe(devcontainerJson('demo'))
+    expect(written).toBe(devcontainerJson('demo', 'eslint'))
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
@@ -1799,6 +1799,73 @@ describe('applyOverlay', () => {
       .filter(entry => !entry.endsWith('*'))
       .filter(entry => !own.includes(entry))
     expect(stale).toEqual([])
+  })
+
+  it('recommends the ESLint + Prettier extensions for an eslint workspace', () => {
+    const workspace = vscodeWorkspace('demo', 'eslint')
+    expect(workspace).toContain('dbaeumer.vscode-eslint')
+    expect(workspace).toContain('esbenp.prettier-vscode')
+    expect(workspace).not.toContain('oxc.oxc-vscode')
+  })
+
+  it('recommends the Oxc extension for an oxlint workspace, and drops Prettier', () => {
+    // `oxc.oxc-vscode` is ONE extension covering oxlint AND oxfmt (verified on
+    // the Marketplace), so an oxlint workspace needs no separate formatter
+    // extension — and recommending prettier-vscode would install a formatter the
+    // workspace does not use, fighting oxfmt on every save.
+    const workspace = vscodeWorkspace('demo', 'oxlint')
+    expect(workspace).toContain('oxc.oxc-vscode')
+    expect(workspace).not.toContain('esbenp.prettier-vscode')
+  })
+
+  it('keeps the ESLint extension for oxlint too, because the choice is a hybrid', () => {
+    // The assertion that pins the whole design. oxlint cannot parse YAML, TOML,
+    // Markdown, CSS, HTML or JSON, so ESLint still runs on those in CI. Dropping
+    // the extension would leave someone editing azure-pipelines.yml with no
+    // in-editor feedback from a linter that still fails their build.
+    expect(vscodeWorkspace('demo', 'oxlint')).toContain('dbaeumer.vscode-eslint')
+  })
+
+  it('points editor.defaultFormatter at whichever formatter the workspace has', () => {
+    // Getting this wrong is silent and constant: format-on-save would invoke a
+    // formatter the workspace does not configure, reformatting every file the
+    // moment it is touched.
+    expect(vscodeWorkspace('demo', 'eslint')).toContain(
+      '"editor.defaultFormatter": "esbenp.prettier-vscode"'
+    )
+    expect(vscodeWorkspace('demo', 'oxlint')).toContain(
+      '"editor.defaultFormatter": "oxc.oxc-vscode"'
+    )
+  })
+
+  it('narrows eslint.validate to what ESLint still owns under oxlint', () => {
+    const oxlint = JSON.parse(vscodeWorkspace('demo', 'oxlint')) as {
+      settings: { 'eslint.validate': string[] }
+    }
+    expect(oxlint.settings['eslint.validate']).not.toContain('typescript')
+    expect(oxlint.settings['eslint.validate']).toContain('yaml')
+
+    const eslint = JSON.parse(vscodeWorkspace('demo', 'eslint')) as {
+      settings: { 'eslint.validate': string[] }
+    }
+    expect(eslint.settings['eslint.validate']).toContain('typescript')
+  })
+
+  it('recommends the same extensions in the devcontainer as in the workspace file', () => {
+    // Shared for this reason: opening the workspace in a container must suggest
+    // the same toolset as opening it directly. Now that there are two lists,
+    // asserted for BOTH — a per-linter split is exactly where they would drift.
+    for (const linter of ['eslint', 'oxlint'] as const) {
+      const container = JSON.parse(devcontainerJson('demo', linter)) as {
+        customizations: { vscode: { extensions: string[] } }
+      }
+      const workspace = JSON.parse(vscodeWorkspace('demo', linter)) as {
+        extensions: { recommendations: string[] }
+      }
+      expect(container.customizations.vscode.extensions).toEqual(
+        workspace.extensions.recommendations
+      )
+    }
   })
 
   it('deletes both higher-precedence Prettier configs, or the shared opinion is ignored', () => {

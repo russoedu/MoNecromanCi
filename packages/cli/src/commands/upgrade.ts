@@ -45,6 +45,8 @@ export interface UpgradeOptions {
   ci?: CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
+  /** Override the persisted linter choice. See {@link StackConfig}. */
+  linter?: StackConfig['linter']
 }
 
 /**
@@ -179,6 +181,12 @@ function resolveOverlayOptions(
   // Azure-only concept; a github-only workspace never needed one, so a
   // missing persisted value is not an error the way scope/ci/agent are.
   const variableGroup = options.variableGroup ?? persisted.variableGroup ?? 'Build'
+  // Defaults to `eslint` rather than erroring when absent, unlike testRunner
+  // above. Every workspace generated before the linter choice existed has no
+  // persisted value and is an ESLint workspace, so an upgrade of one must be a
+  // no-op here — demanding a flag would break `mnci upgrade` for every existing
+  // workspace, which is the one thing that command must never do.
+  const linter = options.linter ?? persisted.stack?.linter ?? 'eslint'
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
   if (!testRunner) {
     throw new Error(
@@ -193,7 +201,7 @@ function resolveOverlayOptions(
     agent,
     variableGroup,
     ci,
-    stack: { testRunner }
+    stack: { testRunner, linter }
   }
 }
 

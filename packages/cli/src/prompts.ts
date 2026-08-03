@@ -103,12 +103,22 @@ export async function promptNxCloud(): Promise<boolean> {
 }
 
 /**
- * Prompts for the stack: unit-test runner only.
+ * Prompts for the stack: unit-test runner and linter.
  *
  * @remarks
- * The knob asked up front at `mnci new`. TypeScript is fixed (the
- * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports), and
- * linting is always ESLint + Prettier. Only the test runner is configurable.
+ * The two knobs asked up front at `mnci new`. TypeScript is fixed (the
+ * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports).
+ *
+ * The linter choice carries the formatter with it, which is why it is one
+ * question and not two: ESLint pairs with Prettier, oxlint with oxfmt, and both
+ * are the same seven JavaScript Standard Style options. Choosing is about speed
+ * and toolchain, never about how the code ends up looking.
+ *
+ * The oxlint choice is deliberately labelled as a hybrid rather than as a
+ * replacement, because that is what it is — see {@link StackConfig}. Presenting
+ * it as "oxlint instead of ESLint" would be a false description of what the
+ * workspace gets, and would make the ESLint config it still writes look like a
+ * bug.
  *
  * @param None - this function takes no parameters.
  * @returns The resolved stack configuration.
@@ -123,5 +133,18 @@ export async function promptStack(): Promise<StackConfig> {
       { name: 'Vitest', value: 'vitest' }
     ]
   })
-  return { testRunner }
+  const linter = await select<StackConfig['linter']>({
+    message: 'Linter and formatter',
+    choices: [
+      {
+        name: 'ESLint + Prettier — every file type, the widest rule coverage',
+        value: 'eslint'
+      },
+      {
+        name: 'oxlint + oxfmt for JS/TS, ESLint for the rest — much faster, same style',
+        value: 'oxlint'
+      }
+    ]
+  })
+  return { testRunner, linter }
 }

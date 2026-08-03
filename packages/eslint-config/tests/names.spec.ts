@@ -102,3 +102,82 @@ describe('ignore list', () => {
     }
   })
 })
+
+describe('nonJs(), the hybrid half for oxlint workspaces', () => {
+  /**
+   * Resolves a composed config in a subprocess and reports its block names.
+   *
+   * @param expression - A call expression against the package's exports.
+   * @returns The `name` of every block, in composition order.
+   */
+  function namesOf(expression: string): string[] {
+    const script = `
+      const mnci = await import(${JSON.stringify(join(packageRoot, 'index.js'))})
+      const blocks = ${expression}
+      process.stdout.write(JSON.stringify(blocks.map(b => b.name ?? null)))
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8'
+    })
+    if (!result.stdout?.trim().startsWith('[')) {
+      throw new Error(`could not resolve: ${result.stderr}`)
+    }
+    return JSON.parse(result.stdout.trim()) as string[]
+  }
+
+  const hybrid = namesOf(`mnci.nonJs({ workspaceRoot: ${JSON.stringify(packageRoot)} })`)
+
+  it('covers every language oxlint cannot parse', () => {
+    // The reason this export exists. oxlint reads JS/TS/JSX/Vue only, so without
+    // these a workspace that picked oxlint would lint its CI YAML, its
+    // pyproject.toml and its publishable manifests with nothing at all.
+    for (const block of [
+      'mnci/json',
+      'mnci/jsonc',
+      'mnci/json5',
+      'mnci/markdown',
+      'mnci/css',
+      'mnci/html'
+    ]) {
+      expect(hybrid).toContain(block)
+    }
+    expect(hybrid.some(name => name.startsWith('mnci/yaml'))).toBe(true)
+    expect(hybrid.some(name => name.startsWith('mnci/toml'))).toBe(true)
+  })
+
+  it('keeps @nx/dependency-checks, which is the one oxlint has no answer for', () => {
+    expect(hybrid).toContain('mnci/nx-dependency-checks')
+  })
+
+  it('omits every JS/TS block, so oxlint is not double-reported', () => {
+    // The failure this prevents is not a crash but a duplicate: one defect
+    // reported twice, once by oxlint and once by ESLint, under two rule names.
+    for (const block of [
+      'mnci/base',
+      'mnci/typescript',
+      'mnci/type-aware',
+      'mnci/react',
+      'mnci/tests'
+    ]) {
+      expect(hybrid).not.toContain(block)
+    }
+    expect(hybrid.some(name => name.startsWith('typescript-eslint/'))).toBe(false)
+    expect(hybrid.some(name => name.startsWith('mnci/regexp'))).toBe(false)
+  })
+
+  it('omits the Prettier-reconciliation blocks, since oxfmt formats instead', () => {
+    expect(hybrid).not.toContain('mnci/prettier-compat')
+    expect(hybrid).not.toContain('mnci/stylistic')
+  })
+
+  it('is a strict subset of the full config, never a parallel copy', () => {
+    // Guards the thing that would rot: someone adding a block here that mnci()
+    // does not have, so the two modes diverge on the same file type.
+    const full = namesOf(`mnci.default({ workspaceRoot: ${JSON.stringify(packageRoot)} })`)
+    expect(hybrid.filter(name => !full.includes(name))).toEqual([])
+  })
+
+  it('still names every block', () => {
+    expect(hybrid.filter(name => name === null)).toEqual([])
+  })
+})
