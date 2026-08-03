@@ -1,7 +1,7 @@
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runPrettier: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
-  DEFAULT_STACK: { testRunner: 'jest' }
+  DEFAULT_STACK: { testRunner: 'jest', linter: 'eslint' }
 }))
 jest.mock('../prompts', () => ({
   promptCi: jest.fn(),
@@ -28,7 +28,7 @@ const mockPromptStack = jest.mocked(promptStack)
 const mockPromptText = jest.mocked(promptText)
 
 /** The `--yes` / flagless stack the overlay mock exposes as DEFAULT_STACK. */
-const DEFAULT_STACK = { testRunner: 'jest' } as const
+const DEFAULT_STACK = { testRunner: 'jest', linter: 'eslint' } as const
 
 beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue('/somewhere')
@@ -193,7 +193,7 @@ describe('runNew', () => {
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest', linter: 'eslint' } })
     )
   })
 
@@ -234,7 +234,7 @@ describe('runNew', () => {
       .mockResolvedValueOnce('Build') // variable group
     mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
     mockPromptCi.mockResolvedValue('azure')
-    mockPromptStack.mockResolvedValue({ testRunner: 'vitest' })
+    mockPromptStack.mockResolvedValue({ testRunner: 'vitest', linter: 'eslint' })
 
     await runNew(undefined, {})
 
@@ -252,7 +252,7 @@ describe('runNew', () => {
     expect(mockPromptStack).toHaveBeenCalled()
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest', linter: 'eslint' } })
     )
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })

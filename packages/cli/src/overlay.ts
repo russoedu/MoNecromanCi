@@ -41,9 +41,46 @@ export type CiProvider = 'azure' | 'github' | 'both'
  *
  * @typeParam None - this type has no generic type parameters.
  */
+/**
+ * Which linter (and therefore which formatter) a workspace uses.
+ *
+ * @remarks
+ * `oxlint` is a **hybrid**, not a replacement. oxlint reads JS/TS/JSX/Vue and
+ * nothing else, so an oxlint workspace still gets an ESLint config — built from
+ * `@mnci/eslint-config`'s `nonJs()` — covering YAML, TOML, Markdown, CSS, HTML,
+ * JSON and `@nx/dependency-checks`. Choosing oxlint buys speed on the JS/TS
+ * half; it does not buy a workspace where a duplicate key in a CI pipeline goes
+ * unreported.
+ *
+ * The formatter follows the linter rather than being a third choice, because the
+ * two are one opinion: `eslint` pairs with Prettier via
+ * `@mnci/eslint-config/prettier`, `oxlint` with oxfmt via
+ * `@mnci/oxlint-config/oxfmt`. Both are the same seven Standard options, and a
+ * test asserts they are equal, so the choice is about speed and toolchain, not
+ * about style.
+ */
+export type LinterChoice = 'eslint' | 'oxlint'
+
+/**
+ * The parts of the toolchain a user chooses at `mnci new`.
+ *
+ * @remarks
+ * Two knobs, deliberately. Everything else in an mnci workspace is fixed by the
+ * `--preset=ts` premise, and each additional choice multiplies the matrix the
+ * e2e has to cover — so a knob earns its place only when neither answer is
+ * defensible for everyone. The test runner qualifies (Jest and Vitest are both
+ * first-class in Nx) and so does the linter, now that the Rust toolchain is a
+ * real alternative rather than an experiment.
+ *
+ * Persisted into `nx.json`'s `mnci` block, so `mnci upgrade` re-applies the
+ * overlay for the stack the workspace actually chose instead of reverting it to
+ * the defaults.
+ */
 export interface StackConfig {
   /** Unit-test runner (both Nx-native for the plugin kinds). */
   testRunner: 'jest' | 'vitest'
+  /** Linter and paired formatter. See {@link LinterChoice}. */
+  linter: LinterChoice
 }
 
 /**
@@ -54,7 +91,7 @@ export interface StackConfig {
  * already assume, so defaulting to it keeps behaviour unchanged when
  * the stack is not chosen explicitly. Linting is always ESLint + Prettier.
  */
-export const DEFAULT_STACK: StackConfig = { testRunner: 'jest' }
+export const DEFAULT_STACK: StackConfig = { testRunner: 'jest', linter: 'eslint' }
 
 /**
  * Prettier version pinned into all workspaces.
@@ -630,7 +667,7 @@ export const ESLINT_VERSION = '^10.8.0'
  * @throws Never - performs pure string formatting with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function devcontainerJson(workspaceName: string): string {
+export function devcontainerJson(workspaceName: string, linter: LinterChoice): string {
   return `${toJson({
     name: workspaceName,
     image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
@@ -649,7 +686,7 @@ export function devcontainerJson(workspaceName: string): string {
     // The same recommendations the `.code-workspace` file carries, so opening
     // the folder in a container suggests the identical toolset.
     customizations: {
-      vscode: { extensions: [...VSCODE_RECOMMENDED_EXTENSIONS] }
+      vscode: { extensions: vscodeExtensions(linter) }
     }
   })}\n`
 }
@@ -912,6 +949,107 @@ export const VSCODE_RECOMMENDED_EXTENSIONS = [
 ] as const
 
 /**
+ * The editor extensions that depend on which linter the workspace chose.
+ *
+ * @remarks
+ * **`oxc.oxc-vscode` is one extension covering both halves of the Rust
+ * toolchain** — it provides oxlint *and* oxfmt integration, verified on the
+ * Marketplace rather than assumed, so an oxlint workspace needs no separate
+ * formatter extension and `esbenp.prettier-vscode` is correctly absent.
+ *
+ * **`dbaeumer.vscode-eslint` stays in BOTH lists, and that is the hybrid
+ * showing through.** Choosing oxlint does not remove ESLint from the workspace:
+ * oxlint cannot parse YAML, TOML, Markdown, CSS, HTML or JSON, so
+ * `@mnci/eslint-config`'s `nonJs()` keeps covering those (plus
+ * `@nx/dependency-checks` on publishable manifests). Dropping the ESLint
+ * extension would leave a contributor editing `azure-pipelines.yml` with no
+ * in-editor feedback from a linter that *is* running in CI — the worst kind of
+ * gap, because the file still fails the build.
+ */
+export const LINTER_EXTENSIONS = {
+  eslint: ['dbaeumer.vscode-eslint', 'esbenp.prettier-vscode'],
+  oxlint: ['oxc.oxc-vscode', 'dbaeumer.vscode-eslint']
+} as const
+
+/**
+ * Extensions every workspace gets, whichever linter it chose.
+ *
+ * @remarks
+ * Nx's console and a test-runner integration: neither depends on the lint
+ * toolchain, so they are factored out rather than repeated in both lists, where
+ * one of the two copies would eventually be the stale one.
+ */
+export const SHARED_VSCODE_EXTENSIONS = [
+  'nrwl.angular-console',
+  'firsttris.vscode-jest-runner'
+] as const
+
+/**
+ * The extension list for one linter choice.
+ *
+ * @remarks
+ * The single source both the `.code-workspace` file and the devcontainer read,
+ * so opening the workspace in a container cannot suggest a different toolset
+ * from opening it directly — the reason the list was shared in the first place,
+ * now that there are two of them to keep straight.
+ *
+ * @param linter - The workspace's linter choice.
+ * @returns The recommended extension IDs, linter-specific ones first.
+ * @throws Never - performs a pure lookup.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function vscodeExtensions(linter: LinterChoice): string[] {
+  return [...LINTER_EXTENSIONS[linter], ...SHARED_VSCODE_EXTENSIONS]
+}
+
+/**
+ * The editor settings that depend on the linter choice.
+ *
+ * @remarks
+ * Two things change together, and they have to: which extension formats, and
+ * which languages ESLint is asked to validate.
+ *
+ * `eslint.validate` is narrowed for oxlint to exactly the languages ESLint still
+ * owns there. Leaving JS/TS in that list would ask the ESLint extension to
+ * validate files whose config has no rules for them — reporting nothing, but
+ * spending a language-server round trip per keystroke to do it, and telling the
+ * reader that ESLint covers JS when it does not.
+ *
+ * @param linter - The workspace's linter choice.
+ * @returns The `settings` block for the `.code-workspace` file.
+ * @throws Never - performs pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
+  const formatter = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
+  const eslintLanguages =
+    linter === 'oxlint'
+      ? ['json', 'jsonc', 'markdown', 'yaml', 'html', 'css']
+      : [
+          'javascript',
+          'javascriptreact',
+          'typescript',
+          'typescriptreact',
+          'json',
+          'jsonc',
+          'markdown',
+          'yaml'
+        ]
+
+  return {
+    'eslint.validate': eslintLanguages,
+    'editor.codeActionsOnSave': {
+      'source.fixAll.eslint': 'explicit'
+    },
+    'editor.defaultFormatter': formatter,
+    'editor.formatOnSave': true,
+    '[json]': { 'editor.defaultFormatter': formatter },
+    '[jsonc]': { 'editor.defaultFormatter': formatter },
+    '[yaml]': { 'editor.defaultFormatter': formatter }
+  }
+}
+
+/**
  * VS Code workspace file template for generated monorepos.
  *
  * @remarks
@@ -944,38 +1082,14 @@ export const VSCODE_RECOMMENDED_EXTENSIONS = [
  */
 export function vscodeWorkspace(
   workspaceName: string,
+  linter: LinterChoice,
   existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
 ): string {
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
-      settings: {
-        'eslint.validate': [
-          'javascript',
-          'javascriptreact',
-          'typescript',
-          'typescriptreact',
-          'json',
-          'jsonc',
-          'markdown',
-          'yaml'
-        ],
-        'editor.codeActionsOnSave': {
-          'source.fixAll.eslint': 'explicit'
-        },
-        'editor.defaultFormatter': 'esbenp.prettier-vscode',
-        'editor.formatOnSave': true,
-        '[json]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode'
-        },
-        '[jsonc]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode'
-        },
-        '[yaml]': {
-          'editor.defaultFormatter': 'esbenp.prettier-vscode'
-        }
-      },
-      extensions: { recommendations: [...VSCODE_RECOMMENDED_EXTENSIONS] },
+      settings: vscodeSettings(linter),
+      extensions: { recommendations: vscodeExtensions(linter) },
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
         tasks: existingTasks?.tasks ?? []
@@ -1112,7 +1226,7 @@ export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
     agent: options.agent,
     variableGroup: options.variableGroup,
     ci: options.ci,
-    stack: { testRunner: options.stack.testRunner }
+    stack: { testRunner: options.stack.testRunner, linter: options.stack.linter }
   }
 }
 
@@ -2470,7 +2584,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // Makes a local environment match the one CI verifies — see devcontainerJson.
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),
-    devcontainerJson(options.workspaceName)
+    devcontainerJson(options.workspaceName, options.stack.linter)
   )
   writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   removeNxScaffolding(workspaceRoot)
@@ -2482,7 +2596,10 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   const existing = readCodeWorkspace<{
     tasks?: { version?: string; tasks?: Record<string, unknown>[] }
   }>(codeWorkspacePath)
-  writeFileEnsured(codeWorkspacePath, vscodeWorkspace(options.workspaceName, existing?.tasks))
+  writeFileEnsured(
+    codeWorkspacePath,
+    vscodeWorkspace(options.workspaceName, options.stack.linter, existing?.tasks)
+  )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename
   // `undefined.code-workspace` and the workspace's real one was never refreshed.

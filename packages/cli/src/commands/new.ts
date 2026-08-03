@@ -41,6 +41,8 @@ export interface NewOptions {
   ci?: CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
+  /** Linter + paired formatter. See {@link StackConfig}. */
+  linter?: StackConfig['linter']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
   nxCloud?: boolean
 }
@@ -87,14 +89,18 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
  * @typeParam None - this function has no generic type parameters.
  */
 async function resolveStack(options: NewOptions): Promise<StackConfig> {
-  if (options.testRunner || options.yes) {
+  // Either flag skips the prompt, so a caller can pin one half of the stack and
+  // take the default for the other without being asked about it.
+  if (options.testRunner || options.linter || options.yes) {
     return {
-      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner
+      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner,
+      linter: options.linter ?? DEFAULT_STACK.linter
     }
   }
   const prompted = await promptStack()
   return {
-    testRunner: prompted.testRunner
+    testRunner: prompted.testRunner,
+    linter: prompted.linter
   }
 }
 
