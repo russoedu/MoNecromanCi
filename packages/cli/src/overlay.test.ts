@@ -1802,6 +1802,95 @@ describe('applyOverlay', () => {
     expect(stale).toEqual([])
   })
 
+  it('writes the oxlint pair and no Prettier config when oxlint is chosen', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(true)
+    // Two formatter configs would mean the editor and CI can disagree about which
+    // applies — the same silent failure shape as the `.prettierrc` precedence bug.
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(false)
+  })
+
+  it('keeps an ESLint config under oxlint, trimmed to what oxlint cannot parse', () => {
+    // The hybrid's whole point. Without this a workspace that chose oxlint would
+    // lint its CI YAML, its pyproject.toml and its publishable manifests with
+    // nothing at all.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
+    expect(config).toContain("import { nonJs } from '@mnci/eslint-config'")
+    // NOT the full config: composing both would report one defect twice.
+    expect(config).not.toContain("import mnci from '@mnci/eslint-config'")
+  })
+
+  it('removes the oxlint pair when the workspace switches back to eslint', () => {
+    // `mnci upgrade` runs this same code path, so switching modes has to be one
+    // command rather than a manual cleanup. Asserted by switching for real.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
+
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
+  })
+
+  it('points the format scripts at the formatter the workspace actually has', () => {
+    for (const [linter, tool] of [
+      ['eslint', 'prettier'],
+      ['oxlint', 'oxfmt']
+    ] as const) {
+      overlayWith({ testRunner: 'jest', linter })
+      const scripts = (
+        JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+          scripts: Record<string, string>
+        }
+      ).scripts
+      expect(scripts.format).toContain(tool)
+      expect(scripts['format:check']).toContain(tool)
+    }
+  })
+
+  it('declares the formatter it formats with, rather than relying on hoisting', () => {
+    // `@mnci/eslint-config` depends on prettier, so `npx prettier` works either
+    // way — but the VS Code extension resolves prettier from the PROJECT's
+    // dependencies and silently falls back to its bundled copy when it finds
+    // none. Reported from a real workspace.
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    const devDeps = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(devDeps.prettier).toBeDefined()
+  })
+
+  it('declares the whole oxlint toolchain, ESLint included', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const devDeps = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+
+    for (const dependency of ['oxlint', 'oxfmt', '@mnci/oxlint-config']) {
+      expect(devDeps[dependency]).toBeDefined()
+    }
+    // ON TOP OF the ESLint set, not instead of it: the hybrid still lints YAML,
+    // TOML, Markdown, CSS, HTML and JSON with ESLint.
+    expect(devDeps.eslint).toBeDefined()
+    expect(devDeps['@mnci/eslint-config']).toBeDefined()
+  })
+
+  it('persists the linter so mnci upgrade does not revert it', () => {
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
+      mnci: { stack: { linter: string } }
+    }
+    expect(nxJson.mnci.stack.linter).toBe('oxlint')
+  })
+
   it('recommends the ESLint + Prettier extensions for an eslint workspace', () => {
     const workspace = vscodeWorkspace('demo', 'eslint')
     expect(workspace).toContain('dbaeumer.vscode-eslint')
