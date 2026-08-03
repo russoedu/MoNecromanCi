@@ -797,6 +797,47 @@ export function eslintToolchainDependencies(nxVersion: string): Record<string, s
 }
 
 /**
+ * The root `lint` target for one linter choice.
+ *
+ * @remarks
+ * **This is what actually runs oxlint.** Nothing else does, and that gap is worth
+ * spelling out because it is invisible: an oxlint workspace can have a valid
+ * `oxlint.config.ts`, a green `npm run lint`, and never invoke oxlint once —
+ * every per-project `lint` target comes from `@nx/eslint/plugin` and runs ESLint
+ * alone. A first pass shipped exactly that, and the e2e assertion "lint runs
+ * green" passed while verifying nothing about the JS/TS half.
+ *
+ * So under oxlint the root target runs both, in the order they matter:
+ *
+ * 1. `oxlint .` over the **whole** workspace. Unlike ESLint's root invocation
+ *    this is deliberately not scoped away from `apps/`, `libs/` and `packages/`:
+ *    oxlint is designed to sweep a repo in one pass, and no per-project target
+ *    covers it, so scoping here would leave JS/TS linted by nothing.
+ * 2. `eslint .` on root files only, exactly as the eslint path does — the
+ *    per-project ESLint targets already cover the project trees.
+ *
+ * `parallel: false` so a failure names which linter failed rather than
+ * interleaving two outputs.
+ *
+ * @param linter - The workspace's linter choice.
+ * @returns The `lint` target for the root project.
+ * @throws Never - performs pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function rootLintTarget(linter: LinterChoice): Record<string, unknown> {
+  if (linter !== 'oxlint') return ROOT_LINT_TARGET
+  return {
+    executor: 'nx:run-commands',
+    cache: true,
+    options: {
+      commands: ['oxlint .', ROOT_LINT_TARGET.options.command],
+      parallel: false,
+      cwd: '.'
+    }
+  }
+}
+
+/**
  * The `oxlint` version generated workspaces declare.
  *
  * @remarks
@@ -2789,7 +2830,7 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
     targets: {
       ...(existingNx?.targets as Record<string, unknown> | undefined),
-      lint: ROOT_LINT_TARGET
+      lint: rootLintTarget(options.stack.linter)
     }
   }
   writeFileEnsured(

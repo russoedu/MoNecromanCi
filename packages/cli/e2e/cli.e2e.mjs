@@ -340,6 +340,22 @@ process.env.MNCI_ESLINT_CONFIG_SPEC = path.join(
   eslintConfigPackOutput.split('\n').at(-1)
 )
 
+// Same treatment for the oxlint config, needed by the `alt` workspace below.
+// Without it `npm install` in an oxlint workspace 404s until the package has been
+// published once — the identical trap the ESLint config hit the first time.
+console.log('\n▸ packing @mnci/oxlint-config for the e2e to install locally')
+const oxlintConfigDirectory = path.resolve(SCRIPT_DIR, '..', '..', 'oxlint-config')
+const oxlintConfigPackDirectory = path.join(temporary, 'oxlint-config-pack')
+mkdirSync(oxlintConfigPackDirectory, { recursive: true })
+const oxlintConfigPackOutput = execSync(
+  `npm pack --silent --pack-destination "${oxlintConfigPackDirectory}"`,
+  { cwd: oxlintConfigDirectory, encoding: 'utf8' }
+).trim()
+process.env.MNCI_OXLINT_CONFIG_SPEC = path.join(
+  oxlintConfigPackDirectory,
+  oxlintConfigPackOutput.split('\n').at(-1)
+)
+
 section('js stack', [], () => {
   /* ---------------------------------------------------------------------------
    * new
@@ -1243,22 +1259,45 @@ section('alt stack', [], () => {
   // when oxlint was dropped (the stack has one knob now: the test runner), so the
   // invocation had been hard-crashing the suite here — taking the whole Python
   // section, which lives below, down with it.
-  console.log('\n▸ mnci new alt --test-runner vitest')
-  run(`node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest`, temporary)
+  console.log('\n▸ mnci new alt --test-runner vitest --linter oxlint')
+  run(
+    `node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest --linter oxlint`,
+    temporary
+  )
 
   const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
-  // The stack has exactly one knob now — the test runner. This workspace is the
-  // vitest half of that pair (the `demo` workspace above covers jest); linting is
-  // always ESLint + Prettier. These assertions used to check oxlint/oxfmt, which
-  // were removed from the CLI, so they described a workspace mnci can no longer
-  // produce.
-  // `linter: 'none'` is not "no linting": it stops a direct `nx g` from
-  // scaffolding a per-project config that would compete with the root one.
-  // The `lint` target comes from @nx/eslint/plugin, asserted separately below.
+  // This workspace covers the OTHER end of both stack knobs: vitest (the `demo`
+  // workspace above is jest) and oxlint (demo is eslint). Pairing them here rather
+  // than adding a third workspace keeps the matrix covered without another ~8
+  // minutes of real npm installs.
+  //
+  // `linter: 'none'` in the Nx generator defaults is unrelated to mnci's linter
+  // choice, and the collision of names is worth stating: it stops a direct `nx g`
+  // from scaffolding a per-project ESLint config that would compete with the root
+  // one, and it reads 'none' under BOTH mnci linters.
   enforce(
     "alt: stack persisted as nx.json generator defaults (linter 'none' + vitest)",
     altNx.generators?.['@nx/js:library']?.linter === 'none' &&
       altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
+  )
+  enforce(
+    'alt: the oxlint choice is persisted, so mnci upgrade will not revert it',
+    altNx.mnci?.stack?.linter === 'oxlint'
+  )
+  enforce(
+    'alt: oxlint workspace gets oxlint.config.ts and .oxfmtrc.json',
+    existsSync(path.join(altWorkspace, 'oxlint.config.ts')) &&
+      existsSync(path.join(altWorkspace, '.oxfmtrc.json'))
+  )
+  enforce(
+    'alt: and NO Prettier config — two formatter configs is the precedence bug again',
+    !existsSync(path.join(altWorkspace, '.prettierrc.mjs'))
+  )
+  enforce(
+    'alt: ESLint stays, trimmed to what oxlint cannot parse (the hybrid)',
+    readFileSync(path.join(altWorkspace, 'eslint.config.mjs'), 'utf8').includes(
+      "import { nonJs } from '@mnci/eslint-config'"
+    )
   )
   enforce(
     'alt: mnci registers @nx/eslint/plugin — what gives every project its lint target',
@@ -1272,9 +1311,16 @@ section('alt stack', [], () => {
     altManifest.scripts?.lint === 'nx run-many -t lint'
   )
   enforce(
-    'alt: Prettier set up (format + format:check scripts)',
-    altManifest.scripts?.format === 'prettier --write .' &&
-      altManifest.scripts?.['format:check'] === 'prettier --check .'
+    'alt: oxfmt set up as the formatter (format + format:check scripts)',
+    altManifest.scripts?.format === 'oxfmt .' &&
+      altManifest.scripts?.['format:check'] === 'oxfmt --check .'
+  )
+  enforce(
+    'alt: the whole oxlint toolchain is declared, ESLint alongside it (the hybrid)',
+    ['oxlint', 'oxfmt', '@mnci/oxlint-config', 'eslint', '@mnci/eslint-config'].every(
+      dependency => altManifest.devDependencies?.[dependency] !== undefined
+    ),
+    `devDependencies: ${JSON.stringify(altManifest.devDependencies)}`
   )
 
   run(`node ${CLI} add npm-lib sdk`, altWorkspace)
@@ -1305,13 +1351,13 @@ section('alt stack', [], () => {
   writeFileSync(misformatted, 'export const greeting =    "hi";\n')
   run('npm run format', altWorkspace)
   enforce(
-    'alt: Prettier applies Standard style (drops semicolons, converts to single quotes)',
+    'alt: oxfmt applies Standard style (drops semicolons, converts to single quotes)',
     readFileSync(misformatted, 'utf8') === "export const greeting = 'hi'\n",
     `got: ${JSON.stringify(readFileSync(misformatted, 'utf8'))}`
   )
   rmSync(misformatted, { force: true })
   enforce(
-    'alt: npm run lint (ESLint) runs green',
+    'alt: npm run lint runs green on the oxlint hybrid',
     tryRun('npm run lint', altWorkspace),
     'see log above'
   )

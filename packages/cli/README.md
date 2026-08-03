@@ -30,6 +30,7 @@ first-party (or established community) Nx equivalent:
 mnci new my-repo            # create a monorepo (prompts scope + registry)
 mnci new my-repo --yes --registry npm --scope @my
 mnci new my-repo --yes --registry npm --scope @my --nx-cloud  # opt in to Nx Cloud
+mnci new my-repo --yes --registry npm --scope @my --linter oxlint  # Rust toolchain
 
 cd my-repo
 mnci add react-app web         # @nx/react (Vite + Jest)
@@ -75,15 +76,17 @@ Every check corresponds to an invariant that has **actually** been violated, in
 this repo or in a workspace it generated. None are hypothetical; a check nobody has
 ever needed is noise that trains people to ignore the output.
 
-| Check                                                   | The failure it catches                                                                                                             |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Exactly one root ESLint config, and no per-project ones | The config fragmenting — every `@nx/*` generator writes one, so each project ends up linting against whichever config sits nearest |
-| No stray `.prettierrc`                                  | It outranks `.prettierrc.mjs`, so the whole formatting opinion is silently discarded while both files look fine                    |
-| `@nx/eslint/plugin` registered in `nx.json`             | Without it `npm run lint` exits 0 while linting nothing                                                                            |
-| The **resolved** `eslint` major                         | A declared range and an installed version are different things — manifests once said `^10` while the pin said 9                    |
-| `.npmrc` matches the recorded registry                  | The two registry kinds get different files; an Azure workspace also needs its scope routed                                         |
-| `versionActions` on publishable Dart/Python packages    | Its absence aborts `nx release` for the **whole** workspace, not just that project                                                 |
-| `nx sync:check`                                         | A stale TypeScript project reference that was never committed                                                                      |
+| Check                                                   | The failure it catches                                                                                                                              |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exactly one root ESLint config, and no per-project ones | The config fragmenting — every `@nx/*` generator writes one, so each project ends up linting against whichever config sits nearest                  |
+| No stray `.prettierrc`                                  | It outranks `.prettierrc.mjs`, so the whole formatting opinion is silently discarded while both files look fine                                     |
+| `@nx/eslint/plugin` registered in `nx.json`             | Without it `npm run lint` exits 0 while linting nothing                                                                                             |
+| The **resolved** `eslint` major                         | A declared range and an installed version are different things — manifests once said `^10` while the pin said 9                                     |
+| `.npmrc` matches the recorded registry                  | The two registry kinds get different files; an Azure workspace also needs its scope routed                                                          |
+| `versionActions` on publishable Dart/Python packages    | Its absence aborts `nx release` for the **whole** workspace, not just that project                                                                  |
+| `nx sync:check`                                         | A stale TypeScript project reference that was never committed                                                                                       |
+| Only the chosen linter's config files present           | Two formatter configs is not a visible error — each is valid, the CLI picks one, the editor may pick the other, and the two gates disagree silently |
+| oxlint toolchain declared                               | `@mnci/oxlint-config` peers on `oxlint`, so a missing declaration turns `npm run lint` into "command not found" at the worst moment                 |
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
 each a single cross-platform command:
@@ -261,6 +264,31 @@ contradicting each other. `mnci` runs Prettier itself at the end of `new` and ev
 `add`, so a generated workspace passes its own `format:check` immediately — Nx's
 generators emit semicolons and double quotes, and without that pass the first
 commit buries every real change under generator noise.
+
+**Choosing the linter.** `--linter=eslint` (default) or `--linter=oxlint`, also a
+prompt at `mnci new` and overridable on `mnci upgrade`. The formatter rides along
+— ESLint pairs with Prettier, oxlint with oxfmt — because both are the same seven
+Standard options, so the choice is about speed and toolchain, never about how the
+code ends up looking.
+
+**`oxlint` is a hybrid, not a swap**, and that is deliberate. oxlint parses
+JS/TS/JSX/Vue and nothing else, so an oxlint workspace keeps a trimmed ESLint
+config (`@mnci/eslint-config`'s `nonJs()`) for the file types oxlint cannot read:
+
+|                                 | `eslint`                               | `oxlint`                                                 |
+| ------------------------------- | -------------------------------------- | -------------------------------------------------------- |
+| JS/TS lint                      | ESLint, 452 rules                      | oxlint, 206 native + 225 bridged                         |
+| YAML/TOML/MD/CSS/HTML/JSON lint | ESLint                                 | **ESLint** (unchanged)                                   |
+| `@nx/dependency-checks`         | yes                                    | **yes** (unchanged)                                      |
+| Formatter                       | Prettier                               | oxfmt (~30x faster)                                      |
+| Config files                    | `eslint.config.mjs`, `.prettierrc.mjs` | `oxlint.config.ts`, `.oxfmtrc.json`, `eslint.config.mjs` |
+| VS Code extension               | ESLint + Prettier                      | Oxc (covers both) + ESLint                               |
+
+A pure swap was considered and rejected: it would leave a duplicate key in a CI
+pipeline, a malformed `pyproject.toml`, and a publishable package's wrong manifest
+all reported by nothing. Switching modes with `mnci upgrade --linter=<other>`
+rewrites the config files **and deletes the mode you left**, so a workspace never
+carries two formatter configs.
 
 **Finding and overriding a rule.** One root config importing a package is easy to
 own and hard to read: nothing in three lines says which of ~20 plugins reported

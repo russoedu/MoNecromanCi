@@ -1802,6 +1802,36 @@ describe('applyOverlay', () => {
     expect(stale).toEqual([])
   })
 
+  it('actually runs oxlint, which no other target does', () => {
+    // The hole this closes is silent: every per-project `lint` target comes from
+    // @nx/eslint/plugin and runs ESLint alone, so an oxlint workspace could have a
+    // valid oxlint.config.ts, a green `npm run lint`, and never invoke oxlint once.
+    // A first pass shipped exactly that.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { targets: { lint: { options: { commands: string[] } } } }
+    }
+    const commands = nx.targets.lint.options.commands
+    expect(commands.some(command => command.startsWith('oxlint '))).toBe(true)
+    // And ESLint still runs, for the file types oxlint cannot parse.
+    expect(commands.some(command => command.startsWith('eslint '))).toBe(true)
+  })
+
+  it('sweeps the whole workspace with oxlint, not just the root', () => {
+    // ESLint's root invocation is scoped away from apps/libs/packages because each
+    // project lints its own tree. oxlint has no per-project target at all, so the
+    // same scoping would leave JS/TS linted by nothing.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      nx: { targets: { lint: { options: { commands: string[] } } } }
+    }
+    const oxlintCommand = nx.targets.lint.options.commands.find(command =>
+      command.startsWith('oxlint ')
+    )
+    expect(oxlintCommand).not.toContain('--ignore-pattern')
+  })
+
   it('writes the oxlint pair and no Prettier config when oxlint is chosen', () => {
     overlayWith({ testRunner: 'jest', linter: 'oxlint' })
 
