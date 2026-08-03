@@ -77,3 +77,28 @@ describe('config block names', () => {
     expect(own.length).toBeGreaterThan(names.length / 2)
   })
 })
+
+describe('ignore list', () => {
+  it('ignores build-artifact directories, tmp included', () => {
+    // `tmp` is the one that bit: `@nx/esbuild` writes intermediates there, and the
+    // generated ROOT lint target has no project directory to scope it away, so a
+    // freshly generated workspace failed `nx run-many -t lint` with 39 errors on
+    // code the user never wrote. `.prettierignore` had always listed `tmp`, which
+    // is precisely why the asymmetry went unnoticed — the formatter skipped those
+    // files and the linter did not.
+    //
+    // Caught by the real Windows e2e, not by any fixture, because it needs a
+    // workspace that has actually BUILT something.
+    const script = `
+      const mnci = await import(${JSON.stringify(join(packageRoot, 'index.js'))})
+      process.stdout.write(JSON.stringify(mnci.ignores))
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8'
+    })
+    const ignores = JSON.parse(result.stdout.trim()) as string[]
+    for (const artifact of ['**/tmp', '**/dist', '**/out-tsc', '**/coverage', '**/node_modules']) {
+      expect(ignores).toContain(artifact)
+    }
+  })
+})

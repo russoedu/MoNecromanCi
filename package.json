@@ -12,7 +12,8 @@
     "affected": "nx affected -t lint,typecheck,test,build",
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lint:ox": "oxlint packages"
   },
   "private": true,
   "devDependencies": {

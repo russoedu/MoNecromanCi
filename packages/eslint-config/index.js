@@ -44,6 +44,13 @@ export const ignores = [
   '**/node_modules',
   '**/build',
   '**/.next',
+  // Build artifacts, and the omission that made the generated root `lint` target
+  // fail on a fresh workspace. `@nx/esbuild` writes intermediates here — for a
+  // node-app, `tmp/<scope>/<name>/main-with-require-overrides.js` — and the root
+  // lint target has no project directory to hide behind, so it linted them: 39
+  // errors on generated code the user never wrote. `.prettierignore` has always
+  // listed `tmp`, which is exactly why nothing noticed the asymmetry.
+  '**/tmp',
   '**/vite.config.*.timestamp*',
   // Non-JS ecosystems mnci supports; each has its own linter (ruff,
   // golangci-lint, flutter analyze) wired as that project's `lint` target.

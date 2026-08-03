@@ -15,6 +15,7 @@ This monorepo is itself an Nx monorepo, built and maintained by the CLI it ships
 packages/
 ├── cli/                  # @mnci/cli — the CLI binary (mnci new/add/upgrade)
 ├── eslint-config/        # @mnci/eslint-config — the shared ESLint + Prettier config
+├── oxlint-config/        # @mnci/oxlint-config — the same opinion on oxlint + oxfmt
 ├── nx-python-pip/        # @mnci/nx-python-pip — Nx plugin for pip-native Python projects
 └── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
 
@@ -209,7 +210,55 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### `@mnci/eslint-config` Owns Prettier, and Every Block Has a Name (Latest)
+### A Second Linting Package: `@mnci/oxlint-config` (Latest)
+
+The same lint and style opinion on the Rust toolchain — oxlint + oxfmt — as an
+alternative to `@mnci/eslint-config`, not a replacement. **Not yet wired into the
+CLI**; that is the next conversation. This reverses the earlier "removed oxlint
+entirely" decision, deliberately and on request.
+
+- **The contract is directional, and that is what makes it testable.** Anything
+  `@mnci/eslint-config` accepts must pass oxlint. The config may be more
+  _permissive_ — it unavoidably is — but never _stricter_, because that is the case
+  where a green codebase starts failing on files nobody touched. Verified the
+  strongest way available: **0 findings across this whole ESLint-clean monorepo**.
+- **Literal rule parity is impossible, and the numbers are stated rather than
+  glossed.** Of the 452 rules the ESLint config enables for a project `.ts`, oxlint
+  implements 206; **246 do not exist in it** (169 `unicorn`, 56 `regexp`, plus a
+  tail). oxlint also parses only JS/TS/JSX/Vue, so YAML, TOML, Markdown, CSS, HTML
+  and JSON are linted by nothing here — measured, not assumed: `eslint-plugin-yml`
+  loads through the bridge and then exposes no rules, and oxlint would not parse a
+  `.yaml` even if it did.
+- **225 of the 246 are closed with oxlint's `jsPlugins`**, which runs _real_ ESLint
+  plugins. So `unicorn` and `regexp` here are not ports — they are the same
+  packages at the same versions the ESLint config uses. oxlint's own partial
+  `unicorn` is switched off so one defect is never reported twice.
+- **Three wrong turns, each found by measurement and each recorded in the file it
+  affects.** (1) `categories: { correctness: 'error' }` was measured clean on this
+  repo — but with oxlint's _default_ plugins; once `import`/`jest`/`vitest`/`react`
+  were enabled it reported 8 findings on ESLint-clean source. (2) `categories: {}`
+  changed nothing, because the plugins are what enable rules, which is why
+  `configs/leaks.js` disables 111 of them. (3) TypeScript rules applied
+  workspace-wide made `typescript/no-require-imports` fire on a `.cjs` file the
+  ESLint config lints clean, so they are TS-scoped like the ESLint block they
+  mirror.
+- **Two genuine divergences, off with evidence** in `configs/divergences.js`. The
+  worrying one is `unicorn/no-array-sort`: an _option_ (`allowExpressionStatement`)
+  that ESLint honours and the alpha bridge appears not to — a rule stricter than
+  configured everywhere it runs, not just in one file.
+- **A fixture that asserted the opposite of the truth was caught and removed.** The
+  minimal repro written for `consistent-function-scoping` is reported by _both_
+  linters, so as a "clean" fixture it was simply wrong. The divergence only appears
+  on the real 400-line module. **A fake fixture is worse than no fixture.**
+- **oxfmt replaces Prettier, verified rather than assumed**: byte-identical on
+  JSON/YAML/MD/CSS/TS samples and on 60 of 61 real files, diverging only on how a
+  multi-line union after `as` wraps. 46ms against ~1.5s. A test diffs the two
+  binaries and asserts the option set `toEqual` the ESLint package's, so the two
+  halves cannot drift.
+- **#24's guard earned its keep again**: it failed the moment the package appeared,
+  because a new project had no `build` target and no recorded reason.
+
+### `@mnci/eslint-config` Owns Prettier, and Every Block Has a Name
 
 The package held the whole linting opinion while the formatting opinion was a literal
 in `overlay.ts` — two halves of one decision, in two places, reachable by two different

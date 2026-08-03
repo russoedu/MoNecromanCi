@@ -54,6 +54,13 @@ const ABSENT_BY_DESIGN: Record<string, Record<string, string>> = {
     // Plain ESM a consumer loads directly, so there is nothing to compile —
     // and a build step would risk the published config drifting from source.
     build: 'published as source — a build step could let dist/ drift from it'
+  },
+  '@mnci/oxlint-config': {
+    // Same reasoning as @mnci/eslint-config: plain ESM that oxlint loads
+    // directly. It has `lint`, `typecheck` and `test` targets like every other
+    // project — this guard caught its absence of `build` the moment the package
+    // was added, which is what the exemption table is for.
+    build: 'published as source — a build step could let dist/ drift from it'
   }
   // No project is exempt from `typecheck`, deliberately. `tsconfig.base.json`
   // sets `isolatedModules: true`, which puts ts-jest in transpile-only mode, so

@@ -232,20 +232,22 @@ function enforceWorkspaceShape(root, stage) {
     `found: ${JSON.stringify(eslintConfigs)}`
   )
 
-  // Two Prettier configs is not a cosmetic duplicate: `.prettierrc` wins
-  // Prettier's precedence over `.prettierrc.json`, so Nx's leftover file
-  // silently discarded mnci's entire formatting opinion. Asserting the count
-  // is not enough — assert which one Prettier actually resolves.
+  // Two Prettier configs is not a cosmetic duplicate. Prettier's precedence runs
+  // `.prettierrc` -> `.prettierrc.json` -> ... -> `.prettierrc.mjs`, so EITHER of
+  // the earlier names left behind silently discards mnci's entire formatting
+  // opinion. `.prettierrc` is Nx's; `.prettierrc.json` is the one mnci itself
+  // used to write, which is why an upgrade has to delete it too. Asserting the
+  // count is not enough — assert which one Prettier actually resolves.
   const prettierConfigs = findFiles(root, name => /^\.prettierrc(?:\..+)?$/.test(name))
   enforce(
     `${stage}: exactly one Prettier config`,
-    prettierConfigs.length === 1 && prettierConfigs[0] === '.prettierrc.json',
+    prettierConfigs.length === 1 && prettierConfigs[0] === '.prettierrc.mjs',
     `found: ${JSON.stringify(prettierConfigs)}`
   )
   const resolved = tryRunCapture('npx prettier --find-config-path package.json', root)
   enforce(
     `${stage}: Prettier resolves that config, not a stray one`,
-    (resolved.output ?? '').trimEnd().endsWith('.prettierrc.json'),
+    (resolved.output ?? '').trimEnd().endsWith('.prettierrc.mjs'),
     `resolved: ${(resolved.output ?? '').trim()}`
   )
 
@@ -419,15 +421,29 @@ section('js stack', [], () => {
     rootLintPlanted.output
   )
 
-  // Standard forbids trailing commas; the old "es5" value contradicted it and
-  // went unnoticed because Nx's .prettierrc was winning anyway.
+  // The options moved into @mnci/eslint-config/prettier, so there is no JSON left
+  // to parse — the generated file re-exports the package. Asserted through the
+  // real binary instead, which is the stronger check anyway: it covers the
+  // package resolving from a generated workspace AND the options applying, and it
+  // is what would have caught the drift this replaced. (This repo's own config
+  // said trailingComma "es5" while it SHIPPED "none", reported by nothing,
+  // because the check and the shipped opinion were different files.)
   enforce(
-    'Prettier configured for Standard (no semicolons, single quotes, no trailing commas)',
-    (() => {
-      const config = JSON.parse(readFileSync(path.join(workspace, '.prettierrc.json'), 'utf8'))
-      return config.semi === false && config.singleQuote === true && config.trailingComma === 'none'
-    })()
+    'Prettier config delegates to @mnci/eslint-config/prettier',
+    readFileSync(path.join(workspace, '.prettierrc.mjs'), 'utf8').includes(
+      "from '@mnci/eslint-config/prettier'"
+    )
   )
+  const standardProbe = path.join(workspace, 'prettier-probe.ts')
+  writeFileSync(standardProbe, 'export const o = {\n  a: "x",\n  b: 2,\n}\n')
+  tryRunCapture('npx prettier --write prettier-probe.ts', workspace)
+  const formatted = readFileSync(standardProbe, 'utf8')
+  enforce(
+    'Prettier applies Standard for real (no semicolons, single quotes, no trailing commas)',
+    formatted === "export const o = {\n  a: 'x',\n  b: 2\n}\n",
+    JSON.stringify(formatted)
+  )
+  rmSync(standardProbe, { force: true })
 
   // Publish auth. This workspace is generated with --registry npm, so the .npmrc
   // is the auth-only variant: the npmjs.org token line and NOTHING else. No

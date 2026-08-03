@@ -18,7 +18,10 @@
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/packages/eslint-config/package.json",
       "{workspaceRoot}/packages/eslint-config/index.js",
-      "{workspaceRoot}/packages/eslint-config/configs/**/*.js"
+      "{workspaceRoot}/packages/eslint-config/configs/**/*.js",
+      "{workspaceRoot}/packages/oxlint-config/package.json",
+      "{workspaceRoot}/packages/oxlint-config/index.js",
+      "{workspaceRoot}/packages/oxlint-config/configs/**/*.js"
     ]
   },
   "plugins": [
