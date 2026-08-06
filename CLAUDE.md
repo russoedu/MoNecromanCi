@@ -210,7 +210,51 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The CLI Offers a Linter Choice (Latest)
+### The oxlint Path's First Real e2e Run, and Three Failures (Latest)
+
+The Windows e2e had never once driven `mnci new --linter=oxlint`. Its first run
+failed three assertions, all in the `alt` section, and none of them was a flaky
+test — each was a defect that reached real generated workspaces.
+
+- **`runPrettier()` was hardcoded, and ran in oxlint workspaces too.** This is
+  the worst of the three because it fails *silently*: an oxlint workspace has no
+  `.prettierrc.mjs` (the overlay deletes it), so `npx prettier --write .` does
+  not error — it formats the whole workspace against **Prettier's own defaults**,
+  semicolons and double quotes, the exact inverse of the shared opinion, over
+  files mnci had just written correctly. `oxfmt --check` then reported **19 files
+  unformatted in a freshly generated workspace**, `eslint.config.mjs` and
+  `oxlint.config.ts` among them. Now `runFormatter(cwd, linter, target)`.
+- **`readWorkspaceStack()` never read `linter` at all**, so `mnci add` had no way
+  to know — the same mis-formatting on every add, and `WorkspaceStack` had no
+  such field to pass. It defaults to `eslint` when absent, the call `upgrade`
+  already documents, since a pre-choice workspace has no persisted value.
+- **`@mnci/oxlint-config` was STRICTER than ESLint on `.tsx`**, which is the one
+  thing the parity contract forbids. `mnci/react` switches
+  `explicit-function-return-type` **off** — a component's return type is always
+  inferred JSX — and this config's React block was derived by diffing only the
+  rules that block turns ON, so the single `'off'` was missed. A fresh
+  `mnci add react-app` failed `npm run lint` on Nx's own `app.tsx` and
+  `nx-welcome.tsx`, files the user had never opened.
+- **Enumerating the class found a second instance nobody had hit**: the `.d.ts`
+  blocks. A declaration file matches `**/*.{ts,mts,cts,tsx}`, so `no-explicit-any`,
+  `consistent-type-imports`, the promise rules and `unbound-method` all stayed on
+  where ESLint takes them off. `configs/declarations.js` mirrors it. A generated
+  workspace has no `.d.ts`, so this would have waited for the first user to add a
+  vendor declaration.
+- **The derivation method was the bug, so the guard is a property, not a
+  fixture.** `tests/parity.spec.ts` now resolves both configs and asserts that
+  every rule an ESLint block disables *after* something enabled it is disabled in
+  a matching oxlint scope. It found a third entry on the first run —
+  `no-irregular-whitespace` for `*.yaml` — which is a legitimate exemption, since
+  oxlint has no YAML parser; that is encoded as a reachability property rather
+  than a rule-name allowlist. Both real gaps were mutation-tested (reverting
+  either fails 3 and 7 tests respectively).
+- Verified against the actual failing shape, not fixtures alone: a real `app.tsx`
+  + `nx-welcome.tsx` + a plain `.ts`, where oxlint reported **3 errors before and
+  1 after** — the survivor being the plain `.ts`, so the rule was not switched off
+  wholesale.
+
+### The CLI Offers a Linter Choice
 
 `mnci new --linter=eslint|oxlint`, also a prompt and an `mnci upgrade` override,
 persisted in `nx.json`'s `mnci` block. Default stays `eslint`, so nothing changes

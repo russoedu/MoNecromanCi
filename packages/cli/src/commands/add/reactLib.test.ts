@@ -1,6 +1,6 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
-  runPrettier: jest.fn(),
+  runFormatter: jest.fn(),
   runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))

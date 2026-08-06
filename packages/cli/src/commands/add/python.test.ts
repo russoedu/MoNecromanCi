@@ -1,6 +1,6 @@
 jest.mock('../../nx', () => ({
   runNx: jest.fn(),
-  runPrettier: jest.fn(),
+  runFormatter: jest.fn(),
   runShell: jest.fn(() => 0)
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
@@ -10,12 +10,12 @@ import { select } from '@inquirer/prompts'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runNx, runPrettier, runShell } from '../../nx'
+import { runNx, runFormatter, runShell } from '../../nx'
 import { promptText } from '../../prompts'
 import { runAdd } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
-const mockRunPrettier = jest.mocked(runPrettier)
+const mockRunFormatter = jest.mocked(runFormatter)
 const mockRunShell = jest.mocked(runShell)
 const mockPromptText = jest.mocked(promptText)
 const mockSelect = jest.mocked(select)
@@ -315,7 +315,7 @@ describe('runAdd python-vendor', () => {
     // pass is a second, separate call site — easy to miss, easy to regress.
     await runAdd('python-vendor', 'svc', { lib: 'pycore' })
 
-    expect(mockRunPrettier).toHaveBeenCalledWith(workspaceRoot)
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
   })
 
   it('appends to an existing vendor table instead of overwriting it', async () => {
