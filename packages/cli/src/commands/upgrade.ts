@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { runPrettier } from '../nx'
+import { runFormatter } from '../nx'
 import {
   applyOverlay,
   readMnciConfig,
@@ -252,7 +252,11 @@ export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void
   // `nx.json` it had just rewritten mis-formatted — which now fails the
   // workspace's own `format:check` CI gate. Non-fatal for the same reason it is
   // there: the overlay is already applied by this point.
-  runPrettier(workspaceRoot)
+  //
+  // The linter comes from `resolved`, which is what `applyOverlay` was just
+  // given — so a `mnci upgrade --linter=oxlint` formats with the formatter it
+  // has this moment switched TO, not the one the workspace had on the way in.
+  runFormatter(workspaceRoot, resolved.stack.linter)
 
   logger.success('Done. Review the changes with `git diff` before committing.')
 }

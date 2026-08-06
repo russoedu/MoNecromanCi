@@ -61,7 +61,25 @@ const CLEAN: Record<string, string> = {
   'packages/demo/src/sum.ts':
     'export function total(ns: number[]): number {\n  let out = 0\n  for (const n of ns) out += n\n  return out\n}\n',
   // Nx's generators emit files with a bare eslint-disable.
-  'packages/demo/src/disabled.ts': '/* eslint-disable */\nexport const anything = 1\n'
+  'packages/demo/src/disabled.ts': '/* eslint-disable */\nexport const anything = 1\n',
+  // A React component with no return annotation, which is EXACTLY the shape of
+  // Nx's generated `app.tsx` and `nx-welcome.tsx`. This is the regression that
+  // reached a real generated workspace: `mnci add react-app` under oxlint failed
+  // `npm run lint` on two files the user had never opened, because
+  // `mnci/react`'s one `'off'` entry was missed when this config's React block
+  // was derived by diffing only the rules that block turns ON.
+  'packages/demo/src/component.tsx':
+    "export function App() {\n  return <div className='x'>hi</div>\n}\n",
+  // ...while a plain `.ts` still requires the annotation, so the fixture above
+  // cannot pass by switching the rule off everywhere. `native.js` keeps it on
+  // here, where a return type is real API surface.
+  'packages/demo/src/annotated.ts': 'export function id(n: number): number {\n  return n\n}\n',
+  // Vendor declarations legitimately re-declare and use `any`. A `.d.ts` matches
+  // the TS-scoped override, so this is clean only because
+  // `configs/declarations.js` takes those rules back off — the same class of gap
+  // as the `.tsx` above, found by enumeration rather than by tripping over it.
+  'packages/demo/src/vendor.d.ts':
+    'declare module "vendor" {\n  export function anything(x: any): any\n}\n'
   // No fixture for the `consistent-function-scoping` divergence recorded in
   // configs/divergences.js, deliberately. A minimal reproduction of it does not
   // exist: the obvious three-line version is reported by BOTH linters, so as a
@@ -236,4 +254,177 @@ describe('the type-aware rules', () => {
       rmSync(join(workspace, file), { force: true })
     }
   })
+})
+
+/**
+ * The oxlint name for an ESLint rule.
+ *
+ * @remarks
+ * unicorn comes through the JS bridge under its own namespace, so a disable has
+ * to name the bridged rule rather than oxlint's partial native one (which
+ * `leaks.js` switches off wholesale).
+ *
+ * @param rule - The ESLint rule name.
+ * @returns The same rule as oxlint spells it.
+ */
+const oxlintName = (rule: string): string =>
+  rule.startsWith('@typescript-eslint/')
+    ? rule.replace('@typescript-eslint/', 'typescript/')
+    : rule.replace(/^unicorn\//, 'unicorn-js/')
+
+/**
+ * The severity of a rule setting, whether or not it carries options.
+ *
+ * @param setting - A rule's configured value.
+ * @returns The severity alone.
+ */
+const level = (setting: unknown): unknown => (Array.isArray(setting) ? setting[0] : setting)
+
+describe('every rule the ESLint config disables in a scoped block is disabled here too', () => {
+  /**
+   * The class of bug this exists for, stated once because two instances shipped:
+   *
+   * This config's scoped blocks were derived by diffing the ESLint config's
+   * resolved rules for one file type against another, which surfaces every rule
+   * a block turns **on** and none of the rules it turns **off**. So
+   * `mnci/react`'s single `'off'` entry — `explicit-function-return-type`, off
+   * because a component's return type is always inferred JSX — was missed, and
+   * oxlint ended up STRICTER than ESLint on `.tsx`. A fresh `mnci add react-app`
+   * then failed lint on Nx's own generated files. The `.d.ts` blocks had the
+   * same gap and had simply never been exercised.
+   *
+   * The fixtures above pin those two instances behaviourally. This pins the
+   * property, so the next scoped `'off'` added on the ESLint side cannot go
+   * unmirrored just because nobody thought to write a fixture for it.
+   *
+   * Static, deliberately: it reads both config objects rather than linting, and
+   * a rule's mere presence is exactly what is being asserted. A behavioural
+   * version would need a fixture per rule, which is the thing that did not
+   * happen.
+   */
+
+  /**
+   * Resolves both configs in one subprocess.
+   *
+   * @returns The ESLint config's scoped disables, and the oxlint config.
+   * @throws If either config fails to resolve.
+   */
+  function configs(): {
+    scopedDisables: { rule: string; by: string; files: string[] }[]
+    oxlint: {
+      rules?: Record<string, unknown>
+      overrides?: { files: string[]; rules?: Record<string, unknown> }[]
+    }
+  } {
+    const script = `
+      const eslintConfig = (await import(${JSON.stringify(
+        join(packageRoot, '..', 'eslint-config', 'index.js')
+      )})).default
+      const oxlintConfig = (await import(${JSON.stringify(join(packageRoot, 'index.js'))})).default
+      const blocks = eslintConfig({})
+      const level = setting => (Array.isArray(setting) ? setting[0] : setting)
+      const state = new Map()
+      const scopedDisables = []
+      for (const block of blocks) {
+        for (const [rule, setting] of Object.entries(block.rules ?? {})) {
+          // Only a disable that REVERSES an earlier enable matters. A rule that
+          // was never on needs no mirror.
+          if (level(setting) === 'off' && state.get(rule) && state.get(rule) !== 'off' && block.files) {
+            scopedDisables.push({ rule, by: block.name, files: block.files })
+          }
+          state.set(rule, level(setting))
+        }
+      }
+      process.stdout.write(JSON.stringify({ scopedDisables, oxlint: oxlintConfig({}) }))
+    `
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024
+    })
+    const stdout = result.stdout?.trim() ?? ''
+    if (!stdout.startsWith('{')) {
+      throw new Error(`could not resolve the configs.\nstderr: ${result.stderr}`)
+    }
+    return JSON.parse(stdout) as ReturnType<typeof configs>
+  }
+
+  const { scopedDisables, oxlint } = configs()
+
+  /** Every rule this config sets anywhere, with the scopes that disable it. */
+  const enabledSomewhere = new Set<string>()
+  const disabledIn: { files: string[]; rules: Set<string> }[] = []
+  const baseRules = Object.entries(oxlint.rules ?? {})
+  for (const [rule, setting] of baseRules) {
+    if (level(setting) !== 'off') enabledSomewhere.add(rule)
+  }
+  const overrides = oxlint.overrides ?? []
+  for (const override of overrides) {
+    const disabled = new Set<string>()
+    const overrideRules = Object.entries(override.rules ?? {})
+    for (const [rule, setting] of overrideRules) {
+      if (level(setting) === 'off') disabled.add(rule)
+      else enabledSomewhere.add(rule)
+    }
+    disabledIn.push({ files: override.files, rules: disabled })
+  }
+
+  /** The extensions oxlint parses. Everything else it never opens. */
+  const OXLINT_EXTENSIONS = new Set(['js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx', 'vue'])
+
+  /**
+   * Whether a scope can reach a file oxlint actually parses.
+   *
+   * @remarks
+   * The one principled exemption, and it is a property rather than a list of
+   * rule names: `mnci/yaml` disables `no-irregular-whitespace` for `*.yaml`, and
+   * oxlint could not report it on a `.yaml` if it wanted to — it has no YAML
+   * parser, which is the whole reason the CLI's oxlint mode keeps ESLint for
+   * those files. Mirroring such a disable would be noise asserting nothing.
+   *
+   * Unrecognised scopes count as reachable, so a scope this cannot classify
+   * demands the mirror rather than being waved through.
+   *
+   * @param patterns - The ESLint block's `files` patterns.
+   * @returns Whether any pattern can match a file oxlint parses.
+   */
+  const reachesOxlint = (patterns: string[]): boolean =>
+    patterns.some(pattern => {
+      const braced = (pattern.match(/\{([^}]+)\}/g) ?? []).flatMap(group =>
+        group.slice(1, -1).split(',')
+      )
+      const trailing = /\.([a-z]+)$/.exec(pattern)?.[1]
+      const extensions = [...braced, ...(trailing ? [trailing] : [])].map(part => part.trim())
+      return extensions.length === 0 || extensions.some(part => OXLINT_EXTENSIONS.has(part))
+    })
+
+  // The ones that need mirroring: a rule this config actually enables, disabled
+  // by a scoped ESLint block, on files oxlint parses. A rule oxlint has no
+  // equivalent for (169 unicorn and 56 regexp rules do not exist natively, and
+  // plenty of core rules are simply absent) needs nothing.
+  const mustMirror = scopedDisables.filter(
+    entry => enabledSomewhere.has(oxlintName(entry.rule)) && reachesOxlint(entry.files)
+  )
+
+  it('found scoped disables to check, so this is not vacuously green', () => {
+    // Without this the suite would pass just as happily if `configs()` started
+    // returning an empty list — which is how a guard becomes decoration.
+    expect(mustMirror.length).toBeGreaterThan(0)
+  })
+
+  it.each(mustMirror.map(entry => [`${entry.rule} (${entry.by})`, entry]))(
+    'mirrors %s',
+    (_label, entry) => {
+      const rule = oxlintName((entry as { rule: string }).rule)
+      const files = (entry as { files: string[] }).files
+      // The oxlint override has to disable the rule AND cover every pattern the
+      // ESLint block scopes it to. Covering fewer patterns would leave the rule
+      // live on some of the files ESLint exempts, which is the same defect in a
+      // narrower form.
+      const mirrored = disabledIn.some(
+        override =>
+          override.rules.has(rule) && files.every(pattern => override.files.includes(pattern))
+      )
+      expect(mirrored).toBe(true)
+    }
+  )
 })

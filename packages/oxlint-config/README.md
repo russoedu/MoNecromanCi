@@ -169,8 +169,17 @@ to Prettier on `.json`, `.yaml`, `.md`, `.css` and `.ts` samples, and on 61 of
 this repo's real already-Prettier-formatted files it diverged on exactly **one** —
 how a multi-line union after `as` is broken, where oxfmt uses the leading-`|` form
 and Prettier wraps inline. Switching formatters reformats that pattern; that is
-the honest cost, not a reason to avoid the swap. Speed is the reason to make it:
-**46ms against Prettier's ~1.5s** on the same files.
+the honest cost, not a reason to avoid the swap.
+
+**It also formats `.toml`, which Prettier cannot** — `prettier` on a `.toml` exits
+with `No parser could be inferred for file`. That is the one file type where the
+two differ in what they can parse at all, and it closes the gap
+`@mnci/eslint-config`'s parser-only TOML block documents as unenforceable.
+
+Speed is the other reason to make the swap, stated at the scale it actually holds:
+**46ms against ~1.5s on a single file**, and **2.3s against 14.6s** checking this
+whole monorepo — about 6x, not the ~30x the per-file figure implies. Prefer the
+whole-repo number when deciding; it is the one a contributor waits on.
 
 `tests/oxfmt.spec.ts` diffs the two binaries on every fixture, and asserts this
 package's option set `toEqual` the ESLint package's — so the two halves of the
@@ -187,7 +196,9 @@ demanding `function f (a)` makes lint and format mutually unsatisfiable.
 | JS/TS correctness               | 452 rules             | 206 native + 225 bridged       |
 | YAML/TOML/MD/CSS/HTML/JSON lint | yes                   | **no**                         |
 | Type-aware rules                | yes                   | opt-in, not yet at parity      |
-| Formatting                      | Prettier              | oxfmt (~30x faster)            |
+| Formatting                      | Prettier              | oxfmt                          |
+| Formats `.toml`                 | **no** (no parser)    | yes                            |
+| Whole-repo format check         | 14.6s                 | **2.3s**                       |
 | Whole-repo lint, this monorepo  | ~6s                   | ~2s                            |
 | Maturity                        | stable                | oxfmt pre-1.0, JS bridge alpha |
 

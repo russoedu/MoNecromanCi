@@ -27,6 +27,7 @@ import {
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
   FORMATTED_LANGUAGES,
+  formattedLanguages,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
@@ -1913,6 +1914,71 @@ describe('applyOverlay', () => {
     expect(devDeps['@mnci/eslint-config']).toBeDefined()
   })
 
+  it('declares exactly one formatter, never both', () => {
+    // Additive for the LINTER, exclusive for the FORMATTER — the asymmetry is the
+    // point. prettier stays in node_modules either way (`@mnci/eslint-config`
+    // depends on it), so this is about the DECLARATION: prettier-vscode resolves
+    // the formatter from the project's dependencies, so an oxlint workspace that
+    // declares prettier is one where a globally installed prettier-vscode
+    // reformats on save against the opinion oxfmt is not applying. Two
+    // formatters, both resolvable, disagreeing silently — the `.prettierrc`
+    // precedence bug wearing a different hat.
+    //
+    // Two independent mechanisms enforce this, and mutation testing is what
+    // showed it: the write-site ternary never declares prettier under oxlint,
+    // AND `withoutStaleLinterDependencies` strips it if anything did. Breaking
+    // either one alone leaves this test green. That is defence in depth rather
+    // than a redundancy to tidy away — the ternary covers `mnci new`, the prune
+    // covers `mnci upgrade`, and only the prune can fix a manifest that already
+    // declares it. Noted here so nobody reads a passing run as proof that the
+    // line they just changed is the one holding this up; the test below pins the
+    // prune on its own.
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const oxlint = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(oxlint.oxfmt).toBeDefined()
+    expect(oxlint.prettier).toBeUndefined()
+  })
+
+  it('drops the formatter of the mode an upgrade left behind', () => {
+    // The half a conditional cannot fix: the merge starts from the manifest's
+    // existing devDependencies, so a spread can only ADD. Without the prune,
+    // `mnci upgrade --linter=oxlint` on an ESLint workspace leaves `prettier`
+    // declared and `.prettierrc.mjs` deleted — a formatter with no config, which
+    // silently formats against ITS defaults rather than Standard.
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    const beforeSwitch = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(beforeSwitch.prettier).toBeDefined()
+
+    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+    const afterSwitch = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(afterSwitch.prettier).toBeUndefined()
+    expect(afterSwitch.oxfmt).toBeDefined()
+
+    // And back, so the prune is symmetric rather than a one-way door.
+    overlayWith({ testRunner: 'jest', linter: 'eslint' })
+    const backAgain = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        devDependencies: Record<string, string>
+      }
+    ).devDependencies
+    expect(backAgain.prettier).toBeDefined()
+    for (const dependency of ['oxlint', 'oxfmt', '@mnci/oxlint-config']) {
+      expect(backAgain[dependency]).toBeUndefined()
+    }
+  })
+
   it('persists the linter so mnci upgrade does not revert it', () => {
     overlayWith({ testRunner: 'jest', linter: 'oxlint' })
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
@@ -1972,19 +2038,43 @@ describe('applyOverlay', () => {
         { 'editor.defaultFormatter'?: string }
       >
       const expected = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
-      for (const language of FORMATTED_LANGUAGES) {
+      for (const language of formattedLanguages(linter)) {
         expect(settings[`[${language}]`]).toEqual({ 'editor.defaultFormatter': expected })
       }
     }
   })
 
-  it('covers the languages that actually matter, TypeScript included', () => {
+  it('covers the languages that actually matter, TypeScript and HTML included', () => {
     // Asserted by name rather than only through the loop above, because the loop
     // would still pass if someone shortened FORMATTED_LANGUAGES back to the three
-    // it started as — which is exactly how the reported bug existed.
-    for (const language of ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']) {
+    // it started as — which is exactly how the reported bug existed. `html` is
+    // here because it was missing for the same reason `typescript` was: the list
+    // claimed to be "everything the formatter handles" and nobody checked it
+    // against the binaries. Both Prettier and oxfmt reformat `.html`.
+    for (const language of [
+      'typescript',
+      'typescriptreact',
+      'javascript',
+      'javascriptreact',
+      'html'
+    ]) {
       expect(FORMATTED_LANGUAGES).toContain(language)
     }
+  })
+
+  it('pins TOML under oxlint only, because Prettier cannot parse it at all', () => {
+    // Not a preference. `prettier` on a `.toml` exits with "No parser could be
+    // inferred for file"; oxfmt reformats it. So pinning `[toml]` in an ESLint
+    // workspace would route the file to a formatter that errors on it, while
+    // leaving it out of an oxlint workspace forfeits a formatted
+    // `pyproject.toml` — the one thing `@mnci/eslint-config`'s parser-only TOML
+    // block has always documented as unenforceable.
+    const oxlint = JSON.parse(vscodeWorkspace('demo', 'oxlint')).settings as Record<string, unknown>
+    expect(oxlint['[toml]']).toEqual({ 'editor.defaultFormatter': 'oxc.oxc-vscode' })
+
+    const eslint = JSON.parse(vscodeWorkspace('demo', 'eslint')).settings as Record<string, unknown>
+    expect(eslint['[toml]']).toBeUndefined()
+    expect(FORMATTED_LANGUAGES).not.toContain('toml')
   })
 
   it('narrows eslint.validate to what ESLint still owns under oxlint', () => {

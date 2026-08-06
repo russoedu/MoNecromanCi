@@ -210,7 +210,51 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The CLI Offers a Linter Choice (Latest)
+### The oxlint Path's First Real e2e Run, and Three Failures (Latest)
+
+The Windows e2e had never once driven `mnci new --linter=oxlint`. Its first run
+failed three assertions, all in the `alt` section, and none of them was a flaky
+test — each was a defect that reached real generated workspaces.
+
+- **`runPrettier()` was hardcoded, and ran in oxlint workspaces too.** This is
+  the worst of the three because it fails _silently_: an oxlint workspace has no
+  `.prettierrc.mjs` (the overlay deletes it), so `npx prettier --write .` does
+  not error — it formats the whole workspace against **Prettier's own defaults**,
+  semicolons and double quotes, the exact inverse of the shared opinion, over
+  files mnci had just written correctly. `oxfmt --check` then reported **19 files
+  unformatted in a freshly generated workspace**, `eslint.config.mjs` and
+  `oxlint.config.ts` among them. Now `runFormatter(cwd, linter, target)`.
+- **`readWorkspaceStack()` never read `linter` at all**, so `mnci add` had no way
+  to know — the same mis-formatting on every add, and `WorkspaceStack` had no
+  such field to pass. It defaults to `eslint` when absent, the call `upgrade`
+  already documents, since a pre-choice workspace has no persisted value.
+- **`@mnci/oxlint-config` was STRICTER than ESLint on `.tsx`**, which is the one
+  thing the parity contract forbids. `mnci/react` switches
+  `explicit-function-return-type` **off** — a component's return type is always
+  inferred JSX — and this config's React block was derived by diffing only the
+  rules that block turns ON, so the single `'off'` was missed. A fresh
+  `mnci add react-app` failed `npm run lint` on Nx's own `app.tsx` and
+  `nx-welcome.tsx`, files the user had never opened.
+- **Enumerating the class found a second instance nobody had hit**: the `.d.ts`
+  blocks. A declaration file matches `**/*.{ts,mts,cts,tsx}`, so `no-explicit-any`,
+  `consistent-type-imports`, the promise rules and `unbound-method` all stayed on
+  where ESLint takes them off. `configs/declarations.js` mirrors it. A generated
+  workspace has no `.d.ts`, so this would have waited for the first user to add a
+  vendor declaration.
+- **The derivation method was the bug, so the guard is a property, not a
+  fixture.** `tests/parity.spec.ts` now resolves both configs and asserts that
+  every rule an ESLint block disables _after_ something enabled it is disabled in
+  a matching oxlint scope. It found a third entry on the first run —
+  `no-irregular-whitespace` for `*.yaml` — which is a legitimate exemption, since
+  oxlint has no YAML parser; that is encoded as a reachability property rather
+  than a rule-name allowlist. Both real gaps were mutation-tested (reverting
+  either fails 3 and 7 tests respectively).
+- Verified against the actual failing shape, not fixtures alone: a real `app.tsx`,
+  a real `nx-welcome.tsx` and a plain `.ts`, where oxlint reported **3 errors
+  before and 1 after** — the survivor being the plain `.ts`, so the rule was not
+  switched off wholesale.
+
+### The CLI Offers a Linter Choice
 
 `mnci new --linter=eslint|oxlint`, also a prompt and an `mnci upgrade` override,
 persisted in `nx.json`'s `mnci` block. Default stays `eslint`, so nothing changes
@@ -230,20 +274,50 @@ for an existing workspace or a flagless run.
   assertion that would have "passed" — the gate-that-verifies-nothing class again.
   oxlint sweeps the WHOLE workspace (no `--ignore-pattern` scoping) precisely
   because no per-project target covers it.
-- **Switching modes deletes the mode you left.** Two formatter configs is the
-  `.prettierrc` precedence bug in a new costume: both files valid, CLI picks one,
-  editor picks the other, gates disagree silently.
+- **Switching modes deletes the mode you left** — config files _and_ the
+  formatter's `devDependencies` entry. Two formatter configs is the `.prettierrc`
+  precedence bug in a new costume: both files valid, CLI picks one, editor picks
+  the other, gates disagree silently.
 - **Format-on-save was broken for `.ts`, and it was mnci's fault.** The
   `.code-workspace` set a global `editor.defaultFormatter` plus `[json]`/`[jsonc]`/
   `[yaml]` only. VS Code resolves a language-specific setting ahead of a general
   one and does so BEFORE scope, so any user-level `[typescript]` block outranked
   it. Reported from a real workspace where `.json` formatted and `.ts` did not.
-  `FORMATTED_LANGUAGES` now pins all nine.
+  `FORMATTED_LANGUAGES` pins them all.
 - **Generated workspaces never declared `prettier`** — it arrived only as a
   transitive dependency of `@mnci/eslint-config`, so `npx prettier` worked while
   the VS Code extension, which resolves prettier from the PROJECT's dependencies
   and silently falls back to its bundled copy, could get a different one. `oxfmt`
   and `oxlint` are declared for the same reason.
+- **Additive for the linter, EXCLUSIVE for the formatter**, and the asymmetry is
+  the correction to the first pass, which declared `prettier` unconditionally —
+  so an oxlint workspace declared a formatter nothing ran. The justification
+  inverts under oxlint: the declaration exists so `esbenp.prettier-vscode`
+  resolves the _project's_ prettier, and that extension is not even recommended
+  there, so declaring it is precisely what lets a globally installed copy
+  reformat on save against the opinion oxfmt is not applying — with `format:check`
+  (oxfmt) then reporting the result as unformatted. prettier stays in
+  `node_modules` regardless (`@mnci/eslint-config` depends on it), so **this is
+  about the declaration, not about pruning the tree**. Two mechanisms enforce it,
+  and mutation testing is what showed the split: the write-site ternary covers
+  `mnci new`, `withoutStaleLinterDependencies()` covers `mnci upgrade`, and only
+  the prune can fix a manifest that already declares it. `mnci doctor` checks it.
+- **`FORMATTED_LANGUAGES` claimed to be "everything the formatter handles" and
+  had never been checked against the binaries.** Measuring both found `html`
+  missing from a list that had always been able to include it, and `toml`
+  formattable by oxfmt alone — `prettier` on a `.toml` exits with `No parser
+could be inferred for file`. So `[toml]` is pinned under **oxlint only**
+  (`OXFMT_ONLY_LANGUAGES`); pinning it under eslint would route the file to a
+  formatter that errors on it. An oxlint workspace therefore gets a formatted
+  `pyproject.toml`, closing the gap `configs/toml.js` documents as unenforceable
+  — and nothing re-opens the rule that block rejected, since no linter has an
+  opinion on the file either way.
+- **The two `mnci doctor` linter checks shipped with no tests at all**, found while
+  adding the third. All three are covered now, including the default-to-`eslint`
+  path every pre-choice workspace takes, plus a latent crash the tests exposed:
+  both checks read `package.json` through `readJson`, which _throws_ on a missing
+  file, so doctor would have died on the kind of broken workspace it exists to
+  diagnose. `declaredDevDependencies()` reads it tolerantly instead.
 - **`oxc.oxc-vscode` is one extension covering oxlint AND oxfmt** (verified on the
   Marketplace), so an oxlint workspace needs no formatter extension —
   and `dbaeumer.vscode-eslint` stays in BOTH lists, because the hybrid still lints
@@ -294,9 +368,11 @@ entirely" decision, deliberately and on request.
   on the real 400-line module. **A fake fixture is worse than no fixture.**
 - **oxfmt replaces Prettier, verified rather than assumed**: byte-identical on
   JSON/YAML/MD/CSS/TS samples and on 60 of 61 real files, diverging only on how a
-  multi-line union after `as` wraps. 46ms against ~1.5s. A test diffs the two
-  binaries and asserts the option set `toEqual` the ESLint package's, so the two
-  halves cannot drift.
+  multi-line union after `as` wraps. A test diffs the two binaries and asserts the
+  option set `toEqual` the ESLint package's, so the two halves cannot drift.
+  **The speed claim was later restated at the right scale**: 46ms against ~1.5s is
+  a _single file_; checking this whole monorepo is 2.3s against 14.6s, about 6x.
+  Quote the whole-repo number — it is the one a contributor waits on.
 - **#24's guard earned its keep again**: it failed the moment the package appeared,
   because a new project had no `build` target and no recorded reason.
 

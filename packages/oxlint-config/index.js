@@ -2,6 +2,7 @@ import bridged from './configs/bridged.js'
 import divergences from './configs/divergences.js'
 import leaks from './configs/leaks.js'
 import native from './configs/native.js'
+import declarations, { DECLARATION_FILES } from './configs/declarations.js'
 import react, { REACT_FILES } from './configs/react.js'
 import tests, { ENABLED as TEST_RULES, TEST_FILES } from './configs/tests.js'
 import typeAware from './configs/typeAware.js'
@@ -10,6 +11,7 @@ export { default as bridged } from './configs/bridged.js'
 export { default as divergences } from './configs/divergences.js'
 export { default as leaks } from './configs/leaks.js'
 export { default as native } from './configs/native.js'
+export { default as declarations, DECLARATION_FILES } from './configs/declarations.js'
 export { default as react, REACT_FILES } from './configs/react.js'
 export { default as tests, ENABLED as TEST_RULES, TEST_FILES } from './configs/tests.js'
 export { default as typeAware } from './configs/typeAware.js'
@@ -169,6 +171,16 @@ export default function mnci(options = {}) {
         rules: { ...typescriptRules, ...(withTypeAware && typeAware) }
       },
       { files: REACT_FILES, rules: react },
+      // Declaration files, mirroring `mnci/typescript/declarations` and
+      // `mnci/type-aware/declarations`. A `.d.ts` matches the TS override above,
+      // so without this the rules that block switches off stay on here — oxlint
+      // stricter than ESLint on exactly the files that describe types rather than
+      // executing: vendor declarations legitimately re-declare and use `any`, and
+      // `unbound-method` misreads an interface's method signatures as unbound
+      // uses. Found by enumerating every scoped `'off'` in the ESLint config
+      // rather than by hitting it, which is why the guard is a test and not a
+      // habit.
+      { files: DECLARATION_FILES, rules: declarations },
       { files: TEST_FILES, rules: { ...TEST_RULES, ...tests } }
     ]
   }

@@ -3,7 +3,15 @@
  *
  * @remarks
  * Derived by diffing the ESLint config's resolved rules for a `.tsx` against a
- * plain `.ts`, so this is exactly what that block adds and nothing else.
+ * plain `.ts`, so this is exactly what that block adds — **and, since one pass
+ * got this wrong, what it takes away.** The original diff compared only the
+ * rules `mnci/react` switches ON, so the one rule it switches OFF was missed
+ * and stayed enabled here. A fresh `mnci add react-app` then failed
+ * `npm run lint` on Nx's own generated `app.tsx` and `nx-welcome.tsx` under
+ * oxlint while passing under ESLint — the precise shape of the violation the
+ * parity contract exists to prevent, since oxlint may be more permissive but
+ * never stricter. `tests/parity.spec.ts` now asserts the disables too, so a
+ * scoped `'off'` added on the ESLint side cannot silently go unmirrored.
  *
  * Accessibility is the bulk of it, and it belongs here rather than with the HTML
  * rules for the reason the sibling package records: `@html-eslint`'s rules apply
@@ -99,5 +107,13 @@ export default {
   'jsx_a11y/scope': 'error',
   'jsx_a11y/tabindex-no-positive': 'error',
   'react/rules-of-hooks': 'error',
-  'react/exhaustive-deps': 'error'
+  'react/exhaustive-deps': 'error',
+
+  // OFF, mirroring `mnci/react`, and this is the one entry here that removes a
+  // rule rather than adding one. A component's return type is always JSX and
+  // TypeScript infers it precisely, so annotating every one adds noise and no
+  // information — and leaving it on made Nx's generated `app.tsx` fail lint in
+  // a workspace the user had not touched yet. Still enforced on plain `.ts`
+  // (see `native.js`), where a return type is real API surface.
+  'typescript/explicit-function-return-type': 'off'
 }

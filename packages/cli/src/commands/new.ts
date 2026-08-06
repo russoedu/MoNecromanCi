@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { runNpx, runPrettier, runShell } from '../nx'
+import { runFormatter, runNpx, runShell } from '../nx'
 import {
   applyOverlay,
   DEFAULT_STACK,
@@ -245,8 +245,10 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   // `create-nx-workspace` wrote its scaffold in its own style, which is not
   // mnci's. Normalise it now so the workspace passes its own `format:check`
   // from the very first commit.
-  logger.step('Formatting the workspace (Prettier, JavaScript Standard Style)')
-  runPrettier(workspaceRoot)
+  logger.step(
+    `Formatting the workspace (${stack.linter === 'oxlint' ? 'oxfmt' : 'Prettier'}, JavaScript Standard Style)`
+  )
+  runFormatter(workspaceRoot, stack.linter)
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)

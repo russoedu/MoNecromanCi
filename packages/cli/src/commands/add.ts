@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
-import { runNx, runPrettier, runShell } from '../nx'
+import { runFormatter, runNx, runShell } from '../nx'
 import { promptText } from '../prompts'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
@@ -299,7 +299,7 @@ export async function runAdd(
       // generic "Added ... 'name'" success message below reads wrong for
       // this kind, so it returns early with its own message instead.
       syncProjectReferences(workspaceRoot)
-      runPrettier(workspaceRoot)
+      runFormatter(workspaceRoot, stack.linter)
       return
     }
     default: {
@@ -322,7 +322,7 @@ export async function runAdd(
   // `nx sync` plus the root-manifest/`.code-workspace` edits above touch files
   // outside the new project — so this formats the workspace, not just
   // `<projectRoot>`. Keeps `npm run format:check` green after every add.
-  runPrettier(workspaceRoot)
+  runFormatter(workspaceRoot, stack.linter)
 
   logger.success(`Added ${resolvedKind} '${resolvedName}'.`)
 }
@@ -378,11 +378,18 @@ function syncProjectReferences(workspaceRoot: string): void {
  * @typeParam None - this function has no generic type parameters.
  */
 function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
-  const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string } } }>(
+  const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string; linter?: string } } }>(
     join(workspaceRoot, 'nx.json')
   )
   const stack = nxJson.mnci?.stack
   return {
-    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest'
+    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
+    // Defaults to `eslint` when absent, the same call `mnci upgrade` makes and
+    // for the same reason: every workspace generated before the choice existed
+    // has no persisted value and is an ESLint workspace. Reading it at all is
+    // the fix — this function returned `testRunner` alone, so `add` finished by
+    // formatting an oxlint workspace with Prettier, against Prettier's defaults,
+    // since the overlay had deleted the config that would have corrected it.
+    linter: stack?.linter === 'oxlint' ? 'oxlint' : 'eslint'
   }
 }

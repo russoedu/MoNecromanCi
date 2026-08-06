@@ -30,6 +30,38 @@ function seedHealthyWorkspace(): void {
   )
 }
 
+/**
+ * Seeds a healthy workspace for one linter choice.
+ *
+ * @param linter - The linter to persist in `nx.json`'s `mnci` block.
+ * @param devDependencies - The manifest's declared devDependencies.
+ */
+function seedFor(linter: 'eslint' | 'oxlint', devDependencies: Record<string, string>): void {
+  seedHealthyWorkspace()
+  // Clear both modes first, so calling this twice in one test does not leave the
+  // previous mode's config behind and assert against a workspace no `mnci
+  // upgrade` would ever produce.
+  for (const file of ['oxlint.config.ts', '.oxfmtrc.json', '.prettierrc.mjs']) {
+    rmSync(join(workspaceRoot, file), { force: true })
+  }
+  writeFileSync(
+    join(workspaceRoot, 'nx.json'),
+    JSON.stringify({
+      plugins: [{ plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }],
+      mnci: { registry: { kind: 'npm' }, scope: '@demo', stack: { testRunner: 'jest', linter } }
+    })
+  )
+  writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ devDependencies }))
+  if (linter === 'oxlint') {
+    writeFileSync(join(workspaceRoot, 'oxlint.config.ts'), 'export default {}')
+    writeFileSync(join(workspaceRoot, '.oxfmtrc.json'), '{}')
+  } else {
+    writeFileSync(join(workspaceRoot, '.prettierrc.mjs'), 'export default {}')
+  }
+}
+
+const oxlintToolchain = { oxlint: '^1', oxfmt: '^0.61', '@mnci/oxlint-config': '^0.1' }
+
 const findingFor = (findings: Finding[], fragment: string): Finding | undefined =>
   findings.find(finding => finding.check.includes(fragment))
 
@@ -207,6 +239,85 @@ describe('collectFindings', () => {
     mockRunShell.mockImplementation(() => 1)
 
     expect(findingFor(collectFindings(workspaceRoot), 'project references synced')?.ok).toBe(false)
+  })
+})
+
+describe('the linter-mode checks', () => {
+  it('passes on a healthy workspace of either mode', () => {
+    for (const [linter, devDeps] of [
+      ['eslint', { prettier: '^3' }],
+      ['oxlint', oxlintToolchain]
+    ] as const) {
+      seedFor(linter, devDeps)
+      expect(collectFindings(workspaceRoot).filter(finding => !finding.ok)).toEqual([])
+    }
+  })
+
+  it('catches a formatter config left over from the mode the workspace left', () => {
+    // The shape that makes this worth a check: each file is valid on its own, so
+    // nothing errors. The CLI reads one, the editor extension may read the other,
+    // and a file formatted by `npm run format` gets reformatted on save.
+    seedFor('oxlint', oxlintToolchain)
+    writeFileSync(join(workspaceRoot, '.prettierrc.mjs'), 'export default {}')
+
+    expect(findingFor(collectFindings(workspaceRoot), 'config files are present')?.ok).toBe(false)
+  })
+
+  it('catches an oxlint config in a workspace whose persisted linter is eslint', () => {
+    seedFor('eslint', { prettier: '^3' })
+    writeFileSync(join(workspaceRoot, 'oxlint.config.ts'), 'export default {}')
+
+    expect(findingFor(collectFindings(workspaceRoot), 'config files are present')?.ok).toBe(false)
+  })
+
+  it('catches prettier still declared in an oxlint workspace', () => {
+    // Not cosmetic: prettier-vscode resolves the formatter from the PROJECT's
+    // dependencies, so the declaration is what lets a globally installed prettier
+    // extension format on save against the opinion oxfmt is not applying — while
+    // `npm run format:check` (oxfmt) reports the result as unformatted.
+    seedFor('oxlint', { ...oxlintToolchain, prettier: '^3' })
+
+    expect(findingFor(collectFindings(workspaceRoot), 'is declared as the formatter')?.ok).toBe(
+      false
+    )
+  })
+
+  it('catches oxfmt still declared in an eslint workspace, so the check is symmetric', () => {
+    seedFor('eslint', { prettier: '^3', oxfmt: '^0.61' })
+
+    expect(findingFor(collectFindings(workspaceRoot), 'is declared as the formatter')?.ok).toBe(
+      false
+    )
+  })
+
+  it('catches an oxlint workspace missing a binary it peers on', () => {
+    // `@mnci/oxlint-config` peers on `oxlint`, so nothing installs it for you.
+    // Missing it turns `npm run lint` into "command not found" at the worst moment
+    // instead of at install time.
+    seedFor('oxlint', { oxfmt: '^0.61', '@mnci/oxlint-config': '^0.1' })
+    const finding = findingFor(collectFindings(workspaceRoot), 'oxlint toolchain declared')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('oxlint')
+  })
+
+  it('reports the oxlint toolchain check as ok on an eslint workspace, never omits it', () => {
+    // A check that silently disappears is one nobody notices has stopped running,
+    // so it reports `ok` with a reason rather than being filtered out.
+    seedFor('eslint', { prettier: '^3' })
+    const finding = findingFor(collectFindings(workspaceRoot), 'oxlint toolchain declared')
+
+    expect(finding?.ok).toBe(true)
+    expect(finding?.detail).toBe('not an oxlint workspace')
+  })
+
+  it('defaults to eslint when no linter is persisted, so an old workspace is not flagged', () => {
+    // Every workspace generated before the choice existed has no `stack.linter`.
+    // Treating that as "no mode chosen" would fail both checks on all of them.
+    seedHealthyWorkspace()
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({}))
+
+    expect(collectFindings(workspaceRoot).filter(finding => !finding.ok)).toEqual([])
   })
 })
 

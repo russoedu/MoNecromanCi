@@ -1,18 +1,18 @@
-// `runUpgrade` ends with runPrettier, which shells out to `npx prettier`. These
+// `runUpgrade` ends with runFormatter, which shells out to `npx prettier`. These
 // tests run in a bare temp dir with no node_modules, so a real call would try to
 // fetch prettier from the network — slow, and flaky offline. Mocked, and
 // asserted on directly below, since "upgrade formats what it rewrote" is one of
 // the behaviours under test.
-jest.mock('../nx', () => ({ runPrettier: jest.fn() }))
+jest.mock('../nx', () => ({ runFormatter: jest.fn() }))
 
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runPrettier } from '../nx'
+import { runFormatter } from '../nx'
 import { applyOverlay, DEFAULT_STACK, type OverlayOptions } from '../overlay'
 import { runUpgrade } from './upgrade'
 
-const mockRunPrettier = jest.mocked(runPrettier)
+const mockRunFormatter = jest.mocked(runFormatter)
 
 /** The overlay options a seeded fixture workspace was generated with. */
 const FIXTURE_OPTIONS: OverlayOptions = {
@@ -239,12 +239,12 @@ describe('runUpgrade', () => {
   it('formats the workspace afterwards, so the nx.json it rewrote passes format:check', () => {
     seedWorkspace()
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
-    mockRunPrettier.mockClear()
+    mockRunFormatter.mockClear()
 
     runUpgrade(workspaceRoot, {})
 
     // `new` and every `add` already did this; upgrade did not, leaving the
     // workspace failing its own CI formatting gate right after an upgrade.
-    expect(mockRunPrettier).toHaveBeenCalledWith(workspaceRoot)
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
   })
 })

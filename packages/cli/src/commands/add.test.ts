@@ -1,6 +1,6 @@
 jest.mock('../nx', () => ({
   runNx: jest.fn(),
-  runPrettier: jest.fn(),
+  runFormatter: jest.fn(),
   runShell: jest.fn(() => 0)
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
@@ -10,12 +10,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { select } from '@inquirer/prompts'
-import { runNx, runPrettier, runShell } from '../nx'
+import { runNx, runFormatter, runShell } from '../nx'
 import { promptText } from '../prompts'
 import { runAdd, type ProjectKind } from './add'
 
 const mockRunNx = jest.mocked(runNx)
-const mockRunPrettier = jest.mocked(runPrettier)
+const mockRunFormatter = jest.mocked(runFormatter)
 const mockRunShell = jest.mocked(runShell)
 const mockSelect = jest.mocked(select)
 const mockPromptText = jest.mocked(promptText)
@@ -81,7 +81,7 @@ describe('runAdd', () => {
     // moment a project is added.
     await runAdd('react-app', 'web', {})
 
-    expect(mockRunPrettier).toHaveBeenCalledWith(workspaceRoot)
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
   })
 
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {

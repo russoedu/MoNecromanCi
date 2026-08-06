@@ -1,4 +1,4 @@
-jest.mock('../nx', () => ({ runNpx: jest.fn(), runPrettier: jest.fn(), runShell: jest.fn() }))
+jest.mock('../nx', () => ({ runNpx: jest.fn(), runFormatter: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
   DEFAULT_STACK: { testRunner: 'jest', linter: 'eslint' }
@@ -12,13 +12,13 @@ jest.mock('../prompts', () => ({
 }))
 
 import { join } from 'node:path'
-import { runNpx, runPrettier, runShell } from '../nx'
+import { runNpx, runFormatter, runShell } from '../nx'
 import { applyOverlay } from '../overlay'
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { runNew } from './new'
 
 const mockRunNpx = jest.mocked(runNpx)
-const mockRunPrettier = jest.mocked(runPrettier)
+const mockRunFormatter = jest.mocked(runFormatter)
 const mockRunShell = jest.mocked(runShell)
 const mockApplyOverlay = jest.mocked(applyOverlay)
 const mockPromptCi = jest.mocked(promptCi)
@@ -271,7 +271,7 @@ describe('runNew', () => {
     // real change under generator noise.
     await runNew('demo', { yes: true })
 
-    expect(mockRunPrettier).toHaveBeenCalledWith(join('/somewhere', 'demo'))
+    expect(mockRunFormatter).toHaveBeenCalledWith(join('/somewhere', 'demo'), 'eslint')
   })
 
   it('does not format when the toolchain install failed (Prettier would not be installed)', async () => {
@@ -279,7 +279,7 @@ describe('runNew', () => {
 
     await expect(runNew('demo', { yes: true })).rejects.toThrow('toolchain failed')
 
-    expect(mockRunPrettier).not.toHaveBeenCalled()
+    expect(mockRunFormatter).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid workspace name before creating anything (no create-nx-workspace, no install)', async () => {

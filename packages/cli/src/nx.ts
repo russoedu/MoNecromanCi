@@ -1,4 +1,5 @@
 import spawn from 'cross-spawn'
+import type { LinterChoice } from './overlay'
 import { logger } from './util/logger'
 
 /**
@@ -74,19 +75,29 @@ export function runNpx(arguments_: string[], cwd: string): void {
 }
 
 /**
- * Runs Prettier over a freshly generated workspace or project.
+ * Runs the workspace's formatter over a freshly generated workspace or project.
  *
  * @remarks
  * Nx's own generators emit semicolons, double quotes and trailing commas —
- * the opposite of the JavaScript Standard Style mnci configures Prettier for.
- * Without this pass a workspace fails its own `npm run format:check` the
- * moment it is created, which is a poor first impression and, worse, buries
- * every real formatting change under a wall of generator noise on the first
- * commit. Running it here means what mnci hands back is already normalised.
+ * the opposite of the JavaScript Standard Style mnci configures. Without this
+ * pass a workspace fails its own `npm run format:check` the moment it is
+ * created, which is a poor first impression and, worse, buries every real
+ * formatting change under a wall of generator noise on the first commit.
+ * Running it here means what mnci hands back is already normalised.
+ *
+ * **Which formatter is not a detail, and hardcoding Prettier here was a real
+ * bug.** An oxlint workspace has no `.prettierrc.mjs` — the overlay deletes it
+ * — so `npx prettier --write .` there does not fail, it silently formats the
+ * whole workspace against **Prettier's own defaults**: semicolons, double
+ * quotes, trailing commas. The exact opposite of the shared opinion, applied to
+ * files mnci itself had just written correctly. `oxfmt --check` then reported
+ * 19 files unformatted in a freshly generated workspace, `eslint.config.mjs`
+ * and `oxlint.config.ts` among them. Caught by the real e2e; no fixture could
+ * have, since it needs a generated workspace with both configs in play.
  *
  * `.prettierignore` (written by the overlay) keeps this off `node_modules`,
- * build output and lockfiles, so the pass stays cheap even on a large
- * workspace.
+ * build output and lockfiles, and oxfmt reads that same file by default — so
+ * the pass stays cheap either way, with one ignore list rather than two.
  *
  * Deliberately non-fatal. The project has already been generated and wired by
  * the time this runs; aborting on a formatter hiccup would leave a usable
@@ -94,6 +105,8 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * re-run instead.
  *
  * @param cwd - The workspace root to run in.
+ * @param linter - The workspace's linter choice, which picks the formatter:
+ * `eslint` pairs with Prettier, `oxlint` with oxfmt.
  * @param target - What to format, relative to `cwd`. Defaults to the whole
  * workspace (`.`); `add` passes the new project's root to keep the pass
  * proportional to what actually changed.
@@ -101,11 +114,18 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * @throws Never - a non-zero exit is reported as a warning.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runPrettier(cwd: string, target = '.'): void {
-  const status = runShell('npx', ['prettier', '--write', '--log-level', 'warn', target], cwd)
+export function runFormatter(cwd: string, linter: LinterChoice, target = '.'): void {
+  // `--write` is oxfmt's default, but it is passed explicitly so the intent
+  // survives a future change of that default — this call REWRITES a user's
+  // files, which is not something to leave implicit.
+  const [command, arguments_] =
+    linter === 'oxlint'
+      ? ['oxfmt', ['--write', target]]
+      : ['prettier', ['--write', '--log-level', 'warn', target]]
+  const status = runShell('npx', [command, ...arguments_], cwd)
   if (status !== 0) {
     logger.warn(
-      `Prettier could not format '${target}' (exit code ${status}). ` +
+      `${command} could not format '${target}' (exit code ${status}). ` +
         "The project was generated; run 'npm run format' to normalise it."
     )
   }
