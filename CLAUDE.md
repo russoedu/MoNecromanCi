@@ -217,7 +217,7 @@ failed three assertions, all in the `alt` section, and none of them was a flaky
 test — each was a defect that reached real generated workspaces.
 
 - **`runPrettier()` was hardcoded, and ran in oxlint workspaces too.** This is
-  the worst of the three because it fails *silently*: an oxlint workspace has no
+  the worst of the three because it fails _silently_: an oxlint workspace has no
   `.prettierrc.mjs` (the overlay deletes it), so `npx prettier --write .` does
   not error — it formats the whole workspace against **Prettier's own defaults**,
   semicolons and double quotes, the exact inverse of the shared opinion, over
@@ -243,16 +243,16 @@ test — each was a defect that reached real generated workspaces.
   vendor declaration.
 - **The derivation method was the bug, so the guard is a property, not a
   fixture.** `tests/parity.spec.ts` now resolves both configs and asserts that
-  every rule an ESLint block disables *after* something enabled it is disabled in
+  every rule an ESLint block disables _after_ something enabled it is disabled in
   a matching oxlint scope. It found a third entry on the first run —
   `no-irregular-whitespace` for `*.yaml` — which is a legitimate exemption, since
   oxlint has no YAML parser; that is encoded as a reachability property rather
   than a rule-name allowlist. Both real gaps were mutation-tested (reverting
   either fails 3 and 7 tests respectively).
-- Verified against the actual failing shape, not fixtures alone: a real `app.tsx`
-  + `nx-welcome.tsx` + a plain `.ts`, where oxlint reported **3 errors before and
-  1 after** — the survivor being the plain `.ts`, so the rule was not switched off
-  wholesale.
+- Verified against the actual failing shape, not fixtures alone: a real `app.tsx`,
+  a real `nx-welcome.tsx` and a plain `.ts`, where oxlint reported **3 errors
+  before and 1 after** — the survivor being the plain `.ts`, so the rule was not
+  switched off wholesale.
 
 ### The CLI Offers a Linter Choice
 
