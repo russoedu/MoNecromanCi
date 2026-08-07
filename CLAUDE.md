@@ -210,7 +210,56 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The oxlint Path's First Real e2e Run, and Three Failures (Latest)
+### npm audit Now Blocks on an Actionable Advisory (Latest)
+
+`npm audit` reported **9 vulnerabilities (8 high, 1 moderate)** on this repo. All
+9 are fixed, and the gate that should have caught them was already there — doing
+nothing useful.
+
+- **The step existed and was warn-only, on a justification that had inverted.**
+  `NPM_AUDIT_STEP` was `npm audit --audit-level=high || echo …`, documented as
+  non-blocking because "every flagged vulnerability traced back to `nx`'s and
+  `verdaccio`'s own bundled transitive dependencies … nothing an edit to _this_
+  workspace's manifest could fix". Measured now: **9 of 9 had `fixAvailable`**,
+  and every one was fixed by a targeted `overrides` entry — exactly the edit that
+  note called impossible. Same shape as the stale `js-yaml` pin below: a decision
+  resting on a measurement nothing re-checks.
+- **The split is actionable vs not, which npm reports per advisory
+  (`fixAvailable`) rather than a severity guess.** A published fix at moderate or
+  above exits 1; anything upstream has not fixed is printed and passes. That
+  keeps the whole of the original concern — going red for something nobody here
+  can fix only teaches people to ignore the gate — while removing the part that
+  was false.
+- **`--omit=dev` would have reported 0.** Measured on the pre-fix tree: every one
+  of the 9 arrived through a devDependency (verdaccio, ts-jest's istanbul chain,
+  `eslint-plugin-tsdoc`, commitlint, Vite). Auditing production only would have
+  been another gate that verifies nothing.
+- **The threshold is `moderate`, not `high`**, because `--audit-level=high` missed
+  the `postcss` advisory outright — moderate, and fixable.
+- **A broken audit does not fail the build.** Unparseable JSON exits 0 with the
+  reason printed; a gate that cannot read its input should say so.
+- **`pip-audit` deliberately stays report-only**, and the asymmetry is now
+  documented as a limitation rather than a preference: its output carries no
+  `fixAvailable` equivalent, so the actionable line cannot be drawn. Do not
+  "align" the two by making it blocking — that trades a weak gate for a false one.
+- **A stale pin was the concrete find.** `overrides["@verdaccio/config"]["js-yaml"]`
+  was already `^4.3.0` — a fix for this same advisory, whose range upstream later
+  extended to _include_ 4.3.0. It read as fixed and was not. `@istanbuljs/load-nyc-config`
+  needed a separate 3.x pin, since 4.x dropped `safeLoad`.
+- **This repo's own `ci.yml` never had the step at all**, which is why nothing
+  reported the 9. Regenerating it wholesale is wrong — it legitimately carries
+  `workflow_dispatch`, the nightly `schedule` and `checkout@v7`, none of which
+  `overlay.ts` emits (a generated workspace has no e2e job), so a blind
+  regeneration would delete the nightly. The step was hand-synced instead.
+  **Still unguarded: nothing checks that this repo's `ci.yml` matches
+  `overlay.ts` for the parts they share.**
+- **Verified by execution against two real dependency trees**, not by reading the
+  guard: the fixed tree exits 0, the pre-fix tree exits 1 listing all nine. Eight
+  unit tests drive the branches with a stub `npm` on PATH — the pattern the verify
+  guard established — including the mixed report where an unactionable finding
+  must not shield an actionable one.
+
+### The oxlint Path's First Real e2e Run, and Three Failures
 
 The Windows e2e had never once driven `mnci new --linter=oxlint`. Its first run
 failed three assertions, all in the `alt` section, and none of them was a flaky
