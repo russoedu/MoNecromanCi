@@ -247,12 +247,22 @@ nothing useful.
   extended to _include_ 4.3.0. It read as fixed and was not. `@istanbuljs/load-nyc-config`
   needed a separate 3.x pin, since 4.x dropped `safeLoad`.
 - **This repo's own `ci.yml` never had the step at all**, which is why nothing
-  reported the 9. Regenerating it wholesale is wrong — it legitimately carries
-  `workflow_dispatch`, the nightly `schedule` and `checkout@v7`, none of which
-  `overlay.ts` emits (a generated workspace has no e2e job), so a blind
-  regeneration would delete the nightly. The step was hand-synced instead.
-  **Still unguarded: nothing checks that this repo's `ci.yml` matches
-  `overlay.ts` for the parts they share.**
+  reported the 9 — and it was missing **seven** guards, not one: pip-audit, all
+  three Go steps and all three Flutter steps. Regenerating wholesale is wrong,
+  since the file legitimately carries `workflow_dispatch`, the nightly
+  `schedule`, a whole `e2e-windows` job and `checkout@v7`, none of which
+  `overlay.ts` emits (a generated workspace has no e2e suite) — a blind
+  regeneration would delete the nightly.
+- **`pipelineDrift.test.ts` now guards the class**, one-directionally: every
+  `run:` command the generator emits for the `ci` job must be present here.
+  Extras are fine, and comparing only `run:` (never `uses:`) is what lets
+  Dependabot bump action versions without tripping it. **There is deliberately no
+  exemption table** — all seven missing guards were added rather than excused,
+  since each begins with an existence check and no-ops without the toolchain, so
+  a Go or Python project landing here is covered on day one. A table of seven
+  "harmless" exemptions is precisely how the audit step stayed missing.
+  Mutation-tested both ways: deleting the audit step fails it, and so does
+  deleting the nightly `schedule` (the wrong way to "fix" drift).
 - **Verified by execution against two real dependency trees**, not by reading the
   guard: the fixed tree exits 0, the pre-fix tree exits 1 listing all nine. Eight
   unit tests drive the branches with a stub `npm` on PATH — the pattern the verify
