@@ -39,7 +39,7 @@
     "directory": "packages/oxlint-config"
   },
   "peerDependencies": {
-    "oxlint": "^1.76.0"
+    "oxlint": "^1.77.0"
   },
   "dependencies": {
     "eslint-plugin-regexp": "^3.1.1",
@@ -51,7 +51,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^26.0.1",
     "jest": "^30.4.2",
-    "oxlint": "^1.76.0",
+    "oxlint": "^1.77.0",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   }
