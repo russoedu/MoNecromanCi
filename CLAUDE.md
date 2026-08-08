@@ -210,7 +210,39 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### npm audit Now Blocks on an Actionable Advisory (Latest)
+### The e2e Now Installs Go's Linter and the Flutter SDK (Latest)
+
+`@mnci/nx-flutter` is a first-party, published plugin that had **never once been
+exercised in CI**, and the reason was not a missing test — the tests exist. Every
+run reported `⊘ SKIPPED the entire Flutter section` and `⊘ SKIPPED the go lint
+assertion`, because the `e2e-windows` job provisioned nothing beyond Node.
+
+- **The `ci` job's guards could not be reused, and copying them would have looked
+  like a fix.** Every Go and Flutter guard begins with `existsSync('go.mod')` /
+  `existsSync('pubspec.yaml')` **against the working directory**. The e2e job's
+  working directory is this repo, which has neither — the suite generates its
+  workspaces in a temp directory and drives them from there. So the gated guards
+  would skip every time. The e2e job needs **unconditional** provisioning, and a
+  test now asserts these steps contain no marker check.
+- **`continue-on-error` on every provisioning step, deliberately.** An SDK
+  download is a network operation on someone else's infrastructure. The e2e
+  already reports an absent toolchain as a loud `SKIPPED` in its final report, so
+  a flaky clone degrades to exactly today's behaviour instead of reddening a
+  nightly for something that is not mnci's fault — and it cannot degrade silently,
+  because the report names every skip.
+- **The hardcoded Flutter version is a drift risk, so it is guarded rather than
+  introduced and forgotten.** The workflow must hardcode `3.44.8` (the generator
+  emits no e2e job at all), so a test asserts it equals `FLUTTER_SDK_VERSION`.
+  Bumping the constant fails the suite until the workflow follows.
+- All three assertions were mutation-tested: re-adding a `pubspec.yaml` marker
+  check fails, bumping `FLUTTER_SDK_VERSION` fails, and dropping
+  `continue-on-error` fails.
+- **Still unproven: the Flutter section itself.** These steps make it _run_; what
+  it reports on Windows is unknown, because it has never run. Expect the first
+  nightly after this to be informative rather than green, and read it as new
+  coverage rather than a regression.
+
+### npm audit Now Blocks on an Actionable Advisory
 
 `npm audit` reported **9 vulnerabilities (8 high, 1 moderate)** on this repo. All
 9 are fixed, and the gate that should have caught them was already there — doing
