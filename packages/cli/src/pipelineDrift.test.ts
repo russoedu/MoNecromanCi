@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
-import { githubActionsYaml, readMnciConfig } from './overlay'
+import { FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './overlay'
 
 /**
  * This repo's own CI must actually run the pipeline mnci ships.
@@ -142,5 +142,70 @@ describe("this repo's ci.yml against the pipeline overlay.ts generates", () => {
     // pins the reasoning rather than leaving it implicit in the helper above.
     expect(usesOf(actual).some(entry => entry.startsWith('actions/checkout@'))).toBe(true)
     expect(usesOf(generated).some(entry => entry.startsWith('actions/checkout@'))).toBe(true)
+  })
+})
+
+describe('the e2e job provisions the toolchains its own suite needs', () => {
+  const steps = actual.jobs['e2e-windows']?.steps ?? []
+  const names = steps.map(step => step.name ?? '')
+
+  it('installs golangci-lint and the Flutter SDK', () => {
+    // Both had been absent, and the consequence was not a failure but a silence:
+    // the suite reported `SKIPPED the go lint assertion` and `SKIPPED the entire
+    // Flutter section` on every run, so `@mnci/nx-flutter` — a first-party,
+    // published plugin — had never once been exercised end to end.
+    expect(names.some(name => name.includes('golangci-lint'))).toBe(true)
+    expect(names.some(name => name.includes('Flutter SDK'))).toBe(true)
+  })
+
+  it('provisions them UNCONDITIONALLY, not through the marker-gated ci guards', () => {
+    // The trap this exists for. Every Go/Flutter guard in the `ci` job begins with
+    // `existsSync('go.mod')` / `existsSync('pubspec.yaml')` against the working
+    // directory. This job's working directory is the repo itself, which has
+    // neither — the e2e generates its workspaces in a temp directory. Copying the
+    // `ci` job's steps here would therefore skip every time and look like it had
+    // fixed something.
+    const provisioning = steps.filter(step =>
+      ['golangci-lint', 'Flutter SDK', 'Go tool bin'].some(marker =>
+        (step.name ?? '').includes(marker)
+      )
+    )
+
+    expect(provisioning.length).toBeGreaterThan(0)
+    for (const step of provisioning) {
+      expect(step.run).not.toContain("existsSync('go.mod')")
+      expect(step.run).not.toContain("existsSync('pubspec.yaml')")
+    }
+  })
+
+  it('pins the same Flutter version overlay.ts ships, so the two cannot drift', () => {
+    // The workflow hardcodes the version because this job is hand-maintained —
+    // the generator emits no e2e job at all. That is a drift risk of exactly the
+    // kind this file exists to catch, so it is caught here rather than introduced
+    // and forgotten: bump FLUTTER_SDK_VERSION and this fails until the workflow
+    // follows.
+    const flutterSteps = steps.filter(step => (step.name ?? '').includes('Flutter'))
+
+    expect(flutterSteps.length).toBeGreaterThan(0)
+    for (const step of flutterSteps) {
+      expect(step.run).toContain(FLUTTER_SDK_VERSION)
+    }
+  })
+
+  it('lets a toolchain install fail without reddening the run', () => {
+    // An SDK download is a network operation on someone else's infrastructure.
+    // The e2e already reports an absent toolchain as a loud SKIPPED, so degrading
+    // to that beats failing a nightly for something that is not mnci's fault —
+    // and it cannot degrade silently, because the report names every skip.
+    const networkSteps = steps.filter(candidate =>
+      ['golangci-lint', 'Flutter SDK', 'PATH'].some(marker =>
+        (candidate.name ?? '').includes(marker)
+      )
+    )
+
+    expect(networkSteps.length).toBeGreaterThan(0)
+    for (const step of networkSteps) {
+      expect((step as { 'continue-on-error'?: boolean })['continue-on-error']).toBe(true)
+    }
   })
 })

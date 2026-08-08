@@ -232,6 +232,39 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # The Go and Flutter toolchains, provisioned UNCONDITIONALLY — which is the
+      # whole point, and why these are not the `ci` job's guards.
+      #
+      # Every guard in the `ci` job is gated on `existsSync('go.mod')` /
+      # `existsSync('pubspec.yaml')` in the working directory. This job's working
+      # directory is *this repo*, which has neither: the e2e generates its
+      # workspaces in a temp directory and drives them from there. So the gated
+      # guards would skip here every time, which is exactly what had been
+      # happening — the suite reported `SKIPPED the go lint assertion` and
+      # `SKIPPED the entire Flutter section` on every run, so `@mnci/nx-flutter`
+      # (a first-party, published plugin) had NEVER been exercised in CI.
+      #
+      # `continue-on-error` on both installs is deliberate. The e2e already treats
+      # an absent toolchain as a loud SKIPPED in its final report, so a flaky SDK
+      # download degrades to the behaviour we have today rather than turning the
+      # nightly red for something that is not mnci's fault. A silent pass is not
+      # possible: the report names every skipped section.
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+        name: Install golangci-lint (so the e2e's Go lint assertion runs)
+        continue-on-error: true
+
+      - run: node -e "const cp=require('node:child_process'),fs=require('node:fs'),path=require('node:path');const r=cp.spawnSync('go',['env','GOPATH'],{encoding:'utf8'});if(r.status!==0){console.log('Could not read GOPATH - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,path.join(r.stdout.trim(),'bin')+require('node:os').EOL)"
+        name: Add Go tool bin to PATH
+        continue-on-error: true
+
+      - run: node -e "const cp=require('node:child_process'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');const sdk=path.join(os.homedir(),'.mnci-flutter-3.44.8');if(fs.existsSync(sdk)){console.log('Flutter SDK already at '+sdk+' - skipping.');process.exit(0)}process.exit(cp.spawnSync('git',['clone','--depth','1','--branch','3.44.8','https://github.com/flutter/flutter.git',sdk],{stdio:'inherit'}).status ?? 1)"
+        name: Install the Flutter SDK (3.44.8, so the e2e's Flutter section runs)
+        continue-on-error: true
+
+      - run: node -e "const fs=require('node:fs'),path=require('node:path'),os=require('node:os');const bin=path.join(os.homedir(),'.mnci-flutter-3.44.8','bin');if(!fs.existsSync(bin)){console.log('No Flutter SDK to publish - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+os.EOL)"
+        name: Add the Flutter SDK to PATH
+        continue-on-error: true
+
       - run: npx nx build @mnci/cli
         name: Build @mnci/cli
 
