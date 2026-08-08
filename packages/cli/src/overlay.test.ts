@@ -484,11 +484,11 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain(`'-m','pip','install','--quiet'`)
   })
 
-  it('runs npm audit right after npm ci, and pip-audit right after the workspace-wide Python install, both non-blocking', () => {
+  it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     const npmInstallIndex = pipeline.indexOf('npm ci')
-    const npmAuditIndex = pipeline.indexOf('npm audit --audit-level=high')
+    const npmAuditIndex = pipeline.indexOf(`'audit','--json'`)
     const pythonWorkspaceInstallIndex = pipeline.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
@@ -498,10 +498,16 @@ describe('azurePipelinesYaml', () => {
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
     expect(pipAuditIndex).toBeGreaterThan(pythonWorkspaceInstallIndex)
     expect(syncCheckIndex).toBeGreaterThan(pipAuditIndex)
-    // Non-blocking: neither step's failure can fail the pipeline.
-    expect(pipeline).toContain('npm audit --audit-level=high || echo')
-    expect(pipeline).toContain('displayName: npm audit (non-blocking)')
+    // The two audits deliberately DIFFER now, and the asymmetry is the point:
+    // `npm audit --json` reports `fixAvailable` per advisory so the actionable
+    // ones can block, while pip-audit's output carries no equivalent field, so
+    // making it blocking would go red on findings nobody can act on.
+    expect(pipeline).toContain('displayName: npm audit (fails on an actionable advisory)')
     expect(pipeline).toContain('displayName: pip-audit (non-blocking)')
+    // The warn-only form must not come back — it exited 0 on all nine of this
+    // repo's own fixable advisories, and its `--audit-level=high` also skipped
+    // the moderate one entirely.
+    expect(pipeline).not.toContain('npm audit --audit-level=high || echo')
   })
 
   it('seeds the Go toolchain before the build, and skips cleanly without a root go.mod', () => {
@@ -757,11 +763,11 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain(`'-m','pip','install','--quiet'`)
   })
 
-  it('runs npm audit right after npm ci, and pip-audit right after the workspace-wide Python install, both non-blocking', () => {
+  it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     const npmInstallIndex = workflow.indexOf('npm ci')
-    const npmAuditIndex = workflow.indexOf('npm audit --audit-level=high')
+    const npmAuditIndex = workflow.indexOf(`'audit','--json'`)
     const pythonWorkspaceInstallIndex = workflow.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
@@ -771,9 +777,9 @@ describe('githubActionsYaml', () => {
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
     expect(pipAuditIndex).toBeGreaterThan(pythonWorkspaceInstallIndex)
     expect(syncCheckIndex).toBeGreaterThan(pipAuditIndex)
-    expect(workflow).toContain('npm audit --audit-level=high || echo')
-    expect(workflow).toContain('name: npm audit (non-blocking)')
+    expect(workflow).toContain('name: npm audit (fails on an actionable advisory)')
     expect(workflow).toContain('name: pip-audit (non-blocking)')
+    expect(workflow).not.toContain('npm audit --audit-level=high || echo')
   })
 
   it('seeds the Go toolchain before the build, using GITHUB_PATH rather than the Azure logging command', () => {
@@ -1046,6 +1052,154 @@ describeOnPosix('the verify guard, executed', () => {
 
     expect(azureStep?.script).toBe(guard)
     expect(githubStep?.run).toBe(guard)
+  })
+})
+
+/**
+ * One advisory, in the shape `npm audit --json` emits.
+ *
+ * @param name - Package name.
+ * @param severity - Advisory severity.
+ * @param fixAvailable - Whether a published fix exists; an object when the fix
+ * needs a semver-major bump, which is how npm reports it.
+ * @returns A `vulnerabilities` entry.
+ */
+const advisory = (
+  name: string,
+  severity: string,
+  fixAvailable: boolean | { isSemVerMajor: boolean }
+): Record<string, unknown> => ({ name, severity, fixAvailable })
+
+/**
+ * Wraps advisories in a full `npm audit --json` report.
+ *
+ * @param entries - The advisories.
+ * @returns The JSON text a stub `npm` should print.
+ */
+const auditReport = (...entries: Record<string, unknown>[]): string =>
+  JSON.stringify({
+    vulnerabilities: Object.fromEntries(entries.map(entry => [entry.name as string, entry]))
+  })
+
+// The audit step decides whether a known-vulnerable dependency can reach `main`,
+// and the version it replaced was warn-only on a justification that had gone
+// stale. Asserting on its source text would only prove the branches were typed —
+// so these run the real emitted command with a stub `npm` on PATH feeding it
+// canned `npm audit --json`, and check the exit status it chooses.
+//
+// Skipped on Windows for the reason the verify-guard harness is: a PATH stub under
+// cmd.exe needs a `.cmd` shim, and this platform's job here is the e2e suite.
+describeOnPosix('the npm audit step, executed', () => {
+  const guard = extractGuard(githubActionsYaml('ubuntu-latest'), 'npm audit')
+
+  let workspace: string
+
+  /**
+   * Runs the real guard against a canned audit report.
+   *
+   * @param report - What the stub `npm` prints on stdout.
+   * @param exitCode - The stub's exit status (npm audit exits non-zero when it
+   * finds anything, which the guard must not confuse with a failure).
+   * @returns The guard's exit status and its stdout.
+   */
+  function run(report: string, exitCode = 1): { status: number | null; out: string } {
+    writeFileSync(join(workspace, 'stub-bin/report.json'), report)
+    const result = spawnSync(guard, {
+      cwd: workspace,
+      shell: true,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        STUB_EXIT: String(exitCode),
+        PATH: `${join(workspace, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`
+      }
+    })
+
+    return { status: result.status, out: `${result.stdout}${result.stderr}` }
+  }
+
+  beforeEach(() => {
+    workspace = mkdtempSync(join(tmpdir(), 'mnci-audit-'))
+    mkdirSync(join(workspace, 'stub-bin'))
+    // The stub ignores its arguments and prints the canned report, so the test
+    // controls the finding set without needing a registry or a lockfile.
+    writeFileSync(
+      join(workspace, 'stub-bin/npm'),
+      `#!/bin/sh\ncat "${join(workspace, 'stub-bin/report.json')}"\nexit \${STUB_EXIT:-1}\n`,
+      { mode: 0o755 }
+    )
+  })
+
+  afterEach(() => rmSync(workspace, { recursive: true, force: true }))
+
+  it('fails on a high advisory that has a published fix', () => {
+    // The case that matters: this is what all nine of this monorepo's own
+    // advisories looked like, every one fixable by an `overrides` entry, while the
+    // warn-only step printed them and exited 0.
+    const { status, out } = run(auditReport(advisory('js-yaml', 'high', true)))
+
+    expect(status).toBe(1)
+    expect(out).toContain('BLOCKING [high] js-yaml')
+  })
+
+  it('fails on a MODERATE advisory with a fix, which --audit-level=high missed', () => {
+    // Not a hypothetical: the `postcss` advisory in this repo was moderate and
+    // fixable, and the step it replaced would have passed it silently.
+    const { status, out } = run(auditReport(advisory('postcss', 'moderate', true)))
+
+    expect(status).toBe(1)
+    expect(out).toContain('BLOCKING [moderate] postcss')
+  })
+
+  it('PASSES a high advisory with no fix available, and says why', () => {
+    // The whole of the original concern, kept: going red for something nobody in
+    // this workspace can fix teaches people to ignore the gate.
+    const { status, out } = run(auditReport(advisory('upstream-only', 'high', false)))
+
+    expect(status).toBe(0)
+    expect(out).toContain('NO fix available upstream')
+  })
+
+  it('passes a low advisory even with a fix, below the blocking threshold', () => {
+    const { status, out } = run(auditReport(advisory('trivial', 'low', true)))
+
+    expect(status).toBe(0)
+    expect(out).toContain('below the blocking threshold')
+  })
+
+  it('blocks on the actionable one even when an unactionable one is present', () => {
+    // A mixed report is the realistic case, and the unactionable entry must not
+    // provide cover for the actionable one.
+    const { status, out } = run(
+      auditReport(advisory('upstream-only', 'critical', false), advisory('fixable', 'high', true))
+    )
+
+    expect(status).toBe(1)
+    expect(out).toContain('BLOCKING [high] fixable')
+    expect(out).toContain('NO fix available upstream')
+  })
+
+  it('flags a fix that needs a semver-major bump, rather than implying a one-liner', () => {
+    const { status, out } = run(auditReport(advisory('big', 'high', { isSemVerMajor: true })))
+
+    expect(status).toBe(1)
+    expect(out).toContain('(semver-major)')
+  })
+
+  it('passes a clean report', () => {
+    const { status, out } = run(auditReport(), 0)
+
+    expect(status).toBe(0)
+    expect(out).toContain('none actionable')
+  })
+
+  it('does NOT block when the audit itself is broken', () => {
+    // A gate that cannot read its input should say so, not guess. A registry
+    // outage or an npm output change must not read as "vulnerable".
+    const { status, out } = run('not json at all', 1)
+
+    expect(status).toBe(0)
+    expect(out).toContain('not blocking on a broken audit')
   })
 })
 

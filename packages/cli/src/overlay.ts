@@ -1692,14 +1692,20 @@ const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),pat
  * Python guard here uses).
  *
  * **Deliberately non-blocking**: `pip-audit`'s own exit code is discarded
- * (`process.exit(0)` always) rather than failing the build — the sibling
- * `npm audit` step ({@link NPM_AUDIT_STEP}) makes the identical choice, and
- * for the identical reason: an upstream-only advisory with no
- * user-actionable fix (a transitive dependency of a pinned tool, not
- * patchable by editing this workspace's own manifest) would otherwise turn
- * every build red for a problem nobody here can fix. See
- * {@link NPM_AUDIT_STEP}'s remarks for the concrete example this reasoning
- * is drawn from.
+ * (`process.exit(0)` always) rather than failing the build. An upstream-only
+ * advisory with no user-actionable fix (a transitive dependency of a pinned
+ * tool, not patchable by editing this workspace's own manifest) would
+ * otherwise turn every build red for a problem nobody here can fix.
+ *
+ * **This no longer matches its npm sibling, and the asymmetry is a limitation
+ * rather than a preference.** {@link NPM_AUDIT_STEP} now fails on an advisory
+ * that has a published fix and passes the rest, because `npm audit --json`
+ * reports `fixAvailable` per advisory. `pip-audit`'s output carries no
+ * equivalent field, so the actionable/unactionable line cannot be drawn here
+ * without resolving each advisory's fixed version by hand. Until that is
+ * built, report-only is the honest choice: the alternative is a gate that goes
+ * red on findings nobody can act on. Do not "align" the two by making this one
+ * blocking — that trades a weak gate for a false one.
  */
 const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"`
 
@@ -1915,32 +1921,52 @@ const FLUTTER_TOOL_PATH_GITHUB = `node -e "${FLUTTER_TOOL_PATH_PRELUDE}if(!proce
 const FLUTTER_PUB_GET_GUARD = `node -e "const fs=require('node:fs');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('flutter',['pub','get'],{stdio:'inherit',shell:process.platform==='win32'}).status ?? 1)"`
 
 /**
- * The `npm audit` step run right after `npm ci`, non-blocking (warn-only).
+ * The `npm audit` step: blocks on an **actionable** advisory, reports the rest.
  *
  * @remarks
- * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
- * — a single-line shell command, not a `node -e` guard, since it needs no
- * existence check (`package-lock.json` always exists). `||` is a standard
- * conditional-execution operator in both `cmd.exe` and POSIX `sh` (verified
- * empirically elsewhere in this file, e.g. `git init -q -b main && git add -A`
- * in the real e2e suite), so this one line runs unchanged on every agent OS.
+ * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  *
- * **Deliberately non-blocking.** Verified empirically (a real `npm audit` on
- * this monorepo's own dependency tree) that every flagged vulnerability
- * traced back to `nx`'s and `verdaccio`'s own bundled transitive
- * dependencies, both already at their latest published release — nothing an
- * edit to *this* workspace's manifest could fix, only a future upstream
- * release. A hard-failing audit step would have turned CI red for a problem
- * with no user-actionable fix, for as long as upstream took to patch it. The
- * real, current fix for a genuinely actionable finding (targeted
- * `package.json` `overrides` on just the vulnerable transitive package, not
- * a blanket `--force`) is exactly what this monorepo's own `fix(deps)`
- * commit did — a manual, reviewed response, not something CI should attempt
- * automatically. So this step's job is visibility (a clearly labelled
- * section in every CI log), not enforcement.
+ * **This replaced a warn-only step, and the reason is that the step's own
+ * justification had stopped being true.** It used to be
+ * `npm audit --audit-level=high || echo ...`, documented as non-blocking
+ * because "every flagged vulnerability traced back to `nx`'s and `verdaccio`'s
+ * own bundled transitive dependencies ... nothing an edit to *this* workspace's
+ * manifest could fix". That was measured, and it has since inverted: a real
+ * audit of this monorepo reported **9 advisories, 9 of them with
+ * `fixAvailable`**, and every one was fixed by a targeted `overrides` entry —
+ * exactly the edit the old note said was impossible. Same shape as the stale
+ * `js-yaml` pin that audit run uncovered: a decision resting on a measurement
+ * nothing re-checks.
+ *
+ * So the split is **actionable vs not**, which is a property `npm audit --json`
+ * reports per advisory (`fixAvailable`) rather than a severity guess:
+ *
+ * - A published fix exists, at `moderate` or above → **exit 1**. The remedy is a
+ *   reviewed `overrides` entry, and leaving it to a human who never sees a red
+ *   build is how a fix sits unapplied for weeks.
+ * - No fix exists upstream → printed, exit 0. This preserves the whole of the
+ *   original concern: going red for something nobody in this workspace can fix
+ *   is a gate that only teaches people to ignore it.
+ *
+ * Three deliberate choices worth not undoing:
+ *
+ * - **Dev dependencies are included.** Measured: `npm audit --omit=dev` on the
+ *   tree that had those 9 advisories reports **0**. Every one arrived through a
+ *   devDependency (verdaccio, ts-jest's istanbul chain, eslint-plugin-tsdoc,
+ *   commitlint, Vite). Omitting them would have reported nothing and verified
+ *   nothing.
+ * - **The threshold is `moderate`, not `high`.** The old `--audit-level=high`
+ *   would have missed the `postcss` advisory outright, which was moderate and
+ *   had a fix.
+ * - **A broken audit does not fail the build.** No parseable JSON (registry
+ *   outage, npm change) exits 0 with the reason printed. A gate that cannot read
+ *   its input should say so, not guess.
+ *
+ * Verified by execution against two real dependency trees, not by reading it:
+ * this monorepo's fixed tree exits 0, and the pre-fix tree exits 1 listing all
+ * nine. The unit tests drive the remaining branches with a stub `npm` on PATH.
  */
-const NPM_AUDIT_STEP =
-  'npm audit --audit-level=high || echo npm audit found vulnerabilities, see log above - non-blocking, run npm audit locally to inspect'
+const NPM_AUDIT_STEP = `node -e "const cp=require('node:child_process');const r=cp.spawnSync('npm',['audit','--json'],{encoding:'utf8',shell:process.platform==='win32',maxBuffer:33554432});let d;try{d=JSON.parse(r.stdout)}catch{console.log('npm audit produced no JSON (exit '+r.status+') - not blocking on a broken audit.');process.exit(0)}const all=Object.values(d.vulnerabilities||{});const BLOCK=['critical','high','moderate'];const act=all.filter(v=>v.fixAvailable&&BLOCK.includes(v.severity));const rest=all.filter(v=>!act.includes(v));for(const v of rest)console.log('  note ['+v.severity+'] '+v.name+(v.fixAvailable?' - fix available, below the blocking threshold':' - NO fix available upstream, nothing to do here'));if(act.length===0){console.log('npm audit - '+all.length+' advisory(ies), none actionable at moderate or above.');process.exit(0)}for(const v of act)console.log('  BLOCKING ['+v.severity+'] '+v.name+' - fix available'+(v.fixAvailable&&v.fixAvailable.isSemVerMajor?' (semver-major)':''));console.log('Each has a published fix. Add a targeted overrides entry in package.json rather than npm audit fix --force.');process.exit(1)"`
 
 /**
  * The Nx targets every CI run verifies.
@@ -2241,11 +2267,11 @@ steps:
     env:
       ${npmAuthName}: ${npmAuthValue}
 
-  # Non-blocking: surfaces known-vulnerable dependencies in every CI log
-  # without failing the build over an upstream-only advisory nobody here can
-  # fix (see NPM_AUDIT_STEP's remarks in overlay.ts for why).
+  # Fails ONLY on an advisory that has a published fix, at moderate or above;
+  # anything upstream has not fixed is printed and passes. See NPM_AUDIT_STEP's
+  # remarks for why that split replaced a warn-only step.
   - script: ${NPM_AUDIT_STEP}
-    displayName: npm audit (non-blocking)
+    displayName: npm audit (fails on an actionable advisory)
 
   # Installs the fixed Python toolchain (ruff, pytest, build, twine, pip-audit)
   # — written by 'mnci add' to requirements-dev.txt on the first Python
@@ -2501,11 +2527,11 @@ jobs:
         env:
           ${npmAuthName}: ${npmAuthValue}
 
-      # Non-blocking: surfaces known-vulnerable dependencies in every CI log
-      # without failing the build over an upstream-only advisory nobody here
-      # can fix (see NPM_AUDIT_STEP's remarks in overlay.ts for why).
+      # Fails ONLY on an advisory that has a published fix, at moderate or
+      # above; anything upstream has not fixed is printed and passes. See
+      # NPM_AUDIT_STEP's remarks for why that split replaced a warn-only step.
       - run: ${NPM_AUDIT_STEP}
-        name: npm audit (non-blocking)
+        name: npm audit (fails on an actionable advisory)
 
       # Installs the fixed Python toolchain (ruff, pytest, build, twine,
       # pip-audit) — written by 'mnci add' to requirements-dev.txt on the

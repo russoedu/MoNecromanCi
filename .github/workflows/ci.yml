@@ -61,6 +61,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # Fails ONLY on an advisory that has a published fix, at moderate or
+      # above; anything upstream has not fixed is printed and passes. See
+      # NPM_AUDIT_STEP's remarks for why that split replaced a warn-only step.
+      - run: node -e "const cp=require('node:child_process');const r=cp.spawnSync('npm',['audit','--json'],{encoding:'utf8',shell:process.platform==='win32',maxBuffer:33554432});let d;try{d=JSON.parse(r.stdout)}catch{console.log('npm audit produced no JSON (exit '+r.status+') - not blocking on a broken audit.');process.exit(0)}const all=Object.values(d.vulnerabilities||{});const BLOCK=['critical','high','moderate'];const act=all.filter(v=>v.fixAvailable&&BLOCK.includes(v.severity));const rest=all.filter(v=>!act.includes(v));for(const v of rest)console.log('  note ['+v.severity+'] '+v.name+(v.fixAvailable?' - fix available, below the blocking threshold':' - NO fix available upstream, nothing to do here'));if(act.length===0){console.log('npm audit - '+all.length+' advisory(ies), none actionable at moderate or above.');process.exit(0)}for(const v of act)console.log('  BLOCKING ['+v.severity+'] '+v.name+' - fix available'+(v.fixAvailable&&v.fixAvailable.isSemVerMajor?' (semver-major)':''));console.log('Each has a published fix. Add a targeted overrides entry in package.json rather than npm audit fix --force.');process.exit(1)"
+        name: npm audit (fails on an actionable advisory)
+
       # Installs the fixed Python toolchain (ruff, pytest, build, twine) — written
       # by 'mnci add' to requirements-dev.txt on the first Python project. Plain
       # pip, no uv/Poetry: portable guard skips cleanly on a workspace with none.
@@ -74,6 +80,45 @@ jobs:
       # lint/test time too. Portable guard skips cleanly on a workspace with none.
       - run: node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py,args,{stdio:'inherit'}).status ?? 1)"
         name: Install Python project dependencies (editable, workspace-wide)
+
+      # Non-blocking, same reasoning as the npm audit step above. Runs after
+      # the workspace-wide install so it scans the workspace's actual
+      # dependency set, not just the fixed toolchain.
+      - run: node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"
+        name: pip-audit (non-blocking)
+
+      # Go, if the workspace has any: hosted runners ship the toolchain, so
+      # only the module cache and the linter need seeding. Both guards skip
+      # cleanly on a workspace with no root go.mod.
+      - run: node -e "if(!require('node:fs').existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('go',['mod','download'],{stdio:'inherit'}).status ?? 1)"
+        name: Download Go module dependencies
+
+      # golangci-lint is what the generated Go lint target actually runs (the
+      # plugin's own default is 'go fmt', which only reformats). 'go install'
+      # drops it in GOPATH/bin, which is not on PATH by default on a hosted
+      # runner — so publish it for every later step in the job.
+      - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}if(cp.spawnSync('golangci-lint',['--version'],{stdio:'ignore'}).status===0){console.log('golangci-lint already installed - skipping.');process.exit(0)}process.exit(cp.spawnSync('go',['install','github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest'],{stdio:'inherit'}).status ?? 1)"
+        name: Install golangci-lint
+
+      - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}const r=cp.spawnSync('go',['env','GOPATH'],{encoding:'utf8'});if(r.status!==0){console.log('Could not resolve GOPATH - skipping.');process.exit(0)}const bin=require('node:path').join(r.stdout.trim(),'bin');if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+'\n')"
+        name: Add Go tool bin to PATH
+
+      # Flutter, if the workspace has any. Unlike Python and Go, hosted runners
+      # do NOT ship the Flutter SDK, so this installs it (shallow git clone at
+      # a pinned tag) and puts it on PATH. All three guards skip cleanly on a
+      # workspace with no root pubspec.yaml, and the install also skips when an
+      # SDK is already on PATH.
+      - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}if(cp.spawnSync('flutter',['--version'],{stdio:'ignore',shell:process.platform==='win32'}).status===0){console.log('Flutter SDK already on PATH - skipping.');process.exit(0)}const sdk=require('node:path').join(require('node:os').homedir(),'.mnci-flutter-3.44.8');if(fs.existsSync(sdk)){console.log('Flutter SDK already installed at '+sdk+' - skipping.');process.exit(0)}process.exit(cp.spawnSync('git',['clone','--depth','1','--branch','3.44.8','https://github.com/flutter/flutter.git',sdk],{stdio:'inherit'}).status ?? 1)"
+        name: Install the Flutter SDK (3.44.8)
+
+      - run: node -e "const fs=require('node:fs'),path=require('node:path');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}const sdk=require('node:path').join(require('node:os').homedir(),'.mnci-flutter-3.44.8');if(!fs.existsSync(sdk)){console.log('Flutter SDK was not installed by mnci (already on PATH) - skipping.');process.exit(0)}const bin=path.join(sdk,'bin');if(!process.env.GITHUB_PATH){console.log('Not running in GitHub Actions - skipping.');process.exit(0)}fs.appendFileSync(process.env.GITHUB_PATH,bin+'\n')"
+        name: Add the Flutter SDK to PATH
+
+      # One command resolves EVERY Dart dependency, internal and external, for
+      # the whole workspace: the projects are pub workspace members, so this
+      # writes a single root pubspec.lock they all share.
+      - run: node -e "const fs=require('node:fs');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('flutter',['pub','get'],{stdio:'inherit',shell:process.platform==='win32'}).status ?? 1)"
+        name: Resolve Dart dependencies (one pub get for the whole workspace)
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
