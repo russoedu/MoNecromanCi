@@ -31,6 +31,29 @@ export interface Finding {
 const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[0]
 
 /**
+ * Normalises a `globSync` result to forward slashes.
+ *
+ * @remarks
+ * Load-bearing on Windows, where `globSync` returns `packages\name\file`. Two
+ * checks here split those results on `'/'`, and on a backslash path
+ * `lastIndexOf('/')` is `-1`, so `slice(0, -1)` silently drops the last
+ * character instead of the filename. The resulting path resolves to nothing,
+ * which turned {@link checkVersionActions} — the highest-consequence check in
+ * this file — into a check that reported a failure for EVERY publishable
+ * Dart/Python package on Windows, including correctly configured ones, under a
+ * mangled name. A doctor that cries wolf on a healthy workspace is worse than
+ * one that stays quiet.
+ *
+ * @param path - A workspace-relative path from `globSync`.
+ * @returns The same path with forward slashes.
+ * @throws Never - performs a pure string replacement.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function toPosix(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+/**
  * Checks that the workspace has exactly one ESLint config, at the root.
  *
  * @remarks
@@ -46,10 +69,12 @@ const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[
  * @typeParam None - this function has no generic type parameters.
  */
 function checkEslintConfigs(workspaceRoot: string): Finding[] {
-  const rootConfigs = globSync('eslint.config.{js,mjs,cjs,ts,mts,cts}', { cwd: workspaceRoot })
+  const rootConfigs = globSync('eslint.config.{js,mjs,cjs,ts,mts,cts}', {
+    cwd: workspaceRoot
+  }).map(config => toPosix(config))
   const projectConfigs = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
     cwd: workspaceRoot
-  })
+  }).map(config => toPosix(config))
 
   return [
     {
@@ -357,7 +382,7 @@ function checkVersionActions(workspaceRoot: string): Finding[] {
   const candidates = [
     ...globSync('packages/*/pubspec.yaml', { cwd: workspaceRoot }),
     ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot })
-  ]
+  ].map(manifest => toPosix(manifest))
   return candidates.flatMap(manifest => {
     const projectRoot = manifest.slice(0, manifest.lastIndexOf('/'))
     const projectJsonPath = join(workspaceRoot, projectRoot, 'project.json')
@@ -376,6 +401,149 @@ function checkVersionActions(workspaceRoot: string): Finding[] {
         ok: hasOverride,
         detail: 'missing — nx release aborts for the ENTIRE workspace, not just this project',
         remedy: `add release.version.versionActions to ${projectRoot}/project.json`
+      }
+    ]
+  })
+}
+
+/**
+ * The target options whose value is a single path to a file that must already
+ * exist for the target to run.
+ *
+ * @remarks
+ * Deliberately short. `outputPath` is an output, not an input, so it is absent
+ * by design; `assets` takes globs and would need matching rather than an
+ * existence test. These three are the ones whose absence produces a failure
+ * that reads as a compiler problem rather than a config problem.
+ */
+const TARGET_FILE_OPTIONS = ['main', 'tsConfig', 'packageJson'] as const
+
+/**
+ * Reads every Nx target a project declares, from either place it can declare them.
+ *
+ * @remarks
+ * A project can carry targets in `project.json` **and** in `package.json`'s `nx`
+ * block, and a real workspace was found doing both for one project with
+ * different `main` values in each. Both are read here rather than whichever is
+ * found first, so a stale definition cannot hide behind the live one.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param projectRoot - The project's workspace-relative directory.
+ * @returns One entry per declaring file, with that file's targets.
+ * @throws Never - an unreadable or absent manifest contributes no targets.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function declaredTargets(
+  workspaceRoot: string,
+  projectRoot: string
+): { source: string; targets: Record<string, { options?: Record<string, unknown> }> }[] {
+  const sources: {
+    source: string
+    targets: Record<string, { options?: Record<string, unknown> }>
+  }[] = []
+  for (const [file, extract] of [
+    ['project.json', (json: Record<string, unknown>) => json['targets']],
+    [
+      'package.json',
+      (json: Record<string, unknown>) => (json['nx'] as Record<string, unknown>)?.['targets']
+    ]
+  ] as const) {
+    try {
+      const targets = extract(
+        readJson<Record<string, unknown>>(join(workspaceRoot, projectRoot, file))
+      )
+      if (targets && typeof targets === 'object') {
+        sources.push({
+          source: `${projectRoot}/${file}`,
+          targets: targets as Record<string, { options?: Record<string, unknown> }>
+        })
+      }
+    } catch {
+      // No manifest, or unparseable — nothing to check, and the other checks
+      // already report a workspace that broken.
+    }
+  }
+  return sources
+}
+
+/**
+ * Checks that every target option naming a file points at a file that exists.
+ *
+ * @remarks
+ * Found in a real hand-built workspace, three times over in one repo: a build
+ * target whose `main` was `src/index.ts` in `project.json` and `src/main.ts` in
+ * the same project's `package.json`, with **neither** file present, and a
+ * library whose `tsConfig` named a `tsconfig.lib.json` that had never been
+ * written.
+ *
+ * Worth a check rather than left to the build because of how it surfaces. Nx
+ * hands the path to the executor unvalidated, so the failure arrives as a
+ * TypeScript or esbuild error about the compiler finding no inputs — which
+ * reads as a broken tsconfig, and sends people to edit the one file that is
+ * fine. Nothing anywhere names the missing file.
+ *
+ * Paths carrying an Nx token (`{workspaceRoot}`, `{projectRoot}`) are skipped:
+ * they are resolved by Nx at run time, so testing them literally would report a
+ * file that is never meant to exist under that name.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns One finding per target option pointing at a missing file.
+ * @throws Never - only reads the filesystem.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkTargetFilesExist(workspaceRoot: string): Finding[] {
+  const projectRoots = new Set(
+    [
+      ...globSync('{apps,libs,packages}/*/project.json', { cwd: workspaceRoot }),
+      ...globSync('{apps,libs,packages}/*/package.json', { cwd: workspaceRoot })
+    ].map(manifest => toPosix(manifest).split('/').slice(0, 2).join('/'))
+  )
+
+  return [...projectRoots].flatMap(projectRoot =>
+    declaredTargets(workspaceRoot, projectRoot).flatMap(({ source, targets }) =>
+      Object.entries(targets).flatMap(([targetName, target]) =>
+        checkOneTargetsFiles(workspaceRoot, source, targetName, target)
+      )
+    )
+  )
+}
+
+/**
+ * Checks one target's file-valued options.
+ *
+ * @remarks
+ * Split out of {@link checkTargetFilesExist} so the sweep stays a flat
+ * comprehension rather than four nested loops around a pair of `continue`s.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param source - The manifest that declared the target, for the message.
+ * @param targetName - The target's name, for the message.
+ * @param target - The target definition to inspect.
+ * @returns One finding per option pointing at a missing file.
+ * @throws Never - only reads the filesystem.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkOneTargetsFiles(
+  workspaceRoot: string,
+  source: string,
+  targetName: string,
+  target: { options?: Record<string, unknown> }
+): Finding[] {
+  return TARGET_FILE_OPTIONS.flatMap(option => {
+    const value = target?.options?.[option]
+    // A token (`{workspaceRoot}`, `{projectRoot}`) is resolved by Nx at run
+    // time, so a literal existence test would report a file that is never
+    // meant to exist under that name.
+    const checkable = typeof value === 'string' && !value.includes('{')
+    if (!checkable || fileExists(join(workspaceRoot, value))) {
+      return []
+    }
+    return [
+      {
+        check: `${source} → ${targetName}.${option} points at a real file`,
+        ok: false,
+        detail: `${value} does not exist — the target fails as if the compiler were misconfigured`,
+        remedy: `create ${value}, or correct ${option} in ${source}`
       }
     ]
   })
@@ -441,6 +609,7 @@ export function collectFindings(workspaceRoot: string): Finding[] {
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
     ...checkVersionActions(workspaceRoot),
+    ...checkTargetFilesExist(workspaceRoot),
     checkSync(workspaceRoot)
   ].filter((finding): finding is Finding => finding !== undefined)
 }

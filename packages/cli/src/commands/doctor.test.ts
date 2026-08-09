@@ -234,6 +234,93 @@ describe('collectFindings', () => {
     expect(findingFor(collectFindings(workspaceRoot), 'packages/shared')?.ok).toBe(true)
   })
 
+  it('catches a build target whose main names a file that was never written', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'apps/api/src'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'apps/api/project.json'),
+      JSON.stringify({
+        targets: { build: { options: { main: 'apps/api/src/index.ts' } } }
+      })
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'build.main')
+
+    // Nx never validates this, so the build fails as a compiler error about
+    // finding no inputs — and nothing names the file that is actually missing.
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('apps/api/src/index.ts')
+    expect(finding?.remedy).toContain('apps/api/project.json')
+  })
+
+  it('reads targets from BOTH project.json and package.json, so a stale one cannot hide', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'apps/api/src'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/api/src/index.ts'), 'export {}')
+    // The real shape this came from: project.json's main exists, package.json's
+    // does not, and the two disagree about what the entry point even is.
+    writeFileSync(
+      join(workspaceRoot, 'apps/api/project.json'),
+      JSON.stringify({ targets: { build: { options: { main: 'apps/api/src/index.ts' } } } })
+    )
+    writeFileSync(
+      join(workspaceRoot, 'apps/api/package.json'),
+      JSON.stringify({
+        name: '@demo/api',
+        nx: { targets: { build: { options: { main: 'apps/api/src/main.ts' } } } }
+      })
+    )
+
+    const findings = collectFindings(workspaceRoot).filter(f => f.check.includes('build.main'))
+
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.check).toContain('package.json')
+    expect(findings[0]?.detail).toContain('apps/api/src/main.ts')
+  })
+
+  it('catches a tsConfig naming a tsconfig that does not exist', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'libs/models/src'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'libs/models/src/index.ts'), 'export {}')
+    writeFileSync(
+      join(workspaceRoot, 'libs/models/project.json'),
+      JSON.stringify({
+        targets: {
+          build: {
+            options: { main: 'libs/models/src/index.ts', tsConfig: 'libs/models/tsconfig.lib.json' }
+          }
+        }
+      })
+    )
+
+    expect(findingFor(collectFindings(workspaceRoot), 'build.tsConfig')?.ok).toBe(false)
+  })
+
+  it('passes targets whose files exist, and never resolves an Nx token literally', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'apps/api/src'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/api/src/main.ts'), 'export {}')
+    writeFileSync(join(workspaceRoot, 'apps/api/tsconfig.json'), '{}')
+    writeFileSync(
+      join(workspaceRoot, 'apps/api/project.json'),
+      JSON.stringify({
+        targets: {
+          build: {
+            options: {
+              main: 'apps/api/src/main.ts',
+              tsConfig: 'apps/api/tsconfig.json',
+              // Resolved by Nx at run time; testing it literally would report a
+              // file that is never meant to exist under this name.
+              packageJson: '{projectRoot}/package.json'
+            }
+          }
+        }
+      })
+    )
+
+    expect(collectFindings(workspaceRoot).filter(f => f.check.includes('apps/api'))).toEqual([])
+  })
+
   it('reports a failing nx sync:check', () => {
     seedHealthyWorkspace()
     mockRunShell.mockImplementation(() => 1)
