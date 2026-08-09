@@ -194,12 +194,30 @@ function goTestTarget(): Record<string, unknown> {
  * The executor's own default is `go fmt`, which only reformats — pinning
  * `linter` to `golangci-lint` is what makes this an actual linter.
  *
+ * **`parallelism: false` is not a performance knob, it is a correctness fix.**
+ * `golangci-lint` takes a machine-global lock and refuses to run beside another
+ * copy of itself, exiting non-zero with `parallel golangci-lint is running`. Nx
+ * runs `lint` across projects concurrently by default, so a workspace with two
+ * or more Go projects failed `nx run-many -t lint` at random — one project
+ * reporting `0 issues` while a sibling died on the lock. Nothing to do with the
+ * Go code, and the failure moves between projects from run to run, which is what
+ * makes it so unpleasant to diagnose from a CI log.
+ *
+ * Found the first time the e2e ever ran this assertion: `golangci-lint` had
+ * never been installed on the runner, so the whole check reported SKIPPED and
+ * this shipped unnoticed. Go lint is now serialised across projects; the other
+ * targets are untouched and still run in parallel.
+ *
  * @returns The nx target object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
 function goLintTarget(): Record<string, unknown> {
-  return { executor: '@nx-go/nx-go:lint', options: { linter: 'golangci-lint', args: ['run'] } }
+  return {
+    executor: '@nx-go/nx-go:lint',
+    parallelism: false,
+    options: { linter: 'golangci-lint', args: ['run'] }
+  }
 }
 
 /**

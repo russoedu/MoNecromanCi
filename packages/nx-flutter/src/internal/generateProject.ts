@@ -164,10 +164,26 @@ function flutterCreateTask(
       ...(options.buildable ? ['--platforms', 'web'] : []),
       options.directory
     ]
-    const result = spawnSync(flutterCommand(), arguments_, { cwd: workspaceRoot, stdio: 'inherit' })
+    // Output is CAPTURED rather than inherited, then echoed, and that is a fix
+    // rather than a style choice. With `stdio: 'inherit'` inside a
+    // GeneratorCallback, Nx owns the terminal and swallowed everything flutter
+    // said: a real failure surfaced as nothing but Nx's own generic
+    // `flutter create ... failed with exit code 1. Is the Flutter SDK on your
+    // PATH?` — which was actively misleading, since the SDK was on PATH and had
+    // just printed its version. A whole nightly produced no usable diagnostic.
+    //
+    // So flutter's own stdout and stderr are echoed here AND folded into the
+    // thrown error, where Nx will print them.
+    const result = spawnSync(flutterCommand(), arguments_, {
+      cwd: workspaceRoot,
+      encoding: 'utf8'
+    })
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+    if (output) console.log(output)
     if (result.status !== 0) {
       throw new Error(
-        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}. Is the Flutter SDK on your PATH? https://docs.flutter.dev/get-started/install`
+        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}.\n` +
+          `flutter said:\n${output || '(no output — check that the Flutter SDK is on your PATH: https://docs.flutter.dev/get-started/install)'}`
       )
     }
 

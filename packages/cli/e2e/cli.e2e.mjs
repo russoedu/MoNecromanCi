@@ -596,13 +596,24 @@ section('js stack', [], () => {
   )
 
   // Runs the EXACT script text extracted from the generated pipeline (not a
-  // re-typed copy) against this real workspace's real node_modules — proves
-  // the non-blocking property for real, not just via a string match on '||'.
+  // re-typed copy) against this real workspace's real node_modules.
+  //
+  // This used to assert the step exits 0 "even when real vulnerabilities are
+  // found", because it was warn-only. It is not any more: it exits 1 on an
+  // advisory that has a published fix, and 0 on anything upstream has not fixed.
+  // The rename is what caught the staleness — the lookup returned undefined and
+  // the assertion failed on a nightly, which is the whole reason a real e2e
+  // exists. A string match on the step name would not have noticed.
+  //
+  // Exit 0 is still the expectation here, but for a different reason: this is a
+  // freshly generated workspace, so it should carry no ACTIONABLE advisory. If
+  // this ever fails, read the log rather than the assertion — it means what mnci
+  // generates ships a fixable vulnerability, which is worth knowing.
   const npmAuditStep = pipelineParsed?.steps?.find(
-    step => step.displayName === 'npm audit (non-blocking)'
+    step => step.displayName === 'npm audit (fails on an actionable advisory)'
   )
   enforce(
-    "pipeline's npm audit step exits 0 even when real vulnerabilities are found",
+    "pipeline's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStep) && tryRun(npmAuditStep.script, workspace),
     'see log above'
   )
@@ -714,10 +725,10 @@ section('js stack', [], () => {
   // Same real-execution proof as the Azure pipeline, against this workspace's
   // real node_modules (generated with --registry npm too).
   const npmAuditStepGithub = workflowParsed?.jobs?.ci?.steps?.find(
-    step => step.name === 'npm audit (non-blocking)'
+    step => step.name === 'npm audit (fails on an actionable advisory)'
   )
   enforce(
-    "workflow's npm audit step exits 0 even when real vulnerabilities are found",
+    "workflow's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStepGithub) && tryRun(npmAuditStepGithub.run, workspaceGithub),
     'see log above'
   )
