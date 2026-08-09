@@ -2200,15 +2200,40 @@ trigger:
   # reason: two concurrent 'nx release' runs would race to create the same tag.
   batch: true
   branches:
-    include: [main]
+    include:
+      - main
+      # EVERY other branch too, and that breadth is a correction rather than
+      # generosity. On Azure Repos Git a YAML 'pr:' block does nothing at all
+      # (see the note below), so a CI trigger is the only pre-merge
+      # verification this file can switch on by itself. Listing main alone —
+      # which is what this pipeline used to do, next to a 'pr:' block that
+      # looked like it covered the rest — means a workspace verifies NOTHING
+      # until a change has already reached the branch it was supposed to
+      # protect.
+      #
+      # Release stays gated on main (the 'condition:' on every release step
+      # below), so a topic-branch run installs, audits, syncs, formats,
+      # verifies and packs, and publishes nothing.
+      - '*'
 
-# Note: cancelling a superseded PR validation run is NOT a YAML setting on Azure
-# — it lives in the branch policy ("Build validation -> automatically cancel").
-# Nothing here can express it, so it is left to whoever configures the policy
-# rather than faked with a batch setting that would only delay PR runs.
-pr:
-  branches:
-    include: [main]
+# PR validation is deliberately NOT configured here, because on Azure Repos Git
+# it CANNOT be: "For an Azure Repos Git repo, you cannot configure a PR trigger
+# in the YAML file. You need to use branch policies." A 'pr:' block here is not
+# an error — it is silently ignored, which is worse, because the file then
+# documents a gate that does not exist. (The same block IS honoured for GitHub
+# and Bitbucket repos, which is why .github/workflows/ci.yml keeps its
+# 'pull_request:' trigger.)
+#
+# To get PR validation, configure it once in the UI: Project Settings ->
+# Repositories -> <repo> -> Policies -> <branch> -> Build Validation, pointing
+# at this pipeline. That is also the only thing that sets
+# System.PullRequest.TargetBranch, which the verify step below reads to scope
+# itself to affected projects — without a policy that variable is never set and
+# the step verifies every project instead. Correct either way, just slower.
+#
+# Cancelling a superseded PR run lives in that same policy ("automatically
+# cancel"), and likewise has no YAML expression.
+pr: none
 
 pool:
 ${poolBlock(agent)}

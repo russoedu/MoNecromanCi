@@ -320,6 +320,52 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('- group: Build')
   })
 
+  it('never writes a pr: branch filter, which Azure Repos Git ignores outright', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+    const document_ = yaml.load(pipeline) as { pr?: unknown }
+
+    // The whole point: a `pr:` block with branch filters is NOT an error on
+    // Azure Repos, it is silently ignored — so writing one documents a gate
+    // that never runs. `pr: none` states the same truth without the lie.
+    expect(document_.pr).toBe('none')
+    expect(pipeline).not.toContain('pr:\n  branches:')
+    // The remedy has to be named where someone will look for it, or removing
+    // the block just leaves an unexplained hole.
+    expect(pipeline).toContain('Build Validation')
+    expect(pipeline).toContain('System.PullRequest.TargetBranch')
+  })
+
+  it('triggers CI on every branch, since pr: cannot cover them on Azure Repos', () => {
+    const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      trigger?: { batch?: boolean; branches?: { include?: string[] } }
+    }
+
+    // main alone would mean a topic branch is verified by nothing at all,
+    // because the `pr:` block that used to sit next to it never ran.
+    expect(document_.trigger?.branches?.include).toContain('*')
+    expect(document_.trigger?.branches?.include).toContain('main')
+    expect(document_.trigger?.batch).toBe(true)
+  })
+
+  it('gates every release step on main, so a topic-branch run publishes nothing', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Pairs with the all-branches trigger above: CI everywhere is only safe
+    // while the publishing half stays pinned to main.
+    for (const releaseStep of [
+      'Pack all apps',
+      'Publish the drop',
+      'Release — version, tag and publish',
+      'Push release tags'
+    ]) {
+      const at = pipeline.indexOf(releaseStep)
+      expect(at).toBeGreaterThan(-1)
+      expect(pipeline.slice(at, at + 400)).toContain(
+        "eq(variables['Build.SourceBranchName'], 'main')"
+      )
+    }
+  })
+
   it('does not reference any custom CI engine — the pipeline is plain Nx', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
