@@ -29,6 +29,7 @@ import {
   FORMATTED_LANGUAGES,
   formattedLanguages,
   ESLINT_PEER_OVERRIDES,
+  SECURITY_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
   ROOT_LINT_TARGET,
@@ -1804,6 +1805,30 @@ describe('applyOverlay', () => {
 
     expect(overrides['left-pad']).toBe('1.0.0')
     expect(overrides).toMatchObject(ESLINT_PEER_OVERRIDES)
+    expect(overrides).toMatchObject(SECURITY_OVERRIDES)
+  })
+
+  it('ships the security overrides that let a fresh workspace pass its own npm audit', () => {
+    // Measured on a real generated workspace: `mnci new` + one `mnci add
+    // npm-lib` reported 8 high-severity advisories with zero user code, all
+    // actionable, so NPM_AUDIT_STEP exits 1 and CI is red on the first push.
+    // All 8 trace to one brace-expansion advisory that nx pulls in.
+    overlayWith(DEFAULT_STACK)
+
+    const { overrides } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      overrides: Record<string, unknown>
+    }
+
+    expect(overrides).toMatchObject(SECURITY_OVERRIDES)
+  })
+
+  it('keys the security override by version range, so it cannot drag other majors along', () => {
+    // The bare-name form would pull the 1.x and 2.x copies also present in an
+    // Nx tree up to 5.x across a major API change, to fix an advisory neither
+    // of them has. Every key must carry an `@<range>` selector.
+    for (const key of Object.keys(SECURITY_OVERRIDES)) {
+      expect(key).toMatch(/.@.*\d/)
+    }
   })
 
   it('gives the root project a lint target, since nothing else lints root-level files', () => {

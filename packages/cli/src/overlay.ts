@@ -755,6 +755,46 @@ export const ESLINT_PEER_OVERRIDES = {
 } as const
 
 /**
+ * Security overrides a generated workspace needs to pass its OWN npm audit gate.
+ *
+ * @remarks
+ * Measured, not anticipated: a workspace straight out of `mnci new` plus one
+ * `mnci add npm-lib` reported **8 high-severity advisories with zero lines of
+ * user code**, and every one of them is actionable, so `NPM_AUDIT_STEP` exits 1
+ * and CI is red on the first push. A scaffold that cannot pass the gate it
+ * ships is the worst version of that gate — it teaches people to switch it off.
+ *
+ * All 8 are one advisory. `brace-expansion` GHSA-rgw5-rvv9-x895 (DoS via
+ * unbounded intermediate arrays) covers `4.0.0 - 5.0.8`; `nx` and six `@nx/*`
+ * packages are flagged only for depending on it. npm's own suggested remedy is
+ * `nx@22.6.5` marked `isSemVerMajor` — a **downgrade of the build tool** by a
+ * major, which nobody would take, and which is exactly why the audit step
+ * reports `fixAvailable` rather than running `npm audit fix`.
+ *
+ * Two details make this override safe rather than a blunt pin:
+ *
+ * - It is keyed by the **vulnerable range**, not the bare package name. A plain
+ *   `"brace-expansion": "^5.0.9"` would drag the `1.1.18` and `2.1.4` copies
+ *   also present in the tree up to 5.x across a major API change, to fix an
+ *   advisory neither of them has. Keyed this way, `npm install` removed exactly
+ *   one package and left both others alone (verified).
+ * - The fixed version was already resolved elsewhere in the same tree, so this
+ *   deduplicates onto something npm had installed anyway rather than
+ *   introducing a version nothing else uses.
+ *
+ * **Remove it when it stops being needed, and check rather than assume.** The
+ * precedent is this repo's own `@verdaccio/config`/`js-yaml` pin, which read as
+ * fixed while the advisory range had quietly been extended to include the
+ * pinned version. The condition here is narrow: once the `nx` release this
+ * scaffold installs no longer resolves a `brace-expansion` inside the
+ * vulnerable range, this entry is dead weight. `npm audit` on a freshly
+ * generated workspace is the check, and it is the only one that means anything.
+ */
+export const SECURITY_OVERRIDES = {
+  'brace-expansion@4.0.0 - 5.0.8': '^5.0.9'
+} as const
+
+/**
  * The ESLint toolchain a generated workspace needs as real devDependencies.
  *
  * @remarks
@@ -2965,7 +3005,8 @@ export function applyOverlay(workspaceRoot: string, options: OverlayOptions): vo
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
-    ...ESLINT_PEER_OVERRIDES
+    ...ESLINT_PEER_OVERRIDES,
+    ...SECURITY_OVERRIDES
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
