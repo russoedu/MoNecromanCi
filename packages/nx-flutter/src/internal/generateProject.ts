@@ -157,6 +157,22 @@ function flutterCreateTask(
     const template = options.buildable ? 'app' : 'package'
     const arguments_ = [
       'create',
+      // `--no-pub` is load-bearing, and its absence is what broke this for real.
+      //
+      // `flutter create` finishes with an implicit `flutter pub get`. By the time
+      // it runs, Nx has already flushed the Tree — which means the ROOT
+      // `pubspec.yaml` already lists this project in its `workspace:` block,
+      // while the project's own `pubspec.yaml`, which `flutter create` has just
+      // written from its template, does not yet carry `resolution: workspace`.
+      // That combination is one pub rejects outright: a package named in a
+      // workspace must declare it is resolved by that workspace. So the implicit
+      // `pub get` fails and takes `flutter create` down with it.
+      //
+      // `resolution: workspace` is added a few lines below, immediately after
+      // this call. Skipping the premature resolve and doing it once at the root
+      // afterwards is therefore the whole fix: same end state, in an order pub
+      // accepts.
+      '--no-pub',
       '--template',
       template,
       '--project-name',
@@ -195,6 +211,27 @@ function flutterCreateTask(
       join(workspaceRoot, options.directory, 'analysis_options.yaml'),
       memberAnalysisOptions(depth)
     )
+
+    // The resolve `--no-pub` skipped, now that the member declares
+    // `resolution: workspace`. Run at the workspace ROOT rather than in the new
+    // project, because that is what a pub workspace means: one resolution for
+    // every member, into a single root `pubspec.lock`.
+    //
+    // Failing here is a real failure. `mnci add flutter-app` that leaves a
+    // project pub cannot resolve has not produced a working project, and saying
+    // so now beats a confusing error at the user's first `flutter run`.
+    const resolve = spawnSync(flutterCommand(), ['pub', 'get'], {
+      cwd: workspaceRoot,
+      encoding: 'utf8'
+    })
+    const resolveOutput = `${resolve.stdout ?? ''}${resolve.stderr ?? ''}`.trim()
+    if (resolveOutput) console.log(resolveOutput)
+    if (resolve.status !== 0) {
+      throw new Error(
+        `flutter pub get failed with exit code ${resolve.status ?? 1} after creating ` +
+          `${options.directory}.\nflutter said:\n${resolveOutput || '(no output)'}`
+      )
+    }
   }
 }
 

@@ -230,8 +230,31 @@ work; two were real defects that newly-enabled coverage exposed.
   sibling dies on the lock, the victim moving between runs. Fixed with
   `parallelism: false` on the Go lint target only. This is a **user-facing bug in
   generated workspaces**, invisible for as long as the runner had no linter.
-- **`flutter create` fails, and the reason is still unknown** — because the error
-  was unreadable. The generator used `stdio: 'inherit'` inside a
+- **`flutter create` fails because the generator resolves the pub workspace too
+  early — and the error was unreadable, which is why it took a nightly to see.**
+
+  The ordering, now traced through the code rather than guessed: Nx flushes the
+  Tree before any `GeneratorCallback` runs, so by the time `flutter create` is
+  invoked the ROOT `pubspec.yaml` already lists the new project in its
+  `workspace:` block. `flutter create` then writes the project's own
+  `pubspec.yaml` from its template — **without** `resolution: workspace`, which
+  the generator adds a few lines later — and finishes with an implicit
+  `flutter pub get`. Pub rejects that state outright: a package named in a
+  workspace must declare it is resolved by that workspace. The implicit resolve
+  fails and takes `flutter create` down with it.
+
+  Fixed with `--no-pub` on `flutter create`, plus one `flutter pub get` at the
+  **root** after the post-create edits — same end state, in an order pub accepts.
+  Root rather than in-project because that is what a pub workspace means: one
+  resolution for every member, one `pubspec.lock`. A failure there now throws,
+  since an `add` that leaves a project pub cannot resolve has not produced a
+  working project.
+
+  **Only reachable with a real SDK**, which is why three published releases of
+  this plugin never hit it, and why the e2e is the gate rather than a mocked unit
+  test — `generators.spec.ts` deliberately does not mock `flutter create`.
+
+  The diagnosis was only possible after fixing the error reporting. The generator used `stdio: 'inherit'` inside a
   `GeneratorCallback`, where Nx owns the terminal and swallowed everything flutter
   said. A whole nightly produced nothing but Nx's generic `failed with exit code
   1. Is the Flutter SDK on your PATH?`, which was actively misleading: the SDK was
