@@ -157,6 +157,22 @@ function flutterCreateTask(
     const template = options.buildable ? 'app' : 'package'
     const arguments_ = [
       'create',
+      // `--no-pub` is load-bearing, and its absence is what broke this for real.
+      //
+      // `flutter create` finishes with an implicit `flutter pub get`. By the time
+      // it runs, Nx has already flushed the Tree — which means the ROOT
+      // `pubspec.yaml` already lists this project in its `workspace:` block,
+      // while the project's own `pubspec.yaml`, which `flutter create` has just
+      // written from its template, does not yet carry `resolution: workspace`.
+      // That combination is one pub rejects outright: a package named in a
+      // workspace must declare it is resolved by that workspace. So the implicit
+      // `pub get` fails and takes `flutter create` down with it.
+      //
+      // `resolution: workspace` is added a few lines below, immediately after
+      // this call. Skipping the premature resolve and doing it once at the root
+      // afterwards is therefore the whole fix: same end state, in an order pub
+      // accepts.
+      '--no-pub',
       '--template',
       template,
       '--project-name',
@@ -164,10 +180,26 @@ function flutterCreateTask(
       ...(options.buildable ? ['--platforms', 'web'] : []),
       options.directory
     ]
-    const result = spawnSync(flutterCommand(), arguments_, { cwd: workspaceRoot, stdio: 'inherit' })
+    // Output is CAPTURED rather than inherited, then echoed, and that is a fix
+    // rather than a style choice. With `stdio: 'inherit'` inside a
+    // GeneratorCallback, Nx owns the terminal and swallowed everything flutter
+    // said: a real failure surfaced as nothing but Nx's own generic
+    // `flutter create ... failed with exit code 1. Is the Flutter SDK on your
+    // PATH?` — which was actively misleading, since the SDK was on PATH and had
+    // just printed its version. A whole nightly produced no usable diagnostic.
+    //
+    // So flutter's own stdout and stderr are echoed here AND folded into the
+    // thrown error, where Nx will print them.
+    const result = spawnSync(flutterCommand(), arguments_, {
+      cwd: workspaceRoot,
+      encoding: 'utf8'
+    })
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+    if (output) console.log(output)
     if (result.status !== 0) {
       throw new Error(
-        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}. Is the Flutter SDK on your PATH? https://docs.flutter.dev/get-started/install`
+        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}.\n` +
+          `flutter said:\n${output || '(no output — check that the Flutter SDK is on your PATH: https://docs.flutter.dev/get-started/install)'}`
       )
     }
 
@@ -179,6 +211,27 @@ function flutterCreateTask(
       join(workspaceRoot, options.directory, 'analysis_options.yaml'),
       memberAnalysisOptions(depth)
     )
+
+    // The resolve `--no-pub` skipped, now that the member declares
+    // `resolution: workspace`. Run at the workspace ROOT rather than in the new
+    // project, because that is what a pub workspace means: one resolution for
+    // every member, into a single root `pubspec.lock`.
+    //
+    // Failing here is a real failure. `mnci add flutter-app` that leaves a
+    // project pub cannot resolve has not produced a working project, and saying
+    // so now beats a confusing error at the user's first `flutter run`.
+    const resolve = spawnSync(flutterCommand(), ['pub', 'get'], {
+      cwd: workspaceRoot,
+      encoding: 'utf8'
+    })
+    const resolveOutput = `${resolve.stdout ?? ''}${resolve.stderr ?? ''}`.trim()
+    if (resolveOutput) console.log(resolveOutput)
+    if (resolve.status !== 0) {
+      throw new Error(
+        `flutter pub get failed with exit code ${resolve.status ?? 1} after creating ` +
+          `${options.directory}.\nflutter said:\n${resolveOutput || '(no output)'}`
+      )
+    }
   }
 }
 

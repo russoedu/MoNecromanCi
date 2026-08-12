@@ -210,7 +210,62 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The e2e Now Installs Go's Linter and the Flutter SDK (Latest)
+### The First Nightly With Go and Flutter Provisioned: Four Failures (Latest)
+
+Exactly the informative-not-green run the previous entry predicted. All four
+provisioning steps succeeded, so both toolchains were genuinely present and the
+suite itself failed. Two of the four were regressions from this repo's own recent
+work; two were real defects that newly-enabled coverage exposed.
+
+- **Two stale e2e assertions, and they were mine.** The e2e looked the audit step
+  up by `displayName === 'npm audit (non-blocking)'` and asserted it "exits 0 even
+  when real vulnerabilities are found". Making the step blocking renamed it, so the
+  lookup returned `undefined` and the assertion failed. The unit tests were
+  updated in that change; these were missed. **The e2e caught what the unit tests
+  could not** — a string-match on the step name would have passed.
+- **`golangci-lint` self-locks, and mnci generated a workspace that trips it.**
+  `Error: parallel golangci-lint is running`. It takes a machine-global lock, Nx
+  runs `lint` across projects concurrently, so any workspace with two Go projects
+  fails `nx run-many -t lint` at random — one project printing `0 issues` while a
+  sibling dies on the lock, the victim moving between runs. Fixed with
+  `parallelism: false` on the Go lint target only. This is a **user-facing bug in
+  generated workspaces**, invisible for as long as the runner had no linter.
+- **`flutter create` fails because the generator resolves the pub workspace too
+  early — and the error was unreadable, which is why it took a nightly to see.**
+
+  The ordering, now traced through the code rather than guessed: Nx flushes the
+  Tree before any `GeneratorCallback` runs, so by the time `flutter create` is
+  invoked the ROOT `pubspec.yaml` already lists the new project in its
+  `workspace:` block. `flutter create` then writes the project's own
+  `pubspec.yaml` from its template — **without** `resolution: workspace`, which
+  the generator adds a few lines later — and finishes with an implicit
+  `flutter pub get`. Pub rejects that state outright: a package named in a
+  workspace must declare it is resolved by that workspace. The implicit resolve
+  fails and takes `flutter create` down with it.
+
+  Fixed with `--no-pub` on `flutter create`, plus one `flutter pub get` at the
+  **root** after the post-create edits — same end state, in an order pub accepts.
+  Root rather than in-project because that is what a pub workspace means: one
+  resolution for every member, one `pubspec.lock`. A failure there now throws,
+  since an `add` that leaves a project pub cannot resolve has not produced a
+  working project.
+
+  **Only reachable with a real SDK**, which is why three published releases of
+  this plugin never hit it, and why the e2e is the gate rather than a mocked unit
+  test — `generators.spec.ts` deliberately does not mock `flutter create`.
+
+  The diagnosis was only possible after fixing the error reporting. The generator used `stdio: 'inherit'` inside a
+  `GeneratorCallback`, where Nx owns the terminal and swallowed everything flutter
+  said. A whole nightly produced nothing but Nx's generic `failed with exit code
+  1. Is the Flutter SDK on your PATH?`, which was actively misleading: the SDK was
+on PATH and had printed `Flutter 3.44.8 • channel [user-branch]`two lines
+earlier. Output is now captured, echoed, and folded into the thrown error.
+**No fix is claimed for the underlying failure.** The leading hypothesis is
+ordering: the generator writes the root`pubspec.yaml`with its`workspace:`list *before*`flutter create`runs, and`flutter create`ends with an implicit`pub get`— while the new package does not carry`resolution: workspace` until
+     the post-create edit. That would make it a pub-workspace resolution failure, and
+     it would only ever appear with a real SDK. The next nightly should say.
+
+### The e2e Now Installs Go's Linter and the Flutter SDK
 
 `@mnci/nx-flutter` is a first-party, published plugin that had **never once been
 exercised in CI**, and the reason was not a missing test — the tests exist. Every
