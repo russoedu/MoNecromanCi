@@ -210,7 +210,45 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The First Nightly With Go and Flutter Provisioned: Four Failures (Latest)
+### Flutter Never Ran on Windows At All, and Generated Workspaces Shipped 6 CVEs (Latest)
+
+Nightly #293 went 4 failures → 3, and the two that remained were both real. The
+Go `parallelism: false` fix is **confirmed** — that failure is gone.
+
+- **`--no-pub` was the wrong diagnosis, and the fixed error reporting said so.**
+  The run showed `flutter create --no-pub … failed with exit code 1` and
+  `flutter said: (no output)`. Nothing printed on either stream, which is not how
+  a command that ran and failed behaves.
+- **The real cause: `spawnSync` cannot execute a `.bat` at all.** Since the fix
+  for CVE-2024-27980 (Node 18.20.2 / 20.12.0 / 21.7.3), `child_process.spawnSync`
+  **refuses** `.bat`/`.cmd` without `shell: true`. It does not throw — it returns
+  `{ error, status: null, stdout: null }`. The code then reported
+  `status ?? 1` as "exit code 1" with empty output, and Nx's wrapper helpfully
+  suggested checking PATH. The SDK was on PATH and had printed its version
+  seconds earlier. **Every Flutter invocation on Windows failed before the process
+  started**, across all three executors as well as the generator — so
+  `@mnci/nx-flutter` has never worked on Windows in any published release.
+- **`flutterCommand()` was the bug, and its own doc comment named the fix.** It
+  returned `flutter.bat` on Windows to keep calls working "without `shell: true`
+  (which would reintroduce the argument-quoting hazard the CLI deliberately
+  avoids by using `cross-spawn`)". Correct about the hazard; wrong that naming the
+  `.bat` is sufficient. **cross-spawn resolves `.bat` shims without a shell**, so
+  the plugin now uses the same library the CLI does, and the dead helper is
+  deleted rather than left as a trap.
+- **Not reading `result.error` is what made this invisible for two nightlies.**
+  Capturing stdout/stderr was not enough: a spawn that never started and a command
+  that ran and failed produced the same message. `runFlutter()` now distinguishes
+  them, and every Flutter call in the package goes through it.
+- **Generated workspaces shipped SIX high advisories.** The audit step, running
+  inside a generated workspace for the first time, reported `brace-expansion` plus
+  the five `nx` packages that inherit it, all `fix available (semver-major)` —
+  so `npm audit fix` would try to bump `nx` itself. **This repo has carried the
+  targeted `nx` → `brace-expansion` override the whole time**, which is why its
+  own audit reads 0 while what it generates read 6. Same dogfooding drift as the
+  missing audit step: fixed here, never shipped. This is the audit gate earning
+  its keep the first time it ran somewhere that mattered.
+
+### The First Nightly With Go and Flutter Provisioned: Four Failures
 
 Exactly the informative-not-green run the previous entry predicted. All four
 provisioning steps succeeded, so both toolchains were genuinely present and the

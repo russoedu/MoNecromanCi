@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -8,7 +7,7 @@ import {
   type Tree
 } from '@nx/devkit'
 import { dartPackageName } from './dartPackageName'
-import { flutterCommand } from './flutterCommand'
+import { runFlutter } from './runFlutter'
 import { withWorkspaceResolution } from './pubspec'
 import { addWorkspaceMember, ensureWorkspaceRoot, memberAnalysisOptions } from './workspace'
 
@@ -180,27 +179,13 @@ function flutterCreateTask(
       ...(options.buildable ? ['--platforms', 'web'] : []),
       options.directory
     ]
-    // Output is CAPTURED rather than inherited, then echoed, and that is a fix
-    // rather than a style choice. With `stdio: 'inherit'` inside a
-    // GeneratorCallback, Nx owns the terminal and swallowed everything flutter
-    // said: a real failure surfaced as nothing but Nx's own generic
-    // `flutter create ... failed with exit code 1. Is the Flutter SDK on your
-    // PATH?` — which was actively misleading, since the SDK was on PATH and had
-    // just printed its version. A whole nightly produced no usable diagnostic.
-    //
-    // So flutter's own stdout and stderr are echoed here AND folded into the
-    // thrown error, where Nx will print them.
-    const result = spawnSync(flutterCommand(), arguments_, {
-      cwd: workspaceRoot,
-      encoding: 'utf8'
-    })
-    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
-    if (output) console.log(output)
-    if (result.status !== 0) {
-      throw new Error(
-        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}.\n` +
-          `flutter said:\n${output || '(no output — check that the Flutter SDK is on your PATH: https://docs.flutter.dev/get-started/install)'}`
-      )
+    // Every invocation goes through `runFlutter`, which uses cross-spawn and
+    // reports a spawn failure distinctly from a command failure. See its remarks:
+    // calling `spawnSync` directly made this fail on Windows before the process
+    // started, and report it as "exit code 1" with no output.
+    const created = runFlutter(arguments_, workspaceRoot)
+    if (!created.ok) {
+      throw new Error(`flutter ${arguments_.join(' ')} ${created.reason}`)
     }
 
     const pubspecPath = join(workspaceRoot, options.directory, 'pubspec.yaml')
@@ -220,17 +205,9 @@ function flutterCreateTask(
     // Failing here is a real failure. `mnci add flutter-app` that leaves a
     // project pub cannot resolve has not produced a working project, and saying
     // so now beats a confusing error at the user's first `flutter run`.
-    const resolve = spawnSync(flutterCommand(), ['pub', 'get'], {
-      cwd: workspaceRoot,
-      encoding: 'utf8'
-    })
-    const resolveOutput = `${resolve.stdout ?? ''}${resolve.stderr ?? ''}`.trim()
-    if (resolveOutput) console.log(resolveOutput)
-    if (resolve.status !== 0) {
-      throw new Error(
-        `flutter pub get failed with exit code ${resolve.status ?? 1} after creating ` +
-          `${options.directory}.\nflutter said:\n${resolveOutput || '(no output)'}`
-      )
+    const resolved = runFlutter(['pub', 'get'], workspaceRoot)
+    if (!resolved.ok) {
+      throw new Error(`flutter pub get (after creating ${options.directory}) ${resolved.reason}`)
     }
   }
 }

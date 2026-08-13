@@ -749,9 +749,25 @@ export const ROOT_LINT_TARGET = {
  * far narrower — one named package, one peer, with evidence that the real
  * constraint is satisfied — but it is the same kind of decision, so it should
  * be removed the moment `jsx-a11y` ships a release declaring ESLint 10.
+ *
+ * **`nx` → `brace-expansion` is a security fix, not a resolution fix, and it is
+ * here because a generated workspace shipped six HIGH advisories without it.**
+ * Measured by the audit step running inside a freshly generated workspace for the
+ * first time: `brace-expansion` carries a high advisory, and `nx`, `@nx/js`,
+ * `@nx/eslint`, `@nx/eslint-plugin` and `@nx/workspace` all inherit it. npm
+ * reports the fix as **semver-major**, meaning `npm audit fix` would try to bump
+ * `nx` itself — unacceptable in a scaffold — while a targeted override on the one
+ * vulnerable transitive is both sufficient and safe.
+ *
+ * This repo has carried exactly this override for its own tree the whole time,
+ * which is why its audit reads 0 while generated workspaces read 6. Same
+ * dogfooding drift as the missing audit step: fixed here, never shipped. That is
+ * the argument for the audit step being blocking — it found this the first time
+ * it ever ran somewhere that mattered.
  */
 export const ESLINT_PEER_OVERRIDES = {
-  'eslint-plugin-jsx-a11y': { eslint: '$eslint' }
+  'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
+  nx: { 'brace-expansion': '^5.0.9' }
 } as const
 
 /**
