@@ -1766,7 +1766,12 @@ describe('applyOverlay', () => {
     // `@nx/eslint`, `@nx/eslint-plugin` and `@nx/workspace` all inherit, and npm
     // reports the fix as semver-major, so `npm audit fix` would try to bump `nx`
     // itself. This repo had carried the same override for its own tree all along.
-    expect(overrides.nx).toEqual({ 'brace-expansion': '^5.0.9' })
+    for (const parent of ['nx', '@nx/js', '@nx/eslint', '@nx/eslint-plugin', '@nx/workspace']) {
+      expect(overrides[parent]).toEqual({ 'brace-expansion': '^5.0.9' })
+    }
+    // NOT top-level: a tree with minimatch@3 legitimately carries
+    // brace-expansion@1.x, and forcing that to v5 breaks it.
+    expect(overrides['brace-expansion']).toBeUndefined()
   })
 
   it('gives the root project a lint target, since nothing else lints root-level files', () => {

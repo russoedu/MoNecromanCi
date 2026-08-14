@@ -87,4 +87,43 @@ describe('withWorkspaceResolution', () => {
   it('throws a diagnosable error when there is no environment block to anchor to', () => {
     expect(() => withWorkspaceResolution('name: broken\n')).toThrow(/no `environment:` block/)
   })
+
+  it('handles a CRLF pubspec, which is the only kind `flutter create` writes on Windows', () => {
+    // The bug this pins, and it took three nightlies to reach because the plugin
+    // had never run on Windows: the anchor pattern used a LITERAL `\n`, so
+    // `environment:\r\n` never matched and the generator threw
+    // "no `environment:` block to anchor to" on a file `flutter create` had just
+    // written correctly. The sibling patterns end in `$`, and ECMAScript counts
+    // `\r` as a line terminator, so they were unaffected — which is precisely why
+    // this one line broke alone and looked like a malformed pubspec.
+    const crlf = GENERATED.replaceAll('\n', '\r\n')
+    const updated = withWorkspaceResolution(crlf)
+
+    expect(updated).toContain('resolution: workspace')
+    expect(updated.indexOf('resolution: workspace')).toBeGreaterThan(
+      updated.indexOf('environment:')
+    )
+    expect(updated.indexOf('resolution: workspace')).toBeLessThan(updated.indexOf('dependencies:'))
+  })
+
+  it('inserts CRLF into a CRLF file rather than leaving it mixed', () => {
+    // A two-line insertion that silently converts part of a file to LF shows up
+    // as a whole-file diff on the next checkout, which is not what anyone expects
+    // from adding one key.
+    const crlf = GENERATED.replaceAll('\n', '\r\n')
+    const updated = withWorkspaceResolution(crlf)
+
+    expect(updated).toContain('\r\nresolution: workspace\r\n')
+    expect(updated.includes('\nresolution: workspace\n\r')).toBe(false)
+    // And an LF file stays LF.
+    expect(withWorkspaceResolution(GENERATED)).toContain('\nresolution: workspace\n')
+  })
+
+  it('stays idempotent on a CRLF pubspec too', () => {
+    const crlf = GENERATED.replaceAll('\n', '\r\n')
+    const once = withWorkspaceResolution(crlf)
+
+    expect(withWorkspaceResolution(once)).toBe(once)
+    expect(once.match(/resolution:/g)).toHaveLength(1)
+  })
 })
