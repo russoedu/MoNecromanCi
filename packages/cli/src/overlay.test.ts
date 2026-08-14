@@ -1758,6 +1758,15 @@ describe('applyOverlay', () => {
 
     expect(overrides['left-pad']).toBe('1.0.0')
     expect(overrides).toMatchObject(ESLINT_PEER_OVERRIDES)
+
+    // Named explicitly, not just via the constant: this one is a SECURITY fix,
+    // and a generated workspace shipped six high advisories without it. The audit
+    // step found it the first time it ran inside a generated workspace —
+    // `brace-expansion` carries a high advisory that `nx`, `@nx/js`,
+    // `@nx/eslint`, `@nx/eslint-plugin` and `@nx/workspace` all inherit, and npm
+    // reports the fix as semver-major, so `npm audit fix` would try to bump `nx`
+    // itself. This repo had carried the same override for its own tree all along.
+    expect(overrides.nx).toEqual({ 'brace-expansion': '^5.0.9' })
   })
 
   it('gives the root project a lint target, since nothing else lints root-level files', () => {

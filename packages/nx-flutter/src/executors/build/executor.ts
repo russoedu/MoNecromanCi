@@ -1,8 +1,7 @@
-import { spawnSync } from 'node:child_process'
 import { join, relative } from 'node:path'
 import type { ExecutorContext } from '@nx/devkit'
 import { projectRootFrom } from '../../internal/executorContext'
-import { flutterCommand } from '../../internal/flutterCommand'
+import { runFlutter } from '../../internal/runFlutter'
 import type { BuildExecutorSchema } from './schema.d'
 
 /**
@@ -38,9 +37,8 @@ export default async function buildExecutor(
   const cwd = join(context.root, projectRoot)
   const outputPath = relative(cwd, join(context.root, options.outputPath))
 
-  const result = spawnSync(flutterCommand(), ['build', 'web', '--output', outputPath], {
-    cwd,
-    stdio: 'inherit'
-  })
-  return { success: result.status === 0 }
+  const result = runFlutter(['build', 'web', '--output', outputPath], cwd)
+  if (!result.ok) console.error(`flutter build web ${result.reason}`)
+
+  return { success: result.ok }
 }

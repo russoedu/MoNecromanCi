@@ -1,8 +1,7 @@
-import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import type { ExecutorContext } from '@nx/devkit'
 import { projectRootFrom } from '../../internal/executorContext'
-import { flutterCommand } from '../../internal/flutterCommand'
+import { runFlutter } from '../../internal/runFlutter'
 import type { TestExecutorSchema } from './schema.d'
 
 /**
@@ -30,6 +29,8 @@ export default async function testExecutor(
   context: ExecutorContext
 ): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
-  const result = spawnSync(flutterCommand(), ['test'], { cwd, stdio: 'inherit' })
-  return { success: result.status === 0 }
+  const result = runFlutter(['test'], cwd)
+  if (!result.ok) console.error(`flutter test ${result.reason}`)
+
+  return { success: result.ok }
 }
