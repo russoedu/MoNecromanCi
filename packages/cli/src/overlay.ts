@@ -767,7 +767,12 @@ export const ROOT_LINT_TARGET = {
  */
 export const ESLINT_PEER_OVERRIDES = {
   'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
-  nx: { 'brace-expansion': '^5.0.9' }
+  nx: { 'brace-expansion': '^5.0.9' },
+  // `postcss` → `nanoid` reaches a generated workspace through `@nx/rollup`,
+  // which every publishable `npm-lib` gets. GHSA-2v37-7h3g-55p8 is high, fixed in
+  // 3.3.18, and the fix is a patch — so unlike the entry above this one is not
+  // even a trade, just a version nobody had bumped yet.
+  postcss: { nanoid: '^3.3.18' }
 } as const
 
 /**
