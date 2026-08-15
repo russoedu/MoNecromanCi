@@ -767,7 +767,24 @@ export const ROOT_LINT_TARGET = {
  */
 export const ESLINT_PEER_OVERRIDES = {
   'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
+  // Scoped to EACH named parent, not top-level and not `nx` alone.
+  //
+  // `nx` alone was the first attempt and it did not work: the e2e's audit step
+  // still reported all six advisories in a freshly generated workspace, because
+  // `@nx/js`, `@nx/eslint`, `@nx/eslint-plugin` and `@nx/workspace` are their own
+  // dependents there, and an override scoped to `nx` never reaches a sibling's
+  // dependencies. Those four are exactly the packages npm audit named.
+  //
+  // Top-level would be worse than wrong. A tree with `minimatch@3` legitimately
+  // carries `brace-expansion@1.1.18` (and `@2.1.4` elsewhere) — this repo has
+  // both — and forcing those to v5 breaks them. So the blast radius is one
+  // dependency edge per named parent, and a test asserts there is no top-level
+  // entry.
   nx: { 'brace-expansion': '^5.0.9' },
+  '@nx/js': { 'brace-expansion': '^5.0.9' },
+  '@nx/eslint': { 'brace-expansion': '^5.0.9' },
+  '@nx/eslint-plugin': { 'brace-expansion': '^5.0.9' },
+  '@nx/workspace': { 'brace-expansion': '^5.0.9' },
   // `postcss` → `nanoid` reaches a generated workspace through `@nx/rollup`,
   // which every publishable `npm-lib` gets. GHSA-2v37-7h3g-55p8 is high, fixed in
   // 3.3.18, and the fix is a patch — so unlike the entry above this one is not
