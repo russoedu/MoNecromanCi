@@ -678,6 +678,10 @@ export function devcontainerJson(workspaceName: string, linter: LinterChoice): s
     // `npm ci` first: every guard after it runs through the workspace's own
     // scripts and Nx, which do not exist until the install completes.
     postCreateCommand: [
+      // Same pin the workflow applies, for the same reason — a container whose
+      // npm major differs from CI's resolves dependencies differently, which is
+      // precisely the drift this file exists to remove.
+      `npm install -g npm@${NPM_VERSION}`,
       'npm ci',
       'npm run python:install',
       GOLANGCI_LINT_INSTALL_GUARD,
@@ -1857,6 +1861,30 @@ export const FLUTTER_SDK_VERSION = '3.44.8'
 export const NODE_VERSION = '24'
 
 /**
+ * The npm major a generated workspace is built and tested against.
+ *
+ * @remarks
+ * Pinned because npm's own behaviour is part of the contract, not an
+ * implementation detail beneath it. npm 11 changed when `overrides` are
+ * applied: given a tree that is already installed, it reuses it rather than
+ * re-resolving, so an `overrides` entry added after the first install does
+ * nothing. Measured on nx 23.1.1 with the same manifest and the same sequence:
+ * npm 10.9.7 reported **0** advisories and npm 11.19.0 reported **6**.
+ *
+ * That divergence is what made the bug expensive. `setup-node` installs
+ * whatever npm the Node image happens to bundle, so CI and a contributor's
+ * machine could — and did — resolve differently, which meant a local check
+ * could pass while the thing it was checking was broken for every user.
+ *
+ * **The MAJOR is pinned, not an exact version.** The risk this guards is a
+ * major behavioural change, which is what actually happened; an exact pin would
+ * add a version nothing bumps, and a pin that reads as current while being
+ * stale is a failure mode this repo has already paid for once (the
+ * `@verdaccio/config` → `js-yaml` entry that read as fixed and was not).
+ */
+export const NPM_VERSION = '11'
+
+/**
  * The shared expression that resolves where the Flutter SDK is installed.
  *
  * @remarks
@@ -2559,6 +2587,13 @@ jobs:
           # Nothing to invalidate by hand: the action keys on the lockfile, so a
           # dependency change misses the cache and a no-op change hits it.
           cache: npm
+
+      # setup-node installs whatever npm the Node image bundles, and npm's major
+      # is part of the contract: npm 11 reuses an already-installed tree instead
+      # of re-resolving, so it applies \`overrides\` differently from npm 10. See
+      # NPM_VERSION's remarks for the measurement.
+      - run: npm install -g npm@${NPM_VERSION}
+        name: Pin npm to the major mnci verifies against
 
       - run: npm ci
         name: Install dependencies
