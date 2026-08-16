@@ -31,6 +31,7 @@ import {
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
+  NPM_VERSION,
   ROOT_LINT_TARGET,
   VSCODE_RECOMMENDED_EXTENSIONS,
   rootScripts,
@@ -1270,6 +1271,31 @@ describe('devcontainerJson', () => {
     expect(githubActionsYaml('ubuntu-latest')).toContain(`node-version: ${NODE_VERSION}`)
   })
 
+  it('pins the same npm major the pipeline does, from one constant', () => {
+    // Node was pinned and npm was not, and the gap cost six high advisories in
+    // every generated workspace. npm 11 reuses an already-installed tree rather
+    // than re-resolving, so it applies `overrides` differently from npm 10 —
+    // measured on nx 23.1.1, same manifest, same sequence: npm 10.9.7 reported
+    // 0 and npm 11.19.0 reported 6. A contributor on a different npm major
+    // therefore verified something other than what users got.
+    expect(parsed().postCreateCommand).toContain(`npm install -g npm@${NPM_VERSION}`)
+    expect(githubActionsYaml('ubuntu-latest')).toContain(`npm install -g npm@${NPM_VERSION}`)
+  })
+
+  it('pins npm BEFORE npm ci, since the pin is pointless after the install', () => {
+    const postCreate = parsed().postCreateCommand
+
+    expect(postCreate.indexOf(`npm install -g npm@${NPM_VERSION}`)).toBeLessThan(
+      postCreate.indexOf('npm ci')
+    )
+
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow.indexOf(`npm install -g npm@${NPM_VERSION}`)).toBeLessThan(
+      workflow.indexOf('- run: npm ci')
+    )
+  })
+
   it('brings Python and Go as features rather than a hand-maintained Dockerfile', () => {
     expect(Object.keys(parsed().features)).toEqual([
       'ghcr.io/devcontainers/features/python:1',
@@ -1283,7 +1309,12 @@ describe('devcontainerJson', () => {
     // Reimplementing them here would be a third place to keep in sync.
     const command = parsed().postCreateCommand
 
-    expect(command.startsWith('npm ci')).toBe(true)
+    // `npm ci` comes before every guard, because they all run through the
+    // workspace's own scripts and Nx, which do not exist until it completes.
+    // It is no longer *first* — the npm pin precedes it, since pinning npm
+    // after the install it was meant to govern would achieve nothing.
+    expect(command.indexOf('npm ci')).toBeLessThan(command.indexOf('npm run python:install'))
+    expect(command.indexOf('npm ci')).toBeLessThan(command.indexOf('golangci-lint'))
     expect(command).toContain('npm run python:install')
     expect(command).toContain('golangci-lint')
     // Flutter has no maintained devcontainer feature — the same reason

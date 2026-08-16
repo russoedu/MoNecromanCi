@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runFormatter, runNpx, runShell } from '../nx'
 import {
@@ -227,9 +228,32 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   )
   applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
 
+  // npm honours `overrides` only when it RESOLVES a tree, and by this point
+  // `create-nx-workspace` has already installed one and written its lockfile —
+  // both without the overrides `applyOverlay` just added. npm then reuses that
+  // tree wholesale on the next install, so the overrides are silently ignored.
+  //
+  // This is not theoretical, and it is npm-version dependent, which is what
+  // made it survive three nightlies. Reproduced on nx 23.1.1, which nests a
+  // vulnerable `brace-expansion@5.0.8` under `node_modules/nx`:
+  //
+  //   npm 10.9.7  create → overlay → install  →  0 advisories
+  //   npm 11.19.0 create → overlay → install  →  6 advisories
+  //
+  // So the generated workspace shipped six high advisories while this repo —
+  // whose own lockfile was resolved WITH the overrides present — read 0, and
+  // every local check agreed with the wrong one.
+  //
+  // Both artifacts have to go. Removing only the lockfile still reports 6 under
+  // npm 11: an existing `node_modules` is by itself enough for npm to keep the
+  // stale tree. Measured both ways rather than assumed.
+  rmSync(join(workspaceRoot, 'node_modules'), { recursive: true, force: true })
+  rmSync(join(workspaceRoot, 'package-lock.json'), { force: true })
+
   // One install. It also pulls in everything `applyOverlay` just added to the
   // manifest — Prettier, ESLint and `@mnci/eslint-config` — which is why the
-  // formatting pass below can run immediately after.
+  // formatting pass below can run immediately after. It resolves from scratch,
+  // by construction of the two removals above.
   logger.step('Installing the toolchain (commitlint + husky + linting/formatting)')
   const installStatus = runShell(
     'npm',

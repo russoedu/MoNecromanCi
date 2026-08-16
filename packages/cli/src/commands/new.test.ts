@@ -1,3 +1,12 @@
+// Type-only, so it is erased before jest hoists the factory below.
+import type * as NodeFs from 'node:fs'
+
+// Only `rmSync` is faked — everything else in `node:fs` stays real, so this
+// cannot quietly break an unrelated import somewhere in the module graph.
+jest.mock('node:fs', () => ({
+  ...jest.requireActual<typeof NodeFs>('node:fs'),
+  rmSync: jest.fn()
+}))
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runFormatter: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
@@ -11,12 +20,14 @@ jest.mock('../prompts', () => ({
   promptText: jest.fn()
 }))
 
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNpx, runFormatter, runShell } from '../nx'
 import { applyOverlay } from '../overlay'
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { runNew } from './new'
 
+const mockRmSync = jest.mocked(rmSync)
 const mockRunNpx = jest.mocked(runNpx)
 const mockRunFormatter = jest.mocked(runFormatter)
 const mockRunShell = jest.mocked(runShell)
@@ -180,6 +191,59 @@ describe('runNew', () => {
       workspaceRoot
     )
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['husky'], workspaceRoot)
+  })
+
+  it('drops the pre-overlay tree so the install actually resolves with the overrides', async () => {
+    // The bug this pins shipped six high advisories to every generated
+    // workspace, and nothing here could see it: npm applies `overrides` only
+    // when it RESOLVES, and `create-nx-workspace` has already installed and
+    // locked a tree by the time `applyOverlay` adds them. npm 11 then reuses
+    // that tree instead of re-resolving. Measured on nx 23.1.1 with the same
+    // manifest — npm 10.9.7: 0 advisories, npm 11.19.0: 6.
+    await runNew('demo', { yes: true })
+
+    const workspaceRoot = join('/somewhere', 'demo')
+
+    expect(mockRmSync).toHaveBeenCalledWith(join(workspaceRoot, 'node_modules'), {
+      recursive: true,
+      force: true
+    })
+    expect(mockRmSync).toHaveBeenCalledWith(join(workspaceRoot, 'package-lock.json'), {
+      force: true
+    })
+  })
+
+  it('removes BOTH artifacts — node_modules alone is enough to keep the stale tree', async () => {
+    // The obvious half-fix, and it was measured rather than reasoned about:
+    // deleting only `package-lock.json` still reports all six advisories under
+    // npm 11, because an existing `node_modules` by itself lets npm keep what
+    // is already installed. Asserted as a pair so neither can be dropped as
+    // redundant.
+    await runNew('demo', { yes: true })
+
+    const removed = mockRmSync.mock.calls.map(([target]) => target)
+
+    expect(removed).toContain(join('/somewhere', 'demo', 'node_modules'))
+    expect(removed).toContain(join('/somewhere', 'demo', 'package-lock.json'))
+  })
+
+  it('removes them AFTER the overlay writes the overrides and BEFORE the install', async () => {
+    // Ordering is the whole fix. Removing before `applyOverlay` would discard a
+    // tree and then re-resolve without the overrides — the same bug with an
+    // extra install — and removing after the install would just delete what was
+    // installed. Asserted on call order rather than on the arguments, since
+    // both neighbours already have argument assertions of their own.
+    await runNew('demo', { yes: true })
+
+    const overlayAt = mockApplyOverlay.mock.invocationCallOrder[0]
+    const installAt = mockRunShell.mock.invocationCallOrder[0]
+    const removals = mockRmSync.mock.invocationCallOrder
+
+    expect(removals).toHaveLength(2)
+    for (const removedAt of removals) {
+      expect(removedAt).toBeGreaterThan(overlayAt)
+      expect(removedAt).toBeLessThan(installAt)
+    }
   })
 
   it('installs the commit toolchain (ESLint and Prettier are set up by Nx generators)', async () => {
