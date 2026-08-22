@@ -34,7 +34,7 @@ export const REACT_ENVIRONMENTS = ['dev', 'uat', 'prod'] as const
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function reactEnvironmentFile(environment: string): string {
+export function reactEnvironmentFile (environment: string): string {
   return `# Vite compiles VITE_-prefixed vars into the '${environment}' bundle at build time.
 # They ship to the browser, so keep only PUBLIC config here — never secrets.
 VITE_ENVIRONMENT=${environment}
@@ -62,7 +62,7 @@ VITE_API_URL=https://api.${environment}.example.com
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function reactAppTargets(name: string): Record<string, unknown> {
+export function reactAppTargets (name: string): Record<string, unknown> {
   const targets: Record<string, unknown> = {}
   for (const environment of REACT_ENVIRONMENTS) {
     targets[`build-${environment}`] = {
@@ -106,7 +106,7 @@ export function reactAppTargets(name: string): Record<string, unknown> {
  * @throws Propagates any `fs` error reading or writing `.gitignore`.
  * @typeParam None - this function has no generic type parameters.
  */
-function allowEnvFiles(workspaceRoot: string): void {
+function allowEnvFiles (workspaceRoot: string): void {
   const gitignorePath = join(workspaceRoot, '.gitignore')
   if (!fileExists(gitignorePath)) {
     return
@@ -138,7 +138,7 @@ function allowEnvFiles(workspaceRoot: string): void {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addReactApp(workspaceRoot: string, name: string, stack: WorkspaceStack): void {
+export function addReactApp (workspaceRoot: string, name: string, stack: WorkspaceStack): void {
   ensurePlugin(workspaceRoot, '@nx/react')
   runNx(
     [

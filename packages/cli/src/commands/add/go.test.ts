@@ -18,7 +18,7 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 /** Pre-creates the `project.json` the (mocked) plugin generator would write. */
-function seedProjectJson(relativeDirectory: string, name: string): void {
+function seedProjectJson (relativeDirectory: string, name: string): void {
   mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
   writeFileSync(
     join(workspaceRoot, relativeDirectory, 'project.json'),
@@ -27,7 +27,7 @@ function seedProjectJson(relativeDirectory: string, name: string): void {
 }
 
 /** Reads a generated project.json back. */
-function readProjectJson(relativeDirectory: string): {
+function readProjectJson (relativeDirectory: string): {
   targets: Record<
     string,
     { executor?: string; options?: Record<string, unknown>; parallelism?: boolean }
@@ -39,7 +39,7 @@ function readProjectJson(relativeDirectory: string): {
 }
 
 /** The argv of every `runNx` call, flattened for easy matching. */
-function nxCalls(): string[][] {
+function nxCalls (): string[][] {
   return mockRunNx.mock.calls.map(call => call[0])
 }
 

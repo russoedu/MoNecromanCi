@@ -91,7 +91,7 @@ type NxNode = { data: { root: string; targets?: Record<string, NxTarget> } }
  * @returns The graph's project nodes, keyed by project name.
  * @throws If `nx graph` fails or writes nothing readable.
  */
-function projectGraph(): Record<string, NxNode> {
+function projectGraph (): Record<string, NxNode> {
   const dir = mkdtempSync(join(tmpdir(), 'mnci-graph-'))
   const file = join(dir, 'graph.json')
   try {
@@ -118,7 +118,7 @@ function projectGraph(): Record<string, NxNode> {
  * @param script - Script name to look up.
  * @returns The script's command, or `undefined` if the manifest or script is absent.
  */
-function scriptCommand(projectRoot: string, script: string): string | undefined {
+function scriptCommand (projectRoot: string, script: string): string | undefined {
   const manifest = join(WORKSPACE_ROOT, projectRoot, 'package.json')
   if (!existsSync(manifest)) return undefined
   const scripts = JSON.parse(readFileSync(manifest, 'utf8')).scripts as
@@ -127,7 +127,7 @@ function scriptCommand(projectRoot: string, script: string): string | undefined 
 }
 
 /** Maps a project name to its root, so `npm run … -w <name>` can be followed. */
-function rootsByName(graph: Record<string, NxNode>): Map<string, string> {
+function rootsByName (graph: Record<string, NxNode>): Map<string, string> {
   return new Map(Object.entries(graph).map(([name, node]) => [name, node.data.root]))
 }
 
@@ -141,7 +141,7 @@ function rootsByName(graph: Record<string, NxNode>): Map<string, string> {
  * @param roots - Project name to project root, for the `-w` form.
  * @returns The command a shell would ultimately execute.
  */
-function followNpmRun(command: string, projectRoot: string, roots: Map<string, string>): string {
+function followNpmRun (command: string, projectRoot: string, roots: Map<string, string>): string {
   let current = command.trim()
   for (let hop = 0; hop < MAX_SCRIPT_HOPS; hop++) {
     const match = /^npm run ([\w:.@/-]+)(?:\s+-w\s+(\S+))?\s*$/.exec(current)
@@ -168,7 +168,7 @@ function followNpmRun(command: string, projectRoot: string, roots: Map<string, s
  * @param roots - Project name to project root, for the `-w` form.
  * @returns Every command the target would run; never empty.
  */
-function resolveCommands(
+function resolveCommands (
   target: NxTarget,
   projectRoot: string,
   roots: Map<string, string>

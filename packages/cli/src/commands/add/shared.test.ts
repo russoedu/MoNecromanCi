@@ -6,7 +6,7 @@ import { registerProjectCommands, removeGeneratedEslintConfig } from './shared'
 let workspaceRoot: string
 
 /** Reads the root package.json's scripts back. */
-function scripts(): Record<string, string> {
+function scripts (): Record<string, string> {
   return (
     JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
@@ -15,7 +15,7 @@ function scripts(): Record<string, string> {
 }
 
 /** Reads the .code-workspace file's tasks array back. */
-function tasks(): Record<string, unknown>[] {
+function tasks (): Record<string, unknown>[] {
   return (
     JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
       tasks: { version: string; tasks: Record<string, unknown>[] }

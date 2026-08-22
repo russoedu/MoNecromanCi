@@ -14,7 +14,7 @@ import { ensureAdmZip, hasPlugin, registerProjectCommands, type AddOptions } fro
  * @throws Error when neither `python3` nor `python` can be run.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensurePython(workspaceRoot: string): void {
+function ensurePython (workspaceRoot: string): void {
   const hasPython =
     runShell('python3', ['--version'], workspaceRoot) === 0 ||
     runShell('python', ['--version'], workspaceRoot) === 0
@@ -34,7 +34,7 @@ function ensurePython(workspaceRoot: string): void {
  * instead of the published registry package — the real published spec is
  * the default for every real `mnci add python-*` call.
  */
-function pythonPipPluginSpec(): string {
+function pythonPipPluginSpec (): string {
   return process.env.MNCI2_PYTHON_PIP_SPEC ?? '@mnci/nx-python-pip'
 }
 
@@ -53,7 +53,7 @@ function pythonPipPluginSpec(): string {
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensurePythonPipPlugin(workspaceRoot: string): void {
+function ensurePythonPipPlugin (workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, '@mnci/nx-python-pip')) {
     return
   }
@@ -101,7 +101,7 @@ pip-audit
  * @throws Propagates any Node.js `fs` error raised while writing.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureRequirementsDev(workspaceRoot: string): void {
+function ensureRequirementsDev (workspaceRoot: string): void {
   const requirementsDevPath = join(workspaceRoot, 'requirements-dev.txt')
   if (!fileExists(requirementsDevPath)) {
     writeFileEnsured(requirementsDevPath, PYTHON_REQUIREMENTS_DEV)
@@ -121,7 +121,7 @@ function ensureRequirementsDev(workspaceRoot: string): void {
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonModuleDirectory(name: string): string {
+function pythonModuleDirectory (name: string): string {
   return name.replaceAll('-', '_')
 }
 
@@ -140,7 +140,7 @@ function pythonModuleDirectory(name: string): string {
  * @throws Propagates any `fs`/JSON error reading or writing the file.
  * @typeParam None - this function has no generic type parameters.
  */
-function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<string, unknown>): void {
+function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
   const project = readJson<Record<string, unknown>>(projectJsonPath)
   const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
   writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
@@ -163,7 +163,7 @@ function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<strin
  * @throws Never - pure string formatting.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonAppMain(name: string): string {
+export function pythonAppMain (name: string): string {
   return `def main() -> None:
     print('${name} is running')
 
@@ -188,7 +188,7 @@ if __name__ == '__main__':
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonAppStartTarget(name: string): Record<string, unknown> {
+function pythonAppStartTarget (name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
@@ -212,7 +212,7 @@ function pythonAppStartTarget(name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonFunctionAppStartTarget(name: string): Record<string, unknown> {
+function pythonFunctionAppStartTarget (name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
@@ -235,7 +235,7 @@ function pythonFunctionAppStartTarget(name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonAppPackageTarget(name: string): Record<string, unknown> {
+function pythonAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/python-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
   return {
@@ -264,7 +264,7 @@ function pythonAppPackageTarget(name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonFunctionAppPackageTarget(
+function pythonFunctionAppPackageTarget (
   name: string,
   moduleDirectory: string
 ): Record<string, unknown> {
@@ -293,7 +293,7 @@ function pythonFunctionAppPackageTarget(
  * @throws Error when Python is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPythonApp(workspaceRoot: string, name: string): void {
+export function addPythonApp (workspaceRoot: string, name: string): void {
   ensurePython(workspaceRoot)
   ensurePythonPipPlugin(workspaceRoot)
   ensureRequirementsDev(workspaceRoot)
@@ -325,7 +325,7 @@ export function addPythonApp(workspaceRoot: string, name: string): void {
  * @throws Error when Python is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPythonFunctionApp(workspaceRoot: string, name: string): void {
+export function addPythonFunctionApp (workspaceRoot: string, name: string): void {
   ensurePython(workspaceRoot)
   ensurePythonPipPlugin(workspaceRoot)
   ensureRequirementsDev(workspaceRoot)
@@ -364,7 +364,7 @@ export function addPythonFunctionApp(workspaceRoot: string, name: string): void 
  * @throws Error when Python is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPythonLib(workspaceRoot: string, name: string): void {
+export function addPythonLib (workspaceRoot: string, name: string): void {
   ensurePython(workspaceRoot)
   ensurePythonPipPlugin(workspaceRoot)
   ensureRequirementsDev(workspaceRoot)
@@ -397,7 +397,7 @@ export function addPythonLib(workspaceRoot: string, name: string): void {
  * @throws Error when Python is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPythonInternalLib(workspaceRoot: string, name: string): void {
+export function addPythonInternalLib (workspaceRoot: string, name: string): void {
   ensurePython(workspaceRoot)
   ensurePythonPipPlugin(workspaceRoot)
   ensureRequirementsDev(workspaceRoot)
@@ -438,7 +438,7 @@ const PYTHON_PROJECT_DIRS = ['apps', 'python-packages', 'libs'] as const
  * @throws Never - pure filesystem probing.
  * @typeParam None - this function has no generic type parameters.
  */
-function findPythonProjectDirectory(
+function findPythonProjectDirectory (
   workspaceRoot: string,
   name: string
 ): (typeof PYTHON_PROJECT_DIRS)[number] | undefined {
@@ -464,7 +464,7 @@ function findPythonProjectDirectory(
  * @throws Never - a missing/malformed table simply yields an empty array.
  * @typeParam None - this function has no generic type parameters.
  */
-function parseVendorEntries(pyprojectToml: string): string[] {
+function parseVendorEntries (pyprojectToml: string): string[] {
   const match = /^\s*vendor\s*=\s*\[([^\]]*)\]/m.exec(pyprojectToml)
   if (!match) {
     return []
@@ -495,7 +495,7 @@ function parseVendorEntries(pyprojectToml: string): string[] {
  * the end instead.
  * @typeParam None - this function has no generic type parameters.
  */
-function addVendorEntry(pyprojectToml: string, lib: string): string {
+function addVendorEntry (pyprojectToml: string, lib: string): string {
   const existing = parseVendorEntries(pyprojectToml)
   if (existing.length > 0) {
     const merged = [...existing, lib].map(name => `"${name}"`).join(', ')
@@ -542,7 +542,7 @@ function addVendorEntry(pyprojectToml: string, lib: string): string {
  * a project is asked to vendor itself.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function addPythonVendor(
+export async function addPythonVendor (
   workspaceRoot: string,
   consumer: string,
   options: AddOptions,

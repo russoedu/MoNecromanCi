@@ -29,7 +29,7 @@ import { logger } from './util/logger'
  * @throws Never - spawn failures surface through the returned status, not a throw.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runShell(command: string, arguments_: string[], cwd: string): number {
+export function runShell (command: string, arguments_: string[], cwd: string): number {
   const result = spawn.sync(command, arguments_, { stdio: 'inherit', cwd })
   return result.status ?? 1
 }
@@ -47,7 +47,7 @@ export function runShell(command: string, arguments_: string[], cwd: string): nu
  * @throws Error when the Nx process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNx(arguments_: string[], cwd: string): void {
+export function runNx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', ['nx', ...arguments_], cwd)
   if (status !== 0) {
     throw new Error(`nx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -67,7 +67,7 @@ export function runNx(arguments_: string[], cwd: string): void {
  * @throws Error when the process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNpx(arguments_: string[], cwd: string): void {
+export function runNpx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', arguments_, cwd)
   if (status !== 0) {
     throw new Error(`npx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -114,7 +114,7 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * @throws Never - a non-zero exit is reported as a warning.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runFormatter(cwd: string, linter: LinterChoice, target = '.'): void {
+export function runFormatter (cwd: string, linter: LinterChoice, target = '.'): void {
   // `--write` is oxfmt's default, but it is passed explicitly so the intent
   // survives a future change of that default — this call REWRITES a user's
   // files, which is not something to leave implicit.

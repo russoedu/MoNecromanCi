@@ -28,7 +28,7 @@ const FIXTURE_OPTIONS: OverlayOptions = {
 let workspaceRoot: string
 
 /** Seeds a fresh temp dir with the two files a real `create-nx-workspace` leaves for applyOverlay to patch. */
-function seedWorkspace(): void {
+function seedWorkspace (): void {
   writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
   writeFileSync(
     join(workspaceRoot, 'package.json'),

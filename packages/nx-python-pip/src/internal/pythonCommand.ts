@@ -17,6 +17,6 @@
  * @throws Never - pure platform check.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonCommand(): string {
+export function pythonCommand (): string {
   return process.platform === 'win32' ? 'python' : 'python3'
 }

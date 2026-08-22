@@ -40,7 +40,7 @@ const ENVIRONMENT_BLOCK = /^environment:\r?\n(?:[ \t]+\S.*\r?\n)+/m
  * @throws Never - a missing key yields `undefined`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function readPubspecVersion(contents: string): string | undefined {
+export function readPubspecVersion (contents: string): string | undefined {
   return VERSION_LINE.exec(contents)?.[1]
 }
 
@@ -58,7 +58,7 @@ export function readPubspecVersion(contents: string): string | undefined {
  * @throws Never - pure string transformation.
  * @typeParam None - this function has no generic type parameters.
  */
-export function writePubspecVersion(contents: string, version: string): string {
+export function writePubspecVersion (contents: string, version: string): string {
   // A function replacement, not a string: a literal would let a `$&`/`$1`
   // sequence in `version` be interpreted as a capture-group reference.
   return contents.replace(VERSION_LINE, () => `version: ${version}`)
@@ -83,7 +83,7 @@ export function writePubspecVersion(contents: string, version: string): string {
  * @throws Error when the pubspec has no `environment:` block to anchor to.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withWorkspaceResolution(contents: string): string {
+export function withWorkspaceResolution (contents: string): string {
   if (RESOLUTION_LINE.test(contents)) {
     return contents
   }

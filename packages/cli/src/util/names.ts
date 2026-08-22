@@ -49,7 +49,7 @@
  * the four rejected positions described above.
  * @typeParam None - this function has no generic type parameters.
  */
-export function assertValidProjectName(name: string, label: string): void {
+export function assertValidProjectName (name: string, label: string): void {
   if (!/^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*$/.test(name)) {
     throw new Error(
       `${label} '${name}' is invalid — use lowercase letters, digits, hyphens and dots, starting with a letter, with no leading, trailing or repeated dot (e.g. 'my-project', 'my.service').`

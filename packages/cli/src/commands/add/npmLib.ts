@@ -35,7 +35,7 @@ import {
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function addNpmLib(
+export async function addNpmLib (
   workspaceRoot: string,
   name: string,
   options: AddOptions,

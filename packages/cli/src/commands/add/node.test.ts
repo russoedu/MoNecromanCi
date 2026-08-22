@@ -119,9 +119,9 @@ describe('runAdd node-app', () => {
       dependsOn: ['build'],
       outputs: ['{workspaceRoot}/dist/drop/node-app-svc.zip']
     })
-    expect(manifest.nx.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
+    expect(manifest.nx.targets.package.options.command).toContain('addLocalFolder(\'apps/svc/dist\')')
     expect(manifest.nx.targets.package.options.command).toContain(
-      `writeZip('dist/drop/node-app-svc.zip')`
+      'writeZip(\'dist/drop/node-app-svc.zip\')'
     )
 
     // The root package.json gets discoverable local-dev scripts, routed
@@ -223,11 +223,11 @@ describe('runAdd node-function-app', () => {
     // The v4 programming model: an HTTP trigger importing a tested helper,
     // wired into the esbuild entry so it's reachable (and thus bundled).
     expect(readFileSync(join(workspaceRoot, 'apps/api/src/main.ts'), 'utf8')).toContain(
-      `import './functions/hello'`
+      'import \'./functions/hello\''
     )
     const hello = readFileSync(join(workspaceRoot, 'apps/api/src/functions/hello.ts'), 'utf8')
-    expect(hello).toContain(`from '@azure/functions'`)
-    expect(hello).toContain(`app.http('hello'`)
+    expect(hello).toContain('from \'@azure/functions\'')
+    expect(hello).toContain('app.http(\'hello\'')
     expect(
       readFileSync(join(workspaceRoot, 'apps/api/src/functions/greeting.ts'), 'utf8')
     ).toContain('export function buildGreeting')
@@ -265,10 +265,10 @@ describe('runAdd node-function-app', () => {
     })
     const packageCommand = (manifest.nx.targets.package as { options: { command: string } }).options
       .command
-    expect(packageCommand).toContain(`addLocalFolder('apps/api/dist','dist')`)
-    expect(packageCommand).toContain(`addLocalFile('apps/api/host.json')`)
-    expect(packageCommand).toContain(`addLocalFile('apps/api/package.json')`)
-    expect(packageCommand).toContain(`writeZip('dist/drop/node-function-app-api.zip')`)
+    expect(packageCommand).toContain('addLocalFolder(\'apps/api/dist\',\'dist\')')
+    expect(packageCommand).toContain('addLocalFile(\'apps/api/host.json\')')
+    expect(packageCommand).toContain('addLocalFile(\'apps/api/package.json\')')
+    expect(packageCommand).toContain('writeZip(\'dist/drop/node-function-app-api.zip\')')
 
     // A local `func start`, wired through Nx so it depends on `build` first.
     expect(manifest.nx.targets.start).toMatchObject({

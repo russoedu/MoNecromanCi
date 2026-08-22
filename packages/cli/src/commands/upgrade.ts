@@ -65,7 +65,7 @@ export interface UpgradeOptions {
  * be resolved from either flags or the persisted config.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveRegistry(
+function resolveRegistry (
   options: UpgradeOptions,
   persisted: RegistryConfig | undefined
 ): RegistryConfig {
@@ -125,7 +125,7 @@ function resolveRegistry(
  * @throws Never - an unreadable directory falls through to the basename.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveWorkspaceName(workspaceRoot: string, persisted: Partial<OverlayOptions>): string {
+function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<OverlayOptions>): string {
   if (persisted.workspaceName) {
     return persisted.workspaceName
   }
@@ -156,7 +156,7 @@ function resolveWorkspaceName(workspaceRoot: string, persisted: Partial<OverlayO
  * the persisted config, naming the flag needed to supply it.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveOverlayOptions(
+function resolveOverlayOptions (
   workspaceRoot: string,
   options: UpgradeOptions,
   persisted: Partial<OverlayOptions>
@@ -234,7 +234,7 @@ function resolveOverlayOptions(
  * config.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void {
+export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): void {
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
     throw new Error(
       `No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`

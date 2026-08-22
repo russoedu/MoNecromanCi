@@ -45,7 +45,7 @@ const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkEslintConfigs(workspaceRoot: string): Finding[] {
+function checkEslintConfigs (workspaceRoot: string): Finding[] {
   const rootConfigs = globSync('eslint.config.{js,mjs,cjs,ts,mts,cts}', { cwd: workspaceRoot })
   const projectConfigs = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
     cwd: workspaceRoot
@@ -84,7 +84,7 @@ function checkEslintConfigs(workspaceRoot: string): Finding[] {
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkPrettierConfig(workspaceRoot: string): Finding {
+function checkPrettierConfig (workspaceRoot: string): Finding {
   const strayExists = fileExists(join(workspaceRoot, '.prettierrc'))
   return {
     check: 'Prettier config is mnci’s',
@@ -115,7 +115,7 @@ function checkPrettierConfig(workspaceRoot: string): Finding {
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkLinterModeIsConsistent(workspaceRoot: string): Finding {
+function checkLinterModeIsConsistent (workspaceRoot: string): Finding {
   const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
   const oxlintFiles = ['oxlint.config.ts', '.oxfmtrc.json'].filter(file =>
     fileExists(join(workspaceRoot, file))
@@ -147,7 +147,7 @@ function checkLinterModeIsConsistent(workspaceRoot: string): Finding {
  * @throws Never - a missing or unreadable manifest reads as empty.
  * @typeParam None - this function has no generic type parameters.
  */
-function declaredDevDependencies(workspaceRoot: string): Record<string, string> {
+function declaredDevDependencies (workspaceRoot: string): Record<string, string> {
   const manifestPath = join(workspaceRoot, 'package.json')
   if (!fileExists(manifestPath)) return {}
   const manifest = readJson<{ devDependencies?: Record<string, string> }>(manifestPath)
@@ -177,7 +177,7 @@ function declaredDevDependencies(workspaceRoot: string): Record<string, string> 
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkOneFormatterDeclared(workspaceRoot: string): Finding {
+function checkOneFormatterDeclared (workspaceRoot: string): Finding {
   const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
   const stale = linter === 'oxlint' ? 'prettier' : 'oxfmt'
   const declared = declaredDevDependencies(workspaceRoot)[stale] !== undefined
@@ -208,7 +208,7 @@ function checkOneFormatterDeclared(workspaceRoot: string): Finding {
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkOxlintToolchainDeclared(workspaceRoot: string): Finding {
+function checkOxlintToolchainDeclared (workspaceRoot: string): Finding {
   const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
   if (linter !== 'oxlint') {
     return {
@@ -244,7 +244,7 @@ function checkOxlintToolchainDeclared(workspaceRoot: string): Finding {
  * @throws Never - pure inspection.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkEslintPlugin(nxJson: Record<string, unknown>): Finding {
+function checkEslintPlugin (nxJson: Record<string, unknown>): Finding {
   const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
   const registered = plugins.some(
     entry =>
@@ -278,7 +278,7 @@ function checkEslintPlugin(nxJson: Record<string, unknown>): Finding {
  * @throws Never - a malformed manifest yields no finding.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkResolvedEslint(workspaceRoot: string): Finding | undefined {
+function checkResolvedEslint (workspaceRoot: string): Finding | undefined {
   const manifestPath = join(workspaceRoot, 'node_modules/eslint/package.json')
   if (!fileExists(manifestPath)) {
     return undefined
@@ -313,7 +313,7 @@ function checkResolvedEslint(workspaceRoot: string): Finding | undefined {
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkNpmrc(
+function checkNpmrc (
   workspaceRoot: string,
   registry: RegistryConfig | undefined,
   scope: string | undefined
@@ -353,7 +353,7 @@ function checkNpmrc(
  * @throws Never - an unreadable `project.json` is reported as missing.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkVersionActions(workspaceRoot: string): Finding[] {
+function checkVersionActions (workspaceRoot: string): Finding[] {
   const candidates = [
     ...globSync('packages/*/pubspec.yaml', { cwd: workspaceRoot }),
     ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot })
@@ -393,7 +393,7 @@ function checkVersionActions(workspaceRoot: string): Finding[] {
  * @throws Never - a non-zero exit is the finding, not an error.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkSync(workspaceRoot: string): Finding {
+function checkSync (workspaceRoot: string): Finding {
   return {
     check: 'TypeScript project references synced',
     ok: runShell('npx', ['nx', 'sync:check'], workspaceRoot) === 0,
@@ -419,7 +419,7 @@ function checkSync(workspaceRoot: string): Finding {
  * @throws Error when `workspaceRoot` has no `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function collectFindings(workspaceRoot: string): Finding[] {
+export function collectFindings (workspaceRoot: string): Finding[] {
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   if (!fileExists(nxJsonPath)) {
     throw new Error(
@@ -462,7 +462,7 @@ export function collectFindings(workspaceRoot: string): Finding[] {
  * @throws Error when `workspaceRoot` is not an Nx workspace.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runDoctor(workspaceRoot: string): void {
+export function runDoctor (workspaceRoot: string): void {
   const findings = collectFindings(workspaceRoot)
   const failed = findings.filter(finding => !finding.ok)
 

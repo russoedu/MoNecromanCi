@@ -53,7 +53,7 @@ import {
  * @returns The full command including `node -e` and both quotes, or `''` if no
  * guard in `pipeline` contains `marker`.
  */
-function extractGuard(pipeline: string, marker: string): string {
+function extractGuard (pipeline: string, marker: string): string {
   const guards = pipeline.match(/node -e "[^"]*"/g) ?? []
 
   return guards.find(guard => guard.includes(marker)) ?? ''
@@ -94,7 +94,7 @@ describe('pythonPublishUrl', () => {
 })
 
 /** Everything in an .npmrc that is not a comment or blank — i.e. actual config. */
-function directives(npmrc: string): string[] {
+function directives (npmrc: string): string[] {
   return npmrc
     .split('\n')
     .map(line => line.trim())
@@ -352,15 +352,15 @@ describe('azurePipelinesYaml', () => {
     // The release step exports twine publish creds when there are Python packages.
     expect(pipeline).toContain(`TWINE_REPOSITORY_URL='${url}'`)
     // Reuses the base64 PAT from the group, decoded to the raw token twine needs.
-    expect(pipeline).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(pipeline).toContain('Buffer.from(process.env.PAT,\'base64\')')
     // Guarded on either publishable dir.
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'packages/*/package.json\')')
     // A guarded step installs the fixed pip toolchain before any Python target runs.
     expect(pipeline).toContain('-m pip install -r requirements-dev.txt')
     // Resolves python vs python3 by platform, not hard-coded (Windows agents
     // have no python3.exe).
-    expect(pipeline).toContain(`process.platform==='win32'?'python':'python3'`)
+    expect(pipeline).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
     // A second guarded step editable-installs every Python project so
     // cross-project imports (internal libs included) resolve at test time.
     expect(pipeline).toContain('Install Python project dependencies (editable, workspace-wide)')
@@ -369,7 +369,7 @@ describe('azurePipelinesYaml', () => {
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
     // Python packages are always in the release scope (versioning + tags)…
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     // …but without an Azure feed the release step sets no TWINE_* env.
     expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
@@ -430,7 +430,7 @@ describe('azurePipelinesYaml', () => {
     // nothing about type correctness — a workspace can be green on
     // lint+test+build and still carry real errors. Asserted on the shared target
     // list, so it holds on both the affected and the run-many path.
-    expect(pipeline).toContain(`const T='lint,typecheck,test,build'`)
+    expect(pipeline).toContain('const T=\'lint,typecheck,test,build\'')
   })
 
   it('gates formatting with its own step, and keeps it workspace-wide even on a PR', () => {
@@ -478,22 +478,22 @@ describe('azurePipelinesYaml', () => {
     // One pip invocation covers every project kind: editable-installs apps,
     // publishable libs and internal libs (all have a pyproject.toml), and
     // installs function apps' requirements.txt (no pyproject.toml to editable-install).
-    expect(pipeline).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('libs/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('apps/*/requirements.txt')`)
-    expect(pipeline).toContain(`'-m','pip','install','--quiet'`)
+    expect(pipeline).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'libs/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'apps/*/requirements.txt\')')
+    expect(pipeline).toContain('\'-m\',\'pip\',\'install\',\'--quiet\'')
   })
 
   it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     const npmInstallIndex = pipeline.indexOf('npm ci')
-    const npmAuditIndex = pipeline.indexOf(`'audit','--json'`)
+    const npmAuditIndex = pipeline.indexOf('\'audit\',\'--json\'')
     const pythonWorkspaceInstallIndex = pipeline.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
-    const pipAuditIndex = pipeline.indexOf(`'-m','pip_audit'`)
+    const pipAuditIndex = pipeline.indexOf('\'-m\',\'pip_audit\'')
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
 
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
@@ -609,14 +609,14 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('PathtoPublish: $(Build.SourcesDirectory)/dist/drop')
     // The build tag is derived from the zip filenames, so it is exactly the
     // zip's <type>-<name> basename.
-    expect(pipeline).toContain(`path.basename(f,'.zip')`)
+    expect(pipeline).toContain('path.basename(f,\'.zip\')')
   })
 
   it('guards pack and release with portable node one-liners while apps/packages are empty', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    expect(pipeline).toContain(`globSync('apps/*/project.json')`)
-    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    expect(pipeline).toContain('globSync(\'apps/*/project.json\')')
+    expect(pipeline).toContain('globSync(\'packages/*/package.json\')')
     expect(pipeline).toContain('nx release --yes')
   })
 })
@@ -704,17 +704,17 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python)')
     expect(workflow).not.toContain('nx run-many -t publish')
     expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
-    expect(workflow).toContain(`Buffer.from(process.env.PAT,'base64')`)
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('packages/*/package.json')`)
+    expect(workflow).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'packages/*/package.json\')')
     expect(workflow).toContain('-m pip install -r requirements-dev.txt')
-    expect(workflow).toContain(`process.platform==='win32'?'python':'python3'`)
+    expect(workflow).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
     expect(workflow).toContain('Install Python project dependencies (editable, workspace-wide)')
   })
 
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
   })
 
@@ -757,22 +757,22 @@ describe('githubActionsYaml', () => {
 
     expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
     expect(syncCheckIndex).toBeGreaterThan(workspaceInstallIndex)
-    expect(workflow).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('libs/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('apps/*/requirements.txt')`)
-    expect(workflow).toContain(`'-m','pip','install','--quiet'`)
+    expect(workflow).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'libs/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'apps/*/requirements.txt\')')
+    expect(workflow).toContain('\'-m\',\'pip\',\'install\',\'--quiet\'')
   })
 
   it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     const npmInstallIndex = workflow.indexOf('npm ci')
-    const npmAuditIndex = workflow.indexOf(`'audit','--json'`)
+    const npmAuditIndex = workflow.indexOf('\'audit\',\'--json\'')
     const pythonWorkspaceInstallIndex = workflow.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
-    const pipAuditIndex = workflow.indexOf(`'-m','pip_audit'`)
+    const pipAuditIndex = workflow.indexOf('\'-m\',\'pip_audit\'')
     const syncCheckIndex = workflow.indexOf('nx sync:check')
 
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
@@ -873,14 +873,14 @@ describe('githubActionsYaml', () => {
 
     expect(github).toContain('-m pip install -r requirements-dev.txt')
     expect(azure).toContain('-m pip install -r requirements-dev.txt')
-    expect(github).toContain(`process.platform==='win32'?'python':'python3'`)
-    expect(azure).toContain(`process.platform==='win32'?'python':'python3'`)
-    expect(github).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(azure).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(github).toContain(`globSync('apps/*/project.json')`)
-    expect(azure).toContain(`globSync('apps/*/project.json')`)
-    expect(github).toContain(`Buffer.from(process.env.PAT,'base64')`)
-    expect(azure).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(github).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
+    expect(azure).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
+    expect(github).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(azure).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(github).toContain('globSync(\'apps/*/project.json\')')
+    expect(azure).toContain('globSync(\'apps/*/project.json\')')
+    expect(github).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(azure).toContain('Buffer.from(process.env.PAT,\'base64\')')
 
     // The Flutter SDK install and the root pub get are byte-identical in both.
     // Only the PATH step legitimately differs, because the two providers have
@@ -889,8 +889,8 @@ describe('githubActionsYaml', () => {
     const flutterInstall = `'--branch','${FLUTTER_SDK_VERSION}','https://github.com/flutter/flutter.git'`
     expect(github).toContain(flutterInstall)
     expect(azure).toContain(flutterInstall)
-    expect(github).toContain(`'pub','get'`)
-    expect(azure).toContain(`'pub','get'`)
+    expect(github).toContain('\'pub\',\'get\'')
+    expect(azure).toContain('\'pub\',\'get\'')
     expect(github).toContain('No Flutter projects - skipping.')
     expect(azure).toContain('No Flutter projects - skipping.')
 
@@ -901,8 +901,8 @@ describe('githubActionsYaml', () => {
     expect(azure).toContain('npm run format:check')
 
     // Same for the typecheck target, for the same reason.
-    expect(github).toContain(`const T='lint,typecheck,test,build'`)
-    expect(azure).toContain(`const T='lint,typecheck,test,build'`)
+    expect(github).toContain('const T=\'lint,typecheck,test,build\'')
+    expect(azure).toContain('const T=\'lint,typecheck,test,build\'')
 
     // The verify guard, byte-for-byte. This one matters more than the others:
     // the two providers detect a pull request through DIFFERENT environment
@@ -942,7 +942,7 @@ describeOnPosix('the verify guard, executed', () => {
 
   /** Runs the guard in the fixture repo. @param env - Extra environment.
    * @returns The stub's recorded Nx command, plus the guard's exit status. */
-  function run(env: Record<string, string> = {}): { command: string; status: number | null } {
+  function run (env: Record<string, string> = {}): { command: string; status: number | null } {
     const result = spawnSync(guard, {
       cwd: repo,
       shell: true,
@@ -1103,7 +1103,7 @@ describeOnPosix('the npm audit step, executed', () => {
    * finds anything, which the guard must not confuse with a failure).
    * @returns The guard's exit status and its stdout.
    */
-  function run(report: string, exitCode = 1): { status: number | null; out: string } {
+  function run (report: string, exitCode = 1): { status: number | null; out: string } {
     writeFileSync(join(workspace, 'stub-bin/report.json'), report)
     const result = spawnSync(guard, {
       cwd: workspace,
@@ -1498,14 +1498,14 @@ describe('rootScripts', () => {
     // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
     expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
     // ... then the workspace-wide editable install of every Python project.
-    expect(scripts['python:install']).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(scripts['python:install']).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(scripts['python:install']).toContain(`globSync('libs/*/pyproject.toml')`)
+    expect(scripts['python:install']).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(scripts['python:install']).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(scripts['python:install']).toContain('globSync(\'libs/*/pyproject.toml\')')
     // Chained (not parallel), toolchain install first.
     const toolchainIndex = scripts['python:install'].indexOf(
       '-m pip install -r requirements-dev.txt'
     )
-    const workspaceIndex = scripts['python:install'].indexOf(`globSync('apps/*/pyproject.toml')`)
+    const workspaceIndex = scripts['python:install'].indexOf('globSync(\'apps/*/pyproject.toml\')')
     expect(toolchainIndex).toBeGreaterThan(-1)
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
   })
@@ -2518,7 +2518,7 @@ describe('applyOverlay', () => {
     // The local-dev counterpart of the CI Python-install guards — see the
     // dedicated `python:install` describe block below for the full assertions.
     expect(pythonInstall).toContain('-m pip install -r requirements-dev.txt')
-    expect(pythonInstall).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(pythonInstall).toContain('globSync(\'apps/*/pyproject.toml\')')
   })
 
   it('keeps any scripts the preset generated that the curated set does not own', () => {

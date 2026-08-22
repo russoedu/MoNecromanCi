@@ -14,7 +14,7 @@ import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
  * stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptText(message: string, fallback?: string): Promise<string> {
+export async function promptText (message: string, fallback?: string): Promise<string> {
   const value = await input({
     message,
     default: fallback,
@@ -36,7 +36,7 @@ export async function promptText(message: string, fallback?: string): Promise<st
  * not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptRegistry(fallbackOrganization?: string): Promise<RegistryConfig> {
+export async function promptRegistry (fallbackOrganization?: string): Promise<RegistryConfig> {
   const kind = await select<RegistryConfig['kind']>({
     message: 'Package registry for publishable libraries',
     choices: [
@@ -71,7 +71,7 @@ export async function promptRegistry(fallbackOrganization?: string): Promise<Reg
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptCi(): Promise<CiProvider> {
+export async function promptCi (): Promise<CiProvider> {
   return await select<CiProvider>({
     message: 'CI provider',
     choices: [
@@ -95,7 +95,7 @@ export async function promptCi(): Promise<CiProvider> {
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptNxCloud(): Promise<boolean> {
+export async function promptNxCloud (): Promise<boolean> {
   return await confirm({
     message: 'Connect this workspace to Nx Cloud (remote caching + CI insights)?',
     default: false
@@ -125,7 +125,7 @@ export async function promptNxCloud(): Promise<boolean> {
  * @throws Propagates any error `@inquirer/prompts` raises (e.g. non-TTY stdin).
  * @typeParam None - this function has no generic type parameters.
  */
-export async function promptStack(): Promise<StackConfig> {
+export async function promptStack (): Promise<StackConfig> {
   const testRunner = await select<StackConfig['testRunner']>({
     message: 'Unit-test runner',
     choices: [

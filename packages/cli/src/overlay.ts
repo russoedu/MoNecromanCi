@@ -12,8 +12,8 @@ import { markExecutable, readCodeWorkspace, readJson, toJson, writeFileEnsured }
  * @typeParam None - this type has no generic type parameters.
  */
 export type RegistryConfig =
-  | { kind: 'azure-artifacts'; organization: string; project: string; artifactsFeed: string }
-  | { kind: 'npm' }
+  | { kind: 'azure-artifacts'; organization: string; project: string; artifactsFeed: string } |
+  { kind: 'npm' }
 
 /**
  * Which CI provider(s) {@link applyOverlay} writes a pipeline file for.
@@ -134,7 +134,7 @@ export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function registryUrl(registry: RegistryConfig): string | undefined {
+export function registryUrl (registry: RegistryConfig): string | undefined {
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/npm/registry/`
   }
@@ -187,7 +187,7 @@ export function registryUrl(registry: RegistryConfig): string | undefined {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function npmrcContent(registry: RegistryConfig, scope: string): string {
+export function npmrcContent (registry: RegistryConfig, scope: string): string {
   if (registry.kind === 'npm') {
     return `; Publish authentication for the public npm registry.
 ;
@@ -327,7 +327,7 @@ ${feedKey}:email=npm-requires-this-and-never-uses-it
  * @throws Never - builds a plain object with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function releaseConfig(ci: CiProvider): Record<string, unknown> {
+export function releaseConfig (ci: CiProvider): Record<string, unknown> {
   const githubReleases = ci === 'github'
   return {
     projectsRelationship: 'independent',
@@ -413,7 +413,7 @@ export const ESLINT_PLUGIN_CONFIG = {
  * @throws Never - pure property read.
  * @typeParam None - this function has no generic type parameters.
  */
-function pluginName(entry: unknown): string | undefined {
+function pluginName (entry: unknown): string | undefined {
   return typeof entry === 'string' ? entry : (entry as { plugin?: string }).plugin
 }
 
@@ -430,7 +430,7 @@ function pluginName(entry: unknown): string | undefined {
  * @throws Never - performs a pure object merge with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withEslintPlugin(nxJson: Record<string, unknown>): Record<string, unknown> {
+export function withEslintPlugin (nxJson: Record<string, unknown>): Record<string, unknown> {
   const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
   const registered = plugins.some(entry => pluginName(entry) === ESLINT_PLUGIN_CONFIG.plugin)
   return registered
@@ -483,7 +483,7 @@ export const SHARED_GLOBAL_INPUTS = [
  * @throws Never - performs a pure object merge with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withSharedGlobals(nxJson: Record<string, unknown>): Record<string, unknown> {
+export function withSharedGlobals (nxJson: Record<string, unknown>): Record<string, unknown> {
   const namedInputs = (nxJson.namedInputs as Record<string, unknown> | undefined) ?? {}
   const existing = (namedInputs.sharedGlobals as unknown[] | undefined) ?? []
   const missing = SHARED_GLOBAL_INPUTS.filter(entry => !existing.includes(entry))
@@ -509,7 +509,7 @@ export function withSharedGlobals(nxJson: Record<string, unknown>): Record<strin
  * @throws Never - performs a pure object merge with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withReleaseConfig(
+export function withReleaseConfig (
   nxJson: Record<string, unknown>,
   ci: CiProvider
 ): Record<string, unknown> {
@@ -613,7 +613,7 @@ export const ESLINT_CONFIG_VERSION = '^0.1.0'
  * @throws Never - reads an environment variable.
  * @typeParam None - this function has no generic type parameters.
  */
-export function eslintConfigSpec(): string {
+export function eslintConfigSpec (): string {
   return process.env.MNCI_ESLINT_CONFIG_SPEC ?? ESLINT_CONFIG_VERSION
 }
 
@@ -667,7 +667,7 @@ export const ESLINT_VERSION = '^10.8.0'
  * @throws Never - performs pure string formatting with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function devcontainerJson(workspaceName: string, linter: LinterChoice): string {
+export function devcontainerJson (workspaceName: string, linter: LinterChoice): string {
   return `${toJson({
     name: workspaceName,
     image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
@@ -828,7 +828,7 @@ export const ESLINT_PEER_OVERRIDES = {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function eslintToolchainDependencies(nxVersion: string): Record<string, string> {
+export function eslintToolchainDependencies (nxVersion: string): Record<string, string> {
   return {
     eslint: ESLINT_VERSION,
     '@nx/eslint': nxVersion,
@@ -876,7 +876,7 @@ export const LINTER_ONLY_DEPENDENCIES = {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function withoutStaleLinterDependencies(
+export function withoutStaleLinterDependencies (
   devDeps: Record<string, string>,
   linter: LinterChoice
 ): Record<string, string> {
@@ -912,7 +912,7 @@ export function withoutStaleLinterDependencies(
  * @throws Never - performs pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function rootLintTarget(linter: LinterChoice): Record<string, unknown> {
+export function rootLintTarget (linter: LinterChoice): Record<string, unknown> {
   if (linter !== 'oxlint') return ROOT_LINT_TARGET
   return {
     executor: 'nx:run-commands',
@@ -960,7 +960,7 @@ export const OXFMT_VERSION = '^0.61.0'
  * @throws Never - returns a literal.
  * @typeParam None - this function has no generic type parameters.
  */
-export function oxlintToolchainDependencies(): Record<string, string> {
+export function oxlintToolchainDependencies (): Record<string, string> {
   return {
     '@mnci/oxlint-config': oxlintConfigSpec(),
     oxlint: OXLINT_VERSION,
@@ -991,7 +991,7 @@ export const OXLINT_CONFIG_VERSION = '^0.1.0'
  * @throws Never - reads an environment variable.
  * @typeParam None - this function has no generic type parameters.
  */
-export function oxlintConfigSpec(): string {
+export function oxlintConfigSpec (): string {
   return process.env.MNCI_OXLINT_CONFIG_SPEC ?? OXLINT_CONFIG_VERSION
 }
 
@@ -1048,9 +1048,9 @@ export const ESLINT_BLOCK_INVENTORY = `// WHAT IS IN HERE. Each line is one conf
 //   mnci/tests                    *.spec/*.test relaxations — eslint-plugin-jest
 //                                 (Vitest's globals too; the two stacks share them)
 //   mnci/nx-dependency-checks     @nx/eslint-plugin, on publishable packages' manifests
-//   mnci/prettier-compat          eslint-config-prettier — switches off every rule
-//                                 Prettier owns. Composed LAST, on purpose.
-//   mnci/stylistic                the 3 Standard rules Prettier does not touch
+//   mnci/standard                 JavaScript Standard Style as ESLint rules — the
+//                                 whole formatting opinion. Composed LAST, on
+//                                 purpose: nothing may follow that disables it.
 //
 // To list them as ESLint actually resolves them:  npx eslint --inspect-config
 `
@@ -1339,7 +1339,7 @@ export const OXFMT_ONLY_LANGUAGES = ['toml'] as const
  * @throws Never - pure array construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function formattedLanguages(linter: LinterChoice): string[] {
+export function formattedLanguages (linter: LinterChoice): string[] {
   return [...FORMATTED_LANGUAGES, ...(linter === 'oxlint' ? OXFMT_ONLY_LANGUAGES : [])]
 }
 
@@ -1357,7 +1357,7 @@ export function formattedLanguages(linter: LinterChoice): string[] {
  * @throws Never - performs a pure lookup.
  * @typeParam None - this function has no generic type parameters.
  */
-export function vscodeExtensions(linter: LinterChoice): string[] {
+export function vscodeExtensions (linter: LinterChoice): string[] {
   return [...LINTER_EXTENSIONS[linter], ...SHARED_VSCODE_EXTENSIONS]
 }
 
@@ -1379,7 +1379,7 @@ export function vscodeExtensions(linter: LinterChoice): string[] {
  * @throws Never - performs pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
+export function vscodeSettings (linter: LinterChoice): Record<string, unknown> {
   const formatter = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
   const eslintLanguages =
     linter === 'oxlint'
@@ -1456,7 +1456,7 @@ export function vscodeSettings(linter: LinterChoice): Record<string, unknown> {
  * @throws Never - performs pure string formatting with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function vscodeWorkspace(
+export function vscodeWorkspace (
   workspaceName: string,
   linter: LinterChoice,
   existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
@@ -1523,7 +1523,7 @@ export const ROOT_SCRIPTS = {
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
  */
-export function rootScripts(linter: LinterChoice = 'eslint'): Record<string, string> {
+export function rootScripts (linter: LinterChoice = 'eslint'): Record<string, string> {
   // oxfmt reads `.gitignore` and `.prettierignore` by default, so the same
   // `.prettierignore` mnci already writes governs both formatters and there is no
   // second ignore file to keep in sync. Verified against oxfmt's own CLI docs.
@@ -1555,7 +1555,7 @@ export function rootScripts(linter: LinterChoice = 'eslint'): Record<string, str
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
+export function generatorDefaults (stack: StackConfig): Record<string, unknown> {
   const shared = {
     // `none`, not `eslint`, and the workspace is still fully linted. The root
     // config plus `@nx/eslint/plugin` ({@link ESLINT_PLUGIN_CONFIG}) give every
@@ -1593,7 +1593,7 @@ export function generatorDefaults(stack: StackConfig): Record<string, unknown> {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
+export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
   return {
     // Persisted so `mnci upgrade` can name the `<name>.code-workspace` file it
     // rewrites. Its absence is why upgrade used to write a file literally called
@@ -1629,7 +1629,7 @@ export function mnciConfig(options: OverlayOptions): Record<string, unknown> {
  * @throws Propagates any Node.js `fs`/JSON error reading `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function readMnciConfig(workspaceRoot: string): Partial<OverlayOptions> {
+export function readMnciConfig (workspaceRoot: string): Partial<OverlayOptions> {
   const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
   return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
@@ -1650,7 +1650,7 @@ export function readMnciConfig(workspaceRoot: string): Partial<OverlayOptions> {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonPublishUrl(registry: RegistryConfig): string | undefined {
+export function pythonPublishUrl (registry: RegistryConfig): string | undefined {
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/pypi/upload/`
   }
@@ -1679,7 +1679,7 @@ export function pythonPublishUrl(registry: RegistryConfig): string | undefined {
  * plain generated string, not TypeScript, so it inlines the identical check
  * rather than importing it.
  */
-const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py+' -m pip install -r requirements-dev.txt',{stdio:'inherit',shell:true}).status ?? 1)"`
+const PYTHON_INSTALL_GUARD = 'node -e "if(!require(\'node:fs\').existsSync(\'requirements-dev.txt\')){console.log(\'No Python projects - skipping.\');process.exit(0)}const py=process.platform===\'win32\'?\'python\':\'python3\';process.exit(require(\'node:child_process\').spawnSync(py+\' -m pip install -r requirements-dev.txt\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
  * The portable `node -e` one-liner that editable-installs every Python
@@ -1717,7 +1717,7 @@ const PYTHON_INSTALL_GUARD = `node -e "if(!require('node:fs').existsSync('requir
  * Resolves `python` vs `python3` at run time the same way
  * {@link PYTHON_INSTALL_GUARD} does — see its remarks.
  */
-const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),path=require('node:path');const editableDirs=[...fs.globSync('apps/*/pyproject.toml'),...fs.globSync('python-packages/*/pyproject.toml'),...fs.globSync('libs/*/pyproject.toml')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync('apps/*/requirements.txt');if(editableDirs.length===0&&requirementsFiles.length===0){console.log('No Python projects - skipping.');process.exit(0)}const args=['-m','pip','install','--quiet',...editableDirs.flatMap((d)=>['-e',d]),...requirementsFiles.flatMap((f)=>['-r',f])];const py=process.platform==='win32'?'python':'python3';process.exit(require('node:child_process').spawnSync(py,args,{stdio:'inherit'}).status ?? 1)"`
+const PYTHON_WORKSPACE_INSTALL_GUARD = 'node -e "const fs=require(\'node:fs\'),path=require(\'node:path\');const editableDirs=[...fs.globSync(\'apps/*/pyproject.toml\'),...fs.globSync(\'python-packages/*/pyproject.toml\'),...fs.globSync(\'libs/*/pyproject.toml\')].map((p)=>path.dirname(p));const requirementsFiles=fs.globSync(\'apps/*/requirements.txt\');if(editableDirs.length===0&&requirementsFiles.length===0){console.log(\'No Python projects - skipping.\');process.exit(0)}const args=[\'-m\',\'pip\',\'install\',\'--quiet\',...editableDirs.flatMap((d)=>[\'-e\',d]),...requirementsFiles.flatMap((f)=>[\'-r\',f])];const py=process.platform===\'win32\'?\'python\':\'python3\';process.exit(require(\'node:child_process\').spawnSync(py,args,{stdio:\'inherit\'}).status ?? 1)"'
 
 /**
  * The portable `node -e` one-liner that runs `pip-audit` against the shared
@@ -1749,7 +1749,7 @@ const PYTHON_WORKSPACE_INSTALL_GUARD = `node -e "const fs=require('node:fs'),pat
  * red on findings nobody can act on. Do not "align" the two by making this one
  * blocking — that trades a weak gate for a false one.
  */
-const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirements-dev.txt')){console.log('No Python projects - skipping.');process.exit(0)}const py=process.platform==='win32'?'python':'python3';require('node:child_process').spawnSync(py,['-m','pip_audit'],{stdio:'inherit'});process.exit(0)"`
+const PIP_AUDIT_GUARD = 'node -e "if(!require(\'node:fs\').existsSync(\'requirements-dev.txt\')){console.log(\'No Python projects - skipping.\');process.exit(0)}const py=process.platform===\'win32\'?\'python\':\'python3\';require(\'node:child_process\').spawnSync(py,[\'-m\',\'pip_audit\'],{stdio:\'inherit\'});process.exit(0)"'
 
 /**
  * The portable `node -e` one-liner that downloads the workspace's Go module
@@ -1771,7 +1771,7 @@ const PIP_AUDIT_GUARD = `node -e "if(!require('node:fs').existsSync('requirement
  * obvious "download dependencies" failure rather than as a confusing error
  * inside the build, matching what the Python install steps do.
  */
-const GO_MODULE_DOWNLOAD_GUARD = `node -e "if(!require('node:fs').existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('go',['mod','download'],{stdio:'inherit'}).status ?? 1)"`
+const GO_MODULE_DOWNLOAD_GUARD = 'node -e "if(!require(\'node:fs\').existsSync(\'go.mod\')){console.log(\'No Go projects - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'go\',[\'mod\',\'download\'],{stdio:\'inherit\'}).status ?? 1)"'
 
 /**
  * The portable `node -e` one-liner that installs `golangci-lint` when the
@@ -1792,7 +1792,7 @@ const GO_MODULE_DOWNLOAD_GUARD = `node -e "if(!require('node:fs').existsSync('go
  * Skips when `golangci-lint` is already resolvable, so a self-hosted agent
  * that pre-installs it pays nothing.
  */
-const GOLANGCI_LINT_INSTALL_GUARD = `node -e "const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}if(cp.spawnSync('golangci-lint',['--version'],{stdio:'ignore'}).status===0){console.log('golangci-lint already installed - skipping.');process.exit(0)}process.exit(cp.spawnSync('go',['install','github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest'],{stdio:'inherit'}).status ?? 1)"`
+const GOLANGCI_LINT_INSTALL_GUARD = 'node -e "const fs=require(\'node:fs\'),cp=require(\'node:child_process\');if(!fs.existsSync(\'go.mod\')){console.log(\'No Go projects - skipping.\');process.exit(0)}if(cp.spawnSync(\'golangci-lint\',[\'--version\'],{stdio:\'ignore\'}).status===0){console.log(\'golangci-lint already installed - skipping.\');process.exit(0)}process.exit(cp.spawnSync(\'go\',[\'install\',\'github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest\'],{stdio:\'inherit\'}).status ?? 1)"'
 
 /**
  * The shared prelude that resolves `GOPATH/bin` — where
@@ -1806,7 +1806,7 @@ const GOLANGCI_LINT_INSTALL_GUARD = `node -e "const fs=require('node:fs'),cp=req
  * to that point — the skip-when-no-Go check and reading `go env GOPATH` —
  * is identical, so it lives here once.
  */
-const GO_TOOL_PATH_PRELUDE = `const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}const r=cp.spawnSync('go',['env','GOPATH'],{encoding:'utf8'});if(r.status!==0){console.log('Could not resolve GOPATH - skipping.');process.exit(0)}const bin=require('node:path').join(r.stdout.trim(),'bin');`
+const GO_TOOL_PATH_PRELUDE = 'const fs=require(\'node:fs\'),cp=require(\'node:child_process\');if(!fs.existsSync(\'go.mod\')){console.log(\'No Go projects - skipping.\');process.exit(0)}const r=cp.spawnSync(\'go\',[\'env\',\'GOPATH\'],{encoding:\'utf8\'});if(r.status!==0){console.log(\'Could not resolve GOPATH - skipping.\');process.exit(0)}const bin=require(\'node:path\').join(r.stdout.trim(),\'bin\');'
 
 /**
  * Azure Pipelines: publishes `GOPATH/bin` to later steps in the job.
@@ -1984,7 +1984,7 @@ const FLUTTER_TOOL_PATH_GITHUB = `node -e "${FLUTTER_TOOL_PATH_PRELUDE}if(!proce
  * Runs with `shell: true` on Windows only, where `flutter` is a `.bat` shim
  * that `spawnSync` cannot execute directly.
  */
-const FLUTTER_PUB_GET_GUARD = `node -e "const fs=require('node:fs');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('flutter',['pub','get'],{stdio:'inherit',shell:process.platform==='win32'}).status ?? 1)"`
+const FLUTTER_PUB_GET_GUARD = 'node -e "const fs=require(\'node:fs\');if(!fs.existsSync(\'pubspec.yaml\')){console.log(\'No Flutter projects - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'flutter\',[\'pub\',\'get\'],{stdio:\'inherit\',shell:process.platform===\'win32\'}).status ?? 1)"'
 
 /**
  * The `npm audit` step: blocks on an **actionable** advisory, reports the rest.
@@ -2032,7 +2032,7 @@ const FLUTTER_PUB_GET_GUARD = `node -e "const fs=require('node:fs');if(!fs.exist
  * this monorepo's fixed tree exits 0, and the pre-fix tree exits 1 listing all
  * nine. The unit tests drive the remaining branches with a stub `npm` on PATH.
  */
-const NPM_AUDIT_STEP = `node -e "const cp=require('node:child_process');const r=cp.spawnSync('npm',['audit','--json'],{encoding:'utf8',shell:process.platform==='win32',maxBuffer:33554432});let d;try{d=JSON.parse(r.stdout)}catch{console.log('npm audit produced no JSON (exit '+r.status+') - not blocking on a broken audit.');process.exit(0)}const all=Object.values(d.vulnerabilities||{});const BLOCK=['critical','high','moderate'];const act=all.filter(v=>v.fixAvailable&&BLOCK.includes(v.severity));const rest=all.filter(v=>!act.includes(v));for(const v of rest)console.log('  note ['+v.severity+'] '+v.name+(v.fixAvailable?' - fix available, below the blocking threshold':' - NO fix available upstream, nothing to do here'));if(act.length===0){console.log('npm audit - '+all.length+' advisory(ies), none actionable at moderate or above.');process.exit(0)}for(const v of act)console.log('  BLOCKING ['+v.severity+'] '+v.name+' - fix available'+(v.fixAvailable&&v.fixAvailable.isSemVerMajor?' (semver-major)':''));console.log('Each has a published fix. Add a targeted overrides entry in package.json rather than npm audit fix --force.');process.exit(1)"`
+const NPM_AUDIT_STEP = 'node -e "const cp=require(\'node:child_process\');const r=cp.spawnSync(\'npm\',[\'audit\',\'--json\'],{encoding:\'utf8\',shell:process.platform===\'win32\',maxBuffer:33554432});let d;try{d=JSON.parse(r.stdout)}catch{console.log(\'npm audit produced no JSON (exit \'+r.status+\') - not blocking on a broken audit.\');process.exit(0)}const all=Object.values(d.vulnerabilities||{});const BLOCK=[\'critical\',\'high\',\'moderate\'];const act=all.filter(v=>v.fixAvailable&&BLOCK.includes(v.severity));const rest=all.filter(v=>!act.includes(v));for(const v of rest)console.log(\'  note [\'+v.severity+\'] \'+v.name+(v.fixAvailable?\' - fix available, below the blocking threshold\':\' - NO fix available upstream, nothing to do here\'));if(act.length===0){console.log(\'npm audit - \'+all.length+\' advisory(ies), none actionable at moderate or above.\');process.exit(0)}for(const v of act)console.log(\'  BLOCKING [\'+v.severity+\'] \'+v.name+\' - fix available\'+(v.fixAvailable&&v.fixAvailable.isSemVerMajor?\' (semver-major)\':\'\'));console.log(\'Each has a published fix. Add a targeted overrides entry in package.json rather than npm audit fix --force.\');process.exit(1)"'
 
 /**
  * The Nx targets every CI run verifies.
@@ -2095,7 +2095,7 @@ const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');c
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  * Skips cleanly when the workspace has no apps yet.
  */
-const PACK_APPS_GUARD = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});if(fs.globSync('apps/*/project.json').length===0){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"`
+const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});if(fs.globSync(\'apps/*/project.json\').length===0){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
  * Builds the portable `node -e` one-liner that versions, tags and publishes
@@ -2114,7 +2114,7 @@ const PACK_APPS_GUARD = `node -e "const fs=require('node:fs');fs.mkdirSync('dist
  * @throws Never - pure string building.
  * @typeParam None - this function has no generic type parameters.
  */
-function releaseGuard(pythonPublishEnv: string): string {
+function releaseGuard (pythonPublishEnv: string): string {
   return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
@@ -2129,7 +2129,7 @@ function releaseGuard(pythonPublishEnv: string): string {
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonPublishEnvFragment(pythonPublishUrl?: string): string {
+function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
   return pythonPublishUrl
     ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
     : ''
@@ -2155,7 +2155,7 @@ function pythonPublishEnvFragment(pythonPublishUrl?: string): string {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function npmAuthEnvVariable(
+function npmAuthEnvVariable (
   registryKind: RegistryConfig['kind'],
   variableReference: (name: string) => string
 ): [string, string] {
@@ -2178,7 +2178,7 @@ function npmAuthEnvVariable(
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-export function poolBlock(agent: string): string {
+export function poolBlock (agent: string): string {
   return /^(?:ubuntu|windows|macos)-/i.test(agent) ? `  vmImage: ${agent}` : `  name: ${agent}`
 }
 
@@ -2241,13 +2241,13 @@ export function poolBlock(agent: string): string {
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function azurePipelinesYaml(
+export function azurePipelinesYaml (
   agent: string,
   variableGroup: string,
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts'
 ): string {
-  const onMain = `and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'main'))`
+  const onMain = 'and(succeeded(), ne(variables[\'Build.Reason\'], \'PullRequest\'), eq(variables[\'Build.SourceBranchName\'], \'main\'))'
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, name => `$(${name})`)
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -2506,7 +2506,7 @@ steps:
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function githubActionsYaml(
+export function githubActionsYaml (
   agent: string,
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
@@ -2523,7 +2523,7 @@ export function githubActionsYaml(
   // Windows e2e job and inherited exactly that hazard. The positive form states
   // the actual intent — release on a push to main — and cannot be widened by
   // accident.
-  const onMain = `github.event_name == 'push' && github.ref_name == 'main'`
+  const onMain = 'github.event_name == \'push\' && github.ref_name == \'main\''
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(
     registryKind,
     name => `\${{ secrets.${name} }}`
@@ -2873,7 +2873,7 @@ const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.prettierrc.json', '.vscode'] 
  * @throws Propagates any Node.js `fs` error other than a missing path.
  * @typeParam None - this function has no generic type parameters.
  */
-export function removeNxScaffolding(workspaceRoot: string): void {
+export function removeNxScaffolding (workspaceRoot: string): void {
   for (const entry of NX_SCAFFOLDING_TO_REMOVE) {
     rmSync(join(workspaceRoot, entry), { recursive: true, force: true })
   }
@@ -2898,7 +2898,7 @@ export function removeNxScaffolding(workspaceRoot: string): void {
  * @throws Propagates any Node.js `fs` error other than a missing path.
  * @typeParam None - this function has no generic type parameters.
  */
-export function removeIfPresent(path: string): void {
+export function removeIfPresent (path: string): void {
   rmSync(path, { recursive: true, force: true })
 }
 
@@ -2930,7 +2930,7 @@ export function removeIfPresent(path: string): void {
  * @throws Propagates any Node.js `fs` error other than a missing path.
  * @typeParam None - this function has no generic type parameters.
  */
-export function removeProjectEslintConfigs(workspaceRoot: string): void {
+export function removeProjectEslintConfigs (workspaceRoot: string): void {
   const matches = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
     cwd: workspaceRoot
   })
@@ -2961,7 +2961,7 @@ export function removeProjectEslintConfigs(workspaceRoot: string): void {
  * @throws Propagates any Node.js `fs` error raised while reading or writing.
  * @typeParam None - this function has no generic type parameters.
  */
-export function applyOverlay(workspaceRoot: string, options: OverlayOptions): void {
+export function applyOverlay (workspaceRoot: string, options: OverlayOptions): void {
   // Patch nx.json with the release opinion, the stack generator defaults, the
   // shared global inputs (so `nx affected` on a PR is not blind to the root
   // config files — see SHARED_GLOBAL_INPUTS) and sync.applyChanges (so a stale

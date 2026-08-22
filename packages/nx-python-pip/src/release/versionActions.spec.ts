@@ -11,7 +11,7 @@ jest.mock('nx/release', () => ({
     releaseGroup: unknown
     projectGraphNode: unknown
     finalConfigForProject: unknown
-    constructor(releaseGroup: unknown, projectGraphNode: unknown, finalConfigForProject: unknown) {
+    constructor (releaseGroup: unknown, projectGraphNode: unknown, finalConfigForProject: unknown) {
       this.releaseGroup = releaseGroup
       this.projectGraphNode = projectGraphNode
       this.finalConfigForProject = finalConfigForProject
@@ -25,7 +25,7 @@ import PythonVersionActions from './versionActions'
 const mockExecFileSync = jest.mocked(execFileSync)
 
 /** A minimal in-memory stand-in for Nx's Tree, just what these tests touch. */
-function fakeTree(files: Record<string, string>) {
+function fakeTree (files: Record<string, string>) {
   return {
     read: (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
     write: (path: string, content: string) => {
@@ -34,7 +34,7 @@ function fakeTree(files: Record<string, string>) {
   } as unknown as Tree
 }
 
-function instance(): PythonVersionActions {
+function instance (): PythonVersionActions {
   const releaseGroup = {} as never
   const projectGraphNode = { name: 'pyshared', data: { root: 'python-packages/pyshared' } } as never
   const finalConfigForProject = {} as never

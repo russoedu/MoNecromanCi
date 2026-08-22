@@ -14,7 +14,7 @@ import type { ExecutorContext } from '@nx/devkit'
  * unreachable — Nx always sets `projectName` for a target invocation).
  * @typeParam None - this function has no generic type parameters.
  */
-export function projectRootFrom(context: ExecutorContext): string {
+export function projectRootFrom (context: ExecutorContext): string {
   const projectName = context.projectName
   const root = projectName ? context.projectsConfigurations?.projects[projectName]?.root : undefined
   if (!root) {

@@ -20,7 +20,7 @@ import type { AppGeneratorSchema } from './schema.d'
  * @throws Never during generation; the callback throws on a failed create.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function appGenerator(
+export default async function appGenerator (
   tree: Tree,
   options: AppGeneratorSchema
 ): Promise<GeneratorCallback> {

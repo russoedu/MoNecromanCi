@@ -90,9 +90,9 @@ describe('runAdd python', () => {
     expect(project.targets.package.outputs).toEqual([
       '{workspaceRoot}/dist/drop/python-app-svc.zip'
     ])
-    expect(project.targets.package.options.command).toContain(`addLocalFolder('apps/svc/dist')`)
+    expect(project.targets.package.options.command).toContain('addLocalFolder(\'apps/svc/dist\')')
     expect(project.targets.package.options.command).toContain(
-      `writeZip('dist/drop/python-app-svc.zip')`
+      'writeZip(\'dist/drop/python-app-svc.zip\')'
     )
 
     // A runnable main.py (the plugin's own sample module has no entry point)
@@ -145,13 +145,13 @@ describe('runAdd python', () => {
       '{workspaceRoot}/dist/drop/python-function-app-api.zip'
     ])
     expect(project.targets.package.options.command).toContain(
-      `addLocalFile('apps/api/function_app.py')`
+      'addLocalFile(\'apps/api/function_app.py\')'
     )
     expect(project.targets.package.options.command).toContain(
-      `addLocalFolder('apps/api/api','api')`
+      'addLocalFolder(\'apps/api/api\',\'api\')'
     )
     expect(project.targets.package.options.command).toContain(
-      `writeZip('dist/drop/python-function-app-api.zip')`
+      'writeZip(\'dist/drop/python-function-app-api.zip\')'
     )
 
     // A local `func start` needs no prior build here — the source (function_app.py

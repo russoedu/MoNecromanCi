@@ -30,7 +30,7 @@ const packageRoot = join(__dirname, '..')
  * no name.
  * @throws If the subprocess fails or writes no JSON.
  */
-function blockNames(): (string | null)[] {
+function blockNames (): (string | null)[] {
   const script = `
     const mnci = (await import(${JSON.stringify(join(packageRoot, 'index.js'))})).default
     const blocks = mnci({ workspaceRoot: ${JSON.stringify(packageRoot)} })
@@ -110,7 +110,7 @@ describe('nonJs(), the hybrid half for oxlint workspaces', () => {
    * @param expression - A call expression against the package's exports.
    * @returns The `name` of every block, in composition order.
    */
-  function namesOf(expression: string): string[] {
+  function namesOf (expression: string): string[] {
     const script = `
       const mnci = await import(${JSON.stringify(join(packageRoot, 'index.js'))})
       const blocks = ${expression}

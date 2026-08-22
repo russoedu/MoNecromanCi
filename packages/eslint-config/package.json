@@ -10,12 +10,10 @@
   "exports": {
     ".": "./index.js",
     "./configs/*": "./configs/*.js",
-    "./package.json": "./package.json",
-    "./prettier": "./prettier.js"
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
-    "prettier.js",
     "configs"
   ],
   "scripts": {
@@ -39,7 +37,7 @@
   },
   "peerDependencies": {
     "@nx/eslint-plugin": ">=21",
-    "eslint": "^10.4.0"
+    "eslint": "^10.8.0"
   },
   "peerDependenciesMeta": {
     "@nx/eslint-plugin": {
@@ -55,7 +53,6 @@
     "@html-eslint/parser": "^0.64.0",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@typescript-eslint/parser": "^8.65.0",
-    "eslint-config-prettier": "^10.0.0",
     "eslint-import-resolver-node": "^0.4.0",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import-x": "^4.17.1",
@@ -73,7 +70,6 @@
     "eslint-plugin-yml": "^3.5.0",
     "globals": "^17.9.0",
     "jsonc-eslint-parser": "^3.1.0",
-    "prettier": "^3.8.1",
     "toml-eslint-parser": "^1.0.3",
     "typescript-eslint": "^8.62.0"
   },

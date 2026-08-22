@@ -1,5 +1,3 @@
-import prettierConfig from 'eslint-config-prettier'
-import { named } from './configs/named.js'
 import base from './configs/base.js'
 import css from './configs/css.js'
 import dependencyChecks from './configs/dependencyChecks.js'
@@ -10,7 +8,7 @@ import json from './configs/json.js'
 import markdown from './configs/markdown.js'
 import react from './configs/react.js'
 import regexp from './configs/regexp.js'
-import stylistic from './configs/stylistic.js'
+import standard from './configs/standard.js'
 import toml from './configs/toml.js'
 import typeAware from './configs/typeAware.js'
 import typescript from './configs/typescript.js'
@@ -26,7 +24,7 @@ export { default as json } from './configs/json.js'
 export { default as markdown } from './configs/markdown.js'
 export { default as react } from './configs/react.js'
 export { default as regexp } from './configs/regexp.js'
-export { default as stylistic } from './configs/stylistic.js'
+export { default as standard } from './configs/standard.js'
 export { default as toml } from './configs/toml.js'
 export { default as typeAware } from './configs/typeAware.js'
 export { default as typescript } from './configs/typescript.js'
@@ -63,13 +61,13 @@ export const ignores = [
  * The complete mnci ESLint config: one root config for the whole workspace.
  *
  * @remarks
- * Composition order matters. `eslint-config-prettier` is applied LAST so it
- * can switch off any formatting rule a plugin's recommended set turned on —
- * Prettier owns formatting. The stylistic block is composed after it, and
- * holds only rules `eslint-config-prettier` does not disable, i.e. ones
- * Prettier never touches at all. It deliberately does NOT re-enable anything
- * that config switched off: those are switched off because they contradict
- * Prettier's output, so re-enabling one would make `lint` and `format:check`
+ * Composition order matters. `standard` is applied LAST because it IS the
+ * formatting opinion, and nothing may follow that disables it. Where
+ * `eslint-config-prettier` used to sit — switching every stylistic rule off so
+ * a formatter could own them — there is now nothing, because there is no
+ * formatter. Re-introducing it would silently disable all sixty Standard rules
+ * and leave the workspace with no style enforcement at all: a disabled rule
+ * reports nothing, so `lint` would pass
  * mutually unsatisfiable. See `configs/stylistic.js`.
  *
  * @param options - Composition options. Pass `workspaceRoot` (normally
@@ -78,7 +76,7 @@ export const ignores = [
  * Omit it in a workspace with no publishable npm packages.
  * @returns The flat config array.
  */
-export default function mnci(options = {}) {
+export default function mnci (options = {}) {
   const { workspaceRoot } = options
   return [
     { name: 'mnci/ignores', ignores },
@@ -97,8 +95,11 @@ export default function mnci(options = {}) {
     ...jest,
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
     // Formatting is Prettier's job — this must stay last.
-    ...named('mnci/prettier-compat', [prettierConfig]),
-    ...stylistic
+    // LAST, and nothing may follow that disables it: this block IS the
+    // formatting opinion now. `eslint-config-prettier` used to sit here to
+    // switch every stylistic rule off for a formatter to own; with no
+    // formatter, composing it would silently disable all 62 Standard rules.
+    ...standard
   ]
 }
 
@@ -123,17 +124,13 @@ export default function mnci(options = {}) {
  *
  * - `base`, `typescript`, `typeAware`, `importGraph`, `react`, `regexp`, `jest`
  *   — oxlint owns JS/TS here. Including them would double-report every finding.
- * - `prettierConfig` and `stylistic` — both exist to reconcile ESLint with
- *   **Prettier**, and an oxlint workspace formats with oxfmt. None of the
- *   remaining blocks contain formatting rules for `eslint-config-prettier` to
- *   switch off (`configs/toml.js` is parser-only for exactly this reason), so
- *   composing it here would be inert. `stylistic` is JS-only.
+ * - `standard` — the JS/TS formatting opinion, which is JS-only by definition.
  *
  * @param options - Composition options. Pass `workspaceRoot` to enable the
  * `@nx/dependency-checks` block, which scans for `private: true` manifests.
  * @returns The flat config array for the non-JavaScript half.
  */
-export function nonJs(options = {}) {
+export function nonJs (options = {}) {
   const { workspaceRoot } = options
   return [
     { name: 'mnci/ignores', ignores },

@@ -53,7 +53,7 @@ export interface BuildableProjectOptions {
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generateBuildableProject(tree: Tree, options: BuildableProjectOptions): void {
+export function generateBuildableProject (tree: Tree, options: BuildableProjectOptions): void {
   const moduleDirectory = pythonModuleDirectory(options.name)
   const root = options.directory
 

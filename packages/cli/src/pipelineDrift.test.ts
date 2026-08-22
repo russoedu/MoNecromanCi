@@ -60,7 +60,7 @@ interface Workflow {
  * @param job - The job id.
  * @returns Every `run` command in that job's steps.
  */
-function runCommands(workflow: Workflow, job: string): string[] {
+function runCommands (workflow: Workflow, job: string): string[] {
   return (workflow.jobs[job]?.steps ?? [])
     .filter((step): step is Step & { run: string } => typeof step.run === 'string')
     .map(step => step.run)
@@ -74,7 +74,7 @@ function runCommands(workflow: Workflow, job: string): string[] {
  * @param command - The `run` command to look up.
  * @returns The step's `name`, or the command's opening characters.
  */
-function nameOf(workflow: Workflow, job: string, command: string): string {
+function nameOf (workflow: Workflow, job: string, command: string): string {
   const step = (workflow.jobs[job]?.steps ?? []).find(candidate => candidate.run === command)
 
   return step?.name ?? command.slice(0, 60)
@@ -86,7 +86,7 @@ function nameOf(workflow: Workflow, job: string, command: string): string {
  * @param workflow - A parsed workflow document.
  * @returns Every action reference in that job's steps.
  */
-function usesOf(workflow: Workflow): string[] {
+function usesOf (workflow: Workflow): string[] {
   return (workflow.jobs.ci?.steps ?? [])
     .map(step => step.uses)
     .filter((entry): entry is string => typeof entry === 'string')

@@ -26,7 +26,7 @@ import {
  * @throws Error when the underlying `nx add` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensurePlugin(workspaceRoot: string, packageName: string): void {
+function ensurePlugin (workspaceRoot: string, packageName: string): void {
   if (hasPlugin(workspaceRoot, packageName)) {
     return
   }
@@ -61,7 +61,7 @@ function ensurePlugin(workspaceRoot: string, packageName: string): void {
  * @throws Error when the generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function runNodeApp(
+function runNodeApp (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack,
@@ -100,7 +100,7 @@ function runNodeApp(
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function nodeAppPackageTarget(name: string): Record<string, unknown> {
+function nodeAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/node-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
   return {
@@ -129,7 +129,7 @@ function nodeAppPackageTarget(name: string): Record<string, unknown> {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNodeApp(
+export function addNodeApp (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack,
@@ -160,7 +160,7 @@ export function addNodeApp(
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureAzureFunctionsPackage(workspaceRoot: string): void {
+function ensureAzureFunctionsPackage (workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, '@azure/functions')) {
     return
   }
@@ -298,7 +298,7 @@ describe('buildGreeting', () => {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoot: string): void {
+function repairNodeFunctionAppManifest (nodeFunctionAppRoot: string, workspaceRoot: string): void {
   const manifestPath = join(nodeFunctionAppRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const azureFunctionsVersion = readJson<{ version: string }>(
@@ -335,7 +335,7 @@ function repairNodeFunctionAppManifest(nodeFunctionAppRoot: string, workspaceRoo
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
+function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/node-function-app-${name}.zip`
   const root = `apps/${name}`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('${root}/dist','dist');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/package.json');z.writeZip('${zip}')"`
@@ -364,7 +364,7 @@ function nodeFunctionAppPackageTarget(name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function nodeFunctionAppStartTarget(name: string): Record<string, unknown> {
+function nodeFunctionAppStartTarget (name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     dependsOn: ['build'],
@@ -396,7 +396,7 @@ function nodeFunctionAppStartTarget(name: string): Record<string, unknown> {
  * @throws Error when the generator or a required install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNodeFunctionApp(
+export function addNodeFunctionApp (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack

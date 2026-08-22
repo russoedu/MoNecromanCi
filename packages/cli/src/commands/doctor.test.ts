@@ -14,7 +14,7 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 /** A workspace where every invariant holds, for tests to break one at a time. */
-function seedHealthyWorkspace(): void {
+function seedHealthyWorkspace (): void {
   writeFileSync(
     join(workspaceRoot, 'nx.json'),
     JSON.stringify({
@@ -36,7 +36,7 @@ function seedHealthyWorkspace(): void {
  * @param linter - The linter to persist in `nx.json`'s `mnci` block.
  * @param devDependencies - The manifest's declared devDependencies.
  */
-function seedFor(linter: 'eslint' | 'oxlint', devDependencies: Record<string, string>): void {
+function seedFor (linter: 'eslint' | 'oxlint', devDependencies: Record<string, string>): void {
   seedHealthyWorkspace()
   // Clear both modes first, so calling this twice in one test does not leave the
   // previous mode's config behind and assert against a workspace no `mnci

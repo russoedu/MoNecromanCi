@@ -20,7 +20,7 @@ beforeEach(() => {
  * callback that shells out to the real `flutter create`, which is covered by
  * the e2e suite rather than mocked into meaninglessness.
  */
-function members(): string[] {
+function members (): string[] {
   const contents = tree.read(ROOT_PUBSPEC, 'utf8') ?? ''
   return contents
     .split('\n')

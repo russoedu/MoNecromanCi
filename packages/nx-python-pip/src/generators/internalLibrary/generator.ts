@@ -23,7 +23,7 @@ import type { InternalLibraryGeneratorSchema } from './schema.d'
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function internalLibraryGenerator(
+export default async function internalLibraryGenerator (
   tree: Tree,
   options: InternalLibraryGeneratorSchema
 ): Promise<void> {

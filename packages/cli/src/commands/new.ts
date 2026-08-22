@@ -73,7 +73,7 @@ export interface NewOptions {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
+function nxCloudProviderValue (ci: CiProvider): 'github' | 'azure' {
   return ci === 'azure' ? 'azure' : 'github'
 }
 
@@ -89,7 +89,7 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
  * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-async function resolveStack(options: NewOptions): Promise<StackConfig> {
+async function resolveStack (options: NewOptions): Promise<StackConfig> {
   // Either flag skips the prompt, so a caller can pin one half of the stack and
   // take the default for the other without being asked about it.
   if (options.testRunner || options.linter || options.yes) {
@@ -122,7 +122,7 @@ async function resolveStack(options: NewOptions): Promise<StackConfig> {
  */
 const CI_PROVIDERS: ReadonlySet<CiProvider> = new Set(['azure', 'github', 'both'])
 
-async function resolveCi(options: NewOptions): Promise<CiProvider> {
+async function resolveCi (options: NewOptions): Promise<CiProvider> {
   if (options.ci && CI_PROVIDERS.has(options.ci)) {
     return options.ci
   }
@@ -140,7 +140,7 @@ async function resolveCi(options: NewOptions): Promise<CiProvider> {
  * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-async function resolveRegistry(options: NewOptions): Promise<RegistryConfig> {
+async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
   if (options.registry === 'azure-artifacts' || (options.organization && options.artifactsFeed)) {
     return {
       kind: 'azure-artifacts',
@@ -171,7 +171,7 @@ async function resolveRegistry(options: NewOptions): Promise<RegistryConfig> {
  * @throws Error when any underlying command exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runNew(name: string | undefined, options: NewOptions): Promise<void> {
+export async function runNew (name: string | undefined, options: NewOptions): Promise<void> {
   const workspaceName = name ?? (await promptText('Workspace name'))
   // Fails fast, before any further prompt or side effect: the name becomes a
   // directory, a `create-nx-workspace` argument and (derived) an npm scope, so

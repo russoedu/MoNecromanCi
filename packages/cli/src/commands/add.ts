@@ -103,25 +103,25 @@ export type { AddOptions } from './add/shared'
  * @typeParam None - this type has no generic type parameters.
  */
 export type ProjectKind =
-  | 'react-app'
-  | 'react-lib'
-  | 'react-internal-lib'
-  | 'node-app'
-  | 'node-function-app'
-  | 'npm-lib'
-  | 'internal-lib'
-  | 'python-app'
-  | 'python-function-app'
-  | 'python-lib'
-  | 'python-internal-lib'
-  | 'python-vendor'
-  | 'go-app'
-  | 'go-function-app'
-  | 'go-lib'
-  | 'go-internal-lib'
-  | 'flutter-app'
-  | 'flutter-lib'
-  | 'flutter-internal-lib'
+  | 'react-app' |
+  'react-lib' |
+  'react-internal-lib' |
+  'node-app' |
+  'node-function-app' |
+  'npm-lib' |
+  'internal-lib' |
+  'python-app' |
+  'python-function-app' |
+  'python-lib' |
+  'python-internal-lib' |
+  'python-vendor' |
+  'go-app' |
+  'go-function-app' |
+  'go-lib' |
+  'go-internal-lib' |
+  'flutter-app' |
+  'flutter-lib' |
+  'flutter-internal-lib'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -172,7 +172,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
  * @throws Error when run outside a workspace root or a generator fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runAdd(
+export async function runAdd (
   kind: ProjectKind | undefined,
   name: string | undefined,
   options: AddOptions
@@ -348,7 +348,7 @@ export async function runAdd(
  * @throws Never - a non-zero `nx sync` is reported as a warning, not thrown.
  * @typeParam None - this function has no generic type parameters.
  */
-function syncProjectReferences(workspaceRoot: string): void {
+function syncProjectReferences (workspaceRoot: string): void {
   logger.step('Syncing TypeScript project references (nx sync)')
   if (runShell('npx', ['nx', 'sync'], workspaceRoot) !== 0) {
     logger.warn(
@@ -377,7 +377,7 @@ function syncProjectReferences(workspaceRoot: string): void {
  * @throws Propagates any `fs`/JSON error reading `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
+function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
   const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string; linter?: string } } }>(
     join(workspaceRoot, 'nx.json')
   )

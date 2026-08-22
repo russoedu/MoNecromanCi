@@ -79,7 +79,7 @@ export interface WorkspaceStack {
  * @throws Propagates any `fs`/JSON error reading the root manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function hasPlugin(workspaceRoot: string, packageName: string): boolean {
+export function hasPlugin (workspaceRoot: string, packageName: string): boolean {
   const manifest = readJson<{
     dependencies?: Record<string, string>
     devDependencies?: Record<string, string>
@@ -103,7 +103,7 @@ export function hasPlugin(workspaceRoot: string, packageName: string): boolean {
  * @throws Error when the underlying `nx add` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function ensurePlugin(workspaceRoot: string, packageName: string): void {
+export function ensurePlugin (workspaceRoot: string, packageName: string): void {
   if (hasPlugin(workspaceRoot, packageName)) {
     return
   }
@@ -124,7 +124,7 @@ export function ensurePlugin(workspaceRoot: string, packageName: string): void {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function markPrivate(manifestPath: string): void {
+export function markPrivate (manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, private: true }))
 }
@@ -146,7 +146,7 @@ export function markPrivate(manifestPath: string): void {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function markPublic(manifestPath: string): void {
+export function markPublic (manifestPath: string): void {
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   writeFileEnsured(manifestPath, toJson({ ...manifest, publishConfig: { access: 'public' } }))
 }
@@ -165,7 +165,7 @@ export function markPublic(manifestPath: string): void {
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function ensureAdmZip(workspaceRoot: string): void {
+export function ensureAdmZip (workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, 'adm-zip')) {
     return
   }
@@ -194,7 +194,7 @@ export function ensureAdmZip(workspaceRoot: string): void {
  * @throws Propagates any `fs`/JSON error reading the root manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function defaultScope(workspaceRoot: string): string {
+export function defaultScope (workspaceRoot: string): string {
   const { name } = readJson<{ name: string }>(join(workspaceRoot, 'package.json'))
   const base = (name.startsWith('@') ? name.slice(1) : name).split('/', 1)[0]
   return `@${base}`
@@ -218,7 +218,7 @@ export function defaultScope(workspaceRoot: string): string {
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addNxTargets(manifestPath: string, newTargets: Record<string, unknown>): void {
+export function addNxTargets (manifestPath: string, newTargets: Record<string, unknown>): void {
   // The generator always writes this manifest first (runAdd throws otherwise);
   // defaulting to {} only guards the pathological missing-file case.
   const manifest = fileExists(manifestPath) ? readJson<Record<string, unknown>>(manifestPath) : {}
@@ -274,7 +274,7 @@ const ESLINT_CONFIG_FILENAMES = [
  * @throws Propagates any Node.js `fs` error other than a missing path.
  * @typeParam None - this function has no generic type parameters.
  */
-export function removeGeneratedEslintConfig(workspaceRoot: string, projectRoot: string): void {
+export function removeGeneratedEslintConfig (workspaceRoot: string, projectRoot: string): void {
   for (const filename of ESLINT_CONFIG_FILENAMES) {
     rmSync(join(workspaceRoot, projectRoot, filename), { force: true })
   }
@@ -319,7 +319,7 @@ export interface ProjectCommands {
  * @throws Never - a missing/unreadable directory yields `undefined`.
  * @typeParam None - this function has no generic type parameters.
  */
-function findCodeWorkspaceFile(workspaceRoot: string): string | undefined {
+function findCodeWorkspaceFile (workspaceRoot: string): string | undefined {
   try {
     const entry = readdirSync(workspaceRoot).find(file => file.endsWith('.code-workspace'))
     return entry ? join(workspaceRoot, entry) : undefined
@@ -343,7 +343,7 @@ function findCodeWorkspaceFile(workspaceRoot: string): string | undefined {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function projectTask(name: string, kind: 'build' | 'qa' | 'start'): Record<string, unknown> {
+function projectTask (name: string, kind: 'build' | 'qa' | 'start'): Record<string, unknown> {
   const script = `${name}:${kind}`
   const base = { label: `${name}: ${kind}`, type: 'npm', script, problemMatcher: [] }
   return kind === 'start' ? { ...base, isBackground: true } : { ...base, group: kind }
@@ -376,7 +376,7 @@ function projectTask(name: string, kind: 'build' | 'qa' | 'start'): Record<strin
  * @throws Propagates any `fs`/JSON error reading or writing either file.
  * @typeParam None - this function has no generic type parameters.
  */
-export function registerProjectCommands(
+export function registerProjectCommands (
   workspaceRoot: string,
   name: string,
   commands: ProjectCommands

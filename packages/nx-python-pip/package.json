@@ -1,7 +1,7 @@
 {
   "name": "@mnci/nx-python-pip",
   "version": "0.1.0",
-  "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) — no uv, no Poetry, no lock file.",
+  "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) \u2014 no uv, no Poetry, no lock file.",
   "publishConfig": {
     "access": "public"
   },
@@ -55,7 +55,7 @@
     "@nx/devkit": "23.1.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
-    "eslint": "^9.39.0",
+    "eslint": "^10.8.0",
     "jest": "^30.4.2",
     "nx": "23.1.1",
     "ts-jest": "^29.4.11",

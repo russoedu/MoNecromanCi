@@ -42,7 +42,7 @@ const REGISTRY_TIMEOUT_MS = 2000
  * @throws Never - every failure path is swallowed.
  * @typeParam None - this function has no generic type parameters.
  */
-export function checkForUpdate(currentVersion: string): void {
+export function checkForUpdate (currentVersion: string): void {
   try {
     if (!process.stdout.isTTY) {
       return
@@ -72,7 +72,7 @@ export function checkForUpdate(currentVersion: string): void {
  * @throws Never - a failed or empty query is treated as "no update known".
  * @typeParam None - this function has no generic type parameters.
  */
-function reportIfOutdated(currentVersion: string): void {
+function reportIfOutdated (currentVersion: string): void {
   const result = spawn.sync('npm', ['view', PACKAGE_NAME, 'version'], {
     encoding: 'utf8',
     timeout: REGISTRY_TIMEOUT_MS,
@@ -111,7 +111,7 @@ function reportIfOutdated(currentVersion: string): void {
  * @throws Never - unparseable input yields `false`.
  * @typeParam None - this function has no generic type parameters.
  */
-function isNewerVersion(candidate: string, current: string): boolean {
+function isNewerVersion (candidate: string, current: string): boolean {
   const candidateParts = releaseTriple(candidate)
   const currentParts = releaseTriple(current)
   if (!candidateParts || !currentParts) {
@@ -134,7 +134,7 @@ function isNewerVersion(candidate: string, current: string): boolean {
  * @throws Never - malformed input yields `undefined`.
  * @typeParam None - this function has no generic type parameters.
  */
-function releaseTriple(version: string): [number, number, number] | undefined {
+function releaseTriple (version: string): [number, number, number] | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
 }
@@ -152,7 +152,7 @@ function releaseTriple(version: string): [number, number, number] | undefined {
  * @throws Never - any read or parse failure yields the fallback.
  * @typeParam None - this function has no generic type parameters.
  */
-export function readCliVersion(packageDirectory: string): string {
+export function readCliVersion (packageDirectory: string): string {
   try {
     const manifestPath = join(packageDirectory, '..', 'package.json')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: string }

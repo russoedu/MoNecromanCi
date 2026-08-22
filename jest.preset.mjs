@@ -1,5 +1,5 @@
 /** Shared Jest preset. Each project's own jest.config.mjs calls createConfig(name). */
-export function createConfig(projectName) {
+export function createConfig (projectName) {
   return {
     displayName: projectName,
     testEnvironment: 'node',

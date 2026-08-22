@@ -37,7 +37,7 @@ export default class DartVersionActions extends VersionActions {
    * `version:` key.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromSourceManifest(
+  async readCurrentVersionFromSourceManifest (
     tree: Tree
   ): Promise<{ currentVersion: string; manifestPath: string } | null> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pubspec.yaml')
@@ -68,7 +68,7 @@ export default class DartVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromRegistry(
+  async readCurrentVersionFromRegistry (
     _tree: Tree,
     _currentVersionResolverMetadata: Record<string, unknown> | undefined
   ): Promise<{ currentVersion: string | null; logText: string } | null> {
@@ -93,7 +93,7 @@ export default class DartVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionOfDependency(
+  async readCurrentVersionOfDependency (
     _tree: Tree,
     _projectGraph: ProjectGraph,
     _dependencyProjectName: string
@@ -111,7 +111,7 @@ export default class DartVersionActions extends VersionActions {
    * {@link readCurrentVersionFromSourceManifest}.
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectVersion(tree: Tree, newVersion: string): Promise<string[]> {
+  async updateProjectVersion (tree: Tree, newVersion: string): Promise<string[]> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pubspec.yaml')
     const contents = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(manifestPath, writePubspecVersion(contents, newVersion))
@@ -134,7 +134,7 @@ export default class DartVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectDependencies(
+  async updateProjectDependencies (
     _tree: Tree,
     _projectGraph: ProjectGraph,
     _dependenciesToUpdate: Record<string, string>

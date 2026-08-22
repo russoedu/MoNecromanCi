@@ -57,14 +57,14 @@ const PYTHON = process.platform === 'win32' ? 'python' : 'python3'
  * suffix, and never creates a `python3.exe` (only `python.exe`) — so `name`
  * should be the extension-less, `3`-less base name (`'pip'`, `'python'`).
  */
-function venvExecutable(venvPath, name) {
+function venvExecutable (venvPath, name) {
   return process.platform === 'win32'
     ? path.join(venvPath, 'Scripts', `${name}.exe`)
     : path.join(venvPath, 'bin', name)
 }
 
 /** Runs a command inheriting stdio, throwing on non-zero exit. */
-function run(command, cwd) {
+function run (command, cwd) {
   console.log(`\n$ ${command}   (cwd: ${cwd})`)
   execSync(command, {
     cwd,
@@ -74,7 +74,7 @@ function run(command, cwd) {
 }
 
 /** Runs a command, returning true/false instead of throwing. */
-function tryRun(command, cwd) {
+function tryRun (command, cwd) {
   try {
     run(command, cwd)
     return true
@@ -84,7 +84,7 @@ function tryRun(command, cwd) {
 }
 
 /** Runs a command capturing combined output; returns an ok/output record. */
-function tryRunCapture(command, cwd) {
+function tryRunCapture (command, cwd) {
   console.log(`\n$ ${command}   (cwd: ${cwd})`)
   try {
     const output = execSync(command, {
@@ -105,7 +105,7 @@ function tryRunCapture(command, cwd) {
 const results = { enforced: [], skipped: [] }
 
 /** Records an ENFORCED expectation, which fails the run when false. */
-function enforce(label, ok, detail = '') {
+function enforce (label, ok, detail = '') {
   results.enforced.push({ label, ok, detail })
   console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  — ${detail}`}`)
 }
@@ -118,7 +118,7 @@ function enforce(label, ok, detail = '') {
  * NOT fail the run, but is printed in the summary so a skipped section can
  * never be mistaken for a passing one.
  */
-function skip(label, reason) {
+function skip (label, reason) {
   results.skipped.push({ label, reason })
   console.log(`  ⊘ SKIPPED ${label} — ${reason}`)
 }
@@ -146,7 +146,7 @@ const failedSections = new Set()
  * @param needs - Labels of sections this one cannot run without.
  * @param body - The section itself.
  */
-function section(label, needs, body) {
+function section (label, needs, body) {
   const blockedBy = needs.find(name => failedSections.has(name))
   if (blockedBy) {
     failedSections.add(label)
@@ -175,7 +175,7 @@ function section(label, needs, body) {
 const SANDBOX_INJECTED = ['.agents', '.opencode', '.github/skills']
 
 /** Removes the sandbox-injected paths from a generated workspace. */
-function dropSandboxInjected(root) {
+function dropSandboxInjected (root) {
   for (const injected of SANDBOX_INJECTED) {
     rmSync(path.join(root, injected), { recursive: true, force: true })
   }
@@ -189,7 +189,7 @@ function dropSandboxInjected(root) {
  * workspace and would drag in hundreds of third-party config files —
  * defeating the "exactly one config" assertions this exists to serve.
  */
-function findFiles(directory, predicate, base = directory) {
+function findFiles (directory, predicate, base = directory) {
   const found = []
   const entries = readdirSync(directory, { withFileTypes: true })
   for (const entry of entries) {
@@ -220,7 +220,7 @@ function findFiles(directory, predicate, base = directory) {
  * `stage` names the point in the run, so a failure says which `add`
  * regressed rather than just "the workspace is wrong".
  */
-function enforceWorkspaceShape(root, stage) {
+function enforceWorkspaceShape (root, stage) {
   dropSandboxInjected(root)
 
   const eslintConfigs = findFiles(root, name =>
@@ -266,7 +266,7 @@ function enforceWorkspaceShape(root, stage) {
 }
 
 /** Whether the Flutter SDK is available to drive the Flutter section. */
-function hasFlutter() {
+function hasFlutter () {
   try {
     execSync('flutter --version', { stdio: 'ignore' })
     return true
@@ -276,7 +276,7 @@ function hasFlutter() {
 }
 
 /** Whether the Go toolchain is available to drive the Go section. */
-function hasGo() {
+function hasGo () {
   try {
     execSync('go version', { stdio: 'ignore' })
     return true
@@ -296,7 +296,7 @@ function hasGo() {
  * lint assertion alone is gated, so everything else still runs.
  * @returns `true` when the linter can be invoked.
  */
-function hasGolangciLint() {
+function hasGolangciLint () {
   try {
     execSync('golangci-lint --version', { stdio: 'ignore' })
     return true
@@ -570,7 +570,7 @@ section('js stack', [], () => {
     pipelineYaml.includes('nx run-many -t package') &&
       pipelineYaml.includes('ArtifactName: drop') &&
       pipelineYaml.includes('##vso[build.addbuildtag]') &&
-      pipelineYaml.includes(`path.basename(f,'.zip')`)
+      pipelineYaml.includes('path.basename(f,\'.zip\')')
   )
   // This workspace was generated with --registry npm, so auth is NODE_AUTH_TOKEN
   // sourced from an NPM_TOKEN variable, not PAT — the azurePipelinesYaml/
@@ -1159,7 +1159,7 @@ section('js stack', [], () => {
   enforce(
     'sdk bundle runs standalone under node, resolving the inlined private lib and the external dependency correctly',
     tryRun(
-      `node --input-type=module -e "import { sdk } from './packages/sdk/dist/index.esm.js'; if (sdk() !== 'sdk uses utils and 1m') { throw new Error('wrong output: ' + sdk()) }"`,
+      'node --input-type=module -e "import { sdk } from \'./packages/sdk/dist/index.esm.js\'; if (sdk() !== \'sdk uses utils and 1m\') { throw new Error(\'wrong output: \' + sdk()) }"',
       workspace
     ),
     'see log above'
@@ -1777,8 +1777,7 @@ section('python', ['alt stack'], () => {
 
   const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
   const pysvcMetadata = existsSync(pysvcWheelPath)
-    ? // eslint-disable-next-line unicorn/prefer-blob-reading-methods
-      new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA')
+    ? new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: app wheel declares the real external dependency (tomli) — not silently dropped',
@@ -1817,8 +1816,7 @@ section('python', ['alt stack'], () => {
     ? pysvcCombinedZip.getEntries().map(entry => entry.entryName)
     : []
   const pysvcCombinedMetadata = pysvcCombinedZip
-    ? // eslint-disable-next-line unicorn/prefer-blob-reading-methods
-      pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA')
+    ? pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: combined wheel vendors pycore AND keeps the real external dependency declared — no metadata drop (the old @nxlv/python bug does not reproduce with pip)',

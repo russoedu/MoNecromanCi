@@ -21,7 +21,7 @@ import { checkForUpdate, readCliVersion } from './util/versionChecker'
  * @throws Never - wiring only; execution errors surface when commands run.
  * @typeParam None - this function has no generic type parameters.
  */
-export function buildProgram(cliVersion: string): Command {
+export function buildProgram (cliVersion: string): Command {
   const program = new Command()
 
   program
@@ -138,7 +138,7 @@ export function buildProgram(cliVersion: string): Command {
  * @throws Never - failures are logged and turned into a non-zero exit code.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function main(): Promise<void> {
+export async function main (): Promise<void> {
   try {
     const cliVersion = readCliVersion(__dirname)
     const program = buildProgram(cliVersion)
