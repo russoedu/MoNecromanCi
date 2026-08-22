@@ -37,7 +37,7 @@
   },
   "peerDependencies": {
     "@nx/eslint-plugin": ">=21",
-    "eslint": "^10.8.0"
+    "eslint": "^10.8.1"
   },
   "peerDependenciesMeta": {
     "@nx/eslint-plugin": {
@@ -76,7 +76,7 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
