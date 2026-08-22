@@ -23,7 +23,7 @@ default landed at the root, each `nx g` generator dropped another
 `eslint.config.mjs` into its own project, and the richer rules the project
 actually wanted lived only in mnci's own repo — never in anything it generated.
 
-This package is that opinion, packaged. A generated workspace gets two files:
+This package is that opinion, packaged. A generated workspace gets **one** file:
 
 ```js
 // eslint.config.mjs
@@ -32,28 +32,32 @@ import mnci from '@mnci/eslint-config'
 export default mnci({ workspaceRoot: import.meta.dirname })
 ```
 
-```js
-// .prettierrc.mjs
-export { default } from '@mnci/eslint-config/prettier'
-```
-
-…and nothing else. No per-project configs.
+…and nothing else. No per-project configs, and no formatter config — there is no
+second tool to configure. mnci actively **deletes** `.prettierrc`,
+`.prettierrc.json`, `.prettierrc.mjs`, `.prettierignore`, `.oxfmtrc.json` and
+`oxlint.config.ts` if an older version left one behind, because a config file no
+command line reads is still read by an editor extension.
 
 Shipping it as a package rather than as template strings means an upgrade reaches
 existing workspaces through `npm update`, the plugins are _this_ package's
 dependencies instead of two dozen devDependencies in every generated workspace,
 and the config is independently testable — which it is, against the real `eslint`
-and `prettier` binaries.
+binary.
 
 ## What it covers
 
-Two halves of one decision, which is why they are one package.
+One decision, in one package, because it used to be two.
 
-**ESLint here is correctness and code quality only. Prettier owns every
-formatting question**, and `eslint-config-prettier` is composed last so no rule
-here can fight it. Splitting the two across packages would mean a version pair
-free to drift until `npm run lint` and `npm run format:check` contradict each
-other; keeping them together makes that impossible rather than merely unlikely.
+**ESLint here covers correctness, code quality, type-aware rules AND formatting.**
+There is no `eslint-config-prettier`, and removing it was load-bearing rather
+than cosmetic: that package exists to switch every stylistic rule OFF so a
+formatter can own them, so composing it after the Standard block would silently
+disable all sixty of those rules. A disabled rule reports nothing, so `lint`
+would have gone on passing while enforcing nothing at all.
+
+That arrangement is also exactly why a formatting mistake used to produce no
+squiggle, no message and no Problems entry — ESLint had been configured to have
+no opinion on formatting, so it had nothing to report.
 
 ### The ESLint blocks
 
@@ -79,40 +83,45 @@ as a comment, so it is readable without opening node_modules.
 | `mnci/html`                              | `@html-eslint/eslint-plugin`, incl. its a11y rules                                             |
 | `mnci/tests`                             | `*.spec`/`*.test` relaxations — `eslint-plugin-jest`, plus Vitest's `vi`/`vitest` globals      |
 | `mnci/nx-dependency-checks`              | `@nx/eslint-plugin` on publishable packages' manifests — only when `workspaceRoot` is passed   |
-| `mnci/prettier-compat`                   | `eslint-config-prettier` — switches off every rule Prettier owns. **Composed last.**           |
-| `mnci/stylistic`                         | the three Standard rules Prettier does not touch — see below                                   |
+| `mnci/standard`                          | JavaScript Standard Style as ~60 `@stylistic` rules — **this is the formatter.** See below     |
 
 `configs/named.js` fills a name in for the blocks upstream presets ship
 anonymously, keeping any name upstream does provide. A test resolves the real
 config and fails if any block is unnamed or if two share a name; another test, in
 `@mnci/cli`, fails if the generated comment and the real config disagree.
 
-### Formatting (`prettier.js`)
+### Formatting (`configs/standard.js`)
 
-JavaScript Standard Style, as Prettier options: `semi: false`,
-`singleQuote: true`, `trailingComma: 'none'`, `arrowParens: 'avoid'`,
-`printWidth: 100`, `tabWidth: 2`.
+JavaScript Standard Style, as ~60 `@stylistic` **rules** rather than as a
+formatter's options. `npm run format` is `eslint . --fix`; there is no
+`format:check`, because `lint` already reports a formatting mistake as an
+ordinary error, with a squiggle and a rule name.
 
-Consumed as a shareable config, exactly like the rules:
+The rules were derived **programmatically** from `neostandard` and ported to
+`@stylistic` v5, so no rule or option is mistyped by hand. `neostandard` itself
+is deliberately **not** a dependency: it pins `@stylistic` at exactly `2.11.0`,
+which calls `sourceCode.isSpaceBetweenTokens` — removed in ESLint 10 — so it
+throws on the first file. Forcing it onto v5 fails differently, since its config
+names `func-call-spacing`, which v5 dropped. An override made it *install* and it
+still did not work.
 
-```js
-// .prettierrc.mjs
-export { default } from '@mnci/eslint-config/prettier'
-```
+**`space-before-function-paren` is ON**, which is the point of the whole
+arrangement. Standard's signature rule was unreachable for as long as any
+Prettier-compatible formatter owned formatting: Prettier and oxfmt both rewrite
+`function f (a)` back to `function f(a)`, so enabling it made `lint` and
+`format:check` mutually unsatisfiable. With no formatter, nothing contradicts it.
 
-**`.prettierrc.mjs`, and mnci deletes `.prettierrc` and `.prettierrc.json`.**
-Prettier's precedence runs `.prettierrc` → `.prettierrc.json` → … →
-`.prettierrc.mjs`, so a leftover file of either earlier kind wins outright and
-silently reinstates whatever it says. That is not a hypothetical: mnci wrote
-`.prettierrc.json` while `create-nx-workspace` wrote `.prettierrc`, and the
-result was that mnci's entire formatting opinion was discarded in every
-generated workspace until `prettier.resolveConfig` was used to find out why.
+**Do not add `eslint-config-prettier` back.** It exists to switch stylistic rules
+off so a formatter can own them, so composing it after this block would disable
+all sixty rules — and a disabled rule reports nothing, so `lint` would pass while
+enforcing nothing.
 
-`trailingComma: 'none'` is worth calling out, because getting it wrong is quiet
-in both directions: Prettier's own default is `'all'`, and this repo itself
-carried `'es5'` in a config it never published — so mnci was formatted against an
-opinion it did not ship, across 86 files, and nothing reported it. The Prettier
-spec now pins every option by running the real binary against fixtures.
+`jsx-indent` was the subtle one to remove. Dropping the deprecated rule on its own
+would have left JSX indentation checked by **nothing**, because Standard also
+lists all sixteen JSX node types in `indent`'s `ignoredNodes`. Both halves go, so
+`indent` genuinely covers JSX — verified on a real `.tsx`. `TemplateLiteral *`
+stays, since it is not a JSX node and removing it false-positives inside template
+literals.
 
 ### Type-aware rules (`configs/typeAware.js`)
 
@@ -207,42 +216,32 @@ the `pyproject.toml` that `@mnci/nx-python-pip` itself generates. Every Python
 workspace would have failed `npm run lint` on a file the user never wrote. A test
 pins the generated content as clean so that cannot be reintroduced.
 
-This does mean TOML _formatting_ is unenforced. Deliberately — Prettier has no TOML
-support, and the available alternative measured worse than nothing.
+This does mean TOML _formatting_ is unenforced. Deliberately — no linter here has
+an opinion on a `.toml`'s layout, and the formatter that once might have was
+measured and found worse than nothing.
 
-### The stylistic exceptions
+### Why `space-before-function-paren` IS here
 
-Prettier covers most of JavaScript Standard Style (no semicolons, single
-quotes, 2-space indent, no trailing commas). Three Standard rules sit in
-territory Prettier never touches at all, so they live in
-`configs/stylistic.js`, composed **after** `eslint-config-prettier` so it
-cannot switch them back off:
+It is Standard's signature rule, it is **on**, and for most of this project's
+history it could not be.
 
-| Rule                          | Why Prettier can't do it       |
-| ----------------------------- | ------------------------------ |
-| `spaced-comment`              | never edits comment bodies     |
-| `lines-between-class-members` | preserves whatever you wrote   |
-| `unicode-bom`                 | passes a BOM through unchanged |
+`eslint-config-prettier` disabled it because it **conflicts** with Prettier
+rather than because it is redundant: Prettier emits `function f(a)` and rewrites
+`function f (a)` back on every run, while the rule demands the opposite.
+Enabling it alongside a formatter made `npm run lint` and `npm run format:check`
+mutually unsatisfiable — a real ping-pong, verified by round-tripping a file
+through both binaries, not a theoretical concern. Prettier closed the
+corresponding option permanently, so there was no version to wait for; oxfmt
+behaves identically.
 
-The list was derived by diffing `eslint-config-standard`'s stylistic rules
-against `eslint-config-prettier`'s disable list, not by guesswork. That
-ordering — stylistic last — is covered by a regression test.
+The resolution was not to find a better formatter but to stop having one.
+Turning the rule on reformatted 82 files and reported 306 problems in
+`@mnci/cli` alone, 99% of them auto-fixed.
 
-### Why `space-before-function-paren` is not here
-
-It is Standard's signature rule and the obvious omission. It is deliberate.
-
-`eslint-config-prettier` disables that rule because it **conflicts** with
-Prettier, not because it is redundant: Prettier emits `function f(a)` and
-rewrites `function f (a)` back on every run, while the rule demands the
-opposite. Enabling it makes `npm run lint` and `npm run format:check` mutually
-unsatisfiable — a real ping-pong, verified by round-tripping a file through
-both binaries, not a theoretical concern. Prettier has closed the corresponding
-option permanently, so there is no version to wait for.
-
-Choosing Prettier as the formatter means accepting its call here. mnci does,
-and a regression test asserts the rule stays off so nobody re-adds it in good
-faith later.
+This is the single clearest reason the stack collapsed onto one tool. A
+formatter and a linter that both hold style opinions must be kept in agreement,
+and the previous arrangement avoided that only by having ESLint hold no
+stylistic opinion at all.
 
 ## Usage
 
@@ -257,10 +256,8 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 block for `packages/*` and `libs/*`, which needs to scan for `private: true`
 manifests. Omit it in a workspace with no publishable npm packages.
 
-```js
-// .prettierrc.mjs
-export { default } from '@mnci/eslint-config/prettier'
-```
+There is no second file to add. Formatting comes from the `mnci/standard` block
+inside this same config.
 
 ## Overriding a rule
 
@@ -298,24 +295,31 @@ Individual blocks are exported too, if you need to recompose rather than append:
 import { base, typescript, react, ignores } from '@mnci/eslint-config'
 ```
 
-Prettier options are overridden by spreading rather than re-exporting:
+Formatting is overridden the same way as anything else, because it is made of
+rules. To widen the line limit, for instance:
 
 ```js
-// .prettierrc.mjs
-import mnci from '@mnci/eslint-config/prettier'
-
-export default { ...mnci, printWidth: 120 }
+export default [
+  ...mnci({ workspaceRoot: import.meta.dirname }),
+  {
+    name: 'local/wider-lines',
+    rules: { '@stylistic/max-len': ['error', { code: 120 }] }
+  }
+]
 ```
 
-```bash
-npx prettier --find-config-path path/to/file   # which config file applies
-```
+### The one thing that cannot work
 
-### One override that cannot work
+**Adding a formatter.** Prettier, oxfmt, dprint — whichever is chosen will
+disagree with `mnci/standard`, and because a formatter runs on save it wins
+silently, leaving `lint` to fail on files nobody edited by hand.
 
-`space-before-function-paren` — see below. Prettier reverses it on every run, so
-switching it on makes `npm run lint` and `npm run format:check` impossible to
-satisfy at the same time.
+Installing the editor extension is enough on its own: neither
+`esbenp.prettier-vscode` nor `oxc.oxc-vscode` needs a config file, and with none
+present they format against their own defaults — semicolons and double quotes,
+the exact inverse of Standard. That is why `mnci upgrade` deletes every retired
+formatter config rather than merely not writing one, and why `mnci doctor`
+reports a leftover as a failure.
 
 ## ESLint 10
 
@@ -372,12 +376,14 @@ instead of rediscovering why they suddenly fire.
 - **`@nx/eslint-plugin` is an optional peer.** Its version has to track the
   workspace's own Nx version, and the `dependency-checks` block is skipped
   entirely when it is absent — so the config still works outside Nx.
-- **Tests shell out to the real `eslint` and `prettier` binaries.** Asserting on a
-  flat config's object shape proves nothing, because a later block can silently
-  disable an earlier rule; asserting on the exported Prettier object proves nothing
-  either, because the interesting failure is a config Prettier _finds_ and then
-  ignores. Every test runs a real fixture through a real binary and asserts on what
-  came back.
-- **`prettier` is a dependency here, not a peer.** Unlike `eslint`, nothing in this
-  package extends a Prettier plugin or needs to match a consumer's major, and a
-  workspace should not have to declare a formatter to be formatted correctly.
+- **Tests shell out to the real `eslint` binary.** Asserting on a flat config's
+  object shape proves nothing, because a later block can silently disable an
+  earlier rule — which is exactly the failure `eslint-config-prettier` would
+  cause if it came back. Every test runs a real fixture through the real binary
+  and asserts on what came back.
+- **No formatter is a dependency, a peer, or anything else.** `prettier` used to
+  be a dependency here on the reasoning that a workspace should not have to
+  declare a formatter to be formatted correctly. That reasoning inverted once
+  ESLint owned formatting: the declaration is precisely what lets
+  `esbenp.prettier-vscode` resolve a prettier and reformat on save against an
+  opinion no gate checks.

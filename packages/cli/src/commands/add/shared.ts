@@ -46,7 +46,7 @@ export interface AddOptions {
  * `add.ts` resolves and every plugin-generated kind consumes).
  *
  * @remarks
- * Only testRunner is configurable; linting is always ESLint + Prettier.
+ * Only testRunner is configurable; linting and formatting are always ESLint.
  *
  * @typeParam None - this interface has no generic type parameters.
  */

@@ -286,7 +286,7 @@ tags, which have no Actions equivalent):
 16 Add the Flutter SDK to PATH                (guard)
 17 Resolve Dart dependencies                  (guard) ← Flutter dep injection
 18 npx nx sync:check
-19 npm run format:check       ← Prettier's own gate; ESLint reports no formatting
+19 (removed — ESLint reports formatting itself, so a second gate ran the same
 20 Verify (affected on a PR, every project on main)   (guard) ← see below
 21 Pack all apps → dist/drop                  (main only)
 22 Publish the drop artifact                  (main only)
@@ -327,7 +327,8 @@ providers by construction. The guard reads `GITHUB_BASE_REF` and
 `SYSTEM_PULLREQUEST_TARGETBRANCH` and strips Azure's `refs/heads/` prefix, since
 Azure sends a full ref where GitHub sends a bare branch name.
 
-Step 19 stays workspace-wide even on a pull request: `prettier --check .` is one
+Step 19 no longer exists. It stayed workspace-wide even on a pull request, on
+the reasoning that `prettier --check .` is one
 invocation over the whole tree, not a per-project Nx target, so there is nothing
 to narrow and formatting is never checked in part.
 
@@ -419,7 +420,7 @@ same output) and is what both `new` and `upgrade` call.
 nx.json                    (release, sync, generators, sharedGlobals, and the `mnci` block)
 package.json               (curated root scripts, dual TS compiler, ESLint toolchain)
 .npmrc                     (publish auth; azure also routes @scope to the feed)
-.prettierrc.json + .prettierignore
+(no formatter config — ESLint is the formatter)
 eslint.config.mjs          (3 lines importing @mnci/eslint-config)
 commitlint.config.mjs
 .husky/commit-msg
@@ -432,7 +433,7 @@ azure-pipelines.yml        (--ci=azure|both)
 `applyOverlay()` also **deletes** two things `create-nx-workspace` scaffolds:
 
 ```
-.prettierrc                        (wins precedence over .prettierrc.json — see §11)
+.prettierrc                        (any formatter config — see §11)
 .vscode/                           (superseded by the .code-workspace file)
 {apps,libs,packages}/*/eslint.config.*   (the workspace has exactly one, at the root)
 ```
@@ -460,7 +461,7 @@ in the per-npm-lib config (`NPM_LIB_ESLINT_CONFIG`, now gone) moved into
 | `affected`                | `nx affected -t lint,typecheck,test,build` |
 | `graph`                   | `nx graph`                                 |
 | `release:preview`         | `nx release --dry-run`                     |
-| `format` / `format:check` | `prettier --write .` / `--check .`         |
+| `format`                  | `eslint . --fix --cache`                   |
 | `python:install`          | the same two Python guards CI runs         |
 | `prepare`                 | `husky`                                    |
 
@@ -563,8 +564,8 @@ of every generated workspace's config, and both `new` and `upgrade` call it.
 ```bash
 npm run build                    # all four packages
 npm run test                     # unit tests
-npm run lint                     # ESLint (quality) — Prettier is separate
-npm run format:check             # Prettier
+npm run lint                     # ESLint — quality, types AND formatting
+npm run format                   # eslint . --fix --cache
 npx nx sync:check                # TS project references
 npm run typecheck                # tsc only — bundlers do NOT type-check
 npx nx run-many -t lint,typecheck,test,build   # everything at once
@@ -648,12 +649,15 @@ the default PR job does not run it.
     manifest. Without this a **vitest** workspace fails `npm run lint` on a freshly
     generated npm-lib. The exclusions now live in `@mnci/eslint-config`'s
     `dependencyChecks` block (root config), not a per-project file.
-13. **`.prettierrc` beats `.prettierrc.json`.** Prettier's config resolution order
-    is not alphabetical, and `create-nx-workspace` writes the winning filename. For
-    a long time that silently discarded mnci's entire Prettier opinion in every
-    generated workspace, invisibly — both files existed and looked fine. The
-    overlay deletes Nx's; the e2e asserts `--find-config-path` resolves to
-    `.prettierrc.json`, not merely that one config file exists.
+13. **No formatter config may survive anywhere in the workspace.** Historically
+    this was about precedence — `.prettierrc` beats `.prettierrc.json`, and
+    `create-nx-workspace` wrote the winning filename, so mnci's entire formatting
+    opinion was silently discarded in every generated workspace while both files
+    existed and looked fine. Now that ESLint is the only formatter the rule is
+    stronger, not weaker: such a file runs from no command line at all, and that
+    is exactly what makes it dangerous, because an editor extension still
+    resolves it and reformats on save — after every gate has passed. The overlay
+    deletes all six shapes; `mnci doctor` reports any survivor as a failure.
 14. **`@nx/eslint/plugin` must be registered by mnci, in `nx.json`.** It is what
     turns the single root config into a `lint` target on every project. Nx used
     to add it as a side effect of the first `nx g … --linter=eslint`; mnci passes
@@ -661,11 +665,14 @@ the default PR job does not run it.
     stop dragging in `eslint-plugin-import@2.31.0`, which peer-caps at ESLint 9
     and broke `mnci add react-app` outright). Drop the registration and every
     project silently loses linting while `npm run lint` still exits 0.
-15. **`space-before-function-paren` cannot coexist with Prettier.**
-    `eslint-config-prettier` disables it because it _conflicts_, not because it is
-    redundant: Prettier rewrites `function f (a)` to `function f(a)` every run.
-    Enabling it makes `lint` and `format:check` mutually unsatisfiable. A
-    regression test in `@mnci/eslint-config` asserts it stays off.
+15. **`space-before-function-paren` is ON, and no formatter may be added back.**
+    Standard's signature rule was unreachable for as long as any
+    Prettier-compatible formatter owned formatting: Prettier and oxfmt both
+    rewrite `function f (a)` to `function f(a)` every run, making `lint` and
+    `format:check` mutually unsatisfiable. Dropping the formatter is what made it
+    enforceable. Adding one back re-breaks it — and `eslint-config-prettier` in
+    particular would silently disable all sixty Standard rules, so `lint` would
+    keep passing while enforcing nothing.
 16. **Adding a package requires `npx nx sync`** and committing the resulting
     `tsconfig.json` change, or `nx sync:check` fails in CI.
 
@@ -679,7 +686,7 @@ the default PR job does not run it.
   layout. **Neither exists.** The real e2e is `packages/cli/e2e/cli.e2e.mjs`.
 - The CLI's published `description` advertised **oxlint/oxfmt**, which were
   removed. The stack has exactly **one** knob now: the test runner. Linting is
-  always ESLint (quality) + Prettier (formatting).
+  always ESLint, which covers quality, types and formatting alike.
 - The task list marked "Implement Flutter support" **completed long before any
   code existed**. Treat task-list completion claims as unreliable; verify against
   the code.
@@ -705,7 +712,7 @@ the default PR job does not run it.
 ## 13. Working on this repo — practical notes
 
 - **Run `npm run format` before committing.** Nx generators emit
-  semicolons/double-quotes; Prettier normalises to JavaScript Standard Style
+  semicolons/double-quotes; `eslint --fix` normalises to JavaScript Standard Style
   (no semicolons, single quotes, 2-space).
 - **Commits are linted** by commitlint via a husky `commit-msg` hook. Use
   conventional commits — they drive versioning.

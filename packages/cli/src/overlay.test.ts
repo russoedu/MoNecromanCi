@@ -1916,9 +1916,19 @@ describe('applyOverlay', () => {
     // so it is part of the deliverable rather than decoration.
     expect(config).toContain('npx eslint --inspect-config')
     expect(config).toContain("name: 'local/")
-    // The one override that cannot work must be stated where someone would try
-    // it, not only in the README they have not opened.
-    expect(config).toContain('space-before-function-paren')
+    // The one thing that cannot work must be stated where someone would try it,
+    // not only in a README they have not opened — and what that is has CHANGED.
+    // It used to be `space-before-function-paren`, unreachable while Prettier
+    // rewrote `f (a)` back to `f(a)` on every run. That rule is now ON: it is
+    // Standard's signature rule and nothing contradicts it any more.
+    //
+    // What replaces it is the inverse warning: do not add a formatter. Whichever
+    // one is chosen disagrees with `mnci/standard`, and because a formatter runs
+    // on save it wins silently — leaving `lint` to fail on files the user never
+    // edited by hand.
+    expect(config).toContain('FORMATTING IS LINTING HERE')
+    expect(config).toContain('There is no Prettier, no oxfmt')
+    expect(config).toContain('Installing a Prettier or oxfmt extension is')
   })
 
   it('names blocks in the inventory that the real config actually has', () => {
@@ -1985,19 +1995,32 @@ describe('applyOverlay', () => {
     expect(scripts['format:check']).toBeUndefined()
   })
 
-  it('recommends the ESLint + Prettier extensions for an eslint workspace', () => {
+  it('recommends the ESLint extension and NO formatter extension', () => {
+    // The absence is the assertion. mnci recommended `esbenp.prettier-vscode`
+    // for as long as Prettier owned formatting — and kept recommending it after
+    // ESLint took over, which made mnci the thing that installed its own hazard.
+    //
+    // That extension needs no config file to act: with none present it formats
+    // against Prettier's own defaults, semicolons and double quotes, the exact
+    // inverse of Standard. Because it runs on save, the damage lands AFTER every
+    // gate, so `lint` stays green until someone next looks. Recommending it
+    // while `RETIRED_FORMATTER_FILES` deletes its config was the two halves of
+    // one decision contradicting each other.
     const workspace = vscodeWorkspace('demo')
     expect(workspace).toContain('dbaeumer.vscode-eslint')
-    expect(workspace).toContain('esbenp.prettier-vscode')
+    expect(workspace).not.toContain('esbenp.prettier-vscode')
     expect(workspace).not.toContain('oxc.oxc-vscode')
   })
 
-  it('keeps the ESLint extension for oxlint too, because the choice is a hybrid', () => {
-    // The assertion that pins the whole design. oxlint cannot parse YAML, TOML,
-    // Markdown, CSS, HTML or JSON, so ESLint still runs on those in CI. Dropping
-    // the extension would leave someone editing azure-pipelines.yml with no
-    // in-editor feedback from a linter that still fails their build.
-    expect(vscodeWorkspace('demo')).toContain('dbaeumer.vscode-eslint')
+  it('recommends no retired formatter extension in the devcontainer either', () => {
+    // The workspace file and the devcontainer read the same constant, so this
+    // cannot diverge today — but the two lists HAVE been separate before, and a
+    // container that silently installs a formatter is the harder half to notice,
+    // since nobody opens it expecting to audit its extensions.
+    const container = devcontainerJson('demo')
+    expect(container).toContain('dbaeumer.vscode-eslint')
+    expect(container).not.toContain('esbenp.prettier-vscode')
+    expect(container).not.toContain('oxc.oxc-vscode')
   })
 
   it('points editor.defaultFormatter at ESLint, which is the formatter', () => {
@@ -2051,8 +2074,9 @@ describe('applyOverlay', () => {
 
   it('recommends the same extensions in the devcontainer as in the workspace file', () => {
     // Shared for this reason: opening the workspace in a container must suggest
-    // the same toolset as opening it directly. Now that there are two lists,
-    // asserted for BOTH — a per-linter split is exactly where they would drift.
+    // the same toolset as opening it directly. Asserted for BOTH rather than for
+    // the constant alone — when these were two per-linter lists, the split was
+    // exactly where they drifted.
     const container = JSON.parse(devcontainerJson('demo')) as {
       customizations: { vscode: { extensions: string[] } }
     }

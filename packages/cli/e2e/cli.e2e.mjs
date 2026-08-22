@@ -214,7 +214,7 @@ function findFiles (directory, predicate, base = directory) {
  * Re-run after each `add`, because every one of these is something an
  * `@nx/*` generator actively re-creates: a per-project `eslint.config.mjs`,
  * a `.vscode/launch.json` (`@nx/node`), and generator-styled source that
- * would fail `format:check`. Asserting them once after `new` would prove
+ * would fail `lint`. Asserting them once after `new` would prove
  * nothing about the state a real user's workspace is actually in.
  *
  * `stage` names the point in the run, so a failure says which `add`
@@ -232,7 +232,6 @@ function enforceWorkspaceShape (root, stage) {
     `found: ${JSON.stringify(eslintConfigs)}`
   )
 
-  // Two Prettier configs is not a cosmetic duplicate. Prettier's precedence runs
   // Every formatter config mnci has ever written must be ABSENT. They are inert
   // from the command line now that nothing runs Prettier or oxfmt — which is
   // exactly why this is worth asserting: a globally installed
@@ -256,13 +255,43 @@ function enforceWorkspaceShape (root, stage) {
   // re-creates launch.json on every add, so this must hold after each one.
   enforce(`${stage}: no .vscode directory`, !existsSync(path.join(root, '.vscode')))
 
-  // The whole point of the post-generate Prettier pass: a user should never
-  // have to run `npm run format` to make a freshly generated workspace pass
-  // its own CI. This is the check that regresses the moment that call is
-  // dropped, so it runs WITHOUT a format step in front of it.
+  // No formatter EXTENSION may be recommended either, and this is the half a
+  // unit test cannot reach: it reads the files a real `mnci new` wrote. The
+  // extension needs no config file to do harm — with none present it formats
+  // against Prettier's own defaults, semicolons and double quotes, the inverse
+  // of Standard — so recommending it while deleting its config was mnci
+  // installing its own hazard.
+  for (const [label, file] of [
+    ['code-workspace', findFiles(root, name => name.endsWith('.code-workspace'))[0]],
+    ['devcontainer', '.devcontainer/devcontainer.json']
+  ]) {
+    if (!file) continue
+    const contents = readFileSync(path.join(root, file), 'utf8')
+    for (const extension of ['esbenp.prettier-vscode', 'oxc.oxc-vscode']) {
+      enforce(
+        `${stage}: ${label} does not recommend ${extension}`,
+        !contents.includes(extension)
+      )
+    }
+    enforce(
+      `${stage}: ${label} recommends the ESLint extension`,
+      contents.includes('dbaeumer.vscode-eslint')
+    )
+  }
+
+  // A user should never have to run a format step to make a freshly generated
+  // workspace pass its own CI. This is the check that regresses the moment the
+  // post-generate `eslint --fix` call is dropped, so it runs WITHOUT one in
+  // front of it.
+  //
+  // It asserts `lint`, not `format:check`, and that is not a rename: there IS no
+  // `format:check` any more. ESLint reports formatting as ordinary errors, so
+  // `lint` covers strictly more than the old gate did — and this assertion would
+  // have gone red on the first nightly after the collapse onto one tool, since
+  // `npm run format:check` on a missing script exits non-zero.
   enforce(
-    `${stage}: format:check is already green — no manual format needed`,
-    tryRun('npm run format:check', root)
+    `${stage}: lint is already green — no manual format needed`,
+    tryRun('npm run lint', root)
   )
 }
 
@@ -874,9 +903,9 @@ section('js stack', [], () => {
   )
   // These two are written already Standard-formatted, unlike the earlier
   // fixtures. Every fixture before this one is followed by another `mnci add`,
-  // whose Prettier pass normalises it in passing — which is itself evidence the
-  // pass works. Nothing runs after this one, so it has to arrive clean or the
-  // "format:check is already green after adds" assertion below fails on the
+  // whose `eslint --fix` pass normalises it in passing — which is itself
+  // evidence the pass works. Nothing runs after this one, so it has to arrive
+  // clean or the "lint is already green after adds" assertion below fails on the
   // harness's own code rather than on anything mnci produced.
   writeFileSync(
     path.join(workspace, 'apps/api/src/deps.ts'),
@@ -1340,8 +1369,8 @@ section('alt stack', [], () => {
   // distinguish "Prettier is configured correctly" from "Prettier is configured
   // at all" — and in fact Nx's leftover .prettierrc was winning the whole time.)
   enforce(
-    'alt: format:check is green with no manual format step',
-    tryRun('npm run format:check', altWorkspace),
+    'alt: lint is green with no manual format step',
+    tryRun('npm run lint', altWorkspace),
     'see log above'
   )
 
