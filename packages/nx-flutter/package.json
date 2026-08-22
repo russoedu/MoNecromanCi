@@ -56,7 +56,7 @@
     "@types/cross-spawn": "^6.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "jest": "^30.4.2",
     "nx": "23.1.1",
     "ts-jest": "^29.4.11",
