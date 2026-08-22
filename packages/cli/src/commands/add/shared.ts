@@ -1,7 +1,6 @@
 import { readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
-import type { LinterChoice } from '../../overlay'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
@@ -53,18 +52,6 @@ export interface AddOptions {
  */
 export interface WorkspaceStack {
   testRunner: 'jest' | 'vitest'
-  /**
-   * The workspace's linter choice, which is also what picks the formatter.
-   *
-   * @remarks
-   * Not generator-facing — no `@nx/*` generator takes it, since `add` passes
-   * `--linter=none` to all of them regardless. It is here because `add` ends by
-   * formatting the workspace, and WHICH formatter is a per-workspace fact: an
-   * oxlint workspace has no `.prettierrc.mjs`, so running Prettier there
-   * silently applies Prettier's own defaults. The field was missing from this
-   * shape entirely, so `add` had no way to know.
-   */
-  linter: LinterChoice
 }
 
 /**

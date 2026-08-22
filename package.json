@@ -5,15 +5,13 @@
   "scripts": {
     "build": "nx run-many -t build",
     "lint": "nx run-many -t lint",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "eslint . --fix --cache",
     "test": "nx run-many -t test",
     "typecheck": "nx run-many -t typecheck",
     "affected": "nx affected -t lint,typecheck,test,build",
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
-    "prepare": "husky",
-    "lint:ox": "oxlint packages"
+    "prepare": "husky"
   },
   "private": true,
   "devDependencies": {

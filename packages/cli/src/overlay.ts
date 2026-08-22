@@ -42,26 +42,6 @@ export type CiProvider = 'azure' | 'github' | 'both'
  * @typeParam None - this type has no generic type parameters.
  */
 /**
- * Which linter (and therefore which formatter) a workspace uses.
- *
- * @remarks
- * `oxlint` is a **hybrid**, not a replacement. oxlint reads JS/TS/JSX/Vue and
- * nothing else, so an oxlint workspace still gets an ESLint config — built from
- * `@mnci/eslint-config`'s `nonJs()` — covering YAML, TOML, Markdown, CSS, HTML,
- * JSON and `@nx/dependency-checks`. Choosing oxlint buys speed on the JS/TS
- * half; it does not buy a workspace where a duplicate key in a CI pipeline goes
- * unreported.
- *
- * The formatter follows the linter rather than being a third choice, because the
- * two are one opinion: `eslint` pairs with Prettier via
- * `@mnci/eslint-config/prettier`, `oxlint` with oxfmt via
- * `@mnci/oxlint-config/oxfmt`. Both are the same seven Standard options, and a
- * test asserts they are equal, so the choice is about speed and toolchain, not
- * about style.
- */
-export type LinterChoice = 'eslint' | 'oxlint'
-
-/**
  * The parts of the toolchain a user chooses at `mnci new`.
  *
  * @remarks
@@ -79,8 +59,6 @@ export type LinterChoice = 'eslint' | 'oxlint'
 export interface StackConfig {
   /** Unit-test runner (both Nx-native for the plugin kinds). */
   testRunner: 'jest' | 'vitest'
-  /** Linter and paired formatter. See {@link LinterChoice}. */
-  linter: LinterChoice
 }
 
 /**
@@ -89,18 +67,9 @@ export interface StackConfig {
  * @remarks
  * Jest: the test runner existing generated repos (and the e2e suite)
  * already assume, so defaulting to it keeps behaviour unchanged when
- * the stack is not chosen explicitly. Linting is always ESLint + Prettier.
+ * the stack is not chosen explicitly. Linting and formatting are always ESLint.
  */
-export const DEFAULT_STACK: StackConfig = { testRunner: 'jest', linter: 'eslint' }
-
-/**
- * Prettier version pinned into all workspaces.
- *
- * @remarks
- * Prettier handles code formatting following JavaScript Standard Style
- * in all generated workspaces.
- */
-export const PRETTIER_VERSION = '^3.8.1'
+export const DEFAULT_STACK: StackConfig = { testRunner: 'jest' }
 
 /**
  * The dual TypeScript compiler stamped into every workspace's `devDependencies`.
@@ -537,55 +506,6 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
 `
 
 /**
- * The Prettier config written into generated workspaces.
- *
- * @remarks
- * The options themselves no longer live here — they live in
- * `@mnci/eslint-config/prettier`, and this file only re-exports them. Lint and
- * format are one opinion, so shipping them as one package means they cannot
- * drift into disagreeing, and a formatting fix reaches an existing workspace
- * through `npm update` rather than needing `mnci upgrade`. The file keeps
- * comments explaining the override path, which is why it is `.mjs` and not JSON.
- *
- * **Written as `.prettierrc.mjs`, and both other candidates are deleted.**
- * Prettier's precedence is `.prettierrc` → `.prettierrc.json` → … →
- * `.prettierrc.mjs`, so a leftover file of either earlier kind wins outright and
- * silently reinstates the old opinion. {@link removeNxScaffolding} therefore
- * removes `.prettierrc` (which `create-nx-workspace` writes as
- * `{ "singleQuote": true }`) **and** `.prettierrc.json` (which mnci itself wrote
- * before this change, so an `mnci upgrade` must clear it). Getting that wrong is
- * not hypothetical: it is exactly the bug that made every option in this file
- * silently ignored in every generated workspace until it was found with
- * `prettier.resolveConfig`.
- *
- * Prettier owns all formatting. The three JavaScript Standard rules Prettier
- * never touches (`spaced-comment`, `lines-between-class-members`,
- * `unicode-bom`) live in `@mnci/eslint-config`'s stylistic block instead.
- * `space-before-function-paren` is deliberately NOT among them: Prettier
- * actively reverses it, so enabling it would make `lint` and `format:check`
- * mutually unsatisfiable.
- */
-export const PRETTIER_CONFIG = `// The formatting half of @mnci/eslint-config.
-//
-// Prettier's options live in the same package as the ESLint rules on purpose:
-// linting and formatting are one decision. \`eslint-config-prettier\` is composed
-// last inside that package so every formatting rule defers to these settings, and
-// splitting the two across packages means a version pair that can drift until
-// \`npm run lint\` and \`npm run format:check\` disagree with each other.
-//
-// Consuming it as a shareable config also means a formatting fix reaches this
-// workspace through \`npm update\`, the same way a rule change does, instead of
-// waiting for \`mnci upgrade\` to rewrite a file.
-//
-// TO OVERRIDE an option, spread it rather than re-exporting:
-//
-//   import mnci from '@mnci/eslint-config/prettier'
-//   export default { ...mnci, printWidth: 120 }
-//
-// TO SEE the resolved options for a file:  npx prettier --find-config-path <file>
-export { default } from '@mnci/eslint-config/prettier'
-`
-/**
  * The `@mnci/eslint-config` version generated workspaces depend on.
  *
  * @remarks
@@ -667,7 +587,7 @@ export const ESLINT_VERSION = '^10.8.0'
  * @throws Never - performs pure string formatting with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function devcontainerJson (workspaceName: string, linter: LinterChoice): string {
+export function devcontainerJson (workspaceName: string): string {
   return `${toJson({
     name: workspaceName,
     image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
@@ -690,7 +610,7 @@ export function devcontainerJson (workspaceName: string, linter: LinterChoice): 
     // The same recommendations the `.code-workspace` file carries, so opening
     // the folder in a container suggests the identical toolset.
     customizations: {
-      vscode: { extensions: vscodeExtensions(linter) }
+      vscode: { extensions: VSCODE_RECOMMENDED_EXTENSIONS }
     }
   })}\n`
 }
@@ -721,7 +641,13 @@ export const ROOT_LINT_TARGET = {
   cache: true,
   options: {
     command: [
-      'eslint .',
+      // `--cache` is the one ESLint speed option that actually pays here:
+      // measured best-of-3 on this repo, an unchanged re-run drops from 9,546ms
+      // to 2,835ms (3.4x). `--concurrency=auto` was measured too and REJECTED —
+      // it came out 8% SLOWER, because per-worker TypeScript type-service
+      // startup costs more than the parallelism saves. The cache file is
+      // per-machine and gitignored.
+      'eslint . --cache',
       '--ignore-pattern "apps/**"',
       '--ignore-pattern "libs/**"',
       '--ignore-pattern "packages/**"',
@@ -838,161 +764,60 @@ export function eslintToolchainDependencies (nxVersion: string): Record<string, 
 }
 
 /**
- * The devDependencies that belong to exactly one linter mode.
+ * Config files a previous mnci version wrote for a second tool, now deleted.
  *
  * @remarks
- * Read as "declared by this mode, and stale in the other one". Everything
- * absent from both lists — `eslint`, `@nx/eslint`, `@nx/eslint-plugin`,
- * `@mnci/eslint-config` — is shared, because the hybrid runs ESLint in both
- * modes and pruning one of those would break the mode being switched *to*.
+ * mnci has shipped three formatter arrangements: Prettier (`.prettierrc.json`,
+ * later `.prettierrc.mjs`), an oxlint/oxfmt mode (`oxlint.config.ts`,
+ * `.oxfmtrc.json`), and now none at all — ESLint formats. `applyOverlay`
+ * removes every one of these on each run, and that is not tidiness.
  *
- * `prettier` is on the `eslint` side even though `@mnci/eslint-config` depends
- * on it outright, so it stays in `node_modules` regardless. The declaration is
- * what matters: the VS Code extension resolves the formatter from the
- * **project's** dependencies, so declaring prettier in an oxlint workspace is
- * what lets a globally installed `esbenp.prettier-vscode` reformat a file on
- * save against the opinion oxfmt is not applying. Two formatters, both
- * resolvable, disagreeing silently — the `.prettierrc` precedence bug's exact
- * shape, which is why the fix is symmetric with deleting the other mode's
- * config file rather than merely not writing this one.
+ * A leftover config is INERT from the command line, because nothing invokes
+ * those binaries any more, and that is exactly what makes it dangerous: a
+ * globally installed `esbenp.prettier-vscode` or `oxc.oxc-vscode` still
+ * resolves it and still reformats on save. The editor then quietly undoes
+ * Standard — no semicolons become semicolons, `function f (a)` loses its space
+ * — while `npm run lint` reports nothing, because the file was reformatted
+ * after the last check. The `.prettierrc` precedence bug in its third costume.
  */
-export const LINTER_ONLY_DEPENDENCIES = {
-  eslint: ['prettier'],
-  oxlint: ['@mnci/oxlint-config', 'oxlint', 'oxfmt']
-} as const
+export const RETIRED_FORMATTER_FILES = [
+  '.prettierrc',
+  '.prettierrc.json',
+  '.prettierrc.mjs',
+  '.prettierignore',
+  'oxlint.config.ts',
+  '.oxfmtrc.json'
+] as const
 
 /**
- * Drops the devDependencies belonging to the linter mode the workspace left.
+ * Drops the devDependencies of every formatter and linter mnci has retired.
  *
  * @remarks
- * Only `mnci upgrade --linter=<other>` reaches this with anything to remove; on
- * `mnci new` the manifest has neither set yet. Without it a switched workspace
- * keeps declaring the formatter it no longer runs, since the merge starts from
- * the existing `devDependencies` and a spread can only add.
+ * The declaration is the point, not the install. `@mnci/eslint-config` no
+ * longer depends on Prettier, so it leaves `node_modules` on its own — but a
+ * workspace generated before the swap still DECLARES it, and the VS Code
+ * extension resolves a formatter from the **project's** dependencies. Leaving
+ * the declaration is what lets a globally installed extension find a real
+ * `prettier` and reformat against an opinion nothing checks.
  *
- * @param devDeps - The merged devDependency set.
- * @param linter - The linter the workspace is being written for.
- * @returns The same set, minus the other mode's entries.
+ * Runs on `mnci upgrade` as well as `mnci new`, because a pre-swap workspace is
+ * exactly the case that needs it — a fresh one has none of these to begin with.
+ *
+ * @param devDeps - The merged devDependencies for the root manifest.
+ * @returns The same map without any retired tool.
  * @throws Never - pure object construction.
- * @typeParam None - this function has no generic type parameters.
  */
-export function withoutStaleLinterDependencies (
-  devDeps: Record<string, string>,
-  linter: LinterChoice
+export function withoutRetiredFormatterDependencies (
+  devDeps: Record<string, string>
 ): Record<string, string> {
-  const stale = new Set<string>(LINTER_ONLY_DEPENDENCIES[linter === 'oxlint' ? 'eslint' : 'oxlint'])
-  return Object.fromEntries(Object.entries(devDeps).filter(([name]) => !stale.has(name)))
-}
-
-/**
- * The root `lint` target for one linter choice.
- *
- * @remarks
- * **This is what actually runs oxlint.** Nothing else does, and that gap is worth
- * spelling out because it is invisible: an oxlint workspace can have a valid
- * `oxlint.config.ts`, a green `npm run lint`, and never invoke oxlint once —
- * every per-project `lint` target comes from `@nx/eslint/plugin` and runs ESLint
- * alone. A first pass shipped exactly that, and the e2e assertion "lint runs
- * green" passed while verifying nothing about the JS/TS half.
- *
- * So under oxlint the root target runs both, in the order they matter:
- *
- * 1. `oxlint .` over the **whole** workspace. Unlike ESLint's root invocation
- *    this is deliberately not scoped away from `apps/`, `libs/` and `packages/`:
- *    oxlint is designed to sweep a repo in one pass, and no per-project target
- *    covers it, so scoping here would leave JS/TS linted by nothing.
- * 2. `eslint .` on root files only, exactly as the eslint path does — the
- *    per-project ESLint targets already cover the project trees.
- *
- * `parallel: false` so a failure names which linter failed rather than
- * interleaving two outputs.
- *
- * @param linter - The workspace's linter choice.
- * @returns The `lint` target for the root project.
- * @throws Never - performs pure object construction.
- * @typeParam None - this function has no generic type parameters.
- */
-export function rootLintTarget (linter: LinterChoice): Record<string, unknown> {
-  if (linter !== 'oxlint') return ROOT_LINT_TARGET
-  return {
-    executor: 'nx:run-commands',
-    cache: true,
-    options: {
-      commands: ['oxlint .', ROOT_LINT_TARGET.options.command],
-      parallel: false,
-      cwd: '.'
-    }
-  }
-}
-
-/**
- * The `oxlint` version generated workspaces declare.
- *
- * @remarks
- * Declared by the workspace because `@mnci/oxlint-config` peers on it, the same
- * arrangement `eslint` has — the config cannot pick the binary's version for you.
- */
-export const OXLINT_VERSION = '^1.76.0'
-
-/**
- * The `oxfmt` version generated workspaces declare.
- *
- * @remarks
- * Pre-1.0, and pinned by caret deliberately: it is the one part of the oxlint
- * stack whose output could change between minors, and a test diffs it against
- * Prettier so a drift is reported rather than silently reformatting a repo.
- */
-export const OXFMT_VERSION = '^0.61.0'
-
-/**
- * The extra dependencies an **oxlint** workspace needs on top of the ESLint set.
- *
- * @remarks
- * On top of, not instead of: the hybrid keeps ESLint for the file types oxlint
- * cannot parse, so `eslintToolchainDependencies` still applies in full.
- *
- * `oxlint` is a peer of `@mnci/oxlint-config` rather than a dependency, so the
- * workspace has to declare it — the same reason `eslint` is declared. `oxfmt` is
- * declared for the reason `prettier` is: the editor extension resolves the
- * formatter from the project, not from a transitive dependency.
- *
- * @returns The oxlint-specific devDependencies.
- * @throws Never - returns a literal.
- * @typeParam None - this function has no generic type parameters.
- */
-export function oxlintToolchainDependencies (): Record<string, string> {
-  return {
-    '@mnci/oxlint-config': oxlintConfigSpec(),
-    oxlint: OXLINT_VERSION,
-    oxfmt: OXFMT_VERSION
-  }
-}
-
-/**
- * The `@mnci/oxlint-config` version generated workspaces depend on.
- *
- * @remarks
- * A caret range, so `npm update` carries rule fixes into existing workspaces
- * without an `mnci upgrade` — the same reason the ESLint config ships as a
- * package rather than as a template string.
- */
-export const OXLINT_CONFIG_VERSION = '^0.1.0'
-
-/**
- * The `@mnci/oxlint-config` spec to write into a generated workspace's manifest.
- *
- * @remarks
- * Reads `MNCI_OXLINT_CONFIG_SPEC` so the e2e can point this at a locally packed
- * tarball instead of the registry, the same escape hatch
- * {@link eslintConfigSpec} uses — without it, `npm install` in a freshly
- * generated oxlint workspace 404s until the package has been published once.
- *
- * @returns The dependency spec (a semver range, or a path/URL when overridden).
- * @throws Never - reads an environment variable.
- * @typeParam None - this function has no generic type parameters.
- */
-export function oxlintConfigSpec (): string {
-  return process.env.MNCI_OXLINT_CONFIG_SPEC ?? OXLINT_CONFIG_VERSION
+  const retired = new Set([
+    'prettier',
+    'eslint-config-prettier',
+    'oxlint',
+    'oxfmt',
+    '@mnci/oxlint-config'
+  ])
+  return Object.fromEntries(Object.entries(devDeps).filter(([name]) => !retired.has(name)))
 }
 
 /**
@@ -1104,127 +929,6 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 `
 
 /**
- * The root `eslint.config.mjs` for an **oxlint** workspace.
- *
- * @remarks
- * The hybrid's ESLint half. oxlint reads JS/TS/JSX/Vue and nothing else, so
- * without this a workspace that chose oxlint would lint its CI YAML, its
- * `pyproject.toml`, its Markdown, CSS, HTML and JSON with nothing at all — and
- * would lose `@nx/dependency-checks`, the only thing stopping a publishable
- * package's manifest from declaring the wrong dependencies.
- *
- * `nonJs()` composes exactly those blocks from the same modules the full config
- * uses, so a rule added to `configs/yaml.js` reaches both modes.
- */
-export const ESLINT_CONFIG_NON_JS = `import { nonJs } from '@mnci/eslint-config'
-
-// This workspace lints JS/TS with oxlint (see oxlint.config.ts). ESLint keeps
-// the file types oxlint cannot parse at all — YAML, TOML, Markdown, CSS, HTML,
-// JSON — plus @nx/dependency-checks on publishable manifests.
-//
-// The JS/TS rule blocks are deliberately NOT composed here. Running both linters
-// over the same file would report one defect twice under two different names.
-//
-// TO OVERRIDE, append a named block after the spread, exactly as the full config
-// documents. To change a JS/TS rule, edit oxlint.config.ts instead — this file
-// does not lint JS/TS.
-export default [...nonJs({ workspaceRoot: import.meta.dirname })]
-`
-
-/**
- * The root `oxlint.config.ts` written into oxlint workspaces.
- *
- * @remarks
- * `oxlint.config.ts`, not `.oxlintrc.json`, and that is forced rather than
- * preferred: `.oxlintrc`'s `extends` takes **paths** resolved relative to the
- * config file, so `extends: ["@mnci/oxlint-config"]` fails with
- * `No such file or directory`. `defineConfig` is the only shareable-config route
- * oxlint offers. Verified both ways.
- */
-export const OXLINT_CONFIG = `import { defineConfig } from 'oxlint'
-import mnci from '@mnci/oxlint-config'
-
-// oxlint owns JS/TS/JSX here; eslint.config.mjs keeps everything oxlint cannot
-// parse. The contract @mnci/oxlint-config holds itself to: anything
-// @mnci/eslint-config accepts must pass oxlint, so switching linters never turns
-// a green codebase red.
-//
-// oxlint.config.ts, not .oxlintrc.json, and that is not a preference: .oxlintrc's
-// \`extends\` takes PATHS relative to the config file, so
-// \`extends: ["@mnci/oxlint-config"]\` fails with "No such file or directory".
-// defineConfig is the only shareable-config route oxlint offers.
-//
-// Type-aware rules (no-floating-promises and friends) are opt-in — pass
-// { typeAware: true } AND run oxlint with --type-aware. They report findings the
-// ESLint stack accepts, so they are off by default to keep the contract above.
-export default defineConfig({ extends: [mnci()] })
-`
-
-/**
- * The `.oxfmtrc.json` written into oxlint workspaces.
- *
- * @remarks
- * Inlined rather than re-exported from `@mnci/oxlint-config/oxfmt`, unlike the
- * Prettier config's `.prettierrc.mjs`. oxfmt's config is JSON only — it has no
- * `.mjs` form to import a package from — so the options are duplicated here and
- * `tests/oxfmt.spec.ts` asserts the package's option set equals the ESLint
- * package's, which is what keeps all three in step.
- *
- * The `$schema` entry is what gives an editor completion and validation on the
- * file, and costs nothing.
- */
-export const OXFMT_CONFIG = `${JSON.stringify(
-  {
-    $schema: './node_modules/oxfmt/configuration_schema.json',
-    semi: false,
-    singleQuote: true,
-    trailingComma: 'none',
-    arrowParens: 'avoid',
-    printWidth: 100,
-    tabWidth: 2,
-    useTabs: false
-  },
-  null,
-  2
-)}\n`
-
-/**
- * The .prettierignore written into generated workspaces.
- *
- * @remarks
- * Patterns to exclude from Prettier formatting, matching root locations.
- *
- * The non-JS entries are not padding. This list used to cover only the
- * JavaScript toolchain, while mnci also generates Python and Dart projects whose
- * tool directories land inside the workspace — and `packages/cli/README.md`
- * explicitly tells users to create a venv there. So `npm run format:check`
- * failed on the `site-packages` tree under `.venv` in any workspace that
- * followed the documented Python setup, and `npm run format` would have
- * rewritten files inside installed third-party packages. Harmless while
- * formatting was unenforced; a hard failure now that it is a CI gate, which is
- * how it surfaced.
- */
-export const PRETTIER_IGNORE = `node_modules
-dist
-dist-dev
-dist-uat
-dist-prod
-coverage
-.next
-out
-.nx
-tmp
-package-lock.json
-*.lock
-.venv
-venv
-__pycache__
-.pytest_cache
-.ruff_cache
-.dart_tool
-`
-
-/**
  * The editor extensions both the `.code-workspace` file and the devcontainer
  * recommend.
  *
@@ -1238,29 +942,6 @@ export const VSCODE_RECOMMENDED_EXTENSIONS = [
   'nrwl.angular-console',
   'firsttris.vscode-jest-runner'
 ] as const
-
-/**
- * The editor extensions that depend on which linter the workspace chose.
- *
- * @remarks
- * **`oxc.oxc-vscode` is one extension covering both halves of the Rust
- * toolchain** — it provides oxlint *and* oxfmt integration, verified on the
- * Marketplace rather than assumed, so an oxlint workspace needs no separate
- * formatter extension and `esbenp.prettier-vscode` is correctly absent.
- *
- * **`dbaeumer.vscode-eslint` stays in BOTH lists, and that is the hybrid
- * showing through.** Choosing oxlint does not remove ESLint from the workspace:
- * oxlint cannot parse YAML, TOML, Markdown, CSS, HTML or JSON, so
- * `@mnci/eslint-config`'s `nonJs()` keeps covering those (plus
- * `@nx/dependency-checks` on publishable manifests). Dropping the ESLint
- * extension would leave a contributor editing `azure-pipelines.yml` with no
- * in-editor feedback from a linter that *is* running in CI — the worst kind of
- * gap, because the file still fails the build.
- */
-export const LINTER_EXTENSIONS = {
-  eslint: ['dbaeumer.vscode-eslint', 'esbenp.prettier-vscode'],
-  oxlint: ['oxc.oxc-vscode', 'dbaeumer.vscode-eslint']
-} as const
 
 /**
  * Extensions every workspace gets, whichever linter it chose.
@@ -1306,62 +987,6 @@ export const FORMATTED_LANGUAGES = [
 ] as const
 
 /**
- * Languages only oxfmt can format, pinned in oxlint workspaces alone.
- *
- * @remarks
- * TOML, and it is a capability difference rather than a preference: `prettier`
- * on a `.toml` exits with `No parser could be inferred for file`, while oxfmt
- * reformats it (`name  =  "x"` → `name = "x"`, `[ 1,2 ]` → `[1, 2]`). Measured
- * against both binaries.
- *
- * So an oxlint workspace gets something the default cannot have: a formatted
- * `pyproject.toml`. `configs/toml.js` in `@mnci/eslint-config` is parser-only
- * *because* Prettier has no TOML support — the one style rule tried there
- * reported six errors on the `pyproject.toml` `@mnci/nx-python-pip` itself
- * generates. Nothing here re-opens that: `nx-python-pip` writes the file, oxfmt
- * reformats it on save, and no lint rule has an opinion either way.
- *
- * Pinning it under `eslint` would be worse than useless — VS Code would route
- * `.toml` to a formatter that errors on it.
- */
-export const OXFMT_ONLY_LANGUAGES = ['toml'] as const
-
-/**
- * The languages to pin a formatter for, for one linter choice.
- *
- * @remarks
- * {@link FORMATTED_LANGUAGES} plus {@link OXFMT_ONLY_LANGUAGES} under `oxlint`.
- * A function rather than two exported constants at the call site, so the one
- * place that needs the union cannot forget half of it.
- *
- * @param linter - The workspace's linter choice.
- * @returns The language identifiers, in a stable order.
- * @throws Never - pure array construction.
- * @typeParam None - this function has no generic type parameters.
- */
-export function formattedLanguages (linter: LinterChoice): string[] {
-  return [...FORMATTED_LANGUAGES, ...(linter === 'oxlint' ? OXFMT_ONLY_LANGUAGES : [])]
-}
-
-/**
- * The extension list for one linter choice.
- *
- * @remarks
- * The single source both the `.code-workspace` file and the devcontainer read,
- * so opening the workspace in a container cannot suggest a different toolset
- * from opening it directly — the reason the list was shared in the first place,
- * now that there are two of them to keep straight.
- *
- * @param linter - The workspace's linter choice.
- * @returns The recommended extension IDs, linter-specific ones first.
- * @throws Never - performs a pure lookup.
- * @typeParam None - this function has no generic type parameters.
- */
-export function vscodeExtensions (linter: LinterChoice): string[] {
-  return [...LINTER_EXTENSIONS[linter], ...SHARED_VSCODE_EXTENSIONS]
-}
-
-/**
  * The editor settings that depend on the linter choice.
  *
  * @remarks
@@ -1379,21 +1004,12 @@ export function vscodeExtensions (linter: LinterChoice): string[] {
  * @throws Never - performs pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-export function vscodeSettings (linter: LinterChoice): Record<string, unknown> {
-  const formatter = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
-  const eslintLanguages =
-    linter === 'oxlint'
-      ? ['json', 'jsonc', 'markdown', 'yaml', 'html', 'css']
-      : [
-          'javascript',
-          'javascriptreact',
-          'typescript',
-          'typescriptreact',
-          'json',
-          'jsonc',
-          'markdown',
-          'yaml'
-        ]
+export function vscodeSettings (): Record<string, unknown> {
+  // ESLint is the formatter now, so `editor.defaultFormatter` points at the
+  // ESLint extension and `source.fixAll.eslint` is what actually reformats on
+  // save. There is no second formatter to disagree with it.
+  const formatter = 'dbaeumer.vscode-eslint'
+  const eslintLanguages = [...FORMATTED_LANGUAGES]
 
   return {
     'eslint.validate': eslintLanguages,
@@ -1417,7 +1033,7 @@ export function vscodeSettings (linter: LinterChoice): Record<string, unknown> {
     // while `.json`/`.jsonc`/`.yaml` were — exactly the three that had explicit
     // entries here and nothing else did.
     ...Object.fromEntries(
-      formattedLanguages(linter).map(language => [
+      FORMATTED_LANGUAGES.map(language => [
         `[${language}]`,
         { 'editor.defaultFormatter': formatter }
       ])
@@ -1458,14 +1074,13 @@ export function vscodeSettings (linter: LinterChoice): Record<string, unknown> {
  */
 export function vscodeWorkspace (
   workspaceName: string,
-  linter: LinterChoice,
   existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
 ): string {
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
-      settings: vscodeSettings(linter),
-      extensions: { recommendations: vscodeExtensions(linter) },
+      settings: vscodeSettings(),
+      extensions: { recommendations: VSCODE_RECOMMENDED_EXTENSIONS },
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
         tasks: existingTasks?.tasks ?? []
@@ -1523,15 +1138,14 @@ export const ROOT_SCRIPTS = {
  * @returns The root scripts object to stamp into the manifest.
  * @throws Never - pure mapping.
  */
-export function rootScripts (linter: LinterChoice = 'eslint'): Record<string, string> {
-  // oxfmt reads `.gitignore` and `.prettierignore` by default, so the same
-  // `.prettierignore` mnci already writes governs both formatters and there is no
-  // second ignore file to keep in sync. Verified against oxfmt's own CLI docs.
-  const formatter = linter === 'oxlint' ? 'oxfmt' : 'prettier'
+export function rootScripts (): Record<string, string> {
   return {
     ...ROOT_SCRIPTS,
-    format: linter === 'oxlint' ? 'oxfmt .' : 'prettier --write .',
-    'format:check': `${formatter} --check .`,
+    // ESLint is the formatter, so `format` is `--fix` and there is no separate
+    // `format:check`: `lint` already reports formatting as ordinary errors.
+    // Carrying a second script that ran the same tool twice would just make a
+    // CI run slower for no extra coverage.
+    format: 'eslint . --fix --cache',
     'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`
   }
 }
@@ -1606,7 +1220,7 @@ export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
     agent: options.agent,
     variableGroup: options.variableGroup,
     ci: options.ci,
-    stack: { testRunner: options.stack.testRunner, linter: options.stack.linter }
+    stack: { testRunner: options.stack.testRunner }
   }
 }
 
@@ -2401,17 +2015,6 @@ steps:
   - script: npx nx sync:check
     displayName: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-  # Prettier owns ALL formatting in this workspace, so it needs a gate of its
-  # own: ESLint is configured for correctness only and deliberately reports
-  # nothing about formatting. Without this step the entire formatting opinion is
-  # advisory, and a workspace drifts out of compliance with no signal anywhere.
-  #
-  # Stays workspace-wide even on a PR, unlike the verify step below: it is one
-  # Prettier invocation over the whole tree, not a per-project Nx target, so
-  # there is nothing to scope down and formatting is never partially checked.
-  - script: npm run format:check
-    displayName: Check formatting (run 'npm run format' locally to fix)
-
   # The one verify step, and deliberately the only one: affected projects on a
   # pull request, EVERY project on anything else (a push to main included, so a
   # release is always verified in full). Every fallback — no target branch, an
@@ -2667,19 +2270,6 @@ jobs:
       # a confusing failure buried inside the build step below.
       - run: npx nx sync:check
         name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
-
-      # Prettier owns ALL formatting in this workspace, so it needs a gate of
-      # its own: ESLint is configured for correctness only and deliberately
-      # reports nothing about formatting. Without this step the entire
-      # formatting opinion is advisory, and a workspace drifts out of
-      # compliance with no signal anywhere.
-      #
-      # Stays workspace-wide even on a PR, unlike the verify step below: it is
-      # one Prettier invocation over the whole tree, not a per-project Nx
-      # target, so there is nothing to scope down and formatting is never
-      # partially checked.
-      - run: npm run format:check
-        name: Check formatting (run 'npm run format' locally to fix)
 
       # The one verify step, and deliberately the only one: affected projects on
       # a pull request, EVERY project on anything else (a push to main included,
@@ -2991,25 +2581,15 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts(options.stack.linter)
+    ...rootScripts()
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
-  const devDeps = withoutStaleLinterDependencies(
-    {
-      ...existingDevDeps,
-      ...TS_COMPILER_DEPENDENCIES,
-      // The preset pins `nx` itself; the ESLint plugins must match it exactly.
-      ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
-      // Additive for the linter, exclusive for the formatter: the hybrid keeps
-      // the whole ESLint toolchain for the file types oxlint cannot parse, but
-      // exactly one of prettier/oxfmt formats the workspace. Declaring both is
-      // how an editor ends up applying the one CI does not check.
-      ...(options.stack.linter === 'oxlint'
-        ? oxlintToolchainDependencies()
-        : { prettier: PRETTIER_VERSION })
-    },
-    options.stack.linter
-  )
+  const devDeps = withoutRetiredFormatterDependencies({
+    ...existingDevDeps,
+    ...TS_COMPILER_DEPENDENCIES,
+    // The preset pins `nx` itself; the ESLint plugins must match it exactly.
+    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest')
+  })
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
@@ -3024,7 +2604,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
     targets: {
       ...(existingNx?.targets as Record<string, unknown> | undefined),
-      lint: rootLintTarget(options.stack.linter)
+      lint: ROOT_LINT_TARGET
     }
   }
   writeFileEnsured(
@@ -3047,29 +2627,23 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // ESLint handles code quality and correctness rules; Prettier handles all
   // formatting (JavaScript Standard Style). ONE ESLint config, at the root —
   // `add` deletes the per-project ones Nx generators write.
-  // The linter choice decides which config files exist, and just as importantly
-  // which do NOT: switching a workspace between modes has to remove the previous
-  // mode's files, or both formatters end up configured and whichever the editor
-  // picks wins. `mnci upgrade` runs this same code path, so a switch is a
-  // one-command operation rather than a manual cleanup.
-  if (options.stack.linter === 'oxlint') {
-    writeFileEnsured(join(workspaceRoot, 'oxlint.config.ts'), OXLINT_CONFIG)
-    writeFileEnsured(join(workspaceRoot, '.oxfmtrc.json'), OXFMT_CONFIG)
-    // ESLint stays, trimmed to what oxlint cannot parse. See ESLINT_CONFIG_NON_JS.
-    writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG_NON_JS)
-    removeIfPresent(join(workspaceRoot, '.prettierrc.mjs'))
-  } else {
-    writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
-    writeFileEnsured(join(workspaceRoot, '.prettierrc.mjs'), PRETTIER_CONFIG)
-    removeIfPresent(join(workspaceRoot, 'oxlint.config.ts'))
-    removeIfPresent(join(workspaceRoot, '.oxfmtrc.json'))
+  // ONE config file, because there is one tool.
+  writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
+  // Every config a previous mnci version could have written for a second tool
+  // has to be REMOVED, not merely left unwritten. A stale `.prettierrc.mjs` or
+  // `.oxfmtrc.json` does nothing on its own now that neither binary runs, but a
+  // globally installed `esbenp.prettier-vscode` or `oxc.oxc-vscode` resolves it
+  // and reformats on save against an opinion no gate checks — silently undoing
+  // Standard in the editor while CI stays green. `mnci upgrade` runs this same
+  // path, so migrating an existing workspace is one command.
+  for (const retired of RETIRED_FORMATTER_FILES) {
+    removeIfPresent(join(workspaceRoot, retired))
   }
   // Makes a local environment match the one CI verifies — see devcontainerJson.
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),
-    devcontainerJson(options.workspaceName, options.stack.linter)
+    devcontainerJson(options.workspaceName)
   )
-  writeFileEnsured(join(workspaceRoot, '.prettierignore'), PRETTIER_IGNORE)
   removeNxScaffolding(workspaceRoot)
   // VS Code workspace file with folder structure, extensions, and settings. The
   // `tasks` array is read back first and carried through: it is per-project state
@@ -3081,7 +2655,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   }>(codeWorkspacePath)
   writeFileEnsured(
     codeWorkspacePath,
-    vscodeWorkspace(options.workspaceName, options.stack.linter, existing?.tasks)
+    vscodeWorkspace(options.workspaceName, existing?.tasks)
   )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename

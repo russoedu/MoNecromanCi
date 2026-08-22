@@ -133,18 +133,5 @@ export async function promptStack (): Promise<StackConfig> {
       { name: 'Vitest', value: 'vitest' }
     ]
   })
-  const linter = await select<StackConfig['linter']>({
-    message: 'Linter and formatter',
-    choices: [
-      {
-        name: 'ESLint + Prettier — every file type, the widest rule coverage',
-        value: 'eslint'
-      },
-      {
-        name: 'oxlint + oxfmt for JS/TS, ESLint for the rest — much faster, same style',
-        value: 'oxlint'
-      }
-    ]
-  })
-  return { testRunner, linter }
+  return { testRunner }
 }

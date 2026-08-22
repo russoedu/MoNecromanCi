@@ -236,7 +236,7 @@ describe('runUpgrade', () => {
     expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
   })
 
-  it('formats the workspace afterwards, so the nx.json it rewrote passes format:check', () => {
+  it('formats the workspace afterwards, so the nx.json it rewrote passes lint', () => {
     seedWorkspace()
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
     mockRunFormatter.mockClear()
@@ -245,6 +245,6 @@ describe('runUpgrade', () => {
 
     // `new` and every `add` already did this; upgrade did not, leaving the
     // workspace failing its own CI formatting gate right after an upgrade.
-    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot)
   })
 })

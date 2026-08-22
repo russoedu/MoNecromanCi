@@ -135,18 +135,6 @@ jobs:
       - run: npx nx sync:check
         name: Verify the workspace is synced (run 'npx nx sync' locally and commit if this fails)
 
-      # Prettier owns ALL formatting in this workspace, so it needs a gate of
-      # its own: ESLint is configured for correctness only and deliberately
-      # reports nothing about formatting. Without this step the entire
-      # formatting opinion is advisory, and a workspace drifts out of
-      # compliance with no signal anywhere.
-      #
-      # Stays workspace-wide even on a PR, unlike the verify step below: it is
-      # one Prettier invocation over the whole tree, not a per-project Nx
-      # target, so there is nothing to scope down and formatting is never
-      # partially checked.
-      - run: npm run format:check
-        name: Check formatting (run 'npm run format' locally to fix)
 
       # The one verify step, and deliberately the only one: affected projects on
       # a pull request, EVERY project on anything else (a push to main included,

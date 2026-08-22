@@ -5,8 +5,15 @@
 # @mnci/eslint-config
 
 > The lint **and** format opinion every `mnci`-generated monorepo uses. **One
-> ESLint config and one Prettier config, both at the root, for every language in
-> the workspace.**
+> ESLint config, at the root, for every language in the workspace — code
+> quality, type-aware rules and JavaScript Standard Style formatting, in one
+> tool.**
+>
+> There is no Prettier and no oxfmt. `eslint --fix` is the formatter, which is
+> what makes `space-before-function-paren` — Standard's signature rule —
+> enforceable at all: every Prettier-compatible formatter rewrites
+> `function f (a)` back to `function f(a)`, so a config that both enabled the
+> rule and ran such a formatter was mutually unsatisfiable.
 
 ## Why this exists
 

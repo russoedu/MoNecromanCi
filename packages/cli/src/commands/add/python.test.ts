@@ -315,7 +315,7 @@ describe('runAdd python-vendor', () => {
     // pass is a second, separate call site — easy to miss, easy to regress.
     await runAdd('python-vendor', 'svc', { lib: 'pycore' })
 
-    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot)
   })
 
   it('appends to an existing vendor table instead of overwriting it', async () => {

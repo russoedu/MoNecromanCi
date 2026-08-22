@@ -42,8 +42,6 @@ export interface NewOptions {
   ci?: CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
-  /** Linter + paired formatter. See {@link StackConfig}. */
-  linter?: StackConfig['linter']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
   nxCloud?: boolean
 }
@@ -90,19 +88,13 @@ function nxCloudProviderValue (ci: CiProvider): 'github' | 'azure' {
  * @typeParam None - this function has no generic type parameters.
  */
 async function resolveStack (options: NewOptions): Promise<StackConfig> {
-  // Either flag skips the prompt, so a caller can pin one half of the stack and
-  // take the default for the other without being asked about it.
-  if (options.testRunner || options.linter || options.yes) {
-    return {
-      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner,
-      linter: options.linter ?? DEFAULT_STACK.linter
-    }
+  // The flag skips the prompt entirely: the stack is one choice now that the
+  // linter is no longer part of it.
+  if (options.testRunner || options.yes) {
+    return { testRunner: options.testRunner ?? DEFAULT_STACK.testRunner }
   }
   const prompted = await promptStack()
-  return {
-    testRunner: prompted.testRunner,
-    linter: prompted.linter
-  }
+  return { testRunner: prompted.testRunner }
 }
 
 /**
@@ -267,12 +259,10 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   runShell('npx', ['husky'], workspaceRoot)
 
   // `create-nx-workspace` wrote its scaffold in its own style, which is not
-  // mnci's. Normalise it now so the workspace passes its own `format:check`
-  // from the very first commit.
-  logger.step(
-    `Formatting the workspace (${stack.linter === 'oxlint' ? 'oxfmt' : 'Prettier'}, JavaScript Standard Style)`
-  )
-  runFormatter(workspaceRoot, stack.linter)
+  // mnci's. Normalise it now so the workspace passes its own `lint` from the
+  // very first commit.
+  logger.step('Formatting the workspace (eslint --fix, JavaScript Standard Style)')
+  runFormatter(workspaceRoot)
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)

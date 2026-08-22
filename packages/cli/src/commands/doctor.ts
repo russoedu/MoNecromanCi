@@ -1,7 +1,7 @@
 import { globSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../nx'
-import { ESLINT_VERSION, readMnciConfig, type RegistryConfig } from '../overlay'
+import { ESLINT_VERSION, RETIRED_FORMATTER_FILES, type RegistryConfig } from '../overlay'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 
@@ -71,163 +71,73 @@ function checkEslintConfigs (workspaceRoot: string): Finding[] {
 }
 
 /**
- * Checks that no `.prettierrc` outranks mnci's `.prettierrc.json`.
+ * The root manifest's devDependencies, tolerantly.
  *
  * @remarks
- * Worth a dedicated check because the failure is invisible: both files exist and
- * both look fine, but Prettier's config resolution puts `.prettierrc` **above**
- * `.prettierrc.json`, so the entire formatting opinion is silently discarded.
- * `create-nx-workspace` writes the winning filename.
+ * `readJson` throws on a missing file, and doctor exists to diagnose exactly
+ * the broken workspaces where one might be absent — so it must not die on the
+ * thing it is inspecting.
  *
  * @param workspaceRoot - Absolute path to the workspace.
- * @returns The finding.
- * @throws Never - only reads the filesystem.
- * @typeParam None - this function has no generic type parameters.
- */
-function checkPrettierConfig (workspaceRoot: string): Finding {
-  const strayExists = fileExists(join(workspaceRoot, '.prettierrc'))
-  return {
-    check: 'Prettier config is mnci’s',
-    ok: !strayExists,
-    detail: '.prettierrc exists and outranks .prettierrc.json, so mnci’s config is ignored',
-    remedy: 'delete .prettierrc (or run `mnci upgrade`, which deletes it)'
-  }
-}
-
-/**
- * Checks that exactly one linter mode's config files are present.
- *
- * @remarks
- * The failure this catches is a workspace carrying **both** modes at once —
- * `.prettierrc.mjs` alongside `.oxfmtrc.json`, or an `oxlint.config.ts` in a
- * workspace whose persisted linter is `eslint`. `mnci upgrade` removes the
- * losing mode's files, so this only happens when someone adds one by hand or
- * copies config between repos.
- *
- * It is worth a check for the same reason the `.prettierrc` one is: two formatter
- * configs is not a visible error. Each file is valid on its own, the CLI picks
- * one, the editor extension may pick the other, and the two gates disagree
- * silently — a file formatted correctly by `npm run format` and reformatted on
- * every save.
- *
- * @param workspaceRoot - Absolute path to the workspace.
- * @returns The finding.
- * @throws Never - only reads the filesystem.
- * @typeParam None - this function has no generic type parameters.
- */
-function checkLinterModeIsConsistent (workspaceRoot: string): Finding {
-  const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
-  const oxlintFiles = ['oxlint.config.ts', '.oxfmtrc.json'].filter(file =>
-    fileExists(join(workspaceRoot, file))
-  )
-  const hasPrettier = fileExists(join(workspaceRoot, '.prettierrc.mjs'))
-
-  const stray = linter === 'oxlint' ? (hasPrettier ? ['.prettierrc.mjs'] : []) : oxlintFiles
-
-  return {
-    check: `linter is ${linter} and only ${linter}'s config files are present`,
-    ok: stray.length === 0,
-    detail: `${stray.join(', ')} belongs to the other linter mode, so two configs are in play at once`,
-    remedy: 'run `mnci upgrade`, which removes the mode the workspace did not choose'
-  }
-}
-
-/**
- * The workspace's declared devDependencies, or none when it has no manifest.
- *
- * @remarks
- * Tolerant on purpose. `readJson` throws on a missing file, and doctor's whole
- * value is reporting what is wrong rather than crashing on it — a workspace
- * broken enough to have lost its `package.json` is exactly one someone would run
- * this on. The `nx.json` check is the only one entitled to throw, because
- * without it there is no workspace to inspect at all.
- *
- * @param workspaceRoot - Absolute path to the workspace.
- * @returns The declared devDependencies, or an empty record.
- * @throws Never - a missing or unreadable manifest reads as empty.
+ * @returns The declared devDependencies, or an empty map.
+ * @throws Never - a missing or malformed manifest reads as empty.
  * @typeParam None - this function has no generic type parameters.
  */
 function declaredDevDependencies (workspaceRoot: string): Record<string, string> {
-  const manifestPath = join(workspaceRoot, 'package.json')
-  if (!fileExists(manifestPath)) return {}
-  const manifest = readJson<{ devDependencies?: Record<string, string> }>(manifestPath)
-  return manifest.devDependencies ?? {}
+  try {
+    const manifest = readJson<{ devDependencies?: Record<string, string> }>(
+      join(workspaceRoot, 'package.json')
+    )
+    return manifest.devDependencies ?? {}
+  } catch {
+    return {}
+  }
 }
 
 /**
- * Checks that only the chosen mode's formatter is declared.
+ * Fails when a retired formatter's config or dependency is still present.
  *
  * @remarks
- * The dependency half of {@link checkLinterModeIsConsistent}, and it is a
- * separate finding because it fails for a different reason: the config-file
- * check catches a file somebody added, this catches a declaration `mnci upgrade`
- * itself used to leave behind when switching modes.
+ * ESLint is the only linter and the only formatter. Two checks used to live
+ * here — one for the eslint/oxlint mode split, one for "exactly one formatter
+ * declared" — and both are meaningless now that there is nothing to choose.
+ * This replaces them with the failure that survived the collapse.
  *
- * Why the declaration matters at all, given that `@mnci/eslint-config` depends
- * on prettier outright and so puts it in `node_modules` regardless:
- * `esbenp.prettier-vscode` resolves the formatter from the **project's**
- * dependencies. A declared-but-unused prettier in an oxlint workspace is
- * therefore the thing that lets a globally installed prettier extension
- * reformat a file on save against the opinion oxfmt is not applying — with
- * `npm run format:check` (oxfmt) reporting the result as unformatted. Both
- * declared, both resolvable, neither one wrong on its own.
+ * A leftover `.prettierrc.mjs`, `.oxfmtrc.json` or `oxlint.config.ts` is inert
+ * from the command line, because nothing runs those binaries any more. That is
+ * precisely what makes it worth a check: a globally installed
+ * `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves the config and
+ * still reformats on save, so the editor quietly undoes Standard — semicolons
+ * come back, `function f (a)` loses its space — while `npm run lint` reports
+ * nothing, because the damage lands after the last check ran. A declared
+ * `prettier` in `devDependencies` is the same trap by the other route, since
+ * the extension resolves the formatter from the project.
+ *
+ * `mnci upgrade` removes all of them; this reports a workspace that has not
+ * been upgraded yet, and names the command that fixes it.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @returns The finding.
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkOneFormatterDeclared (workspaceRoot: string): Finding {
-  const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
-  const stale = linter === 'oxlint' ? 'prettier' : 'oxfmt'
-  const declared = declaredDevDependencies(workspaceRoot)[stale] !== undefined
+function checkNoRetiredFormatter (workspaceRoot: string): Finding {
+  const files = RETIRED_FORMATTER_FILES.filter(file => fileExists(join(workspaceRoot, file)))
+  const declared = ['prettier', 'eslint-config-prettier', 'oxlint', 'oxfmt', '@mnci/oxlint-config']
+    .filter(name => declaredDevDependencies(workspaceRoot)[name] !== undefined)
+  const stale = [...files, ...declared]
 
-  return {
-    check: `only ${linter === 'oxlint' ? 'oxfmt' : 'prettier'} is declared as the formatter`,
-    ok: !declared,
-    detail: `${stale} is declared but nothing runs it — the editor may still resolve and apply it, disagreeing with \`npm run format:check\``,
-    remedy: 'run `mnci upgrade`, which drops the formatter of the mode you left'
+  if (stale.length === 0) {
+    return { check: 'ESLint is the only linter and formatter', ok: true }
   }
-}
-
-/**
- * Checks that an oxlint workspace declares the binaries it needs.
- *
- * @remarks
- * `@mnci/oxlint-config` **peers** on `oxlint`, so the workspace has to declare
- * it — and `oxfmt` is what the `format` script invokes. Missing either turns
- * `npm run lint`/`npm run format` into a "command not found" at the worst moment
- * rather than at install time.
- *
- * Only meaningful for an oxlint workspace, so it reports `ok` for an ESLint one
- * rather than being skipped: a check that silently disappears is one nobody
- * notices has stopped running.
- *
- * @param workspaceRoot - Absolute path to the workspace.
- * @returns The finding.
- * @throws Never - only reads the filesystem.
- * @typeParam None - this function has no generic type parameters.
- */
-function checkOxlintToolchainDeclared (workspaceRoot: string): Finding {
-  const linter = readMnciConfig(workspaceRoot).stack?.linter ?? 'eslint'
-  if (linter !== 'oxlint') {
-    return {
-      check: 'oxlint toolchain declared',
-      ok: true,
-      detail: 'not an oxlint workspace',
-      remedy: ''
-    }
-  }
-  const devDeps = declaredDevDependencies(workspaceRoot)
-  const missing = ['oxlint', 'oxfmt', '@mnci/oxlint-config'].filter(
-    dependency => devDeps[dependency] === undefined
-  )
-
   return {
-    check: 'oxlint toolchain declared in devDependencies',
-    ok: missing.length === 0,
-    detail: `missing: ${missing.join(', ')} — lint or format will fail with "command not found"`,
-    remedy: 'run `mnci upgrade`, which writes the toolchain the chosen linter needs'
+    check: 'no retired formatter is still configured',
+    ok: false,
+    detail:
+      `Found: ${stale.join(', ')}. These no longer run, but an editor extension ` +
+      'still resolves them and will reformat on save against an opinion no gate ' +
+      'checks.',
+    remedy: "Run 'mnci upgrade' to remove them."
   }
 }
 
@@ -433,10 +343,7 @@ export function collectFindings (workspaceRoot: string): Finding[] {
 
   return [
     ...checkEslintConfigs(workspaceRoot),
-    checkPrettierConfig(workspaceRoot),
-    checkLinterModeIsConsistent(workspaceRoot),
-    checkOneFormatterDeclared(workspaceRoot),
-    checkOxlintToolchainDeclared(workspaceRoot),
+    checkNoRetiredFormatter(workspaceRoot),
     checkEslintPlugin(nxJson),
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
