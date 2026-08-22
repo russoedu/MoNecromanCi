@@ -9,12 +9,12 @@ import { checkForUpdate, readCliVersion } from './versionChecker'
 const mockSpawnSync = jest.mocked(spawn.sync)
 
 /** A successful `npm view` result reporting `version`. */
-function registryReturns(version: string): void {
+function registryReturns (version: string): void {
   mockSpawnSync.mockReturnValue({ status: 0, stdout: `${version}\n` } as never)
 }
 
 /** Runs every pending `setImmediate` callback and returns what was logged. */
-async function flushAndCapture(): Promise<string> {
+async function flushAndCapture (): Promise<string> {
   const lines: string[] = []
   const logSpy = jest.spyOn(console, 'log').mockImplementation(message => {
     lines.push(String(message))

@@ -20,7 +20,7 @@ import type { LintExecutorSchema } from './schema.d'
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function lintExecutor(
+export default async function lintExecutor (
   _options: LintExecutorSchema,
   context: ExecutorContext
 ): Promise<{ success: boolean }> {

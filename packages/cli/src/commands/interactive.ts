@@ -31,7 +31,7 @@ type InteractiveAction = 'new' | 'add' | 'upgrade'
  * @throws Propagates prompt errors and any failure from the dispatched flow.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runInteractive(): Promise<void> {
+export async function runInteractive (): Promise<void> {
   const inWorkspace = fileExists(join(process.cwd(), 'nx.json'))
   const choiceNew = { name: 'Create a new monorepo', value: 'new' as const }
   const choiceAdd = { name: 'Add a project to this workspace', value: 'add' as const }

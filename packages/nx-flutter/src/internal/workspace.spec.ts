@@ -41,7 +41,7 @@ describe('ensureWorkspaceRoot', () => {
 })
 
 /** The `workspace:` entries currently listed in the root pubspec. */
-function members(): string[] {
+function members (): string[] {
   const contents = tree.read(ROOT_PUBSPEC, 'utf8') ?? ''
   return contents
     .split('\n')

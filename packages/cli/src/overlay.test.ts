@@ -27,10 +27,10 @@ import {
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
   FORMATTED_LANGUAGES,
-  formattedLanguages,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   NODE_VERSION,
+  RETIRED_FORMATTER_FILES,
   NPM_VERSION,
   ROOT_LINT_TARGET,
   VSCODE_RECOMMENDED_EXTENSIONS,
@@ -53,7 +53,7 @@ import {
  * @returns The full command including `node -e` and both quotes, or `''` if no
  * guard in `pipeline` contains `marker`.
  */
-function extractGuard(pipeline: string, marker: string): string {
+function extractGuard (pipeline: string, marker: string): string {
   const guards = pipeline.match(/node -e "[^"]*"/g) ?? []
 
   return guards.find(guard => guard.includes(marker)) ?? ''
@@ -94,7 +94,7 @@ describe('pythonPublishUrl', () => {
 })
 
 /** Everything in an .npmrc that is not a comment or blank — i.e. actual config. */
-function directives(npmrc: string): string[] {
+function directives (npmrc: string): string[] {
   return npmrc
     .split('\n')
     .map(line => line.trim())
@@ -352,15 +352,15 @@ describe('azurePipelinesYaml', () => {
     // The release step exports twine publish creds when there are Python packages.
     expect(pipeline).toContain(`TWINE_REPOSITORY_URL='${url}'`)
     // Reuses the base64 PAT from the group, decoded to the raw token twine needs.
-    expect(pipeline).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(pipeline).toContain('Buffer.from(process.env.PAT,\'base64\')')
     // Guarded on either publishable dir.
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'packages/*/package.json\')')
     // A guarded step installs the fixed pip toolchain before any Python target runs.
     expect(pipeline).toContain('-m pip install -r requirements-dev.txt')
     // Resolves python vs python3 by platform, not hard-coded (Windows agents
     // have no python3.exe).
-    expect(pipeline).toContain(`process.platform==='win32'?'python':'python3'`)
+    expect(pipeline).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
     // A second guarded step editable-installs every Python project so
     // cross-project imports (internal libs included) resolve at test time.
     expect(pipeline).toContain('Install Python project dependencies (editable, workspace-wide)')
@@ -369,7 +369,7 @@ describe('azurePipelinesYaml', () => {
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
     // Python packages are always in the release scope (versioning + tags)…
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     // …but without an Azure feed the release step sets no TWINE_* env.
     expect(pipeline).not.toContain('TWINE_REPOSITORY_URL')
   })
@@ -430,25 +430,22 @@ describe('azurePipelinesYaml', () => {
     // nothing about type correctness — a workspace can be green on
     // lint+test+build and still carry real errors. Asserted on the shared target
     // list, so it holds on both the affected and the run-many path.
-    expect(pipeline).toContain(`const T='lint,typecheck,test,build'`)
+    expect(pipeline).toContain('const T=\'lint,typecheck,test,build\'')
   })
 
-  it('gates formatting with its own step, and keeps it workspace-wide even on a PR', () => {
+  it('has NO separate formatting step, because lint already reports formatting', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    // Load-bearing, and easy to drop as redundant-looking: ESLint here is
-    // configured for correctness ONLY (eslint-config-prettier is composed last
-    // in @mnci/eslint-config), so it reports nothing whatsoever about
-    // formatting. Without this step Prettier is advisory — mnci deletes Nx's
-    // .prettierrc precisely so its own config takes effect, then nothing would
-    // ever check that it holds.
-    expect(pipeline).toContain('npm run format:check')
-    // Deliberately NOT affected-scoped: `prettier --check .` is one invocation
-    // over the whole tree, not a per-project Nx target, so there is nothing to
-    // narrow and formatting is never checked in part.
-    expect(pipeline.indexOf('npm run format:check')).toBeLessThan(
-      pipeline.indexOf('npx nx affected -t ')
-    )
+    // Inverted deliberately. The step this replaces existed because ESLint was
+    // configured for correctness ONLY — `eslint-config-prettier` switched every
+    // stylistic rule off — so without a second Prettier invocation the entire
+    // formatting opinion was advisory.
+    //
+    // ESLint now owns formatting, so the verify step's `lint` reports it as
+    // ordinary errors. A `format:check` step would run the same binary a second
+    // time over the same tree for no additional coverage.
+    expect(pipeline).not.toContain('format:check')
+    expect(pipeline).toContain('nx affected -t ')
   })
 
   it('checks the workspace is synced early, before verification (fails fast on a stale TS reference)', () => {
@@ -478,22 +475,22 @@ describe('azurePipelinesYaml', () => {
     // One pip invocation covers every project kind: editable-installs apps,
     // publishable libs and internal libs (all have a pyproject.toml), and
     // installs function apps' requirements.txt (no pyproject.toml to editable-install).
-    expect(pipeline).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('libs/*/pyproject.toml')`)
-    expect(pipeline).toContain(`globSync('apps/*/requirements.txt')`)
-    expect(pipeline).toContain(`'-m','pip','install','--quiet'`)
+    expect(pipeline).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'libs/*/pyproject.toml\')')
+    expect(pipeline).toContain('globSync(\'apps/*/requirements.txt\')')
+    expect(pipeline).toContain('\'-m\',\'pip\',\'install\',\'--quiet\'')
   })
 
   it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     const npmInstallIndex = pipeline.indexOf('npm ci')
-    const npmAuditIndex = pipeline.indexOf(`'audit','--json'`)
+    const npmAuditIndex = pipeline.indexOf('\'audit\',\'--json\'')
     const pythonWorkspaceInstallIndex = pipeline.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
-    const pipAuditIndex = pipeline.indexOf(`'-m','pip_audit'`)
+    const pipAuditIndex = pipeline.indexOf('\'-m\',\'pip_audit\'')
     const syncCheckIndex = pipeline.indexOf('nx sync:check')
 
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
@@ -609,14 +606,14 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('PathtoPublish: $(Build.SourcesDirectory)/dist/drop')
     // The build tag is derived from the zip filenames, so it is exactly the
     // zip's <type>-<name> basename.
-    expect(pipeline).toContain(`path.basename(f,'.zip')`)
+    expect(pipeline).toContain('path.basename(f,\'.zip\')')
   })
 
   it('guards pack and release with portable node one-liners while apps/packages are empty', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
-    expect(pipeline).toContain(`globSync('apps/*/project.json')`)
-    expect(pipeline).toContain(`globSync('packages/*/package.json')`)
+    expect(pipeline).toContain('globSync(\'apps/*/project.json\')')
+    expect(pipeline).toContain('globSync(\'packages/*/package.json\')')
     expect(pipeline).toContain('nx release --yes')
   })
 })
@@ -704,17 +701,17 @@ describe('githubActionsYaml', () => {
     expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python)')
     expect(workflow).not.toContain('nx run-many -t publish')
     expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
-    expect(workflow).toContain(`Buffer.from(process.env.PAT,'base64')`)
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('packages/*/package.json')`)
+    expect(workflow).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'packages/*/package.json\')')
     expect(workflow).toContain('-m pip install -r requirements-dev.txt')
-    expect(workflow).toContain(`process.platform==='win32'?'python':'python3'`)
+    expect(workflow).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
     expect(workflow).toContain('Install Python project dependencies (editable, workspace-wide)')
   })
 
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
   })
 
@@ -757,22 +754,22 @@ describe('githubActionsYaml', () => {
 
     expect(workspaceInstallIndex).toBeGreaterThan(toolchainIndex)
     expect(syncCheckIndex).toBeGreaterThan(workspaceInstallIndex)
-    expect(workflow).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('libs/*/pyproject.toml')`)
-    expect(workflow).toContain(`globSync('apps/*/requirements.txt')`)
-    expect(workflow).toContain(`'-m','pip','install','--quiet'`)
+    expect(workflow).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'libs/*/pyproject.toml\')')
+    expect(workflow).toContain('globSync(\'apps/*/requirements.txt\')')
+    expect(workflow).toContain('\'-m\',\'pip\',\'install\',\'--quiet\'')
   })
 
   it('runs npm audit right after npm ci, and pip-audit after the workspace-wide Python install', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     const npmInstallIndex = workflow.indexOf('npm ci')
-    const npmAuditIndex = workflow.indexOf(`'audit','--json'`)
+    const npmAuditIndex = workflow.indexOf('\'audit\',\'--json\'')
     const pythonWorkspaceInstallIndex = workflow.indexOf(
       'Install Python project dependencies (editable, workspace-wide)'
     )
-    const pipAuditIndex = workflow.indexOf(`'-m','pip_audit'`)
+    const pipAuditIndex = workflow.indexOf('\'-m\',\'pip_audit\'')
     const syncCheckIndex = workflow.indexOf('nx sync:check')
 
     expect(npmAuditIndex).toBeGreaterThan(npmInstallIndex)
@@ -873,14 +870,14 @@ describe('githubActionsYaml', () => {
 
     expect(github).toContain('-m pip install -r requirements-dev.txt')
     expect(azure).toContain('-m pip install -r requirements-dev.txt')
-    expect(github).toContain(`process.platform==='win32'?'python':'python3'`)
-    expect(azure).toContain(`process.platform==='win32'?'python':'python3'`)
-    expect(github).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(azure).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(github).toContain(`globSync('apps/*/project.json')`)
-    expect(azure).toContain(`globSync('apps/*/project.json')`)
-    expect(github).toContain(`Buffer.from(process.env.PAT,'base64')`)
-    expect(azure).toContain(`Buffer.from(process.env.PAT,'base64')`)
+    expect(github).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
+    expect(azure).toContain('process.platform===\'win32\'?\'python\':\'python3\'')
+    expect(github).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(azure).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(github).toContain('globSync(\'apps/*/project.json\')')
+    expect(azure).toContain('globSync(\'apps/*/project.json\')')
+    expect(github).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(azure).toContain('Buffer.from(process.env.PAT,\'base64\')')
 
     // The Flutter SDK install and the root pub get are byte-identical in both.
     // Only the PATH step legitimately differs, because the two providers have
@@ -889,20 +886,21 @@ describe('githubActionsYaml', () => {
     const flutterInstall = `'--branch','${FLUTTER_SDK_VERSION}','https://github.com/flutter/flutter.git'`
     expect(github).toContain(flutterInstall)
     expect(azure).toContain(flutterInstall)
-    expect(github).toContain(`'pub','get'`)
-    expect(azure).toContain(`'pub','get'`)
+    expect(github).toContain('\'pub\',\'get\'')
+    expect(azure).toContain('\'pub\',\'get\'')
     expect(github).toContain('No Flutter projects - skipping.')
     expect(azure).toContain('No Flutter projects - skipping.')
 
-    // Both providers gate formatting, not just one — the whole point of this
-    // test is that a step added to one provider cannot be forgotten in the
-    // other.
-    expect(github).toContain('npm run format:check')
-    expect(azure).toContain('npm run format:check')
+    // NEITHER provider has a formatting step, and asserting the absence in both
+    // is the same anti-drift property as asserting the presence used to be: a
+    // step removed from one provider must not survive in the other. ESLint owns
+    // formatting now, so `lint` inside the verify target reports it.
+    expect(github).not.toContain('format:check')
+    expect(azure).not.toContain('format:check')
 
     // Same for the typecheck target, for the same reason.
-    expect(github).toContain(`const T='lint,typecheck,test,build'`)
-    expect(azure).toContain(`const T='lint,typecheck,test,build'`)
+    expect(github).toContain('const T=\'lint,typecheck,test,build\'')
+    expect(azure).toContain('const T=\'lint,typecheck,test,build\'')
 
     // The verify guard, byte-for-byte. This one matters more than the others:
     // the two providers detect a pull request through DIFFERENT environment
@@ -942,7 +940,7 @@ describeOnPosix('the verify guard, executed', () => {
 
   /** Runs the guard in the fixture repo. @param env - Extra environment.
    * @returns The stub's recorded Nx command, plus the guard's exit status. */
-  function run(env: Record<string, string> = {}): { command: string; status: number | null } {
+  function run (env: Record<string, string> = {}): { command: string; status: number | null } {
     const result = spawnSync(guard, {
       cwd: repo,
       shell: true,
@@ -1103,7 +1101,7 @@ describeOnPosix('the npm audit step, executed', () => {
    * finds anything, which the guard must not confuse with a failure).
    * @returns The guard's exit status and its stdout.
    */
-  function run(report: string, exitCode = 1): { status: number | null; out: string } {
+  function run (report: string, exitCode = 1): { status: number | null; out: string } {
     writeFileSync(join(workspace, 'stub-bin/report.json'), report)
     const result = spawnSync(guard, {
       cwd: workspace,
@@ -1254,7 +1252,7 @@ describe('devcontainerJson', () => {
     postCreateCommand: string
     customizations: { vscode: { extensions: string[] } }
   }
-  const parsed = (): Devcontainer => JSON.parse(devcontainerJson('demo', 'eslint')) as Devcontainer
+  const parsed = (): Devcontainer => JSON.parse(devcontainerJson('demo')) as Devcontainer
 
   it('is valid JSON naming the workspace', () => {
     // Written to disk verbatim, so a malformed string would break the container
@@ -1325,7 +1323,7 @@ describe('devcontainerJson', () => {
 
   it('recommends the same extensions as the .code-workspace file', () => {
     expect(parsed().customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
-    expect(vscodeWorkspace('demo', 'eslint')).toContain('dbaeumer.vscode-eslint')
+    expect(vscodeWorkspace('demo')).toContain('dbaeumer.vscode-eslint')
   })
 })
 
@@ -1404,7 +1402,7 @@ describe('generatorDefaults', () => {
     // Not a regression: `none` stops a direct `nx g` from scaffolding a
     // per-project config that would compete with the workspace's single root
     // one. `@nx/eslint/plugin` still gives the project its `lint` target.
-    const defaults = generatorDefaults({ testRunner: 'jest', linter: 'eslint' }) as Record<
+    const defaults = generatorDefaults({ testRunner: 'jest' }) as Record<
       string,
       { linter: string; unitTestRunner: string }
     >
@@ -1431,7 +1429,7 @@ describe('mnciConfig', () => {
       agent: 'ubuntu-latest',
       variableGroup: 'Build',
       ci: 'github',
-      stack: { testRunner: 'vitest', linter: 'eslint' }
+      stack: { testRunner: 'vitest' }
     })
   })
 })
@@ -1485,11 +1483,14 @@ describe('readMnciConfig', () => {
 })
 
 describe('rootScripts', () => {
-  it('uses nx lint and prettier format scripts', () => {
+  it('uses nx lint, and `format` is eslint --fix — one tool, one command', () => {
     const scripts = rootScripts()
+
     expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBe('prettier --write .')
-    expect(scripts['format:check']).toBe('prettier --check .')
+    expect(scripts.format).toBe('eslint . --fix --cache')
+    // No `format:check`: `lint` already reports formatting as ordinary errors,
+    // so a second script would run the same binary twice for no new coverage.
+    expect(scripts['format:check']).toBeUndefined()
   })
 
   it('adds python:install chaining the same two guards CI runs (for local-dev convenience)', () => {
@@ -1498,14 +1499,14 @@ describe('rootScripts', () => {
     // Fixed dev toolchain (ruff/pytest/build/twine from requirements-dev.txt) ...
     expect(scripts['python:install']).toContain('-m pip install -r requirements-dev.txt')
     // ... then the workspace-wide editable install of every Python project.
-    expect(scripts['python:install']).toContain(`globSync('apps/*/pyproject.toml')`)
-    expect(scripts['python:install']).toContain(`globSync('python-packages/*/pyproject.toml')`)
-    expect(scripts['python:install']).toContain(`globSync('libs/*/pyproject.toml')`)
+    expect(scripts['python:install']).toContain('globSync(\'apps/*/pyproject.toml\')')
+    expect(scripts['python:install']).toContain('globSync(\'python-packages/*/pyproject.toml\')')
+    expect(scripts['python:install']).toContain('globSync(\'libs/*/pyproject.toml\')')
     // Chained (not parallel), toolchain install first.
     const toolchainIndex = scripts['python:install'].indexOf(
       '-m pip install -r requirements-dev.txt'
     )
-    const workspaceIndex = scripts['python:install'].indexOf(`globSync('apps/*/pyproject.toml')`)
+    const workspaceIndex = scripts['python:install'].indexOf('globSync(\'apps/*/pyproject.toml\')')
     expect(toolchainIndex).toBeGreaterThan(-1)
     expect(workspaceIndex).toBeGreaterThan(toolchainIndex)
   })
@@ -1723,7 +1724,7 @@ describe('applyOverlay', () => {
   })
 
   it("writes the stack as nx.json generator defaults (for a user's own direct `nx g`)", () => {
-    overlayWith({ testRunner: 'vitest', linter: 'eslint' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       generators: Record<string, { linter: string; unitTestRunner: string }>
@@ -1735,12 +1736,12 @@ describe('applyOverlay', () => {
   })
 
   it('writes mnci.stack — the single source of truth `add` reads back, not the generator defaults', () => {
-    overlayWith({ testRunner: 'vitest', linter: 'eslint' })
+    overlayWith({ testRunner: 'vitest' })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       mnci: { stack: { testRunner: string } }
     }
-    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest', linter: 'eslint' })
+    expect(nxJson.mnci.stack).toEqual({ testRunner: 'vitest' })
   })
 
   it('writes the shared global inputs into nx.json, so an affected-scoped PR is not blind to the root configs', () => {
@@ -1848,7 +1849,7 @@ describe('applyOverlay', () => {
     const written = readFileSync(join(workspaceRoot, '.devcontainer/devcontainer.json'), 'utf8')
 
     expect(JSON.parse(written).name).toBe('demo')
-    expect(written).toBe(devcontainerJson('demo', 'eslint'))
+    expect(written).toBe(devcontainerJson('demo'))
   })
 
   it('writes the whole mnci block — workspaceName/scope/registry/agent/variableGroup/ci — so `mnci upgrade` can reconstruct the exact options a later run resolved', () => {
@@ -1884,37 +1885,6 @@ describe('applyOverlay', () => {
       ci: 'both',
       stack: DEFAULT_STACK
     })
-  })
-
-  it('writes Prettier config and VS Code extensions when eslint is used', () => {
-    overlayWith(DEFAULT_STACK)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
-    expect(existsSync(join(workspaceRoot, '.prettierignore'))).toBe(true)
-    expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
-    const scripts = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        scripts: Record<string, string>
-      }
-    ).scripts
-    expect(scripts.lint).toBe('nx run-many -t lint')
-    expect(scripts.format).toBe('prettier --write .')
-    expect(scripts['format:check']).toBe('prettier --check .')
-    // Check VS Code workspace file
-    const workspace = JSON.parse(
-      readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')
-    ) as {
-      folders: { path: string; name: string }[]
-      extensions: { recommendations: string[] }
-      tasks: { version: string; tasks: unknown[] }
-    }
-    expect(workspace.extensions.recommendations).toContain('dbaeumer.vscode-eslint')
-    expect(workspace.extensions.recommendations).toContain('esbenp.prettier-vscode')
-    // Generic across every generated workspace — no hardcoded package names
-    // from this repo's own dogfooded root leaking into the template.
-    expect(workspace.folders).toEqual([{ path: '.', name: 'demo' }])
-    // Starts empty; `add/*.ts`'s registerProjectCommands appends a task per
-    // project as it's added (see commands/add/shared.test.ts).
-    expect(workspace.tasks).toEqual({ version: '2.0.0', tasks: [] })
   })
 
   it('writes a root eslint config that delegates to @mnci/eslint-config', () => {
@@ -2002,205 +1972,24 @@ describe('applyOverlay', () => {
     expect(stale).toEqual([])
   })
 
-  it('actually runs oxlint, which no other target does', () => {
-    // The hole this closes is silent: every per-project `lint` target comes from
-    // @nx/eslint/plugin and runs ESLint alone, so an oxlint workspace could have a
-    // valid oxlint.config.ts, a green `npm run lint`, and never invoke oxlint once.
-    // A first pass shipped exactly that.
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
+  it('points `format` at eslint --fix, and ships no second format script', () => {
+    // One tool means one command. `format:check` is deliberately absent: `lint`
+    // already reports formatting as ordinary errors, so a second script would
+    // run the same binary twice for no extra coverage.
+    overlayWith({ testRunner: 'jest' })
+    const { scripts } = JSON.parse(
+      readFileSync(join(workspaceRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string> }
 
-    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-      nx: { targets: { lint: { options: { commands: string[] } } } }
-    }
-    const commands = nx.targets.lint.options.commands
-    expect(commands.some(command => command.startsWith('oxlint '))).toBe(true)
-    // And ESLint still runs, for the file types oxlint cannot parse.
-    expect(commands.some(command => command.startsWith('eslint '))).toBe(true)
-  })
-
-  it('sweeps the whole workspace with oxlint, not just the root', () => {
-    // ESLint's root invocation is scoped away from apps/libs/packages because each
-    // project lints its own tree. oxlint has no per-project target at all, so the
-    // same scoping would leave JS/TS linted by nothing.
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    const { nx } = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-      nx: { targets: { lint: { options: { commands: string[] } } } }
-    }
-    const oxlintCommand = nx.targets.lint.options.commands.find(command =>
-      command.startsWith('oxlint ')
-    )
-    expect(oxlintCommand).not.toContain('--ignore-pattern')
-  })
-
-  it('writes the oxlint pair and no Prettier config when oxlint is chosen', () => {
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-
-    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
-    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(true)
-    // Two formatter configs would mean the editor and CI can disagree about which
-    // applies — the same silent failure shape as the `.prettierrc` precedence bug.
-    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(false)
-  })
-
-  it('keeps an ESLint config under oxlint, trimmed to what oxlint cannot parse', () => {
-    // The hybrid's whole point. Without this a workspace that chose oxlint would
-    // lint its CI YAML, its pyproject.toml and its publishable manifests with
-    // nothing at all.
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-
-    const config = readFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'utf8')
-    expect(config).toContain("import { nonJs } from '@mnci/eslint-config'")
-    // NOT the full config: composing both would report one defect twice.
-    expect(config).not.toContain("import mnci from '@mnci/eslint-config'")
-  })
-
-  it('removes the oxlint pair when the workspace switches back to eslint', () => {
-    // `mnci upgrade` runs this same code path, so switching modes has to be one
-    // command rather than a manual cleanup. Asserted by switching for real.
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(true)
-
-    overlayWith({ testRunner: 'jest', linter: 'eslint' })
-    expect(existsSync(join(workspaceRoot, 'oxlint.config.ts'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.oxfmtrc.json'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
-  })
-
-  it('points the format scripts at the formatter the workspace actually has', () => {
-    for (const [linter, tool] of [
-      ['eslint', 'prettier'],
-      ['oxlint', 'oxfmt']
-    ] as const) {
-      overlayWith({ testRunner: 'jest', linter })
-      const scripts = (
-        JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-          scripts: Record<string, string>
-        }
-      ).scripts
-      expect(scripts.format).toContain(tool)
-      expect(scripts['format:check']).toContain(tool)
-    }
-  })
-
-  it('declares the formatter it formats with, rather than relying on hoisting', () => {
-    // `@mnci/eslint-config` depends on prettier, so `npx prettier` works either
-    // way — but the VS Code extension resolves prettier from the PROJECT's
-    // dependencies and silently falls back to its bundled copy when it finds
-    // none. Reported from a real workspace.
-    overlayWith({ testRunner: 'jest', linter: 'eslint' })
-    const devDeps = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-    expect(devDeps.prettier).toBeDefined()
-  })
-
-  it('declares the whole oxlint toolchain, ESLint included', () => {
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    const devDeps = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-
-    for (const dependency of ['oxlint', 'oxfmt', '@mnci/oxlint-config']) {
-      expect(devDeps[dependency]).toBeDefined()
-    }
-    // ON TOP OF the ESLint set, not instead of it: the hybrid still lints YAML,
-    // TOML, Markdown, CSS, HTML and JSON with ESLint.
-    expect(devDeps.eslint).toBeDefined()
-    expect(devDeps['@mnci/eslint-config']).toBeDefined()
-  })
-
-  it('declares exactly one formatter, never both', () => {
-    // Additive for the LINTER, exclusive for the FORMATTER — the asymmetry is the
-    // point. prettier stays in node_modules either way (`@mnci/eslint-config`
-    // depends on it), so this is about the DECLARATION: prettier-vscode resolves
-    // the formatter from the project's dependencies, so an oxlint workspace that
-    // declares prettier is one where a globally installed prettier-vscode
-    // reformats on save against the opinion oxfmt is not applying. Two
-    // formatters, both resolvable, disagreeing silently — the `.prettierrc`
-    // precedence bug wearing a different hat.
-    //
-    // Two independent mechanisms enforce this, and mutation testing is what
-    // showed it: the write-site ternary never declares prettier under oxlint,
-    // AND `withoutStaleLinterDependencies` strips it if anything did. Breaking
-    // either one alone leaves this test green. That is defence in depth rather
-    // than a redundancy to tidy away — the ternary covers `mnci new`, the prune
-    // covers `mnci upgrade`, and only the prune can fix a manifest that already
-    // declares it. Noted here so nobody reads a passing run as proof that the
-    // line they just changed is the one holding this up; the test below pins the
-    // prune on its own.
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    const oxlint = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-    expect(oxlint.oxfmt).toBeDefined()
-    expect(oxlint.prettier).toBeUndefined()
-  })
-
-  it('drops the formatter of the mode an upgrade left behind', () => {
-    // The half a conditional cannot fix: the merge starts from the manifest's
-    // existing devDependencies, so a spread can only ADD. Without the prune,
-    // `mnci upgrade --linter=oxlint` on an ESLint workspace leaves `prettier`
-    // declared and `.prettierrc.mjs` deleted — a formatter with no config, which
-    // silently formats against ITS defaults rather than Standard.
-    overlayWith({ testRunner: 'jest', linter: 'eslint' })
-    const beforeSwitch = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-    expect(beforeSwitch.prettier).toBeDefined()
-
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    const afterSwitch = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-    expect(afterSwitch.prettier).toBeUndefined()
-    expect(afterSwitch.oxfmt).toBeDefined()
-
-    // And back, so the prune is symmetric rather than a one-way door.
-    overlayWith({ testRunner: 'jest', linter: 'eslint' })
-    const backAgain = (
-      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
-        devDependencies: Record<string, string>
-      }
-    ).devDependencies
-    expect(backAgain.prettier).toBeDefined()
-    for (const dependency of ['oxlint', 'oxfmt', '@mnci/oxlint-config']) {
-      expect(backAgain[dependency]).toBeUndefined()
-    }
-  })
-
-  it('persists the linter so mnci upgrade does not revert it', () => {
-    overlayWith({ testRunner: 'jest', linter: 'oxlint' })
-    const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
-      mnci: { stack: { linter: string } }
-    }
-    expect(nxJson.mnci.stack.linter).toBe('oxlint')
+    expect(scripts.format).toBe('eslint . --fix --cache')
+    expect(scripts['format:check']).toBeUndefined()
   })
 
   it('recommends the ESLint + Prettier extensions for an eslint workspace', () => {
-    const workspace = vscodeWorkspace('demo', 'eslint')
+    const workspace = vscodeWorkspace('demo')
     expect(workspace).toContain('dbaeumer.vscode-eslint')
     expect(workspace).toContain('esbenp.prettier-vscode')
     expect(workspace).not.toContain('oxc.oxc-vscode')
-  })
-
-  it('recommends the Oxc extension for an oxlint workspace, and drops Prettier', () => {
-    // `oxc.oxc-vscode` is ONE extension covering oxlint AND oxfmt (verified on
-    // the Marketplace), so an oxlint workspace needs no separate formatter
-    // extension — and recommending prettier-vscode would install a formatter the
-    // workspace does not use, fighting oxfmt on every save.
-    const workspace = vscodeWorkspace('demo', 'oxlint')
-    expect(workspace).toContain('oxc.oxc-vscode')
-    expect(workspace).not.toContain('esbenp.prettier-vscode')
   })
 
   it('keeps the ESLint extension for oxlint too, because the choice is a hybrid', () => {
@@ -2208,18 +1997,18 @@ describe('applyOverlay', () => {
     // Markdown, CSS, HTML or JSON, so ESLint still runs on those in CI. Dropping
     // the extension would leave someone editing azure-pipelines.yml with no
     // in-editor feedback from a linter that still fails their build.
-    expect(vscodeWorkspace('demo', 'oxlint')).toContain('dbaeumer.vscode-eslint')
+    expect(vscodeWorkspace('demo')).toContain('dbaeumer.vscode-eslint')
   })
 
-  it('points editor.defaultFormatter at whichever formatter the workspace has', () => {
+  it('points editor.defaultFormatter at ESLint, which is the formatter', () => {
     // Getting this wrong is silent and constant: format-on-save would invoke a
     // formatter the workspace does not configure, reformatting every file the
     // moment it is touched.
-    expect(vscodeWorkspace('demo', 'eslint')).toContain(
-      '"editor.defaultFormatter": "esbenp.prettier-vscode"'
+    expect(vscodeWorkspace('demo')).toContain(
+      '"editor.defaultFormatter": "dbaeumer.vscode-eslint"'
     )
-    expect(vscodeWorkspace('demo', 'oxlint')).toContain(
-      '"editor.defaultFormatter": "oxc.oxc-vscode"'
+    expect(vscodeWorkspace('demo')).toContain(
+      '"editor.defaultFormatter": "dbaeumer.vscode-eslint"'
     )
   })
 
@@ -2231,15 +2020,14 @@ describe('applyOverlay', () => {
     // user's own settings outranks this file's global `editor.defaultFormatter`.
     // Nothing reports it: Prettier is installed, the config resolves, and
     // `format:check` still finds the unformatted files.
-    for (const linter of ['eslint', 'oxlint'] as const) {
-      const settings = JSON.parse(vscodeWorkspace('demo', linter)).settings as Record<
-        string,
-        { 'editor.defaultFormatter'?: string }
-      >
-      const expected = linter === 'oxlint' ? 'oxc.oxc-vscode' : 'esbenp.prettier-vscode'
-      for (const language of formattedLanguages(linter)) {
-        expect(settings[`[${language}]`]).toEqual({ 'editor.defaultFormatter': expected })
-      }
+    const settings = JSON.parse(vscodeWorkspace('demo')).settings as Record<
+      string,
+      { 'editor.defaultFormatter'?: string }
+    >
+    for (const language of FORMATTED_LANGUAGES) {
+      expect(settings[`[${language}]`]).toEqual({
+        'editor.defaultFormatter': 'dbaeumer.vscode-eslint'
+      })
     }
   })
 
@@ -2261,67 +2049,43 @@ describe('applyOverlay', () => {
     }
   })
 
-  it('pins TOML under oxlint only, because Prettier cannot parse it at all', () => {
-    // Not a preference. `prettier` on a `.toml` exits with "No parser could be
-    // inferred for file"; oxfmt reformats it. So pinning `[toml]` in an ESLint
-    // workspace would route the file to a formatter that errors on it, while
-    // leaving it out of an oxlint workspace forfeits a formatted
-    // `pyproject.toml` — the one thing `@mnci/eslint-config`'s parser-only TOML
-    // block has always documented as unenforceable.
-    const oxlint = JSON.parse(vscodeWorkspace('demo', 'oxlint')).settings as Record<string, unknown>
-    expect(oxlint['[toml]']).toEqual({ 'editor.defaultFormatter': 'oxc.oxc-vscode' })
-
-    const eslint = JSON.parse(vscodeWorkspace('demo', 'eslint')).settings as Record<string, unknown>
-    expect(eslint['[toml]']).toBeUndefined()
-    expect(FORMATTED_LANGUAGES).not.toContain('toml')
-  })
-
-  it('narrows eslint.validate to what ESLint still owns under oxlint', () => {
-    const oxlint = JSON.parse(vscodeWorkspace('demo', 'oxlint')) as {
-      settings: { 'eslint.validate': string[] }
-    }
-    expect(oxlint.settings['eslint.validate']).not.toContain('typescript')
-    expect(oxlint.settings['eslint.validate']).toContain('yaml')
-
-    const eslint = JSON.parse(vscodeWorkspace('demo', 'eslint')) as {
-      settings: { 'eslint.validate': string[] }
-    }
-    expect(eslint.settings['eslint.validate']).toContain('typescript')
-  })
-
   it('recommends the same extensions in the devcontainer as in the workspace file', () => {
     // Shared for this reason: opening the workspace in a container must suggest
     // the same toolset as opening it directly. Now that there are two lists,
     // asserted for BOTH — a per-linter split is exactly where they would drift.
-    for (const linter of ['eslint', 'oxlint'] as const) {
-      const container = JSON.parse(devcontainerJson('demo', linter)) as {
-        customizations: { vscode: { extensions: string[] } }
-      }
-      const workspace = JSON.parse(vscodeWorkspace('demo', linter)) as {
-        extensions: { recommendations: string[] }
-      }
-      expect(container.customizations.vscode.extensions).toEqual(
-        workspace.extensions.recommendations
-      )
+    const container = JSON.parse(devcontainerJson('demo')) as {
+      customizations: { vscode: { extensions: string[] } }
     }
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      extensions: { recommendations: string[] }
+    }
+
+    expect(container.customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
+    expect(workspace.extensions.recommendations).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
   })
 
-  it('deletes both higher-precedence Prettier configs, or the shared opinion is ignored', () => {
-    // Load-bearing, not tidying. Prettier resolves .prettierrc BEFORE
-    // .prettierrc.json, and both before .prettierrc.mjs — so a leftover file of
-    // either earlier kind wins outright and silently reinstates the old opinion.
-    // .prettierrc is what create-nx-workspace writes ({singleQuote:true}, which
-    // once made every mnci option ignored in every generated workspace);
-    // .prettierrc.json is what mnci ITSELF wrote before the config moved into the
-    // package, so `mnci upgrade` has to clear it or the upgrade does nothing.
-    writeFileSync(join(workspaceRoot, '.prettierrc'), '{ "singleQuote": true }\n')
-    writeFileSync(join(workspaceRoot, '.prettierrc.json'), '{ "trailingComma": "es5" }\n')
+  it('deletes every formatter config a past mnci version could have written', () => {
+    // Load-bearing, not tidying, and the reason is that these files are INERT
+    // from the command line — nothing runs Prettier or oxfmt any more. That is
+    // exactly what makes them dangerous: a globally installed
+    // `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves one and still
+    // reformats on save, quietly undoing Standard while `npm run lint` reports
+    // nothing, because the damage lands after the last check ran.
+    //
+    // All six shapes mnci has shipped: `.prettierrc` from create-nx-workspace,
+    // `.prettierrc.json` and `.prettierrc.mjs` from mnci itself, `.prettierignore`,
+    // and the oxlint pair.
+    for (const stale of RETIRED_FORMATTER_FILES) {
+      writeFileSync(join(workspaceRoot, stale), '{}\n')
+    }
 
     overlayWith(DEFAULT_STACK)
 
-    expect(existsSync(join(workspaceRoot, '.prettierrc'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.json'))).toBe(false)
-    expect(existsSync(join(workspaceRoot, '.prettierrc.mjs'))).toBe(true)
+    for (const stale of RETIRED_FORMATTER_FILES) {
+      expect(existsSync(join(workspaceRoot, stale))).toBe(false)
+    }
+    // ...and exactly one config remains, because there is exactly one tool.
+    expect(existsSync(join(workspaceRoot, 'eslint.config.mjs'))).toBe(true)
   })
 
   it('deletes the .vscode directory, whose content the .code-workspace file already carries', () => {
@@ -2368,43 +2132,10 @@ describe('applyOverlay', () => {
     expect(() => overlayWith(DEFAULT_STACK)).not.toThrow()
   })
 
-  it('delegates formatting to the shared package instead of inlining the options', () => {
-    // The options moved into @mnci/eslint-config/prettier so lint and format
-    // cannot drift apart and a fix arrives via `npm update`. What the workspace
-    // gets is a re-export plus the comments explaining how to override it —
-    // which is why the file is .mjs: JSON cannot carry those comments.
-    overlayWith(DEFAULT_STACK)
-
-    const written = readFileSync(join(workspaceRoot, '.prettierrc.mjs'), 'utf8')
-
-    expect(written).toContain("export { default } from '@mnci/eslint-config/prettier'")
-    expect(written).toContain('@mnci/eslint-config/prettier')
-    // The override recipe has to be present, not just implied.
-    expect(written).toContain('printWidth: 120')
-  })
-
   // The options themselves are asserted in @mnci/eslint-config's own suite, by
   // running the real Prettier binary against fixtures. They cannot be asserted
   // here: the package is ESM and these specs run as CJS under ts-jest, so
   // importing it fails to parse — the same wall that file's header documents.
-
-  it('ignores the Python and Dart tool directories, not just the JS ones', () => {
-    overlayWith(DEFAULT_STACK)
-
-    // Regression: this list was JS-only, while mnci generates Python and Dart
-    // projects whose tool directories land in the workspace — and the CLI README
-    // tells users to create a venv right there. `npm run format:check` therefore
-    // failed on .venv/**/site-packages/** in any workspace that followed the
-    // documented Python setup, and `npm run format` would have rewritten files
-    // inside installed third-party packages.
-    const ignore = readFileSync(join(workspaceRoot, '.prettierignore'), 'utf8')
-      .split('\n')
-      .map(line => line.trim())
-
-    for (const directory of ['.venv', 'venv', '__pycache__', '.dart_tool']) {
-      expect(ignore).toContain(directory)
-    }
-  })
 
   it('writes an .npmrc that can actually authenticate a publish', () => {
     overlayWith(DEFAULT_STACK)
@@ -2513,12 +2244,13 @@ describe('applyOverlay', () => {
       'release:preview': 'nx release --dry-run',
       prepare: 'husky'
     })
-    expect(format).toBe('prettier --write .')
-    expect(formatCheck).toBe('prettier --check .')
+    expect(format).toBe('eslint . --fix --cache')
+    // No `format:check`: with one tool, `lint` already reports formatting.
+    expect(formatCheck).toBeUndefined()
     // The local-dev counterpart of the CI Python-install guards — see the
     // dedicated `python:install` describe block below for the full assertions.
     expect(pythonInstall).toContain('-m pip install -r requirements-dev.txt')
-    expect(pythonInstall).toContain(`globSync('apps/*/pyproject.toml')`)
+    expect(pythonInstall).toContain('globSync(\'apps/*/pyproject.toml\')')
   })
 
   it('keeps any scripts the preset generated that the curated set does not own', () => {

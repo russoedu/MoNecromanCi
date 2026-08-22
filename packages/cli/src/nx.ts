@@ -1,5 +1,4 @@
 import spawn from 'cross-spawn'
-import type { LinterChoice } from './overlay'
 import { logger } from './util/logger'
 
 /**
@@ -29,7 +28,7 @@ import { logger } from './util/logger'
  * @throws Never - spawn failures surface through the returned status, not a throw.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runShell(command: string, arguments_: string[], cwd: string): number {
+export function runShell (command: string, arguments_: string[], cwd: string): number {
   const result = spawn.sync(command, arguments_, { stdio: 'inherit', cwd })
   return result.status ?? 1
 }
@@ -47,7 +46,7 @@ export function runShell(command: string, arguments_: string[], cwd: string): nu
  * @throws Error when the Nx process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNx(arguments_: string[], cwd: string): void {
+export function runNx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', ['nx', ...arguments_], cwd)
   if (status !== 0) {
     throw new Error(`nx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -67,7 +66,7 @@ export function runNx(arguments_: string[], cwd: string): void {
  * @throws Error when the process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNpx(arguments_: string[], cwd: string): void {
+export function runNpx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', arguments_, cwd)
   if (status !== 0) {
     throw new Error(`npx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -114,18 +113,19 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * @throws Never - a non-zero exit is reported as a warning.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runFormatter(cwd: string, linter: LinterChoice, target = '.'): void {
-  // `--write` is oxfmt's default, but it is passed explicitly so the intent
-  // survives a future change of that default — this call REWRITES a user's
-  // files, which is not something to leave implicit.
-  const [command, arguments_] =
-    linter === 'oxlint'
-      ? ['oxfmt', ['--write', target]]
-      : ['prettier', ['--write', '--log-level', 'warn', target]]
-  const status = runShell('npx', [command, ...arguments_], cwd)
+export function runFormatter (cwd: string, target = '.'): void {
+  // ESLint IS the formatter now, so formatting a generated project is
+  // `eslint --fix` rather than a separate binary. Nx's generators emit
+  // semicolons and double quotes, so without this pass a fresh workspace fails
+  // its own `lint` before the user has written a line.
+  //
+  // No `--cache` here: this runs once on freshly written files, where a cache
+  // can only cost a write. The lint TARGETS carry it, which is where repeat
+  // runs actually happen.
+  const status = runShell('npx', ['eslint', target, '--fix'], cwd)
   if (status !== 0) {
     logger.warn(
-      `${command} could not format '${target}' (exit code ${status}). ` +
+      `eslint could not format '${target}' (exit code ${status}). ` +
         "The project was generated; run 'npm run format' to normalise it."
     )
   }

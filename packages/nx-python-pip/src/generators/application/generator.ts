@@ -18,7 +18,7 @@ import type { AppGeneratorSchema } from './schema.d'
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function appGenerator(tree: Tree, options: AppGeneratorSchema): Promise<void> {
+export default async function appGenerator (tree: Tree, options: AppGeneratorSchema): Promise<void> {
   generateBuildableProject(tree, {
     name: options.name,
     directory: options.directory ?? `apps/${options.name}`,

@@ -84,15 +84,15 @@ describe('runFormatter', () => {
 
   it('formats the whole workspace by default', () => {
     // Nx's generators emit semicolons and double quotes, so without this pass a
-    // generated workspace fails its own `format:check` before the user has
-    // written a line.
+    // generated workspace fails its own `lint` before the user has written a
+    // line. ESLint is the formatter now, so this is `eslint --fix`.
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
 
-    runFormatter('/ws', 'eslint')
+    runFormatter('/ws')
 
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npx',
-      ['prettier', '--write', '--log-level', 'warn', '.'],
+      ['eslint', '.', '--fix'],
       expect.objectContaining({ cwd: '/ws' })
     )
     expect(warn).not.toHaveBeenCalled()
@@ -101,82 +101,31 @@ describe('runFormatter', () => {
   it('formats a narrower target when one is given', () => {
     mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
 
-    runFormatter('/ws', 'eslint', 'apps/web')
+    runFormatter('/ws', 'apps/web')
 
     expect(mockSpawnSync.mock.calls[0][1]).toContain('apps/web')
   })
 
-  it('warns instead of throwing when Prettier fails, and names the recovery command', () => {
+  it('warns instead of throwing when the fix pass fails, and names the recovery command', () => {
     // Deliberately non-fatal: the project is fully generated and wired by the
     // time this runs, so aborting on a formatter hiccup would leave a perfectly
     // usable workspace stranded behind an error message.
     mockSpawnSync.mockReturnValue({ status: 2 } as ReturnType<typeof spawn.sync>)
 
     expect(() => {
-      runFormatter('/ws', 'eslint')
+      runFormatter('/ws')
     }).not.toThrow()
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('npm run format'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('exit code 2'))
   })
 
-  it('runs oxfmt, not Prettier, in an oxlint workspace', () => {
-    // THE bug this function was renamed for. Hardcoding Prettier here did not
-    // fail loudly in an oxlint workspace — the overlay deletes `.prettierrc.mjs`,
-    // so `npx prettier --write .` succeeded and formatted the whole workspace
-    // against PRETTIER'S OWN DEFAULTS: semicolons, double quotes, trailing
-    // commas, the exact opposite of the shared opinion, applied to files mnci
-    // had just written correctly. `oxfmt --check` then reported 19 files
-    // unformatted in a freshly generated workspace, `eslint.config.mjs` and
-    // `oxlint.config.ts` among them. Found by the real e2e; no unit test
-    // existed to catch it because this function took no linter at all.
-    mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
-
-    runFormatter('/ws', 'oxlint')
-
-    expect(mockSpawnSync).toHaveBeenCalledWith(
-      'npx',
-      ['oxfmt', '--write', '.'],
-      expect.objectContaining({ cwd: '/ws' })
-    )
-  })
-
-  it("never invokes the other mode's formatter, in either direction", () => {
-    // The property, rather than two examples of it: whichever formatter runs,
-    // the other one must not be reachable in that call. Two formatters over one
-    // tree is the `.prettierrc` precedence bug — both succeed, they disagree,
-    // and whichever ran last wins.
-    for (const [linter, expected, forbidden] of [
-      ['eslint', 'prettier', 'oxfmt'],
-      ['oxlint', 'oxfmt', 'prettier']
-    ] as const) {
-      mockSpawnSync.mockClear()
-      mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawn.sync>)
-
-      runFormatter('/ws', linter)
-
-      const arguments_ = mockSpawnSync.mock.calls[0][1] as string[]
-      expect(arguments_).toContain(expected)
-      expect(arguments_).not.toContain(forbidden)
-    }
-  })
-
-  it('names the formatter that actually failed, not always Prettier', () => {
-    // The warning is the only thing a user sees when this goes wrong, so it has
-    // to name the binary they would re-run.
-    mockSpawnSync.mockReturnValue({ status: 2 } as ReturnType<typeof spawn.sync>)
-
-    runFormatter('/ws', 'oxlint')
-
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('oxfmt'))
-  })
-
-  it('treats a signal-killed Prettier (null status) as a failure, not a success', () => {
+  it('treats a signal-killed run (null status) as a failure, not a success', () => {
     // runShell maps a null status to 1, so this must warn rather than read as
     // "formatted fine".
     mockSpawnSync.mockReturnValue({ status: null } as ReturnType<typeof spawn.sync>)
 
-    runFormatter('/ws', 'eslint')
+    runFormatter('/ws')
 
     expect(warn).toHaveBeenCalled()
   })

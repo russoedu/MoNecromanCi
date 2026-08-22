@@ -18,12 +18,12 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 /** The argv of every `runNx` call, flattened for easy matching. */
-function nxCalls(): string[][] {
+function nxCalls (): string[][] {
   return mockRunNx.mock.calls.map(call => call[0])
 }
 
 /** Pre-creates the `project.json` the (mocked) plugin's app generator would write. */
-function seedProjectJson(relativeDirectory: string, name: string): void {
+function seedProjectJson (relativeDirectory: string, name: string): void {
   mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
   writeFileSync(
     join(workspaceRoot, relativeDirectory, 'project.json'),
@@ -32,7 +32,7 @@ function seedProjectJson(relativeDirectory: string, name: string): void {
 }
 
 /** Reads a generated project.json back. */
-function readProjectJson(relativeDirectory: string): {
+function readProjectJson (relativeDirectory: string): {
   targets: Record<string, { executor?: string; options?: Record<string, unknown> }>
 } {
   return JSON.parse(
@@ -41,7 +41,7 @@ function readProjectJson(relativeDirectory: string): {
 }
 
 /** The command+argv of every `runShell` call. */
-function shellCalls(): string[] {
+function shellCalls (): string[] {
   return mockRunShell.mock.calls.map(call => `${call[0]} ${call[1].join(' ')}`)
 }
 

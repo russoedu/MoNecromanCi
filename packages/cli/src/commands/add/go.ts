@@ -18,7 +18,7 @@ import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
  * @throws Error when `go` cannot be run.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureGo(workspaceRoot: string): void {
+function ensureGo (workspaceRoot: string): void {
   if (runShell('go', ['version'], workspaceRoot) !== 0) {
     throw new Error('Go not found. Install Go 1.21+ first: https://go.dev/dl/')
   }
@@ -40,7 +40,7 @@ function ensureGo(workspaceRoot: string): void {
  * @throws Never - a missing linter only produces a warning.
  * @typeParam None - this function has no generic type parameters.
  */
-function warnIfNoGolangciLint(workspaceRoot: string): void {
+function warnIfNoGolangciLint (workspaceRoot: string): void {
   if (runShell('golangci-lint', ['--version'], workspaceRoot) !== 0) {
     logger.warn(
       'golangci-lint not found — the generated lint target needs it. Install: https://golangci-lint.run/welcome/install/'
@@ -66,7 +66,7 @@ function warnIfNoGolangciLint(workspaceRoot: string): void {
  * @throws Never - reads an environment variable.
  * @typeParam None - this function has no generic type parameters.
  */
-function nxGoPluginSpec(): string {
+function nxGoPluginSpec (): string {
   return process.env.MNCI_NX_GO_SPEC ?? '@nx-go/nx-go'
 }
 
@@ -78,7 +78,7 @@ function nxGoPluginSpec(): string {
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureNxGoPlugin(workspaceRoot: string): void {
+function ensureNxGoPlugin (workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, '@nx-go/nx-go')) {
     return
   }
@@ -123,7 +123,7 @@ function ensureNxGoPlugin(workspaceRoot: string): void {
  * @throws Error when either generator exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureGoModule(workspaceRoot: string): void {
+function ensureGoModule (workspaceRoot: string): void {
   if (fileExists(join(workspaceRoot, 'go.mod'))) {
     return
   }
@@ -144,7 +144,7 @@ function ensureGoModule(workspaceRoot: string): void {
  * @throws Never - returns `undefined` rather than propagating a read error.
  * @typeParam None - this function has no generic type parameters.
  */
-function goModulePath(workspaceRoot: string): string | undefined {
+function goModulePath (workspaceRoot: string): string | undefined {
   try {
     // go.mod is not JSON, so it is read directly rather than via readJson.
     const contents = readFileSync(join(workspaceRoot, 'go.mod'), 'utf8')
@@ -170,7 +170,7 @@ function goModulePath(workspaceRoot: string): string | undefined {
  * @throws Propagates any `fs`/JSON error reading or writing the file.
  * @typeParam None - this function has no generic type parameters.
  */
-function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<string, unknown>): void {
+function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
   const project = readJson<Record<string, unknown>>(projectJsonPath)
   const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
   writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
@@ -183,7 +183,7 @@ function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<strin
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function goTestTarget(): Record<string, unknown> {
+function goTestTarget (): Record<string, unknown> {
   return { executor: '@nx-go/nx-go:test' }
 }
 
@@ -212,7 +212,7 @@ function goTestTarget(): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function goLintTarget(): Record<string, unknown> {
+function goLintTarget (): Record<string, unknown> {
   return {
     executor: '@nx-go/nx-go:lint',
     parallelism: false,
@@ -240,7 +240,7 @@ function goLintTarget(): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function goBuildTarget(name: string): Record<string, unknown> {
+function goBuildTarget (name: string): Record<string, unknown> {
   return {
     executor: '@nx-go/nx-go:build',
     outputs: [`{workspaceRoot}/dist/apps/${name}`],
@@ -267,7 +267,7 @@ function goBuildTarget(name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function goPackageTarget(tag: string, name: string): Record<string, unknown> {
+function goPackageTarget (tag: string, name: string): Record<string, unknown> {
   const zip = `dist/drop/${tag}-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
   return {
@@ -292,7 +292,7 @@ function goPackageTarget(tag: string, name: string): Record<string, unknown> {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function goStartTarget(name: string): Record<string, unknown> {
+function goStartTarget (name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
@@ -301,7 +301,7 @@ function goStartTarget(name: string): Record<string, unknown> {
 }
 
 /** Shared preflight for every Go kind: toolchain, plugin and root module. */
-function prepareGo(workspaceRoot: string): void {
+function prepareGo (workspaceRoot: string): void {
   ensureGo(workspaceRoot)
   warnIfNoGolangciLint(workspaceRoot)
   ensureNxGoPlugin(workspaceRoot)
@@ -322,7 +322,7 @@ function prepareGo(workspaceRoot: string): void {
  * @throws Error when Go is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addGoApp(workspaceRoot: string, name: string): void {
+export function addGoApp (workspaceRoot: string, name: string): void {
   prepareGo(workspaceRoot)
   ensureAdmZip(workspaceRoot)
 
@@ -371,7 +371,7 @@ export function addGoApp(workspaceRoot: string, name: string): void {
  * @throws Error when Go is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addGoFunctionApp(workspaceRoot: string, name: string): void {
+export function addGoFunctionApp (workspaceRoot: string, name: string): void {
   prepareGo(workspaceRoot)
   ensureAdmZip(workspaceRoot)
 
@@ -415,7 +415,7 @@ export function addGoFunctionApp(workspaceRoot: string, name: string): void {
  * @throws Error when Go is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addGoLib(workspaceRoot: string, name: string): void {
+export function addGoLib (workspaceRoot: string, name: string): void {
   prepareGo(workspaceRoot)
 
   runNx(
@@ -456,7 +456,7 @@ export function addGoLib(workspaceRoot: string, name: string): void {
  * @throws Error when Go is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addGoInternalLib(workspaceRoot: string, name: string): void {
+export function addGoInternalLib (workspaceRoot: string, name: string): void {
   prepareGo(workspaceRoot)
 
   runNx(

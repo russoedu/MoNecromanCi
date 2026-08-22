@@ -6,7 +6,7 @@ jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
 
 const mockSpawnSync = jest.mocked(spawnSync)
 
-function context(): ExecutorContext {
+function context (): ExecutorContext {
   return {
     root: '/workspace',
     projectName: 'svc',

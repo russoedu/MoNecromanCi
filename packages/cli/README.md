@@ -30,7 +30,6 @@ first-party (or established community) Nx equivalent:
 mnci new my-repo            # create a monorepo (prompts scope + registry)
 mnci new my-repo --yes --registry npm --scope @my
 mnci new my-repo --yes --registry npm --scope @my --nx-cloud  # opt in to Nx Cloud
-mnci new my-repo --yes --registry npm --scope @my --linter oxlint  # Rust toolchain
 
 cd my-repo
 mnci add react-app web         # @nx/react (Vite + Jest)
@@ -86,7 +85,7 @@ ever needed is noise that trains people to ignore the output.
 | `versionActions` on publishable Dart/Python packages    | Its absence aborts `nx release` for the **whole** workspace, not just that project                                                                  |
 | `nx sync:check`                                         | A stale TypeScript project reference that was never committed                                                                                       |
 | Only the chosen linter's config files present           | Two formatter configs is not a visible error — each is valid, the CLI picks one, the editor may pick the other, and the two gates disagree silently |
-| oxlint toolchain declared                               | `@mnci/oxlint-config` peers on `oxlint`, so a missing declaration turns `npm run lint` into "command not found" at the worst moment                 |
+| no retired formatter is still configured                | a leftover `.prettierrc.mjs` or `.oxfmtrc.json` runs from no command line, but a globally installed editor extension still resolves it and reformats on save, silently undoing Standard |
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
 each a single cross-platform command:
@@ -265,90 +264,30 @@ contradicting each other. `mnci` runs Prettier itself at the end of `new` and ev
 generators emit semicolons and double quotes, and without that pass the first
 commit buries every real change under generator noise.
 
-**Choosing the linter.** `--linter=eslint` (default) or `--linter=oxlint`, also a
-prompt at `mnci new` and overridable on `mnci upgrade`. The formatter rides along
-— ESLint pairs with Prettier, oxlint with oxfmt — because both are the same seven
-Standard options, so the choice is about speed and toolchain, never about how the
-code ends up looking.
+**One linter, which is also the formatter.** There is no `--linter` flag and no
+choice to make: `@mnci/eslint-config` carries code quality, type-aware rules and
+JavaScript Standard Style formatting in a single ESLint config at the root.
+`npm run format` is `eslint . --fix --cache`; there is no `format:check`,
+because `lint` already reports formatting as ordinary errors with a rule name,
+a line and a column.
 
-**`oxlint` is a hybrid, not a swap**, and that is deliberate. oxlint parses
-JS/TS/JSX/Vue and nothing else, so an oxlint workspace keeps a trimmed ESLint
-config (`@mnci/eslint-config`'s `nonJs()`) for the file types oxlint cannot read:
+That is the point of the arrangement rather than a side effect. A formatter and
+a linter that both hold style opinions have to be kept in agreement, and the
+older setup dodged that only by having ESLint hold *no* style opinion at all —
+which is exactly why a formatting mistake produced no squiggle and no message in
+the editor. It also makes `space-before-function-paren` enforceable for the
+first time: every Prettier-compatible formatter, oxfmt included, rewrites
+`function f (a)` back to `function f(a)`.
 
-|                                 | `eslint`                               | `oxlint`                                                 |
-| ------------------------------- | -------------------------------------- | -------------------------------------------------------- |
-| JS/TS lint                      | ESLint, 452 rules                      | oxlint, 206 native + 225 bridged                         |
-| YAML/TOML/MD/CSS/HTML/JSON lint | ESLint                                 | **ESLint** (unchanged)                                   |
-| `@nx/dependency-checks`         | yes                                    | **yes** (unchanged)                                      |
-| Formatter                       | Prettier                               | oxfmt (~6x faster on this repo)                          |
-| Formats `.toml`                 | no — Prettier has no TOML parser       | **yes**                                                  |
-| Config files                    | `eslint.config.mjs`, `.prettierrc.mjs` | `oxlint.config.ts`, `.oxfmtrc.json`, `eslint.config.mjs` |
-| VS Code extension               | ESLint + Prettier                      | Oxc (covers both) + ESLint                               |
-
-A pure swap was considered and rejected: it would leave a duplicate key in a CI
-pipeline, a malformed `pyproject.toml`, and a publishable package's wrong manifest
-all reported by nothing. Switching modes with `mnci upgrade --linter=<other>`
-rewrites the config files **and deletes the mode you left**, so a workspace never
-carries two formatter configs.
-
-**Exactly one formatter is declared, and that is a fix rather than tidiness.**
-`prettier` under `eslint`, `oxfmt` under `oxlint`, and switching modes drops the
-other from `devDependencies`. prettier stays in `node_modules` either way, since
-`@mnci/eslint-config` depends on it — so what matters is the _declaration_:
-`esbenp.prettier-vscode` resolves the formatter from the **project's**
-dependencies, so an oxlint workspace that still declared prettier is one where a
-globally installed Prettier extension reformats on save against the opinion oxfmt
-is not applying, while `npm run format:check` (oxfmt) reports the result as
-unformatted. Both configs valid, both binaries resolvable, neither one wrong on
-its own — the `.prettierrc` precedence bug in another costume. `mnci doctor`
-checks it.
-
-**oxfmt formats `.toml`; Prettier cannot.** `prettier` on a `.toml` exits with
-`No parser could be inferred for file`, so an oxlint workspace gets a formatted
-`pyproject.toml` and the default cannot — the one gap
-`@mnci/eslint-config`'s parser-only TOML block has always documented as
-unenforceable. It is the only file type where the two formatters differ in what
-they can parse, which is why `[toml]` is pinned for format-on-save under `oxlint`
-only: pinning it under `eslint` would route the file to a formatter that errors
-on it.
-
-**Finding and overriding a rule.** One root config importing a package is easy to
-own and hard to read: nothing in three lines says which of ~20 plugins reported
-the thing you disagree with. Every block in `@mnci/eslint-config` therefore
-carries a `name` — `mnci/base`, `mnci/react`, `mnci/type-aware`,
-`mnci/prettier-compat` — and the generated `eslint.config.mjs` ships the full list
-as a comment, next to the recipe for overriding one. `npx eslint --inspect-config`
-lists them as ESLint actually resolves them, `npx eslint --print-config <file>`
-shows the merged result for a single file, and an override is a named block
-appended after the spread, since later blocks win. Don't edit the package inside
-`node_modules`: it is a dependency, and `npm update` will replace it.
-`packages/eslint-config/README.md` has the block-by-block table.
-
-One caveat worth knowing: `space-before-function-paren`, Standard's signature
-rule, is **not** enforced. Prettier rewrites `function f (a)` to `function f(a)`
-on every run and has closed the corresponding option permanently, so enabling it
-would make `npm run lint` and `npm run format:check` mutually unsatisfiable.
-Choosing Prettier means accepting its call there.
-
-`npm run lint` checks code quality; `npm run format` (write) and
-`npm run format:check` (CI-safe) handle formatting. **Both run in CI**, as
-separate steps: ESLint is configured for correctness only and deliberately
-reports nothing about formatting, so Prettier needs a gate of its own or the
-whole formatting opinion is advisory and a workspace drifts out of compliance
-with no signal anywhere.
-
-TypeScript is not a question — every workspace runs the **dual compiler** from
-[Nx's TS 7 guide](https://nx.dev/docs/technologies/typescript/guides/typescript-7):
-`typescript` resolves to a TS 6 package (keeping the programmatic API that Nx's
-graph/plugins, Vite, typescript-eslint and the editor need) while
-`@typescript/native` provides TS 7's native `tsc`. The inferred
-`typecheck`/`build` tasks then run on the **fast TS 7 compiler**, and Nx keeps
-analysing config through the TS 6 API — no target rewiring, frozen per repo by
-the lockfile. (A plain `typescript@7` install would break Nx, since TS 7 ships
-no programmatic API yet; the two aliases are what make it work.)
-
-- **Test runner**: passed straight to the `@nx/*` generators; the function app
-  gets a matching `jest.config.mjs` (+ ts-jest) or `vitest.config.ts`.
+**Upgrading an older workspace.** `mnci upgrade` deletes every config a previous
+version could have written for a second tool — `.prettierrc`, `.prettierrc.json`,
+`.prettierrc.mjs`, `.prettierignore`, `.oxfmtrc.json`, `oxlint.config.ts` — and
+drops `prettier`, `oxlint`, `oxfmt` and `@mnci/oxlint-config` from
+`devDependencies`. Both halves matter: the files are inert from the command line,
+but an editor extension still resolves them, and the VS Code extension resolves a
+formatter from the **project's** dependencies, so a stale declaration is enough
+to reformat on save against an opinion nothing checks. `mnci doctor` reports a
+workspace that has not been upgraded yet.
 
 ## Layout convention = release scoping
 

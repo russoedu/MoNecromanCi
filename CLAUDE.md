@@ -14,8 +14,7 @@ This monorepo is itself an Nx monorepo, built and maintained by the CLI it ships
 ```
 packages/
 ├── cli/                  # @mnci/cli — the CLI binary (mnci new/add/upgrade)
-├── eslint-config/        # @mnci/eslint-config — the shared ESLint + Prettier config
-├── oxlint-config/        # @mnci/oxlint-config — the same opinion on oxlint + oxfmt
+├── eslint-config/        # @mnci/eslint-config — the whole opinion: quality, types AND formatting
 ├── nx-python-pip/        # @mnci/nx-python-pip — Nx plugin for pip-native Python projects
 └── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
 
@@ -33,7 +32,6 @@ azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initia
 nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
 eslint.config.mjs         # ESLint flat config — mnci-owned; one import from @mnci/eslint-config,
                           #   plus a named inventory of every block and how to override it
-.prettierrc.mjs           # re-exports @mnci/eslint-config/prettier (JavaScript Standard Style)
 .prettierignore           # paths Prettier skips
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
@@ -58,8 +56,10 @@ does it too — the docs already tell users to `git diff` before committing an u
 
 - **Bundler**: npm workspaces (TypeScript project references, no per-project `project.json`)
 - **Language**: TypeScript (with dual compiler: TS 6 for API, TS 7 `tsc` for compile)
-- **Linting**: ESLint (flat config) — code quality only
-- **Formatting**: Prettier — JavaScript Standard Style (no semicolons, single quotes, 2-space)
+- **Linting AND formatting**: ESLint (flat config) — one tool. Code quality,
+  type-aware rules and JavaScript Standard Style, including
+  `space-before-function-paren`, which no formatter could ever satisfy. There is
+  no Prettier and no oxfmt; `eslint --fix` is the formatter
 - **Testing**: Jest (default) or Vitest
 - **Build**: esbuild (Node apps), Rollup (npm libs), `python -m build` (Python), `go build` (Go), `flutter build web` (Flutter)
 - **Release**: `nx release` (versioning from conventional commits, git tag-only push)
@@ -210,7 +210,76 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Flutter Never Ran on Windows At All, and Generated Workspaces Shipped 6 CVEs (Latest)
+### ESLint Is the Only Tool: Quality, Types and Formatting (Latest)
+
+`@mnci/oxlint-config` is deleted, Prettier is gone, the `--linter` choice is
+gone, and `@mnci/eslint-config` now carries the formatting opinion as rules.
+One tool, one config, one command — and **nothing to keep in sync**, which was
+the whole argument for collapsing rather than pairing.
+
+- **The user's own reasoning drove this, and it was right.** A formatter and a
+  linter that both hold style opinions must be kept in agreement; the previous
+  arrangement avoided that only because `eslint-config-prettier` switched every
+  stylistic rule OFF, so ESLint had no opinion at all. That is also precisely why
+  a formatting mistake produced no squiggle, no message and no Problems entry —
+  the complaint that started this.
+- **`space-before-function-paren` is ON.** Standard's signature rule was
+  unreachable for as long as a Prettier-compatible formatter owned formatting:
+  Prettier and oxfmt both rewrite `function f (a)` back to `function f(a)`, so
+  enabling it made `lint` and `format:check` mutually unsatisfiable. With no
+  formatter, nothing contradicts it. 82 files reformatted; 306 problems in
+  `@mnci/cli` alone, 99% auto-fixed.
+- **`eslint-config-prettier` is removed, and that removal is load-bearing.** It
+  exists to switch stylistic rules off so a formatter can own them. Composing it
+  after the new block would silently disable all sixty Standard rules — a
+  disabled rule reports nothing, so `lint` would pass while enforcing nothing.
+- **Rules derived from `neostandard`, which is deliberately NOT a dependency.**
+  Extracted programmatically and ported to `@stylistic` v5 so no rule or option
+  is mistyped. neostandard itself was measured and rejected: it pins `@stylistic`
+  at exactly `2.11.0`, which calls `sourceCode.isSpaceBetweenTokens` — removed in
+  ESLint 10 — so it throws on the first file; forcing it onto v5 fails
+  differently, since its config names `func-call-spacing`, which v5 dropped. Its
+  `eslint: ^9` peer is accurate, not stale. **An override made it install and it
+  still did not work** — the same shape as the audit gate that verified nothing.
+- **`jsx-indent` was the subtle one.** Dropping the deprecated rule alone would
+  have left JSX indentation checked by **nothing**, because Standard also lists
+  all sixteen JSX node types in `indent`'s `ignoredNodes`. Both halves go, so
+  `indent` genuinely covers JSX — verified on a real `.tsx`. `TemplateLiteral *`
+  stays, since it is not a JSX node and removing it false-positives inside
+  template literals.
+- **`format:check` is gone from both CI providers and from the root scripts**,
+  and the anti-drift test now asserts its ABSENCE in both — the same property as
+  asserting presence, in the other direction. `lint` reports formatting now, so a
+  second step would run the same binary twice over the same tree.
+- **Speed: `--cache` adopted, `--concurrency` REJECTED, both measured.**
+  Best-of-3 on this repo: baseline 9,546ms, `--concurrency=auto` **10,286ms (8%
+  slower)**, `--cache` on an unchanged re-run **2,835ms (3.4x)**. An earlier
+  reading showed concurrency 2.6x faster; that was entirely TypeScript's
+  type-service warm-up on a cold first run. On 4 cores with type-aware linting,
+  per-worker service startup costs more than the parallelism saves.
+- **A pre-existing defect surfaced on the way**: `@mnci/cli`, `@mnci/nx-flutter`
+  and `@mnci/nx-python-pip` each declared `eslint: ^9.39.0` while the root
+  declared `^10.8.0`, so npm nested **ESLint 9.39.5** in all three. The ESLint 10
+  migration had only ever taken effect at the ROOT — every package had been
+  linting on 9. Correcting the ranges was not enough: npm kept the stale nested
+  copies (reporting them `invalid`) until the lockfile entries were deleted, the
+  same reuse-an-existing-tree behaviour fixed for generated workspaces in #143.
+- **`mnci doctor` keeps one check where it had three.** The eslint/oxlint mode
+  checks are meaningless now; `checkNoRetiredFormatter` replaces them with the
+  failure that survives: a leftover `.prettierrc.mjs` or `.oxfmtrc.json` is inert
+  from the command line, and that is exactly what makes it dangerous — a globally
+  installed `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves it and
+  reformats on save, quietly undoing Standard while `lint` stays green because
+  the damage lands after the check.
+- **`oxc-standard` was researched and rejected** before any of this was written:
+  it is a copied-file scaffold rather than a shareable config, peers
+  `oxfmt: ^0.48.0` (which cannot resolve to the 0.61 in use), was published in a
+  single 13-minute burst three months ago, has no
+  `space-before-function-paren` anywhere, and ships `trailingComma: "es5"` —
+  which Standard forbids and which is the exact drift that cost this repo 86
+  files once already.
+
+### Flutter Never Ran on Windows At All, and Generated Workspaces Shipped 6 CVEs
 
 Nightly #293 went 4 failures → 3, and the two that remained were both real. The
 Go `parallelism: false` fix is **confirmed** — that failure is gone.
@@ -1239,7 +1308,8 @@ mnci worked while everything it produced did not.
 2. `package.json` (curated root scripts only — name, scripts, the dual TS compiler deps,
    the ESLint toolchain)
 3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
-4. `.prettierrc.mjs` (re-exports `@mnci/eslint-config/prettier`) + `.prettierignore`
+4. *(nothing — there is no formatter config; `mnci upgrade` DELETES `.prettierrc*`,
+   `.prettierignore`, `.oxfmtrc.json` and `oxlint.config.ts` if a past version wrote them)*
 5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
 7. `<workspace-name>.code-workspace` (VS Code configuration)

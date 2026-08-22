@@ -24,7 +24,7 @@ import type { TestExecutorSchema } from './schema.d'
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function testExecutor(
+export default async function testExecutor (
   _options: TestExecutorSchema,
   context: ExecutorContext
 ): Promise<{ success: boolean }> {

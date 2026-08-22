@@ -8,7 +8,7 @@ jest.mock('commander', () => {
   }
 
   class FakeCommand {
-    private static stripBrackets(flag: string): string {
+    private static stripBrackets (flag: string): string {
       return flag.replace(/^[[<]/, '').replace(/[\]>]$/, '')
     }
 
@@ -18,26 +18,26 @@ jest.mock('commander', () => {
     private commandName = ''
     private actionHandler?: ActionHandler
 
-    name(): this {
+    name (): this {
       return this
     }
 
-    description(): this {
+    description (): this {
       return this
     }
 
-    version(): this {
+    version (): this {
       return this
     }
 
-    command(nameAndArguments: string): FakeCommand {
+    command (nameAndArguments: string): FakeCommand {
       const subcommand = new FakeCommand()
       subcommand.commandName = nameAndArguments.split(' ', 1)[0]
       this.subcommands.push(subcommand)
       return subcommand
     }
 
-    argument(flag: string): this {
+    argument (flag: string): this {
       this.argumentNames.push(FakeCommand.stripBrackets(flag))
       return this
     }
@@ -47,12 +47,12 @@ jest.mock('commander', () => {
     // against the real `commander` package in cli.choices.test.ts, since a
     // hand-rolled mock re-implementing that validation would just be a second,
     // divergent copy of commander's own logic.
-    addArgument(argument: { flag: string }): this {
+    addArgument (argument: { flag: string }): this {
       this.argumentNames.push(FakeCommand.stripBrackets(argument.flag))
       return this
     }
 
-    option(flags: string): this {
+    option (flags: string): this {
       const longFlagName = /--([\w-]+)/.exec(flags)?.[1] ?? ''
       const key = longFlagName.replaceAll(/-([a-z])/g, (_match, letter: string) =>
         letter.toUpperCase()
@@ -62,12 +62,12 @@ jest.mock('commander', () => {
       return this
     }
 
-    action(handler: ActionHandler): this {
+    action (handler: ActionHandler): this {
       this.actionHandler = handler
       return this
     }
 
-    async parseAsync(argv: string[]): Promise<this> {
+    async parseAsync (argv: string[]): Promise<this> {
       const [commandToken, ...rest] = argv.slice(2)
       // Bare invocation (no subcommand token) runs the program's default action,
       // mirroring commander's own behaviour.
@@ -100,11 +100,11 @@ jest.mock('commander', () => {
 
   class FakeArgument {
     flag: string
-    constructor(flag: string, _description?: string) {
+    constructor (flag: string, _description?: string) {
       this.flag = flag
     }
 
-    choices(_values: readonly string[]): this {
+    choices (_values: readonly string[]): this {
       return this
     }
   }

@@ -24,7 +24,7 @@ let workspaceRoot: string
  * including the broken `types` paths `@nx/react:library --bundler=rollup`
  * actually emits, so the repair has something real to fix.
  */
-function seedProjectManifest(projectRoot: string, name: string): void {
+function seedProjectManifest (projectRoot: string, name: string): void {
   mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
   writeFileSync(
     join(workspaceRoot, projectRoot, 'package.json'),

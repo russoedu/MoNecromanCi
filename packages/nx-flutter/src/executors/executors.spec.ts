@@ -10,7 +10,7 @@ import testExecutor from './test/executor'
 const mockSpawnSync = jest.mocked(spawnSync)
 
 /** A context shaped like the one Nx passes a target invocation. */
-function contextFor(root: string, projectRoot: string): ExecutorContext {
+function contextFor (root: string, projectRoot: string): ExecutorContext {
   return {
     root,
     projectName: 'web',
@@ -19,7 +19,7 @@ function contextFor(root: string, projectRoot: string): ExecutorContext {
 }
 
 /** The argv of the single spawnSync call. */
-function spawnArguments(): { command: string; argv: string[]; cwd: string } {
+function spawnArguments (): { command: string; argv: string[]; cwd: string } {
   const [command, argv, options] = mockSpawnSync.mock.calls[0] as [
     string,
     string[],

@@ -22,7 +22,7 @@ let actions: DartVersionActions
  * created without invoking it and only `projectGraphNode` — the one thing
  * these methods read — is supplied.
  */
-function actionsFor(root: string): DartVersionActions {
+function actionsFor (root: string): DartVersionActions {
   const instance = Object.create(DartVersionActions.prototype) as DartVersionActions
   Object.assign(instance, { projectGraphNode: { name: 'shared', data: { root } } })
   return instance

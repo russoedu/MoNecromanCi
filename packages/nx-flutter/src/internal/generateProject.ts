@@ -57,12 +57,12 @@ export interface FlutterProjectOptions {
 }
 
 /** The `lint` target: `flutter analyze`, with info-level issues fatal. */
-function lintTarget(): ProjectConfiguration['targets'] {
+function lintTarget (): ProjectConfiguration['targets'] {
   return { lint: { executor: '@mnci/nx-flutter:lint', options: {} } }
 }
 
 /** The `test` target: `flutter test`. */
-function testTarget(): ProjectConfiguration['targets'] {
+function testTarget (): ProjectConfiguration['targets'] {
   return { test: { executor: '@mnci/nx-flutter:test', options: {} } }
 }
 
@@ -82,7 +82,7 @@ function testTarget(): ProjectConfiguration['targets'] {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function buildTarget(name: string): ProjectConfiguration['targets'] {
+function buildTarget (name: string): ProjectConfiguration['targets'] {
   return {
     build: {
       executor: '@mnci/nx-flutter:build',
@@ -106,7 +106,7 @@ function buildTarget(name: string): ProjectConfiguration['targets'] {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function packageTarget(name: string): ProjectConfiguration['targets'] {
+function packageTarget (name: string): ProjectConfiguration['targets'] {
   const zip = `dist/drop/flutter-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
   return {
@@ -147,7 +147,7 @@ function packageTarget(name: string): ProjectConfiguration['targets'] {
  * @throws Error when `flutter create` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function flutterCreateTask(
+function flutterCreateTask (
   workspaceRoot: string,
   options: FlutterProjectOptions
 ): GeneratorCallback {
@@ -227,7 +227,7 @@ function flutterCreateTask(
  * @throws Never - falls back to `workspace` when the manifest is unreadable.
  * @typeParam None - this function has no generic type parameters.
  */
-function workspacePackageName(tree: Tree): string {
+function workspacePackageName (tree: Tree): string {
   const manifest = tree.read('package.json', 'utf8')
   const name = manifest ? (JSON.parse(manifest) as { name?: string }).name : undefined
   const unscoped = name?.split('/').pop()
@@ -250,7 +250,7 @@ function workspacePackageName(tree: Tree): string {
  * `flutter create`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generateFlutterProject(
+export function generateFlutterProject (
   tree: Tree,
   options: FlutterProjectOptions
 ): GeneratorCallback {

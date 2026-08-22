@@ -21,7 +21,7 @@
  * @throws Never - a missing/malformed table simply yields an empty array.
  * @typeParam None - this function has no generic type parameters.
  */
-export function parseVendorEntries(pyprojectToml: string): string[] {
+export function parseVendorEntries (pyprojectToml: string): string[] {
   const match = /^\s*vendor\s*=\s*\[([^\]]*)\]/m.exec(pyprojectToml)
   if (!match) {
     return []
@@ -48,7 +48,7 @@ export function parseVendorEntries(pyprojectToml: string): string[] {
  * @throws Never - when no `packages` list is found, the content is returned unchanged.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addPackagesToWheelTarget(
+export function addPackagesToWheelTarget (
   pyprojectToml: string,
   moduleDirectories: string[]
 ): string {

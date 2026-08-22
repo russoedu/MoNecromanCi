@@ -54,7 +54,7 @@ export interface FlutterResult {
  * @throws Never - a failure is reported in the return value.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runFlutter(arguments_: string[], cwd: string): FlutterResult {
+export function runFlutter (arguments_: string[], cwd: string): FlutterResult {
   const result = spawn.sync('flutter', arguments_, { cwd, encoding: 'utf8' })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
   if (output) console.log(output)

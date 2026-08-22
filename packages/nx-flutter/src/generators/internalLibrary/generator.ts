@@ -21,7 +21,7 @@ import type { InternalLibraryGeneratorSchema } from './schema.d'
  * @throws Never during generation; the callback throws on a failed create.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function internalLibraryGenerator(
+export default async function internalLibraryGenerator (
   tree: Tree,
   options: InternalLibraryGeneratorSchema
 ): Promise<GeneratorCallback> {

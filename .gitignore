@@ -9,3 +9,6 @@ coverage/
 .pipeline-staging/
 
 test-output
+
+# ESLint --cache artifact (per-machine; see the lint targets)
+.eslintcache

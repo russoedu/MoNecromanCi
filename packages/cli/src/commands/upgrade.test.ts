@@ -28,7 +28,7 @@ const FIXTURE_OPTIONS: OverlayOptions = {
 let workspaceRoot: string
 
 /** Seeds a fresh temp dir with the two files a real `create-nx-workspace` leaves for applyOverlay to patch. */
-function seedWorkspace(): void {
+function seedWorkspace (): void {
   writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
   writeFileSync(
     join(workspaceRoot, 'package.json'),
@@ -236,7 +236,7 @@ describe('runUpgrade', () => {
     expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
   })
 
-  it('formats the workspace afterwards, so the nx.json it rewrote passes format:check', () => {
+  it('formats the workspace afterwards, so the nx.json it rewrote passes lint', () => {
     seedWorkspace()
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
     mockRunFormatter.mockClear()
@@ -245,6 +245,6 @@ describe('runUpgrade', () => {
 
     // `new` and every `add` already did this; upgrade did not, leaving the
     // workspace failing its own CI formatting gate right after an upgrade.
-    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot)
   })
 })

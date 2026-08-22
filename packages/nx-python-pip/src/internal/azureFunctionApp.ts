@@ -12,7 +12,7 @@
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonFunctionAppMain(moduleDirectory: string): string {
+export function pythonFunctionAppMain (moduleDirectory: string): string {
   return `import azure.functions as func
 
 from ${moduleDirectory}.greeting import build_greeting
@@ -77,7 +77,7 @@ export const PYTHON_FUNCTION_APP_GREETING = `def build_greeting(name: str) -> st
  * @throws Never - pure string build.
  * @typeParam None - this function has no generic type parameters.
  */
-export function pythonFunctionAppGreetingTest(moduleDirectory: string): string {
+export function pythonFunctionAppGreetingTest (moduleDirectory: string): string {
   return `from ${moduleDirectory}.greeting import build_greeting
 
 

@@ -10,7 +10,7 @@ jest.mock('node:fs', () => ({
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runFormatter: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
   applyOverlay: jest.fn(),
-  DEFAULT_STACK: { testRunner: 'jest', linter: 'eslint' }
+  DEFAULT_STACK: { testRunner: 'jest' }
 }))
 jest.mock('../prompts', () => ({
   promptCi: jest.fn(),
@@ -39,7 +39,7 @@ const mockPromptStack = jest.mocked(promptStack)
 const mockPromptText = jest.mocked(promptText)
 
 /** The `--yes` / flagless stack the overlay mock exposes as DEFAULT_STACK. */
-const DEFAULT_STACK = { testRunner: 'jest', linter: 'eslint' } as const
+const DEFAULT_STACK = { testRunner: 'jest' } as const
 
 beforeEach(() => {
   jest.spyOn(process, 'cwd').mockReturnValue('/somewhere')
@@ -178,7 +178,7 @@ describe('runNew', () => {
     await runNew('demo', { yes: true })
 
     const workspaceRoot = join('/somewhere', 'demo')
-    // Default stack: eslint (no oxlint), jest — TS stays the preset's TS 6.
+    // Default stack: jest — TS stays the preset's TS 6.
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
@@ -246,7 +246,7 @@ describe('runNew', () => {
     }
   })
 
-  it('installs the commit toolchain (ESLint and Prettier are set up by Nx generators)', async () => {
+  it('installs the commit toolchain (ESLint is set up by Nx generators)', async () => {
     await runNew('demo', { yes: true, testRunner: 'vitest' })
 
     const workspaceRoot = join('/somewhere', 'demo')
@@ -257,7 +257,7 @@ describe('runNew', () => {
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest', linter: 'eslint' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } })
     )
   })
 
@@ -298,7 +298,7 @@ describe('runNew', () => {
       .mockResolvedValueOnce('Build') // variable group
     mockPromptRegistry.mockResolvedValue({ kind: 'npm' })
     mockPromptCi.mockResolvedValue('azure')
-    mockPromptStack.mockResolvedValue({ testRunner: 'vitest', linter: 'eslint' })
+    mockPromptStack.mockResolvedValue({ testRunner: 'vitest' })
 
     await runNew(undefined, {})
 
@@ -316,7 +316,7 @@ describe('runNew', () => {
     expect(mockPromptStack).toHaveBeenCalled()
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest', linter: 'eslint' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } })
     )
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })
@@ -327,7 +327,7 @@ describe('runNew', () => {
     await expect(runNew('demo', { yes: true })).rejects.toThrow('toolchain failed with exit code 1')
   })
 
-  it('formats the workspace after the toolchain install, so it passes its own format:check', async () => {
+  it('formats the workspace after the toolchain install, so it passes its own lint', async () => {
     // `create-nx-workspace` scaffolds in its own style (semicolons, double
     // quotes) — the opposite of the Standard style mnci configures Prettier
     // for. Without this pass a brand-new workspace fails `npm run format:check`
@@ -335,7 +335,7 @@ describe('runNew', () => {
     // real change under generator noise.
     await runNew('demo', { yes: true })
 
-    expect(mockRunFormatter).toHaveBeenCalledWith(join('/somewhere', 'demo'), 'eslint')
+    expect(mockRunFormatter).toHaveBeenCalledWith(join('/somewhere', 'demo'))
   })
 
   it('does not format when the toolchain install failed (Prettier would not be installed)', async () => {
