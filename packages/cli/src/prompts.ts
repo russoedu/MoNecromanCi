@@ -110,7 +110,7 @@ export async function promptNxCloud (): Promise<boolean> {
  * `--preset=ts` premise, pinned to the TS 6 that Nx 23 supports).
  *
  * The linter choice carries the formatter with it, which is why it is one
- * question and not two: ESLint pairs with Prettier, oxlint with oxfmt, and both
+ * question and not two: ESLint owns linting and formatting alike, and both
  * are the same seven JavaScript Standard Style options. Choosing is about speed
  * and toolchain, never about how the code ends up looking.
  *

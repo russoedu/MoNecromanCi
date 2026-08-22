@@ -37,7 +37,7 @@ export type CiProvider = 'azure' | 'github' | 'both'
  * (Nx's graph/plugins, Vite, typescript-eslint, the editor) and TypeScript 7's
  * native `tsc` for the `typecheck`/`build` tasks. The only stack knob is the
  * unit-test runner, persisted as Nx **generator defaults** in `nx.json`.
- * Linting is ESLint + Prettier (always).
+ * Linting AND formatting are ESLint (always) — there is no separate formatter.
  *
  * @typeParam None - this type has no generic type parameters.
  */
@@ -422,10 +422,12 @@ export function withEslintPlugin (nxJson: Record<string, unknown>): Record<strin
  * what every project's tsconfig extends, and the root `package.json` holds
  * every devDependency version and the curated scripts.
  *
- * `.prettierrc.json` is deliberately absent: Prettier is not a project target,
- * so the pipeline's `format:check` step runs `prettier --check .` over the whole
- * tree on every run regardless. Listing it would invalidate every project's
- * cache and verify nothing new. `package-lock.json` is absent too — Nx already
+ * No formatter config is listed because none exists: ESLint is the formatter,
+ * and `eslint.config.mjs` is already the first entry. When Prettier owned
+ * formatting, `.prettierrc.json` was excluded on the grounds that
+ * `format:check` swept the whole tree on every run regardless, so listing it
+ * would invalidate every project's cache and verify nothing new. Both the file
+ * and that step are gone. `package-lock.json` is absent too — Nx already
  * marks projects affected from lockfile changes through its external-dependency
  * nodes (verified: a lockfile-only edit marks every project).
  */
@@ -921,10 +923,17 @@ ${ESLINT_BLOCK_INVENTORY}//
 // a dependency, so \`npm update\` brings rule fixes in the way it brings any
 // other. An override here survives that; an edit to the package does not.
 //
-// One override cannot work, and it is the one people reach for first:
-// \`space-before-function-paren\`. Prettier rewrites \`f (a)\` to \`f(a)\` on every
-// run, so switching that rule on makes \`npm run lint\` and \`npm run format:check\`
-// impossible to satisfy at the same time. Formatting lives in .prettierrc.mjs.
+// FORMATTING IS LINTING HERE. There is no Prettier, no oxfmt and no
+// \`format:check\` — \`npm run lint\` reports indentation, quotes and spacing as
+// ordinary errors, and \`npm run format\` is \`eslint . --fix\`. So do not add a
+// formatter: whichever one you pick will disagree with the \`mnci/standard\`
+// block above, and because a formatter runs on save it wins silently, leaving
+// \`lint\` to fail on files you never edited by hand.
+//
+// That also applies to the editor. Installing a Prettier or oxfmt extension is
+// enough on its own — neither needs a config file, and with none present they
+// format against their own defaults (semicolons, double quotes), which is the
+// inverse of Standard.
 export default mnci({ workspaceRoot: import.meta.dirname })
 `
 
@@ -935,43 +944,42 @@ export default mnci({ workspaceRoot: import.meta.dirname })
  * @remarks
  * Shared so the two cannot drift: opening the workspace in a container should
  * suggest the same toolset as opening it directly.
+ *
+ * **`esbenp.prettier-vscode` is deliberately absent, and its absence is the
+ * point.** mnci recommended it for as long as Prettier owned formatting, and
+ * kept recommending it for a while after ESLint took over — which made mnci the
+ * thing that installed its own hazard. The extension does not need a config
+ * file to act: with none present it formats against Prettier's own defaults,
+ * semicolons and double quotes, the exact inverse of Standard. It reformats on
+ * save, so the damage lands *after* every gate has run and `lint` stays green
+ * until the next time someone looks. {@link RETIRED_FORMATTER_FILES} exists to
+ * clean up after precisely that, and recommending the extension alongside it
+ * was the two halves of one decision disagreeing.
  */
 export const VSCODE_RECOMMENDED_EXTENSIONS = [
   'dbaeumer.vscode-eslint',
-  'esbenp.prettier-vscode',
   'nrwl.angular-console',
   'firsttris.vscode-jest-runner'
 ] as const
 
 /**
- * Extensions every workspace gets, whichever linter it chose.
- *
- * @remarks
- * Nx's console and a test-runner integration: neither depends on the lint
- * toolchain, so they are factored out rather than repeated in both lists, where
- * one of the two copies would eventually be the stale one.
- */
-export const SHARED_VSCODE_EXTENSIONS = [
-  'nrwl.angular-console',
-  'firsttris.vscode-jest-runner'
-] as const
-
-/**
- * Every language **both** formatters handle, and whose formatter mnci pins.
+ * Every language whose formatter mnci pins to the ESLint extension.
  *
  * @remarks
  * Not a convenience list — see {@link vscodeSettings} for why the general
- * `editor.defaultFormatter` cannot be relied on. The set is "everything the
- * chosen formatter actually handles", so it is measured against the real
- * binaries rather than assumed: each entry below is a file type Prettier 3.8
- * *and* oxfmt 0.61 both reformat.
+ * `editor.defaultFormatter` cannot be relied on. Each entry is a language
+ * `@mnci/eslint-config` actually has a parser and rules for, so that
+ * format-on-save routes to a tool with an opinion about the file rather than to
+ * whatever the user happens to have installed.
  *
- * `typescript` and `typescriptreact` are the two that matter most and were the
- * two missing. `html` was missing too — both formatters have always handled it,
- * and the claim in this comment was simply not checked when it was written.
+ * `typescript` and `typescriptreact` are the two that matter most and were once
+ * the two missing, which is the bug {@link vscodeSettings} documents.
  *
- * See {@link OXFMT_ONLY_LANGUAGES} for the one file type where the two
- * formatters differ in what they can parse at all.
+ * This list used to be justified as "everything **both** formatters handle",
+ * measured against the real Prettier and oxfmt binaries. Both are retired, so
+ * the membership test is now a single question — does the shared ESLint config
+ * cover this language — and nothing has to be kept in agreement with a second
+ * tool.
  */
 export const FORMATTED_LANGUAGES = [
   'javascript',
@@ -993,13 +1001,10 @@ export const FORMATTED_LANGUAGES = [
  * Two things change together, and they have to: which extension formats, and
  * which languages ESLint is asked to validate.
  *
- * `eslint.validate` is narrowed for oxlint to exactly the languages ESLint still
- * owns there. Leaving JS/TS in that list would ask the ESLint extension to
- * validate files whose config has no rules for them — reporting nothing, but
- * spending a language-server round trip per keystroke to do it, and telling the
- * reader that ESLint covers JS when it does not.
+ * `eslint.validate` lists every language in {@link FORMATTED_LANGUAGES},
+ * because ESLint owns all of them now. There is no second formatter to hand any
+ * of them to, and so no narrowed variant of this list to keep in step.
  *
- * @param linter - The workspace's linter choice.
  * @returns The `settings` block for the `.code-workspace` file.
  * @throws Never - performs pure object construction.
  * @typeParam None - this function has no generic type parameters.
@@ -1025,9 +1030,9 @@ export function vscodeSettings (): Record<string, unknown> {
     // does that comparison BEFORE scope. So a `[typescript]` block in someone's
     // USER settings — left over from any other project — outranks this file's
     // workspace-level `editor.defaultFormatter`, and format-on-save quietly uses
-    // that other formatter instead. Nothing reports it: Prettier is installed,
-    // the config resolves, `npm run format:check` still finds the 68 unformatted
-    // files, and the editor simply never applies it.
+    // that other formatter instead — and nothing reports it, because the gate
+    // and the editor are looking at different tools. That is how it was found:
+    // reported from a real workspace, not deduced from the docs.
     //
     // Reported from a real workspace where `.ts` files were not being formatted
     // while `.json`/`.jsonc`/`.yaml` were — exactly the three that had explicit
@@ -1046,7 +1051,7 @@ export function vscodeSettings (): Record<string, unknown> {
  *
  * @remarks
  * Creates a single .code-workspace file that configures the entire monorepo:
- * folder structure, recommended extensions (ESLint, Prettier), workspace
+ * folder structure, recommended extensions (ESLint, Nx, Jest), workspace
  * settings, and a `tasks` array. The array starts empty; `add/*.ts`'s
  * `registerProjectCommands` (`commands/add/shared.ts`) appends a
  * `build`/`qa`/`start` task per project as it is added, so this template
@@ -1120,12 +1125,13 @@ export const ROOT_SCRIPTS = {
 } as const
 
 /**
- * The curated scripts with formatting via Prettier and linting via ESLint.
+ * The curated scripts, with ESLint doing both the linting and the formatting.
  *
  * @remarks
- * ESLint is a per-project Nx target (`nx run-many -t lint`) following code-quality
- * and correctness rules. Prettier handles all formatting (`npm run format` writes;
- * `npm run format:check` verifies without writing), following JavaScript Standard Style.
+ * ESLint is a per-project Nx target (`nx run-many -t lint`) covering code
+ * quality, type-aware correctness *and* JavaScript Standard Style formatting.
+ * `npm run format` is `eslint . --fix`; there is no `format:check`, because
+ * `lint` already reports a formatting mistake as an ordinary error.
  *
  * Every stack also gets `python:install`, chaining the same two guards CI runs
  * ({@link PYTHON_INSTALL_GUARD} then {@link PYTHON_WORKSPACE_INSTALL_GUARD}) —
@@ -2535,8 +2541,8 @@ export function removeProjectEslintConfigs (workspaceRoot: string): void {
  * @remarks
  * This is the ONLY file-writing this CLI does — everything else in the
  * workspace is the untouched output of Nx's own generators. Writes: the
- * `nx.json` release patch, `eslint.config.mjs`, `.prettierrc.mjs`,
- * `.prettierignore`, `.npmrc`, `commitlint.config.mjs`, the husky
+ * `nx.json` release patch, `eslint.config.mjs`, `.npmrc`,
+ * `commitlint.config.mjs`, the husky
  * `commit-msg` hook, the `<workspace>.code-workspace` file and
  * the chosen CI provider's pipeline file(s) — `azure-pipelines.yml` and/or
  * `.github/workflows/ci.yml`, per `options.ci`. It also DELETES the Nx
@@ -2624,10 +2630,9 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
   markExecutable(hookPath)
-  // ESLint handles code quality and correctness rules; Prettier handles all
-  // formatting (JavaScript Standard Style). ONE ESLint config, at the root —
+  // ESLint handles code quality, type-aware correctness AND formatting
+  // (JavaScript Standard Style) — one tool, so one config file, at the root.
   // `add` deletes the per-project ones Nx generators write.
-  // ONE config file, because there is one tool.
   writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
   // Every config a previous mnci version could have written for a second tool
   // has to be REMOVED, not merely left unwritten. A stale `.prettierrc.mjs` or

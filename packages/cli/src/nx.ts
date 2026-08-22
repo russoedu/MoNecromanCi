@@ -79,24 +79,23 @@ export function runNpx (arguments_: string[], cwd: string): void {
  * @remarks
  * Nx's own generators emit semicolons, double quotes and trailing commas —
  * the opposite of the JavaScript Standard Style mnci configures. Without this
- * pass a workspace fails its own `npm run format:check` the moment it is
- * created, which is a poor first impression and, worse, buries every real
- * formatting change under a wall of generator noise on the first commit.
- * Running it here means what mnci hands back is already normalised.
+ * pass a workspace fails its own `lint` the moment it is created, which is a
+ * poor first impression and, worse, buries every real formatting change under a
+ * wall of generator noise on the first commit. Running it here means what mnci
+ * hands back is already normalised.
  *
- * **Which formatter is not a detail, and hardcoding Prettier here was a real
- * bug.** An oxlint workspace has no `.prettierrc.mjs` — the overlay deletes it
- * — so `npx prettier --write .` there does not fail, it silently formats the
- * whole workspace against **Prettier's own defaults**: semicolons, double
- * quotes, trailing commas. The exact opposite of the shared opinion, applied to
- * files mnci itself had just written correctly. `oxfmt --check` then reported
- * 19 files unformatted in a freshly generated workspace, `eslint.config.mjs`
- * and `oxlint.config.ts` among them. Caught by the real e2e; no fixture could
- * have, since it needs a generated workspace with both configs in play.
+ * **There is no formatter to choose any more, and that is what makes this
+ * safe.** This function used to take the workspace's linter choice and pick a
+ * binary from it, because getting that wrong was a real bug: running
+ * `npx prettier --write .` in a workspace with no Prettier config does not
+ * fail, it silently reformats everything against its own defaults — semicolons, double
+ * quotes, trailing commas — over files mnci had just written correctly. Now
+ * ESLint is the only tool, so the config that decides the style and the binary
+ * that applies it cannot disagree: there is only one of each.
  *
- * `.prettierignore` (written by the overlay) keeps this off `node_modules`,
- * build output and lockfiles, and oxfmt reads that same file by default — so
- * the pass stays cheap either way, with one ignore list rather than two.
+ * The ignore list comes from `eslint.config.mjs` for the same reason, rather
+ * than from a separate `.prettierignore` that a second tool had to be taught to
+ * read.
  *
  * Deliberately non-fatal. The project has already been generated and wired by
  * the time this runs; aborting on a formatter hiccup would leave a usable
@@ -104,8 +103,6 @@ export function runNpx (arguments_: string[], cwd: string): void {
  * re-run instead.
  *
  * @param cwd - The workspace root to run in.
- * @param linter - The workspace's linter choice, which picks the formatter:
- * `eslint` pairs with Prettier, `oxlint` with oxfmt.
  * @param target - What to format, relative to `cwd`. Defaults to the whole
  * workspace (`.`); `add` passes the new project's root to keep the pass
  * proportional to what actually changed.

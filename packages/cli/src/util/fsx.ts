@@ -22,11 +22,12 @@ export function readJson<T> (path: string): T {
  * Reads a `.code-workspace` file, tolerating the trailing commas VS Code allows.
  *
  * @remarks
- * `.code-workspace` is VS Code's own JSONC dialect, not strict JSON. Prettier has
- * native `.code-workspace` support and reformats a single-entry array with a
- * trailing comma, which `JSON.parse` then rejects — and `npm run format` is part
- * of mnci's documented routine, so a strict parse breaks on the first `format`
- * run.
+ * `.code-workspace` is VS Code's own JSONC dialect, not strict JSON — VS Code
+ * itself writes trailing commas into it, and so does anything that formats the
+ * file as JSONC. `JSON.parse` rejects those outright, so reading this file
+ * strictly means mnci breaks on a workspace the user's own editor last touched.
+ * Tolerating the dialect the file is actually written in is the only correct
+ * read here.
  *
  * Shared by the two layers that both have to read this file: `applyOverlay`
  * (which must preserve the `tasks` array when it rewrites the rest) and
