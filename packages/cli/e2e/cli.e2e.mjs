@@ -949,10 +949,18 @@ section('js stack', [], () => {
   // evidence the pass works. Nothing runs after this one, so it has to arrive
   // clean or the "lint is already green after adds" assertion below fails on the
   // harness's own code rather than on anything mnci produced.
+  //
+  // The `@standard-clean` markers below are read by `e2eFixtures.test.ts`, which
+  // lints exactly these fixtures against the real config in seconds. Without it
+  // the contract stated in this comment was enforced only by a 50-minute Windows
+  // run — and it broke the moment `space-before-function-paren` was turned on.
+  // A fixture that is deliberately unformatted must NOT carry the marker.
+  // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/deps.ts'),
-    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps(): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
+    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps (): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
   )
+  // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/main.ts'),
     "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello'\nimport { apiDeps } from './deps'\n\nconsole.log(apiDeps())\n"

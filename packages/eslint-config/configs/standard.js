@@ -67,7 +67,17 @@ export default [
       '@stylistic/arrow-spacing': ['error', { before: true, after: true }],
       '@stylistic/block-spacing': ['error', 'always'],
       '@stylistic/brace-style': ['error', '1tbs', { allowSingleLine: true }],
-      '@stylistic/comma-dangle': ['warn', { arrays: 'ignore', enums: 'ignore', exports: 'ignore', imports: 'ignore', objects: 'ignore' }],
+      // 'never' in every context, and 'error' — Standard forbids trailing commas
+      // outright. This shipped as ['warn', { …: 'ignore' }], which is a rule that
+      // reports NOTHING: every context ignored, and a warning even if one had not
+      // been. The extraction from neostandard picked up a disable layer rather
+      // than Standard's own setting, and the e2e caught it on a real
+      // `eslint --fix` that left `b: 2,` standing.
+      //
+      // The TypeScript-only contexts (enums, generics, tuples) are listed too:
+      // @stylistic's defaults for them are not 'never', so omitting them would
+      // leave trailing commas legal in exactly the places a TS codebase writes.
+      '@stylistic/comma-dangle': ['error', { arrays: 'never', objects: 'never', imports: 'never', exports: 'never', functions: 'never', enums: 'never', generics: 'never', tuples: 'never' }],
       '@stylistic/comma-spacing': ['error', { before: false, after: true }],
       '@stylistic/comma-style': ['error', 'last'],
       '@stylistic/computed-property-spacing': ['error', 'never', { enforceForClassMembers: true }],
