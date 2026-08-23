@@ -189,6 +189,48 @@ function dropSandboxInjected (root) {
  * workspace and would drag in hundreds of third-party config files —
  * defeating the "exactly one config" assertions this exists to serve.
  */
+/**
+ * Rewrites a file with `pattern` replaced, and THROWS when it did not match.
+ *
+ * @remarks
+ * `String.replace` on a non-matching pattern is a silent no-op: it returns the
+ * input unchanged and reports nothing. Every edit this suite makes to a
+ * generated file is a precondition for the assertion that follows, so a
+ * no-op does not fail the edit — it fails something further away, if at all.
+ *
+ * This is not hypothetical. The Flutter section injected an internal dependency
+ * into `packages/dartshared/pubspec.yaml` with an LF-only pattern. On Windows,
+ * `flutter create` writes that file with CRLF, so the pattern never matched and
+ * the dependency was never added. It passed anyway for months because the
+ * workspace was formatted by oxfmt, which rewrote the pubspec to LF in passing
+ * — an accidental dependency on a formatter that has since been deleted. The
+ * moment `eslint --fix` replaced it (ESLint does not rewrite YAML at all), the
+ * edit started silently doing nothing and `flutter analyze` began reporting
+ * `depend_on_referenced_packages` on an import the suite had deliberately set
+ * up.
+ *
+ * @param file - Absolute path to the file to rewrite.
+ * @param pattern - The pattern to replace. Use `\r?\n`, never a bare `\n`.
+ * @param replacement - The replacement text.
+ * @returns Nothing.
+ * @throws Error when `pattern` does not match the file's current contents.
+ */
+function replaceInFile (file, pattern, replacement) {
+  const before = readFileSync(file, 'utf8')
+  // A function replacement, not a string — the same reason `internal/pubspec.ts`
+  // uses one: a literal would let a `$&`/`$1` sequence in `replacement` be read
+  // as a capture-group reference rather than as the text it plainly is.
+  const after = before.replace(pattern, () => replacement)
+  if (after === before) {
+    throw new Error(
+      `replaceInFile: ${pattern} did not match ${file}. ` +
+        'A silent no-op here would break a later assertion for an unrelated-looking reason. ' +
+        `First 400 chars:\n${before.slice(0, 400)}`
+    )
+  }
+  writeFileSync(file, after)
+}
+
 function findFiles (directory, predicate, base = directory) {
   const found = []
   const entries = readdirSync(directory, { withFileTypes: true })
@@ -1565,13 +1607,9 @@ section('python', ['alt stack'], () => {
 
   console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
   const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
-  writeFileSync(
-    pysvcPyprojectPath,
-    readFileSync(pysvcPyprojectPath, 'utf8').replace(
-      'dependencies = []',
-      'dependencies = ["tomli>=2.0.0"]'
-    )
-  )
+  // Through `replaceInFile` so a shape change in the plugin's emitted pyproject
+  // fails HERE rather than three assertions later as a missing wheel dependency.
+  replaceInFile(pysvcPyprojectPath, 'dependencies = []', 'dependencies = ["tomli>=2.0.0"]')
   // Also named greeting.py for the same shadowing reason as pyshared above.
   // Unlike pycore, tomli is a real installable PyPI package (declared in
   // pysvc's own pyproject.toml dependencies), so `pip install -e .` genuinely
@@ -2033,12 +2071,13 @@ section('flutter', [], () => {
 
     // An internal dependency, declared with a PLAIN constraint and no `path:`.
     const dartsharedPubspecPath = path.join(altWorkspace, 'packages/dartshared/pubspec.yaml')
-    writeFileSync(
+    // `\r?\n`, not `\n`: `flutter create` writes CRLF on Windows, which is the
+    // only platform this suite runs on. `internal/pubspec.ts` has always spelled
+    // its own patterns that way; this one did not, and silently matched nothing.
+    replaceInFile(
       dartsharedPubspecPath,
-      readFileSync(dartsharedPubspecPath, 'utf8').replace(
-        /^dependencies:\n {2}flutter:\n {4}sdk: flutter\n/m,
-        'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
-      )
+      /^dependencies:\r?\n {2}flutter:\r?\n {4}sdk: flutter\r?\n/m,
+      'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
     )
     writeFileSync(
       path.join(altWorkspace, 'packages/dartshared/lib/dartshared.dart'),
@@ -2066,12 +2105,37 @@ section('flutter', [], () => {
     const packageConfig = JSON.parse(
       readFileSync(path.join(altWorkspace, '.dart_tool/package_config.json'), 'utf8')
     )
+    // Both halves of the ORIGINAL assertion passed while the dependency was
+    // missing entirely, which is why the failure surfaced two assertions later
+    // as a `flutter analyze` lint instead of here. `package_config.json` lists
+    // every workspace member whether or not this package depends on it, and
+    // "contains no `path:`" is trivially true of a dependency that was never
+    // written. So the declaration itself is now asserted directly.
+    const dartsharedPubspec = readFileSync(dartsharedPubspecPath, 'utf8')
+    enforce(
+      'flutter: dartshared actually DECLARES dartcore, with a plain version constraint',
+      /^ {2}dartcore: \^\d/m.test(dartsharedPubspec),
+      dartsharedPubspec
+    )
     enforce(
       'flutter: the internal dep resolved to the LOCAL package with no `path:` dependency',
       packageConfig.packages.some(
         entry => entry.name === 'dartcore' && entry.rootUri.includes('libs/dartcore')
-      ) && !readFileSync(dartsharedPubspecPath, 'utf8').includes('path:'),
+      ) && !dartsharedPubspec.includes('path:'),
       JSON.stringify(packageConfig.packages.find(entry => entry.name === 'dartcore'))
+    )
+
+    // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
+    // `require-lang` reports as an ERROR — so a generated Flutter app failed
+    // `npm run lint` on a file the user never opened. It surfaced here only as
+    // three non-fatal `eslint could not format '.'` lines during `mnci add`,
+    // which is exactly why it needs an assertion of its own rather than relying
+    // on someone reading the add output.
+    const webIndex = readFileSync(path.join(altWorkspace, 'apps/hello/web/index.html'), 'utf8')
+    enforce(
+      'flutter: the generated web shell declares a lang, so the workspace lints clean',
+      /<html lang="[^"]+"/.test(webIndex),
+      webIndex.slice(0, 200)
     )
 
     const flutterVerify = tryRunCapture(

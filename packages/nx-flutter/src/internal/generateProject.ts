@@ -9,6 +9,7 @@ import {
 import { dartPackageName } from './dartPackageName'
 import { runFlutter } from './runFlutter'
 import { withWorkspaceResolution } from './pubspec'
+import { withHtmlLang } from './webIndex'
 import { addWorkspaceMember, ensureWorkspaceRoot, memberAnalysisOptions } from './workspace'
 
 /**
@@ -196,6 +197,26 @@ function flutterCreateTask (
       join(workspaceRoot, options.directory, 'analysis_options.yaml'),
       memberAnalysisOptions(depth)
     )
+
+    // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
+    // `require-lang` reports as an error — so a freshly generated Flutter app
+    // failed `npm run lint` on a file the user never opened. See `withHtmlLang`.
+    //
+    // Tolerant on purpose: a missing or unreadable file is a no-op, never a
+    // failed generation. The project is already created and resolving by now,
+    // and an upstream template that fixes this must not start breaking `add`.
+    if (options.buildable) {
+      const indexPath = join(workspaceRoot, options.directory, 'web/index.html')
+      try {
+        const contents = readFileSync(indexPath, 'utf8')
+        const patched = withHtmlLang(contents)
+        if (patched !== contents) {
+          writeFileSync(indexPath, patched)
+        }
+      } catch {
+        // Never fail an otherwise-successful generation over the web shell.
+      }
+    }
 
     // The resolve `--no-pub` skipped, now that the member declares
     // `resolution: workspace`. Run at the workspace ROOT rather than in the new
