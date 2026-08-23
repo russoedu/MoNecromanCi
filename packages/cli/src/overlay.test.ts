@@ -2060,7 +2060,7 @@ describe('applyOverlay', () => {
     // it started as — which is exactly how the reported bug existed. `html` is
     // here because it was missing for the same reason `typescript` was: the list
     // claimed to be "everything the formatter handles" and nobody checked it
-    // against the binaries. Both Prettier and oxfmt reformat `.html`.
+    // against the binaries.
     for (const language of [
       'typescript',
       'typescriptreact',
@@ -2070,6 +2070,20 @@ describe('applyOverlay', () => {
     ]) {
       expect(FORMATTED_LANGUAGES).toContain(language)
     }
+  })
+
+  it('includes toml, which ESLint parses and no formatter here could', () => {
+    // The entry the e2e asserted and the constant never got — a mismatch that
+    // only a Windows nightly reported, and only after the oxlint mode (whose
+    // `OXFMT_ONLY_LANGUAGES` used to carry it) was deleted.
+    //
+    // Measured, because the name of this constant overstates what it buys: a
+    // real `eslint --fix` leaves a badly-laid-out `.toml` BYTE-IDENTICAL — the
+    // TOML block is `flat/base`, parser only — while a malformed one reports
+    // `Parsing error`. So the entry gets editor-side parse errors on a broken
+    // `pyproject.toml`, and pins format-on-save to a no-op rather than to
+    // whichever TOML formatter the user happens to have installed.
+    expect(FORMATTED_LANGUAGES).toContain('toml')
   })
 
   it('recommends the same extensions in the devcontainer as in the workspace file', () => {

@@ -991,7 +991,23 @@ export const FORMATTED_LANGUAGES = [
   'yaml',
   'markdown',
   'css',
-  'html'
+  'html',
+  // TOML is here for PARSING, not formatting, and the distinction is measured
+  // rather than assumed: `eslint --fix` leaves a badly-laid-out `.toml`
+  // byte-identical (the TOML block is `flat/base`, parser only — `flat/standard`
+  // reported six errors on the `pyproject.toml` mnci itself generates), but it
+  // DOES report `Parsing error: ...` on a malformed one.
+  //
+  // So the entry buys two things. `eslint.validate` gains toml, so a broken
+  // `pyproject.toml` is flagged in the editor rather than at the next CI run.
+  // And pinning the formatter to ESLint means format-on-save does nothing to the
+  // file instead of handing it to whichever TOML formatter the user happens to
+  // have installed — the same reasoning as every other entry here: nothing
+  // reformats against an opinion no gate checks.
+  //
+  // Impossible under the Prettier stack, which is why it is only here now:
+  // `npx prettier` on a `.toml` exits with "No parser could be inferred".
+  'toml'
 ] as const
 
 /**
