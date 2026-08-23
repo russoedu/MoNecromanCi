@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
@@ -26,6 +25,11 @@ import { join } from 'node:path'
  * is exactly the class that has broken twice, since those are the rules a
  * config change flips wholesale.
  */
+
+/** The shape of one entry in `eslint --format json` output. */
+interface LintResult {
+  messages: { ruleId: string | null; message: string }[]
+}
 
 const E2E_FILE = join(__dirname, '..', 'e2e', 'cli.e2e.mjs')
 const REPO_ROOT = join(__dirname, '..', '..', '..')
@@ -66,83 +70,89 @@ function markedFixtures (): Map<string, string> {
  * Runs the real ESLint over one fixture and returns its `@stylistic` messages.
  *
  * @remarks
- * **The probe file must live inside the repo, and that is not a detail.** The
- * first version of this guard wrote it to `os.tmpdir()`, where flat config
- * replies `File ignored because outside of base path` — a *warning*, with
- * `ruleId: null`, which the `@stylistic/` filter below then discarded. Every
- * fixture came back with zero problems and all seven tests passed while
- * checking nothing. Reverting the very regression this file exists to catch did
- * not fail it.
+ * **`--stdin-filename`, a virtual path, never a file on disk.** Two earlier versions
+ * of this got it wrong in opposite directions, and both were caught by CI rather
+ * than by reading the code.
  *
- * It was caught by mutation-testing the guard rather than by reading it, which
- * is the only thing that catches this class. Hence {@link assertActuallyLinted}
- * below: a guard on the guard, so an ignored or unparsed file is a loud failure
- * instead of a clean bill of health.
+ * The first wrote the probe to `os.tmpdir()`, where flat config replies
+ * `File ignored because outside of base path` — a *warning*, with `ruleId: null`,
+ * which the `@stylistic/` filter below then discarded. Every fixture came back
+ * clean and all seven tests passed while checking nothing.
+ *
+ * The second moved it to the repo root, which fixed the ignoring and introduced
+ * a RACE: `nx run-many` runs `@mnci/cli:test` and `@mnci/source:lint`
+ * concurrently, so the root lint enumerated the probe file and then hit
+ * `ENOENT: ... mnci-fixture-probe-<uuid>.ts` when this test deleted it. A test
+ * that writes into the repo it is testing can always do that.
+ *
+ * `--stdin` with `--stdin-filename` takes the source on stdin and a path that
+ * need not exist, so the config resolves exactly as it would for a real file
+ * there while nothing is ever written. (The in-process `ESLint#lintText` API
+ * would be neater still, but flat config loads `eslint.config.mjs` through a
+ * dynamic `import()`, which Jest's CJS VM refuses without
+ * `--experimental-vm-modules`.)
+ *
+ * **Scope, stated honestly.** The virtual path is the repo root, so the
+ * type-aware block (scoped to project source directories), import resolution
+ * and the Nx dependency checks do not apply. Only the `mnci/standard` block's
+ * stylistic rules are asserted — exactly the class that has broken twice, since
+ * those are the rules a config change flips wholesale.
  *
  * @param contents - The fixture source.
  * @returns The stylistic rule ids reported, with their messages.
- * @throws Error when ESLint did not actually lint the file.
+ * @throws Error when ESLint did not actually lint the fixture.
  * @typeParam None - this function has no generic type parameters.
  */
 function stylisticProblems (contents: string): string[] {
-  // Repo root, so the file is inside flat config's base path; a random name so
-  // concurrent runs cannot collide. Not under `{apps,libs,packages}/*/src/**`,
-  // which keeps the type-aware block (and its need for a tsconfig) out of it.
-  const file = join(REPO_ROOT, `mnci-fixture-probe-${randomUUID()}.ts`)
+  let raw: string
   try {
-    writeFileSync(file, contents)
-    let raw = '[]'
-    try {
-      raw = execFileSync(
-        process.execPath,
-        [
-          join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js'),
-          file,
-          '--no-config-lookup',
-          '--config',
-          join(REPO_ROOT, 'eslint.config.mjs'),
-          '--format',
-          'json'
-        ],
-        { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-      )
-    } catch (error) {
-      // ESLint exits non-zero when it reports anything; the JSON is still on
-      // stdout, and that is the payload this assertion is about.
-      raw = (error as { stdout?: string }).stdout ?? '[]'
-    }
-    const results = JSON.parse(raw) as {
-      messages: { ruleId: string | null; message: string }[]
-    }[]
-    assertActuallyLinted(results)
-    return results
-      .flatMap(result => result.messages)
-      .filter(message => message.ruleId?.startsWith('@stylistic/'))
-      .map(message => `${message.ruleId}: ${message.message}`)
-  } finally {
-    rmSync(file, { force: true })
+    raw = execFileSync(
+      process.execPath,
+      [
+        join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js'),
+        '--stdin',
+        // A path that need not exist. The config resolves exactly as it would
+        // for a real file here, and nothing is written.
+        '--stdin-filename',
+        join(REPO_ROOT, 'e2e-fixture-probe.ts'),
+        '--no-config-lookup',
+        '--config',
+        join(REPO_ROOT, 'eslint.config.mjs'),
+        '--format',
+        'json'
+      ],
+      { cwd: REPO_ROOT, input: contents, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    )
+  } catch (error) {
+    // ESLint exits non-zero whenever it reports anything; the JSON is still on
+    // stdout, and that is the payload this assertion is about.
+    raw = (error as { stdout?: string }).stdout ?? '[]'
   }
+  const results = JSON.parse(raw) as LintResult[]
+  assertActuallyLinted(results)
+  return results
+    .flatMap(result => result.messages)
+    .filter(message => message.ruleId?.startsWith('@stylistic/'))
+    .map(message => `${message.ruleId}: ${message.message}`)
 }
 
 /**
- * Fails when ESLint skipped the probe instead of linting it.
+ * Fails when ESLint skipped the fixture instead of linting it.
  *
  * @remarks
  * A skipped file and a clean file are indistinguishable once the messages are
  * filtered to `@stylistic/` — both are an empty list. This is what makes the
- * difference visible, and it is here because the first version of this guard
- * was silently in the skipped case for every fixture.
+ * difference visible, and it exists because the first version of this guard was
+ * silently in the skipped case for every fixture while reporting all green.
  *
- * @param results - ESLint's JSON output.
+ * @param results - ESLint's results for the fixture.
  * @returns Nothing.
- * @throws Error when no file was linted, or one was ignored or failed to parse.
+ * @throws Error when nothing was linted, or the fixture was ignored or unparsed.
  * @typeParam None - this function has no generic type parameters.
  */
-function assertActuallyLinted (
-  results: { messages: { ruleId: string | null; message: string }[] }[]
-): void {
+function assertActuallyLinted (results: LintResult[]): void {
   if (results.length === 0) {
-    throw new Error('ESLint returned no results — the probe was never linted.')
+    throw new Error('ESLint returned no results — the fixture was never linted.')
   }
   const skipped = results
     .flatMap(result => result.messages)
@@ -152,7 +162,7 @@ function assertActuallyLinted (
         /ignored|outside of base path|Parsing error/i.test(message.message)
     )
   if (skipped) {
-    throw new Error(`ESLint did not lint the probe: ${skipped.message}`)
+    throw new Error(`ESLint did not lint the fixture: ${skipped.message}`)
   }
 }
 
