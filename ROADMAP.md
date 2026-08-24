@@ -9,7 +9,7 @@ what it _does_ come before new capability. Several entries below were found by
 running the real CLI and reading the real config rather than from the docs, and
 those cite `file:line` so the claim can be re-checked.
 
-**Done so far:** #1 (publish auth), #2 (`format:check` in CI), #4 (npm cache),
+**Done so far:** #1 (publish auth), #2 (`format:check` in CI — later superseded), #4 (npm cache),
 #5 (`nx affected` on PRs), #6 (superseded-run handling), #8 (`react-lib`),
 #14 (dots in names), #17 (`mnci upgrade`'s defects), #18 (`typecheck` in CI),
 #3 (`mnci doctor`), #16 (registry resolution verified) — which closes **§1 and §2
@@ -733,19 +733,19 @@ runs mnci on real Azure Pipelines should decide it with evidence.
 
 ---
 
-### 23. Azure's release trigger has the shape #22 fixed for GitHub — P2
+### 23. Azure's release trigger has the shape #22 fixed for GitHub — ✅ done
 
-The other half of #22, left undone on purpose and promoted here so it is not buried
-inside a closed item.
+The other half of #22, and the **more** exposed of the two.
 
-Azure gates its release steps on
-`ne(variables['Build.Reason'], 'PullRequest')` — "anything that is not a pull
-request", exactly the formulation that let a `workflow_dispatch` reach the release
-steps on GitHub. A **manually queued run on `main`** satisfies it, and manual queuing
-is a normal Azure workflow rather than an exotic one, so this is arguably more
-exposed than the GitHub version was.
+Azure gated its release steps on `ne(variables['Build.Reason'], 'PullRequest')` —
+"anything that is not a pull request". Microsoft documents **eight** such reasons:
+`Manual`, `Schedule`, `IndividualCI`, `BatchedCI`, `BuildCompletion`,
+`ResourceTrigger`, `ValidateShelveset` and `CheckInShelveset`. So clicking *Run
+pipeline* on `main` — an ordinary Azure workflow, not an exotic one — would have
+published packages and pushed release tags. GitHub's equivalent at least needed
+someone to add a trigger first; this one was wrong the day it was written.
 
-The precise fix is to enumerate the CI reasons instead:
+Now enumerated:
 
 ```yaml
 condition: and(succeeded(),
@@ -753,15 +753,32 @@ condition: and(succeeded(),
   eq(variables['Build.SourceBranchName'], 'main'))
 ```
 
-`BatchedCI` matters because the generated pipeline sets `batch: true` on the main
-trigger, so a push produces `BatchedCI` rather than `IndividualCI`. Getting that
-wrong in the other direction — enumerating only `IndividualCI` — would silently stop
-releasing altogether, which is why this wants evidence rather than a careful guess.
+**Both CI reasons are listed, and that is the load-bearing part.** Dropping
+either does not fail loudly — releases simply stop, with a green pipeline.
+`BatchedCI` is coupled to the generated trigger's `batch: true`, which Azure
+documents as producing "a Git push … and the **Batch changes** was selected";
+`IndividualCI` stays because batching only applies once a run is already in
+progress, so an unbatched push is still the ordinary case. A test asserts the
+condition and `batch: true` together, so the coupling cannot be broken by
+editing one of them.
 
-**Why it was not done with #22:** no Azure Pipelines run has ever exercised this
-project's release path, so there is nothing to verify against. Changing an untested
-release trigger to guard a hypothesis is the worse trade. Whoever first runs mnci on
-real Azure should do this with a real run in front of them.
+**What changed since this said "wants evidence rather than a careful guess":**
+the evidence is Microsoft's own reference, not an Azure run. The `Build.Reason`
+value list and `in()`'s semantics ("Evaluates True if left parameter is equal to
+any right parameter", min 1 / max N) are specification, and Azure defines a
+step's own `succeeded()` as `in(variables['Agent.JobStatus'], …)`, which settles
+that `in()` is valid in a step condition. That is a different kind of claim from
+"the release path works end to end on Azure", which remains unverified — and is
+unaffected here, since this change only ever *narrows* which triggers reach it.
+
+Mutation-tested three ways, each failing correctly: reverting to
+`ne(…, 'PullRequest')`, dropping `BatchedCI`, and removing `batch: true`. The
+emitted YAML still parses, and exactly five steps are gated — the same set as
+GitHub's, asserted by count so the narrowing cannot silently reach a sixth.
+
+Still open, and deliberately so: **no Azure Pipelines run has ever exercised this
+project's release path.** Whoever first runs mnci on real Azure should confirm a
+push to `main` does release, since a wrong `Build.Reason` here fails silently.
 
 ### 24. Nothing guards against a `typecheck` target being a stub — ✅ done
 
