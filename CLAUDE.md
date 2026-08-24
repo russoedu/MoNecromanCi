@@ -32,7 +32,7 @@ azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initia
 nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
 eslint.config.mjs         # ESLint flat config — mnci-owned; one import from @mnci/eslint-config,
                           #   plus a named inventory of every block and how to override it
-.prettierignore           # paths Prettier skips
+                          #   (there is NO formatter config: ESLint is the formatter)
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
 .npmrc                    # publish auth (azure also routes @scope to the feed)
@@ -82,7 +82,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 
 - **`packages/cli/src/overlay.ts`** — the config files mnci owns (see "Files `mnci` owns" below):
   - Exports `applyOverlay()` (pure file writer, deterministic)
-  - Exports config constants: `ROOT_SCRIPTS`, `RELEASE_CONFIG`, `PRETTIER_CONFIG`, etc.
+  - Exports config constants: `ROOT_SCRIPTS`, `RELEASE_CONFIG`, `RETIRED_FORMATTER_FILES`, etc.
   - Exports VS Code workspace file template (`vscodeWorkspace()`)
   - Exports CI YAML generators: `azurePipelinesYaml()`, `githubActionsYaml()`
   - Exports shared guard scripts (Python install, pack, release) used by both CI providers
@@ -154,8 +154,8 @@ does it too — the docs already tell users to `git diff` before committing an u
 ```bash
 npm run build          # build @mnci/cli, @mnci/nx-python-pip, @mnci/nx-flutter
 npm run test           # unit tests (cli, nx-python-pip, nx-flutter)
-npm run lint           # ESLint (code quality) + Prettier (formatting check)
-npm run format         # Prettier --write (auto-fix formatting)
+npm run lint           # ESLint — code quality, type-aware rules AND formatting
+npm run format         # eslint . --fix --cache (auto-fix, incl. formatting)
 npm run typecheck      # tsc across the workspace (bundlers do not type-check)
 npm run affected       # lint + typecheck + test + build for changed projects only
 npm run graph          # open Nx project graph
@@ -164,7 +164,7 @@ npm run release:preview  # dry-run what nx release would do
 
 ### Key Commands
 
-- **`npm run format`** before committing — workspace is generated with semicolons/double-quotes, needs normalization to Standard Style
+- **`npm run format`** before committing — `eslint . --fix --cache`; Nx generates semicolons/double-quotes, which needs normalising to Standard Style
 - **`git diff`** before pushing — review what `mnci upgrade` or any overlay change actually touches
 - **No breaking of tools** — the CLI is dogfooded; if a change breaks the e2e or generated workspace lint/test/build, the CI will catch it
 
@@ -210,7 +210,67 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### ESLint Is the Only Tool: Quality, Types and Formatting (Latest)
+### Prettier Fully Retired, and Two Gates That Had Never Worked (Latest)
+
+The tail of the ESLint-only migration, plus the two defects the first honest
+nightly exposed. `npm run format:check` no longer exists anywhere, and the
+Windows e2e is green: **176 enforced checks, 0 failures**, with Go, Flutter and
+Python all genuinely running rather than skipped.
+
+- **mnci recommended the extension it warns about.** Every generated
+  `.code-workspace` AND devcontainer listed `esbenp.prettier-vscode`, while
+  `applyOverlay()` deleted every Prettier config and `mnci doctor` reported a
+  survivor as a failure. The extension needs no config file to act — with none
+  present it formats against Prettier's own defaults, the exact inverse of
+  Standard — and it runs on save, so the damage lands *after* every gate. mnci
+  was installing its own hazard and then cleaning up after it.
+- **The root manifest still declared `prettier`**, and it was the last thing in
+  the whole tree that did. `mnci doctor` would have failed this repo on the check
+  this repo ships. `dogfood.test.ts` now holds mnci to the invariants it enforces
+  elsewhere — the gap existed because every gate pointed at generated workspaces
+  rather than at mnci.
+- **The shipped `eslint.config.mjs` comment said the opposite of the truth**,
+  telling users `space-before-function-paren` "cannot work". That rule is ON;
+  dropping the formatter is what made it reachable. It now carries the inverse
+  warning: do not add a formatter.
+- **`@stylistic/comma-dangle` enforced NOTHING** — `['warn', { …: 'ignore' }]`,
+  every context ignored. The programmatic extraction from neostandard picked up a
+  disable layer instead of Standard's setting. Audited: the only one of the 60
+  rules affected (`jsx-wrap-multilines`'s ignores are genuine).
+- **The Flutter internal-dep injection had never worked on Windows.** The e2e's
+  pubspec pattern was LF-only; `flutter create` writes CRLF, and
+  `String.replace` on a non-match is a silent no-op. It passed for months only
+  because the `alt` workspace was then formatted by **oxfmt**, which rewrote the
+  pubspec to LF in passing — 21 oxfmt invocations in the last passing nightly, 0
+  in the first failing one. Retiring oxfmt did not break the test; it removed the
+  accident hiding a test that never worked. `replaceInFile` now throws on a
+  non-match, and the assertion that should have caught it (which checked
+  `package_config.json` — true of *any* workspace member — and "no `path:`" —
+  trivially true of a dependency never written) now asserts the declaration.
+- **`mnci add flutter-app` shipped an inaccessible web shell.** `flutter create`
+  writes `<html>` with no `lang`, which `@html-eslint/require-lang` errors on, so
+  a generated app failed its own `npm run lint` on a file the user never opened.
+  Patched (`withHtmlLang`), not linted around — switching off an a11y rule for
+  upstream boilerplate is the worse trade.
+- **THREE wrong versions of one guard, each caught by execution, not review.**
+  `e2eFixtures.test.ts` lints the e2e's own fixtures in seconds instead of
+  leaving the contract to a 50-minute Windows run. v1 wrote its probe to
+  `os.tmpdir()`, where flat config replies `File ignored because outside of base
+path` — a *warning* with a null `ruleId`, which the `@stylistic/` filter
+  discarded, so all seven tests passed while checking nothing. v2 moved it to the
+  repo root and **raced `@mnci/source:lint`** under `nx run-many`
+  (`ENOENT` on the probe), which a warm Nx cache hid locally — use
+  `--skip-nx-cache`. v3 uses `eslint --stdin --stdin-filename`: no file, no race.
+  It reads an explicit `// @standard-clean` marker, because most fixtures are
+  *deliberately* unformatted as evidence the `add` formatter pass works — v1 of
+  that logic flagged four correct-by-design fixtures, a guard that would have
+  been "fixed" by breaking the suite.
+- **The standing lesson: a passing guard is not a working guard.** Five inert or
+  wrong gates surfaced in this stretch alone. Mutation-test every one, and never
+  report a CI verdict from the tail of a log — one such reading here reported
+  "one failure" for a run that had five.
+
+### ESLint Is the Only Tool: Quality, Types and Formatting
 
 `@mnci/oxlint-config` is deleted, Prettier is gone, the `--linter` choice is
 gone, and `@mnci/eslint-config` now carries the formatting opinion as rules.

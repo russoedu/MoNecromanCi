@@ -2459,7 +2459,7 @@ export interface OverlayOptions {
  *
  * - **`.prettierrc`** — Nx writes `{ "singleQuote": true }`. Prettier resolves
  *   `.prettierrc` before `.prettierrc.json`, so every option in
- *   {@link PRETTIER_CONFIG} was being ignored in every generated workspace.
+ *   mnci's own formatting opinion was being ignored in every generated workspace.
  *   Deleting it is what makes mnci's formatting opinion take effect at all.
  * - **`.vscode/`** — `extensions.json` lists the same recommendations the
  *   `<workspace>.code-workspace` file already carries, so VS Code shows the
