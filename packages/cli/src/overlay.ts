@@ -1883,7 +1883,29 @@ export function azurePipelinesYaml (
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts'
 ): string {
-  const onMain = 'and(succeeded(), ne(variables[\'Build.Reason\'], \'PullRequest\'), eq(variables[\'Build.SourceBranchName\'], \'main\'))'
+  // ENUMERATED CI reasons, never "not a pull request" — the Azure half of the
+  // fix #22 made for GitHub, and the more exposed of the two.
+  //
+  // `ne(Build.Reason, 'PullRequest')` admits every reason that is not a PR, and
+  // Azure documents EIGHT of those: Manual, Schedule, IndividualCI, BatchedCI,
+  // BuildCompletion, ResourceTrigger, ValidateShelveset and CheckInShelveset. So
+  // clicking *Run pipeline* on `main` — an ordinary Azure workflow, not an
+  // exotic one — would publish packages and push release tags. GitHub's
+  // equivalent needed someone to add a trigger first; this one never did.
+  //
+  // BOTH CI reasons are listed, and dropping either is a silent failure in the
+  // opposite direction — releases would simply stop, with a green pipeline.
+  // `BatchedCI` is the one that matters here: the trigger above sets
+  // `batch: true`, and Azure documents BatchedCI as the reason for "a Git push
+  // ... and the Batch changes was selected". `IndividualCI` stays because
+  // batching only applies once a run is already in progress, so an unbatched
+  // push is still the ordinary case.
+  //
+  // Verified against Microsoft's own docs rather than assumed: `in()` is
+  // "Evaluates True if left parameter is equal to any right parameter", min 1 /
+  // max N — and Azure defines a step's own `succeeded()` as
+  // `in(variables['Agent.JobStatus'], ...)`, so it is valid in a step condition.
+  const onMain = 'and(succeeded(), in(variables[\'Build.Reason\'], \'IndividualCI\', \'BatchedCI\'), eq(variables[\'Build.SourceBranchName\'], \'main\'))'
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, name => `$(${name})`)
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 

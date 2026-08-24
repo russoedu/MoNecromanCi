@@ -307,8 +307,58 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('PAT: $(PAT)')
     expect(pipeline).not.toContain('npmAuthenticate')
     expect(pipeline).not.toContain('NODE_AUTH_TOKEN')
-    expect(pipeline).toContain("ne(variables['Build.Reason'], 'PullRequest')")
+    expect(pipeline).toContain("in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')")
     expect(pipeline).toContain("eq(variables['Build.SourceBranchName'], 'main')")
+  })
+
+  it('gates every release-only step on a CI push to main, never merely "not a PR"', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // The Azure half of #22, and the more exposed of the two. GitHub's
+    // `!= 'pull_request'` needed someone to add a trigger before it could
+    // misfire; Azure's `ne(Build.Reason, 'PullRequest')` was wrong on the day it
+    // was written, because Azure documents EIGHT non-PR reasons — Manual,
+    // Schedule, IndividualCI, BatchedCI, BuildCompletion, ResourceTrigger,
+    // ValidateShelveset, CheckInShelveset. Clicking *Run pipeline* on `main` is
+    // an ordinary Azure workflow, and it would have published.
+    expect(pipeline).toContain("in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')")
+    expect(pipeline).not.toContain("ne(variables['Build.Reason'], 'PullRequest')")
+  })
+
+  it('lists BOTH CI reasons, because dropping either stops releases silently', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // The failure mode in the other direction, and the reason this item waited
+    // for evidence rather than a careful guess: narrowing to one reason does not
+    // fail loudly, it just never releases again while the pipeline stays green.
+    //
+    // `BatchedCI` is coupled to the trigger below — Azure documents it as the
+    // reason for "a Git push ... and the Batch changes was selected", which is
+    // exactly what `batch: true` selects. `IndividualCI` stays because batching
+    // only applies once a run is already in progress, so an unbatched push is
+    // still the ordinary case. Asserted together so the coupling cannot be
+    // broken by editing one of them.
+    expect(pipeline).toContain("'IndividualCI'")
+    expect(pipeline).toContain("'BatchedCI'")
+    expect(pipeline).toContain('batch: true')
+  })
+
+  it('gates exactly the five release-only steps, the same set as GitHub', () => {
+    // Both providers share one condition across pack, publish, tag, release and
+    // tag-push. Asserting the COUNT is what stops the narrowing from silently
+    // reaching a step it was never meant to gate — or missing one it was.
+    const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      steps: { condition?: string; displayName?: string }[]
+    }
+    const gated = document_.steps.filter(step => step.condition !== undefined)
+
+    expect(gated).toHaveLength(5)
+    for (const step of gated) {
+      expect(step.condition).toBe(
+        "and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), " +
+          "eq(variables['Build.SourceBranchName'], 'main'))"
+      )
+    }
   })
 
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN variable), not PAT, for the public npm registry', () => {
