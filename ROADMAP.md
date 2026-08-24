@@ -136,14 +136,20 @@ Not verified, and deliberately not attempted: a real publish to npmjs.org from t
 correctness rests on the token line being read (confirmed) and npmjs.org being the
 resolved target (confirmed).
 
-### 2. Enforce Prettier somewhere automatic — ✅ done
+### 2. Enforce Prettier somewhere automatic — ✅ done, then SUPERSEDED
+
+> **Superseded.** Prettier is retired and `format:check` no longer exists in any
+> pipeline or root script. ESLint is the formatter, so `lint` reports a
+> formatting mistake as an ordinary error — which is strictly more than this item
+> ever bought. The write-up below is kept as the record of why formatting needed
+> a gate at all; read it in the past tense.
 
 Formatting used to be enforced **nowhere**: `format:check` existed only as a root
 script, absent from both pipelines, and the overlay wrote only a `commit-msg`
 hook. So mnci deleted Nx's `.prettierrc` specifically to make its own formatting
 opinion take effect, then never checked that it held.
 
-`npm run format:check` is now a step in both generated pipelines (and in this
+`npm run format:check` was then a step in both generated pipelines (and in this
 repo's own workflow), placed after `nx sync:check` and before the verify step
 (#5 later removed the standalone `Lint` step it originally sat after). ESLint here
 is correctness-only — `eslint-config-prettier` is composed last in
@@ -235,7 +241,9 @@ guard also reads both providers' PR variables (`GITHUB_BASE_REF`,
 `SYSTEM_PULLREQUEST_TARGETBRANCH`) and strips Azure's `refs/heads/` prefix, since
 Azure sends a full ref where GitHub sends a bare branch name.
 
-`format:check` deliberately stays workspace-wide: `prettier --check .` is one
+`format:check` no longer exists — ESLint reports formatting itself, so a second
+step would run the same binary twice. When it did exist it stayed workspace-wide,
+because `prettier --check .` was one
 invocation over the whole tree, not a per-project Nx target, so there is nothing
 to narrow and formatting is never checked in part. The standalone `npm run lint`
 step is gone — it was `nx run-many -t lint`, a strict subset of the verify step's
@@ -831,7 +839,7 @@ already references and `production` extends, so one list reaches every target.
   dependency, so changes to it arrive through `package-lock.json` — which Nx already
   handles via its external-dependency nodes (measured above).
 - **`.prettierrc.json` is deliberately left out.** Prettier is not a project target;
-  the pipeline runs `prettier --check .` over the whole tree on every run regardless,
+  the pipeline then ran `prettier --check .` over the whole tree on every run regardless,
   so listing it would invalidate every cache and verify nothing new.
 - **The e2e asserts it behaviourally**, not structurally — it touches each of the
   three files in a real generated workspace and requires real projects to be marked.
