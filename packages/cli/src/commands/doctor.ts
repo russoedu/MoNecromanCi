@@ -49,7 +49,7 @@ const SUPPORTED_ESLINT_MAJOR = ESLINT_VERSION.replace(/^\D*/, '').split('.', 1)[
  * @throws Never - performs a pure string replacement.
  * @typeParam None - this function has no generic type parameters.
  */
-function toPosix(path: string): string {
+function toPosix (path: string): string {
   return path.replaceAll('\\', '/')
 }
 
@@ -341,7 +341,7 @@ const TARGET_FILE_OPTIONS = ['main', 'tsConfig', 'packageJson'] as const
  * @throws Never - an unreadable or absent manifest contributes no targets.
  * @typeParam None - this function has no generic type parameters.
  */
-function declaredTargets(
+function declaredTargets (
   workspaceRoot: string,
   projectRoot: string
 ): { source: string; targets: Record<string, { options?: Record<string, unknown> }> }[] {
@@ -399,7 +399,7 @@ function declaredTargets(
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkTargetFilesExist(workspaceRoot: string): Finding[] {
+function checkTargetFilesExist (workspaceRoot: string): Finding[] {
   const projectRoots = new Set(
     [
       ...globSync('{apps,libs,packages}/*/project.json', { cwd: workspaceRoot }),
@@ -431,7 +431,7 @@ function checkTargetFilesExist(workspaceRoot: string): Finding[] {
  * @throws Never - only reads the filesystem.
  * @typeParam None - this function has no generic type parameters.
  */
-function checkOneTargetsFiles(
+function checkOneTargetsFiles (
   workspaceRoot: string,
   source: string,
   targetName: string,
