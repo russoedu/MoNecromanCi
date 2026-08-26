@@ -1269,6 +1269,39 @@ section('js stack', [], () => {
     sdkPackDryRun.output
   )
 
+  // The gate that was missing when a published library shipped a `types` path its
+  // own build never emitted: every field the manifest points a CONSUMER at must
+  // exist in the tarball. Checking `dist/index.esm.js` alone passed while `types`
+  // dangled, so TypeScript consumers silently got `any` (TS7016).
+  const sdkPackedManifest = JSON.parse(
+    readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8')
+  )
+  const sdkEntryPoints = [
+    ['main', sdkPackedManifest.main],
+    ['module', sdkPackedManifest.module],
+    ['types', sdkPackedManifest.types],
+    ['exports[.].types', sdkPackedManifest.exports?.['.']?.types],
+    ['exports[.].import', sdkPackedManifest.exports?.['.']?.import]
+  ].filter(([, value]) => typeof value === 'string')
+  const danglingEntryPoints = sdkEntryPoints.filter(
+    ([, value]) => !sdkPackedFiles.includes(value.startsWith('./') ? value.slice(2) : value)
+  )
+  enforce(
+    'sdk: every entry point the manifest declares is actually IN the packed tarball',
+    danglingEntryPoints.length === 0,
+    'dangling: ' +
+      danglingEntryPoints.map(([field, value]) => field + ' -> ' + value).join(', ') +
+      ' | packed: ' + sdkPackedFiles.join(', ')
+  )
+
+  // Declaration maps reference ../src/*.ts, which `files: ["dist"]` never ships, so
+  // they are dead weight in the tarball and land an editor on nothing.
+  enforce(
+    'sdk: no dead declaration maps in the tarball',
+    sdkPackedFiles.every(file => !file.endsWith('.d.ts.map')),
+    sdkPackedFiles.filter(file => file.endsWith('.d.ts.map')).join(', ')
+  )
+
   /* ---------------------------------------------------------------------------
    * Release config resolves for real
    * ------------------------------------------------------------------------- */

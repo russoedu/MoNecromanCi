@@ -45,6 +45,28 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
+// What @nx/js:lib --bundler=rollup actually writes into the manifest.
+const seedGeneratedManifest = (): void => {
+  writeFileSync(
+    join(workspaceRoot, 'packages/sdk/package.json'),
+    JSON.stringify({
+      name: '@demo/sdk',
+      main: './dist/index.esm.js',
+      module: './dist/index.esm.js',
+      types: './dist/index.esm.d.ts',
+      files: ['dist', '!**/*.tsbuildinfo'],
+      exports: {
+        './package.json': './package.json',
+        '.': {
+          types: './dist/index.esm.d.ts',
+          import: './dist/index.esm.js',
+          default: './dist/index.esm.js'
+        }
+      }
+    })
+  )
+}
+
 describe('runAdd npm-lib', () => {
   it('generates a publishable lib under packages/ as a rollup bundle (inlines internal libs)', async () => {
     await runAdd('npm-lib', 'sdk', {})
@@ -72,6 +94,67 @@ describe('runAdd npm-lib', () => {
       readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
     ) as { publishConfig: { access: string } }
     expect(manifest.publishConfig).toEqual({ access: 'public' })
+  })
+
+  it('repoints types at the declaration file the build actually emits', async () => {
+    // The generator writes types: ./dist/index.esm.d.ts and its own build never
+    // emits that file, so EVERY TypeScript consumer of the published package gets
+    // `any` - verified against a real published package, which failed TS7016. The
+    // same repair already existed for react-lib; npm-lib called the same generator
+    // family with the same flag and shipped the defect for lack of one line.
+    seedGeneratedManifest()
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { types: string; exports: Record<string, { types?: string }> }
+    expect(manifest.types).toBe('./dist/index.d.ts')
+    expect(manifest.exports['.'].types).toBe('./dist/index.d.ts')
+  })
+
+  it('leaves main and module alone — index.esm.js IS emitted, only the types path is wrong', async () => {
+    seedGeneratedManifest()
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { main: string; module: string }
+    expect(manifest.main).toBe('./dist/index.esm.js')
+    expect(manifest.module).toBe('./dist/index.esm.js')
+  })
+
+  it('keeps declaration maps out of the published tarball', async () => {
+    // declarationMap is on workspace-wide and earns its keep inside the monorepo,
+    // but `files: ["dist"]` ships no sources for the maps to point at. Measured on a
+    // real published library: 32 of 67 files were .d.ts.map, every one referencing
+    // ../src/*.ts, which is not in the tarball.
+    seedGeneratedManifest()
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { files: string[] }
+    expect(manifest.files).toContain('!**/*.d.ts.map')
+    // The generator entries survive.
+    expect(manifest.files).toContain('dist')
+    expect(manifest.files).toContain('!**/*.tsbuildinfo')
+  })
+
+  it('leaves an already-correct types path untouched, so an upstream fix is not undone', async () => {
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/package.json'),
+      JSON.stringify({ name: '@demo/sdk', types: './dist/index.d.ts', files: ['dist'] })
+    )
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { types: string }
+    expect(manifest.types).toBe('./dist/index.d.ts')
   })
 
   it('leaves no per-project eslint config behind — an mnci workspace has exactly one, at the root', async () => {

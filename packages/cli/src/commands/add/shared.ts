@@ -139,6 +139,85 @@ export function markPublic (manifestPath: string): void {
 }
 
 /**
+ * The declaration path the rollup-bundled library generators write, which their
+ * own build never produces.
+ */
+const WRONG_TYPES_PATH = './dist/index.esm.d.ts'
+
+/** The declaration path the rollup build actually emits. */
+const ACTUAL_TYPES_PATH = './dist/index.d.ts'
+
+/**
+ * Keeps declaration source maps out of the published tarball.
+ *
+ * @remarks
+ * `declarationMap` is on workspace-wide (`create-nx-workspace` writes it into
+ * `tsconfig.base.json`) and is genuinely useful INSIDE the monorepo, where
+ * go-to-definition across projects lands on the original `.ts`. It is dead weight
+ * in a published package, because `files: ["dist"]` ships no sources for the maps
+ * to point at: measured on a real published library, every `.d.ts.map` carried
+ * `sources: ["../src/<name>.ts"]`, a path outside the tarball. They were also HALF
+ * the package - 32 of its 67 files - so an editor following one lands on nothing
+ * while every consumer downloads them.
+ *
+ * Excluded from `files` rather than by switching `declarationMap` off, so in-repo
+ * navigation keeps working.
+ */
+const DECLARATION_MAP_EXCLUSION = '!**/*.d.ts.map'
+
+/**
+ * Repairs the manifest of a generated publishable library: repoints its `types`
+ * entries at the declaration file the build actually emits, and keeps declaration
+ * maps out of the tarball.
+ *
+ * @remarks
+ * Works around a real inconsistency in the `--bundler=rollup` library generators,
+ * not a preference: they write `types: './dist/index.esm.d.ts'` (and the same path
+ * under `exports['.']`), while the rollup build emits `dist/index.d.ts`. The
+ * referenced file therefore never exists, so **every TypeScript consumer of the
+ * published package gets `any`**, failing with
+ * `TS7016: Could not find a declaration file for module '@scope/name'`.
+ *
+ * Applies to BOTH `@nx/js:lib` (`npm-lib`) and `@nx/react:library` (`react-lib`).
+ * It lived in `reactLib.ts` alone for a while, which is how `npm-lib` shipped the
+ * defect: the bug was found, diagnosed and fixed on one code path while the other
+ * called the same generator family with the same flag. Measured on a real published
+ * workspace — a consumer importing `@auto/env` failed `TS7016`, and repointing
+ * `types` alone made it resolve, with a deliberate type error then reported
+ * correctly.
+ *
+ * `main`/`module` are left alone: they correctly point at `index.esm.js`, which IS
+ * emitted. Only the declaration paths are wrong.
+ *
+ * Guarded on the exact wrong value, so if Nx corrects this upstream the repair
+ * quietly stops applying instead of overwriting a now-correct path.
+ *
+ * @param manifestPath - Absolute path to the library's `package.json`.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the manifest.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function repairPublishableManifest (manifestPath: string): void {
+  const manifest = readJson<{
+    types?: string
+    files?: string[]
+    exports?: Record<string, string | { types?: string }>
+  }>(manifestPath)
+
+  if (manifest.types === WRONG_TYPES_PATH) {
+    manifest.types = ACTUAL_TYPES_PATH
+  }
+  const dot = manifest.exports?.['.']
+  if (typeof dot === 'object' && dot.types === WRONG_TYPES_PATH) {
+    dot.types = ACTUAL_TYPES_PATH
+  }
+  if (manifest.files && !manifest.files.includes(DECLARATION_MAP_EXCLUSION)) {
+    manifest.files.push(DECLARATION_MAP_EXCLUSION)
+  }
+  writeFileEnsured(manifestPath, toJson(manifest))
+}
+
+/**
  * Ensures the `adm-zip` packager is a workspace devDependency.
  *
  * @remarks

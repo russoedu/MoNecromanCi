@@ -210,7 +210,52 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Generated Workspaces Get Launch Configs, Not Just Tasks (Latest)
+### A Published `npm-lib` Shipped No Types At All (Latest)
+
+Found on a **real published package**, not a fixture: `@nx/js:lib --bundler=rollup`
+writes `types: './dist/index.esm.d.ts'`, and its own build never emits that file. So
+every TypeScript consumer of every `npm-lib` mnci has ever generated got `any`:
+
+```
+error TS7016: Could not find a declaration file for module '@auto/env'.
+  '…/dist/index.esm.js' implicitly has an 'any' type.
+```
+
+- **The fix already existed, three metres away.** `reactLib.ts` had
+  `repairTypesPath()` with the same `WRONG_TYPES_PATH` constant and a full write-up
+  of the same bug. `npmLib.ts` called the same generator family with the same flag
+  and had no such call. The repair now lives in `add/shared.ts` as
+  `repairPublishableManifest()` and both kinds use it — the duplication is what let
+  one path stay broken while the other was fixed.
+- **Verified against the published tarball**, downloaded from the feed (reads are
+  anonymous there): `types` names a file absent from the package, and repointing it
+  at `./dist/index.d.ts` makes a consumer resolve — with a deliberate type error then
+  reported as `TS2322`, so the real overloads are present. `main`/`module` were
+  always fine; `index.esm.js` IS emitted.
+- **The gate that was missing is the interesting part.** The e2e already packed the
+  lib and asserted `dist/index.esm.js` was in the tarball — a check that passed while
+  `types` dangled. It now asserts that **every** entry point the manifest declares
+  (`main`, `module`, `types`, both `exports["."]` conditions) is actually present in
+  the packed files. Run against the real broken tarball, the new guard reports
+  exactly the two dangling entries.
+- **Declaration maps were half the package.** 32 of 67 files were `.d.ts.map`, every
+  one referencing `../src/<name>.ts` — a path `files: ["dist"]` never ships, so an
+  editor following one lands on nothing. `files` now carries `!**/*.d.ts.map`.
+  `declarationMap` itself stays ON: it is `create-nx-workspace`'s setting, not
+  mnci's, and it earns its keep for cross-project go-to-definition INSIDE the
+  monorepo. Only the tarball is trimmed.
+
+**Still open, and recorded rather than fixed: the declaration entry carries a Windows
+path separator.** `dist/index.d.ts` is a stub reading
+`export * from "./src\index"`, produced by Nx's declaration step on a Windows
+agent. It resolves on Windows and will NOT resolve on Linux, where `` is an
+ordinary filename character. Confirmed in the published tarball, which was built on
+a Windows CI pool. mnci cannot repair this at generate time — `dist/` does not exist
+yet — so the options are an upstream Nx fix, releasing from a Linux agent, or
+pointing `types` at `./dist/src/index.d.ts` (measured working, but unverified for
+`react-lib`, whose repair was validated against `./dist/index.d.ts`).
+
+### Generated Workspaces Get Launch Configs, Not Just Tasks
 
 The `.code-workspace` file carried a `tasks` array and no `launch` section, so the
 **Run and Debug** panel in a generated workspace was empty. A `tasks` entry is

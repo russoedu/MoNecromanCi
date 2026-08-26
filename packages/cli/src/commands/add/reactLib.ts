@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import { runNx } from '../../nx'
 import { promptText } from '../../prompts'
-import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import {
   defaultScope,
   ensurePlugin,
@@ -9,63 +8,10 @@ import {
   markPublic,
   registerProjectCommands,
   removeGeneratedEslintConfig,
+  repairPublishableManifest,
   type AddOptions,
   type WorkspaceStack
 } from './shared'
-
-/**
- * The declaration path `@nx/react:library --bundler=rollup` writes, which its own
- * build never produces.
- */
-const WRONG_TYPES_PATH = './dist/index.esm.d.ts'
-
-/** The declaration path that rollup build actually emits. */
-const ACTUAL_TYPES_PATH = './dist/index.d.ts'
-
-/**
- * Repoints a generated React library's `types` entries at the declaration file
- * its build actually emits.
- *
- * @remarks
- * Works around a real inconsistency in `@nx/react:library --bundler=rollup`, not
- * a preference: the generator writes `types: './dist/index.esm.d.ts'` (and the
- * same path under `exports['.']`), while its rollup build emits
- * `dist/index.d.ts`. The referenced file therefore never exists, and any
- * consumer importing the library fails with
- * `TS7016: Could not find a declaration file for module '@scope/name'` — so a
- * publishable React lib could not be consumed as a typed dependency at all.
- *
- * Verified empirically against a real generated pair: a `react-lib` importing a
- * `react-internal-lib` fails `typecheck` before this repair and passes after,
- * with `dist/index.d.ts` confirmed present in the build output. `main`/`module`
- * are left alone — they correctly point at `index.esm.js`, which *is* emitted;
- * only the declaration paths are wrong.
- *
- * The same class of bug as the `node-function-app` manifest `main` fix: a
- * generator-written path that is right for a layout other than the one actually
- * produced. Guarded on the exact wrong value, so if Nx corrects this upstream the
- * repair quietly stops applying instead of overwriting a now-correct path.
- *
- * @param manifestPath - Absolute path to the library's `package.json`.
- * @returns Nothing.
- * @throws Propagates any `fs`/JSON error reading or writing the manifest.
- * @typeParam None - this function has no generic type parameters.
- */
-function repairTypesPath (manifestPath: string): void {
-  const manifest = readJson<{
-    types?: string
-    exports?: Record<string, string | { types?: string }>
-  }>(manifestPath)
-
-  if (manifest.types === WRONG_TYPES_PATH) {
-    manifest.types = ACTUAL_TYPES_PATH
-  }
-  const dot = manifest.exports?.['.']
-  if (typeof dot === 'object' && dot.types === WRONG_TYPES_PATH) {
-    dot.types = ACTUAL_TYPES_PATH
-  }
-  writeFileEnsured(manifestPath, toJson(manifest))
-}
 
 /**
  * The bundler both React library kinds are generated with.
@@ -150,7 +96,7 @@ export async function addReactLib (
   )
   const publishableManifest = join(workspaceRoot, 'packages', name, 'package.json')
   markPublic(publishableManifest)
-  repairTypesPath(publishableManifest)
+  repairPublishableManifest(publishableManifest)
   removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
@@ -199,7 +145,7 @@ export function addReactInternalLib (
   )
   const privateManifest = join(workspaceRoot, 'libs', name, 'package.json')
   markPrivate(privateManifest)
-  repairTypesPath(privateManifest)
+  repairPublishableManifest(privateManifest)
   removeGeneratedEslintConfig(workspaceRoot, `libs/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
