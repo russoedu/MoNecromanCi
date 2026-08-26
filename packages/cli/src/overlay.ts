@@ -177,6 +177,9 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   const feedUrl = registryUrl(registry) as string
   // npm keys per-registry credentials by the URL with the protocol stripped.
   const feedKey = feedUrl.replace(/^https:/, '')
+  // npm matches credentials by URL prefix and walks only UP the path, so an entry
+  // on '/npm/registry/' is never found for a request to '/npm/'. Both are keyed.
+  const feedShortKey = feedKey.replace('npm/registry/', 'npm/')
   return `; Publish + resolution routing for this workspace's own scope.
 ;
 ; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
@@ -192,9 +195,24 @@ ${scope}:registry=${feedUrl}
 ; instructions give you, which is exactly what _password expects, so it is used
 ; as-is. (twine wants the RAW token; the CI release step decodes it there.)
 ; Azure ignores the username, and npm requires an email it never uses.
+;
+; NOT _authToken, and that is measured rather than assumed. The feed answers an
+; unauthenticated PUT to the publish endpoint with:
+;   www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+;                     Basic realm="...", TFS-Federated
+; so its Bearer scheme wants an Entra ID access token, NOT a PAT. npm sends
+; _authToken verbatim as a Bearer header, so a PAT there is rejected with
+; "Unable to authenticate, your authentication token seems to be invalid". A PAT
+; authenticates through the Basic scheme, which is username/_password. Note the
+; Packaging REST API DOES accept a PAT as Bearer - do not generalise from it.
+;
+; Both path forms are keyed because npm walks only UP a URL when matching.
 ${feedKey}:username=AzureArtifacts
 ${feedKey}:_password=\${PAT}
 ${feedKey}:email=npm-requires-this-and-never-uses-it
+${feedShortKey}:username=AzureArtifacts
+${feedShortKey}:_password=\${PAT}
+${feedShortKey}:email=npm-requires-this-and-never-uses-it
 `
 }
 
@@ -725,6 +743,46 @@ export const ESLINT_PEER_OVERRIDES = {
 } as const
 
 /**
+ * Security overrides a generated workspace needs to pass its OWN npm audit gate.
+ *
+ * @remarks
+ * Measured, not anticipated: a workspace straight out of `mnci new` plus one
+ * `mnci add npm-lib` reported **8 high-severity advisories with zero lines of
+ * user code**, and every one of them is actionable, so `NPM_AUDIT_STEP` exits 1
+ * and CI is red on the first push. A scaffold that cannot pass the gate it
+ * ships is the worst version of that gate — it teaches people to switch it off.
+ *
+ * All 8 are one advisory. `brace-expansion` GHSA-rgw5-rvv9-x895 (DoS via
+ * unbounded intermediate arrays) covers `4.0.0 - 5.0.8`; `nx` and six `@nx/*`
+ * packages are flagged only for depending on it. npm's own suggested remedy is
+ * `nx@22.6.5` marked `isSemVerMajor` — a **downgrade of the build tool** by a
+ * major, which nobody would take, and which is exactly why the audit step
+ * reports `fixAvailable` rather than running `npm audit fix`.
+ *
+ * Two details make this override safe rather than a blunt pin:
+ *
+ * - It is keyed by the **vulnerable range**, not the bare package name. A plain
+ *   `"brace-expansion": "^5.0.9"` would drag the `1.1.18` and `2.1.4` copies
+ *   also present in the tree up to 5.x across a major API change, to fix an
+ *   advisory neither of them has. Keyed this way, `npm install` removed exactly
+ *   one package and left both others alone (verified).
+ * - The fixed version was already resolved elsewhere in the same tree, so this
+ *   deduplicates onto something npm had installed anyway rather than
+ *   introducing a version nothing else uses.
+ *
+ * **Remove it when it stops being needed, and check rather than assume.** The
+ * precedent is this repo's own `@verdaccio/config`/`js-yaml` pin, which read as
+ * fixed while the advisory range had quietly been extended to include the
+ * pinned version. The condition here is narrow: once the `nx` release this
+ * scaffold installs no longer resolves a `brace-expansion` inside the
+ * vulnerable range, this entry is dead weight. `npm audit` on a freshly
+ * generated workspace is the check, and it is the only one that means anything.
+ */
+export const SECURITY_OVERRIDES = {
+  'brace-expansion@4.0.0 - 5.0.8': '^5.0.9'
+} as const
+
+/**
  * The ESLint toolchain a generated workspace needs as real devDependencies.
  *
  * @remarks
@@ -1063,6 +1121,71 @@ export function vscodeSettings (): Record<string, unknown> {
 }
 
 /**
+ * Prefix marking a launch configuration as mnci-owned.
+ *
+ * @remarks
+ * `vscodeWorkspace` replaces every configuration carrying this prefix and carries
+ * every other one through untouched, so a hand-written debug config survives
+ * `mnci upgrade`. Renaming it would orphan the previous generation's entries,
+ * leaving a workspace with two of each.
+ */
+export const LAUNCH_CONFIG_PREFIX = 'mnci: '
+
+/**
+ * The verify targets exposed in VS Code's **Run and Debug** panel.
+ *
+ * @remarks
+ * Tasks alone were not enough. A `tasks` entry is only reachable through
+ * *Terminal -\> Run Task*; the Run and Debug dropdown reads `launch`, so a workspace
+ * with tasks and no launch section offers nothing there at all. These four are the
+ * same targets the root `affected` script runs.
+ *
+ * **They drive npm scripts, not the Nx binary.** Pointing `program` at
+ * `node_modules/nx/bin/nx.js` would be wrong: Nx ships its bin at
+ * `dist/bin/nx.js`, and that path is version-dependent. `npm run \<script\>` is stable,
+ * needs no path into `node_modules`, and tracks whatever the root script does — so a
+ * change to `ROOT_SCRIPTS` reaches these for free.
+ *
+ * **`node-terminal`, not `node`, and that is the load-bearing choice.** It runs the
+ * command in VS Code's JS Debug Terminal, which instruments **child** processes as
+ * they spawn. `nx run-many` executes every target in a child process, so a plain
+ * `node` launch would attach to the Nx parent alone and a breakpoint inside a spec
+ * would never bind. It also needs no `console` setting: a plain `node` launch
+ * defaults to `internalConsole`, which renders none of Nx's progress output, so a
+ * build there looks like a hang.
+ */
+export const LAUNCH_CONFIGURATIONS = ['build', 'test', 'lint', 'typecheck'] as const
+
+/**
+ * Builds the `launch.configurations` array for a generated workspace.
+ *
+ * @remarks
+ * One entry per {@link LAUNCH_CONFIGURATIONS} target, each named with
+ * {@link LAUNCH_CONFIG_PREFIX} so an upgrade can tell its own entries from a
+ * user's. Order matches the verify order the root `affected` script runs.
+ *
+ * @param workspaceName - The workspace name, used to scope `${workspaceFolder}`.
+ * @returns One configuration per entry in {@link LAUNCH_CONFIGURATIONS}.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function launchConfigurations (workspaceName: string): Record<string, unknown>[] {
+  return LAUNCH_CONFIGURATIONS.map((script, index) => ({
+    type: 'node-terminal',
+    request: 'launch',
+    name: `${LAUNCH_CONFIG_PREFIX}${script}`,
+    command: `npm run ${script}`,
+    // Scoped by folder name rather than a bare ${workspaceFolder}: that variable is
+    // ambiguous once a second folder is added to the workspace, and VS Code then
+    // refuses to resolve it.
+    cwd: `\${workspaceFolder:${workspaceName}}`,
+    // One shared group keeps the four together in the dropdown; a per-entry group
+    // would make four groups of one. `order` holds them in verify order.
+    presentation: { group: 'mnci', order: index + 1 }
+  }))
+}
+
+/**
  * VS Code workspace file template for generated monorepos.
  *
  * @remarks
@@ -1074,6 +1197,11 @@ export function vscodeSettings (): Record<string, unknown> {
  * itself carries no project-specific content — it must stay generic across
  * every `mnci new`-generated workspace, not just this repo's own dogfooded
  * root.
+ * It also carries a `launch` section, because a `tasks` entry is reachable only
+ * through *Terminal -\> Run Task* while the **Run and Debug** panel reads `launch` —
+ * a workspace with tasks alone offers nothing there. See
+ * {@link LAUNCH_CONFIGURATIONS}. Unlike `tasks`, which is carried through wholesale,
+ * the launch array is merged: mnci replaces only its own `mnci: *` entries.
  * Users open this file in VS Code (`File > Open Workspace from File`).
  *
  * **`existingTasks` is what keeps `mnci upgrade` non-destructive**, and the need
@@ -1095,8 +1223,16 @@ export function vscodeSettings (): Record<string, unknown> {
  */
 export function vscodeWorkspace (
   workspaceName: string,
-  existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
+  existingTasks?: { version?: string; tasks?: Record<string, unknown>[] },
+  existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] }
 ): string {
+  // Additive, like nx.json's sharedGlobals: mnci replaces only the configurations it
+  // owns (named `mnci: *`) and carries every other one through, so a hand-written
+  // debug config survives `mnci upgrade`. Tasks are carried through wholesale
+  // instead, because `mnci add` — not the overlay — is what writes them.
+  const userConfigurations = (existingLaunch?.configurations ?? []).filter(
+    (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX)
+  )
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
@@ -1105,6 +1241,10 @@ export function vscodeWorkspace (
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
         tasks: existingTasks?.tasks ?? []
+      },
+      launch: {
+        version: existingLaunch?.version ?? '0.2.0',
+        configurations: [...launchConfigurations(workspaceName), ...userConfigurations]
       }
     },
     null,
@@ -1924,15 +2064,40 @@ trigger:
   # reason: two concurrent 'nx release' runs would race to create the same tag.
   batch: true
   branches:
-    include: [main]
+    include:
+      - main
+      # EVERY other branch too, and that breadth is a correction rather than
+      # generosity. On Azure Repos Git a YAML 'pr:' block does nothing at all
+      # (see the note below), so a CI trigger is the only pre-merge
+      # verification this file can switch on by itself. Listing main alone —
+      # which is what this pipeline used to do, next to a 'pr:' block that
+      # looked like it covered the rest — means a workspace verifies NOTHING
+      # until a change has already reached the branch it was supposed to
+      # protect.
+      #
+      # Release stays gated on main (the 'condition:' on every release step
+      # below), so a topic-branch run installs, audits, syncs, formats,
+      # verifies and packs, and publishes nothing.
+      - '*'
 
-# Note: cancelling a superseded PR validation run is NOT a YAML setting on Azure
-# — it lives in the branch policy ("Build validation -> automatically cancel").
-# Nothing here can express it, so it is left to whoever configures the policy
-# rather than faked with a batch setting that would only delay PR runs.
-pr:
-  branches:
-    include: [main]
+# PR validation is deliberately NOT configured here, because on Azure Repos Git
+# it CANNOT be: "For an Azure Repos Git repo, you cannot configure a PR trigger
+# in the YAML file. You need to use branch policies." A 'pr:' block here is not
+# an error — it is silently ignored, which is worse, because the file then
+# documents a gate that does not exist. (The same block IS honoured for GitHub
+# and Bitbucket repos, which is why .github/workflows/ci.yml keeps its
+# 'pull_request:' trigger.)
+#
+# To get PR validation, configure it once in the UI: Project Settings ->
+# Repositories -> <repo> -> Policies -> <branch> -> Build Validation, pointing
+# at this pipeline. That is also the only thing that sets
+# System.PullRequest.TargetBranch, which the verify step below reads to scope
+# itself to affected projects — without a policy that variable is never set and
+# the step verifies every project instead. Correct either way, just slower.
+#
+# Cancelling a superseded PR run lives in that same policy ("automatically
+# cancel"), and likewise has no YAML expression.
+pr: none
 
 pool:
 ${poolBlock(agent)}
@@ -2637,7 +2802,8 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
-    ...ESLINT_PEER_OVERRIDES
+    ...ESLINT_PEER_OVERRIDES,
+    ...SECURITY_OVERRIDES
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
@@ -2695,10 +2861,11 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const codeWorkspacePath = join(workspaceRoot, `${options.workspaceName}.code-workspace`)
   const existing = readCodeWorkspace<{
     tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+    launch?: { version?: string; configurations?: Record<string, unknown>[] }
   }>(codeWorkspacePath)
   writeFileEnsured(
     codeWorkspacePath,
-    vscodeWorkspace(options.workspaceName, existing?.tasks)
+    vscodeWorkspace(options.workspaceName, existing?.tasks, existing?.launch)
   )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename

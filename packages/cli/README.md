@@ -119,6 +119,39 @@ accordingly, `start` marked `isBackground` since it runs a process that
 doesn't exit on its own. Re-running `add` for the same project name
 overwrites its own scripts/tasks rather than duplicating them.
 
+#### Run and Debug: the `launch` section
+
+Tasks are reachable **only** through Terminal → Run Task. The **Run and Debug**
+panel reads a separate `launch` section, so a workspace with tasks alone offers
+nothing in the dropdown people actually open. Every generated workspace therefore
+also gets four launch configurations, one per verify target:
+
+| configuration | runs |
+| --- | --- |
+| `mnci: build` | `npm run build` |
+| `mnci: test` | `npm run test` |
+| `mnci: lint` | `npm run lint` |
+| `mnci: typecheck` | `npm run typecheck` |
+
+Three details are load-bearing rather than incidental:
+
+- **`type: node-terminal`, not `node`.** `nx run-many` executes every target in a
+  **child** process. A plain `node` launch attaches to the Nx parent alone, so a
+  breakpoint inside a spec never binds; `node-terminal` runs the command in VS
+  Code's JS Debug Terminal, which instruments children as they spawn. It also avoids
+  a second trap — a `node` launch defaults to `internalConsole`, which renders none
+  of Nx's progress output, so a build there looks like it has hung.
+- **They drive `npm run <script>`, never a path into `node_modules`.** The obvious
+  `program: node_modules/nx/bin/nx.js` is wrong: Nx ships its bin at
+  `dist/bin/nx.js`, and that path moves between versions. Driving the root script
+  tracks whatever it does, so a change to the scripts reaches these for free.
+- **`cwd` is `${workspaceFolder:<name>}`, scoped by folder name.** A bare
+  `${workspaceFolder}` is ambiguous the moment a second folder joins the workspace,
+  and VS Code then refuses to resolve it — breaking all four at once.
+
+Your own configurations are safe: `mnci upgrade` replaces only the entries named
+`mnci: *` and carries every other one through untouched.
+
 `:start` resolves differently per kind — an existing generator target where
 one already exists, a small `nx:run-commands` target mnci writes where none
 did:
@@ -190,6 +223,12 @@ folders, settings and extensions are regenerated, but the **`tasks` array is rea
 back and carried through unchanged**. Those tasks are per-project state written by
 `mnci add`, not overlay-owned, so regenerating them wholesale would wipe every
 project's build/qa/start entry on upgrade.
+
+The `launch` array is handled differently again — **merged, not carried through**.
+mnci owns the four `mnci: *` configurations and replaces them, while any
+configuration you added yourself survives. The asymmetry is deliberate: tasks are
+written by `mnci add` and the overlay has no idea which projects exist, whereas the
+launch entries are entirely overlay-authored and should track an upgrade.
 
 `upgrade` also **deletes** things, which is stronger than the overwriting it
 has always done — one more reason to run `git diff` first, as the command's own
@@ -507,6 +546,95 @@ Azure this needs no CLI-collected name, just a secret you create once in the
 repo settings. Either way it's mapped as `env` on the npm steps and read by
 the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
 No `npmAuthenticate@0` task (it would overwrite the hand-set password).
+
+#### Why `_password` and never `_authToken` — read this before "fixing" it
+
+Basic auth here is not a legacy choice. Azure Artifacts answers an unauthenticated
+`PUT` to its npm publish endpoint with:
+
+```
+www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+                  Basic realm="...", TFS-Federated
+```
+
+`authorization_uri` pointing at `login.windows.net` means its **Bearer scheme expects
+an Entra ID access token**. A PAT is not one. npm sends `_authToken` *verbatim* as a
+Bearer header (it base64-decodes only `_password`), so a PAT placed there is rejected
+with:
+
+```
+npm publish error:
+Unable to authenticate, your authentication token seems to be invalid.
+```
+
+**A PAT can only authenticate through the Basic scheme**, which is
+`username` + base64 `_password`. That is what this file emits.
+
+The trap worth knowing: a PAT *is* accepted as a Bearer token by the Packaging REST
+API (`https://feeds.dev.azure.com/<org>/<proj>/_apis/packaging/feeds` returns 200),
+so testing there looks like proof and is not. **Measure the endpoint the code
+actually calls.** An `_authToken` change was shipped and reverted on exactly this.
+
+Both feed path forms are keyed (`…/npm/registry/` and `…/npm/`) because npm matches
+credentials by URL prefix and walks only *up* a path, so an entry on
+`/npm/registry/` is never found for a request to `/npm/`.
+
+#### The alternative on Azure: build-identity auth, no PAT at all
+
+mnci does not generate this, but it is the better setup for an Azure Artifacts feed
+in the **same organisation** as the pipeline, and it is what a real workspace uses
+today. `npmAuthenticate@0` injects the build service identity's token — which *is*
+Entra-issued, so it satisfies the Bearer scheme the feed advertises — and there is no
+secret to store, encode, rotate or let expire.
+
+To switch a generated workspace over by hand:
+
+1. Delete the credential lines from the root `.npmrc`, keeping only the
+   `@scope:registry=` routing line. (`mnci upgrade` will rewrite them back — see the
+   caveat below.)
+2. Add this step **before** `npm ci` in `azure-pipelines.yml`:
+
+```yaml
+- task: npmAuthenticate@0
+  displayName: Authenticate npm against the feed (build identity, no PAT)
+  inputs:
+    workingFile: .npmrc
+```
+
+3. Grant the build identity **Feed Publisher (Contributor)** on the feed (Artifacts →
+   Feed Settings → Permissions). Which identity depends on the job authorization
+   scope: `<Project> Build Service (<org>)` when scoped to the project (the default),
+   or `Project Collection Build Service (<org>)` when not. A **403** rather than a
+   401 is the tell that the wrong identity is in play.
+
+Caveats, stated rather than glossed. This is **Azure-only** — GitHub Actions has no
+equivalent task, so a `--ci=github` or `--ci=both` workspace still needs the PAT.
+Local development then needs `npx vsts-npm-auth -config .npmrc` (Windows) or a
+hand-added credential, since developers no longer inherit one from the file.
+And `mnci upgrade` rewrites `.npmrc`, so it will restore the PAT block — `git diff`
+before committing an upgrade, which the upgrade docs already tell you to do.
+
+#### Diagnosing an auth failure
+
+The error text distinguishes the two schemes, and that is the fastest signal:
+
+| message | meaning |
+| --- | --- |
+| `E401 Incorrect or missing password` | Basic auth was used and rejected — check the base64 `_password` value |
+| `Unable to authenticate, your authentication token seems to be invalid` | a token went out as Bearer and was rejected — a PAT cannot go here |
+| `E403` | the credential is valid but lacks publish rights on the feed |
+
+Two things are easy to get wrong when chasing this:
+
+- **`nx release` publishes from the workspace root, not from each project.**
+  `@nx/js`'s `runPublish` uses `cwd: context.root` and passes `packageRoot` only as
+  the directory argument, so a missing per-package `.npmrc` is never the cause.
+- **npm resolves `_authToken` before `username`/`_password` for a given registry
+  key** (`hasAuth` in `npm-registry-fetch/lib/auth.js`), and *key* precedence is
+  decided before *file* precedence. So a stale `_authToken` in a persistent build
+  agent's user-level `.npmrc` outranks the project-level `_password` and the
+  workspace's own credential never reaches the wire. Check
+  `npm config get userconfig` on the agent before blaming the secret.
 
 On Azure, two one-time grants are required (project admin): **Contribute** on
 the repo for the _Project Collection Build Service_ account (tag push), and

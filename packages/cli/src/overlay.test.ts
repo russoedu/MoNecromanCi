@@ -1,3 +1,5 @@
+import yaml from 'js-yaml'
+import { spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -7,36 +9,35 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import yaml from 'js-yaml'
 import {
   applyOverlay,
   azurePipelinesYaml,
   DEFAULT_STACK,
+  devcontainerJson,
+  ESLINT_BLOCK_INVENTORY,
+  ESLINT_PEER_OVERRIDES,
+  ESLINT_VERSION,
   FLUTTER_SDK_VERSION,
+  FORMATTED_LANGUAGES,
   generatorDefaults,
   githubActionsYaml,
   mnciConfig,
+  NODE_VERSION,
+  NPM_VERSION,
   npmrcContent,
   poolBlock,
   pythonPublishUrl,
   readMnciConfig,
   registryUrl,
-  devcontainerJson,
-  ESLINT_BLOCK_INVENTORY,
-  FORMATTED_LANGUAGES,
-  ESLINT_PEER_OVERRIDES,
-  ESLINT_VERSION,
-  NODE_VERSION,
   RETIRED_FORMATTER_FILES,
-  NPM_VERSION,
   ROOT_LINT_TARGET,
-  VSCODE_RECOMMENDED_EXTENSIONS,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
   type StackConfig,
+  VSCODE_RECOMMENDED_EXTENSIONS,
+  LAUNCH_CONFIGURATIONS,
   vscodeWorkspace,
   withEslintPlugin,
   withReleaseConfig,
@@ -163,6 +164,35 @@ describe('npmrcContent', () => {
 
     expect(npmrc).toContain('_password=${PAT}')
     expect(npmrc).not.toContain('Buffer.from')
+  })
+
+  it('keys BOTH path forms, because npm walks only up a URL when matching', () => {
+    // npm resolves credentials by URL prefix and strips one segment at a time, so
+    // an entry on '/npm/registry/' is never found for a request to '/npm/'.
+    const npmrc = npmrcContent(azure, '@demo')
+    const short = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/'
+
+    expect(directives(npmrc)).toContain(`${short}:_password=\${PAT}`)
+    expect(directives(npmrc)).toContain(`${short}:username=AzureArtifacts`)
+  })
+
+  it('uses Basic auth, never _authToken, because Bearer here wants an Entra token', () => {
+    // Measured against the real feed. An unauthenticated PUT to the publish
+    // endpoint answers with:
+    //   www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+    //                     Basic realm="...", TFS-Federated
+    // so Bearer wants an Entra ID access token, not a PAT. npm sends _authToken
+    // verbatim as a Bearer header, and Azure rejects a PAT there with "Unable to
+    // authenticate, your authentication token seems to be invalid". A PAT goes
+    // through Basic, which is username/_password. This was shipped the wrong way
+    // round once; the Packaging REST API accepts a PAT as Bearer, which is what
+    // made the wrong generalisation look verified.
+    const npmrc = npmrcContent(azure, '@demo')
+
+    // Asserted on directives, not raw text: the comment above them names
+    // _authToken precisely so nobody reintroduces it.
+    expect(directives(npmrc).some((line) => line.includes('_authToken'))).toBe(false)
+    expect(directives(npmrc).some((line) => line.includes('_password'))).toBe(true)
   })
 
   it('drops legacy-peer-deps, added for a plugin removed long ago', () => {
@@ -369,6 +399,52 @@ describe('azurePipelinesYaml', () => {
     // Still reads secrets from the same Library variable group — only the
     // variable name inside it differs, so no new CLI-collected value is needed.
     expect(pipeline).toContain('- group: Build')
+  })
+
+  it('never writes a pr: branch filter, which Azure Repos Git ignores outright', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+    const document_ = yaml.load(pipeline) as { pr?: unknown }
+
+    // The whole point: a `pr:` block with branch filters is NOT an error on
+    // Azure Repos, it is silently ignored — so writing one documents a gate
+    // that never runs. `pr: none` states the same truth without the lie.
+    expect(document_.pr).toBe('none')
+    expect(pipeline).not.toContain('pr:\n  branches:')
+    // The remedy has to be named where someone will look for it, or removing
+    // the block just leaves an unexplained hole.
+    expect(pipeline).toContain('Build Validation')
+    expect(pipeline).toContain('System.PullRequest.TargetBranch')
+  })
+
+  it('triggers CI on every branch, since pr: cannot cover them on Azure Repos', () => {
+    const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      trigger?: { batch?: boolean; branches?: { include?: string[] } }
+    }
+
+    // main alone would mean a topic branch is verified by nothing at all,
+    // because the `pr:` block that used to sit next to it never ran.
+    expect(document_.trigger?.branches?.include).toContain('*')
+    expect(document_.trigger?.branches?.include).toContain('main')
+    expect(document_.trigger?.batch).toBe(true)
+  })
+
+  it('gates every release step on main, so a topic-branch run publishes nothing', () => {
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    // Pairs with the all-branches trigger above: CI everywhere is only safe
+    // while the publishing half stays pinned to main.
+    for (const releaseStep of [
+      'Pack all apps',
+      'Publish the drop',
+      'Release — version, tag and publish',
+      'Push release tags'
+    ]) {
+      const at = pipeline.indexOf(releaseStep)
+      expect(at).toBeGreaterThan(-1)
+      expect(pipeline.slice(at, at + 400)).toContain(
+        "eq(variables['Build.SourceBranchName'], 'main')"
+      )
+    }
   })
 
   it('does not reference any custom CI engine — the pipeline is plain Nx', () => {
@@ -2150,6 +2226,85 @@ describe('applyOverlay', () => {
 
     expect(container.customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
     expect(workspace.extensions.recommendations).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
+  })
+
+  it('exposes the four verify targets in Run and Debug, not only as tasks', () => {
+    // A `tasks` entry is reachable only through Terminal -> Run Task. The Run and
+    // Debug dropdown reads `launch`, so a workspace with tasks alone offers nothing
+    // there — which is exactly what every generated workspace used to do.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { version: string; configurations: Record<string, unknown>[] }
+    }
+
+    expect(workspace.launch.configurations.map((c) => c.name)).toEqual([
+      'mnci: build',
+      'mnci: test',
+      'mnci: lint',
+      'mnci: typecheck'
+    ])
+  })
+
+  it('drives npm scripts rather than a path into node_modules', () => {
+    // Pointing `program` at node_modules/nx/bin/nx.js would be wrong twice over: Nx
+    // ships its bin at dist/bin/nx.js, and that path is version-dependent. Driving
+    // the root script instead tracks ROOT_SCRIPTS for free.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.program).toBeUndefined()
+      expect(configuration.command).toMatch(/^npm run /)
+    }
+    // Every script it launches must actually exist in the generated manifest.
+    const scripts = Object.keys(rootScripts())
+    for (const target of LAUNCH_CONFIGURATIONS) expect(scripts).toContain(target)
+  })
+
+  it('uses node-terminal, so a breakpoint in an nx-spawned child can bind', () => {
+    // nx run-many executes every target in a CHILD process. A plain `node` launch
+    // attaches to the Nx parent alone, so a breakpoint inside a spec never binds;
+    // node-terminal runs in VS Code's JS Debug Terminal, which instruments children
+    // as they spawn. This is the whole reason for the type, so it is pinned.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.type).toBe('node-terminal')
+    }
+  })
+
+  it('scopes cwd by folder NAME, which a second folder would otherwise break', () => {
+    // A bare ${workspaceFolder} is ambiguous in a multi-root workspace and VS Code
+    // refuses to resolve it. The generated file has one folder today, but a user
+    // adding a second must not silently break every launch config.
+    const workspace = JSON.parse(vscodeWorkspace('acme')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.cwd).toBe('${workspaceFolder:acme}')
+    }
+  })
+
+  it('keeps a hand-written launch config across an upgrade, replacing only its own', () => {
+    // Additive like nx.json sharedGlobals. Tasks are carried through wholesale
+    // because `mnci add` writes them; launch entries are overlay-owned, so only the
+    // `mnci: ` ones may be replaced.
+    const mine = { type: 'node', request: 'launch', name: 'debug my thing' }
+    const workspace = JSON.parse(
+      vscodeWorkspace('demo', undefined, {
+        version: '0.2.0',
+        configurations: [{ name: 'mnci: build', stale: true }, mine]
+      })
+    ) as { launch: { configurations: Record<string, unknown>[] } }
+
+    expect(workspace.launch.configurations).toContainEqual(mine)
+    // The stale mnci-owned entry is replaced, not duplicated or preserved.
+    const builds = workspace.launch.configurations.filter((c) => c.name === 'mnci: build')
+    expect(builds).toHaveLength(1)
+    expect(builds[0].stale).toBeUndefined()
   })
 
   it('deletes every formatter config a past mnci version could have written', () => {

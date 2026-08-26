@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 /**
  * Every block in the resolved config must carry a unique `name`.
@@ -32,7 +33,7 @@ const packageRoot = join(__dirname, '..')
  */
 function blockNames (): (string | null)[] {
   const script = `
-    const mnci = (await import(${JSON.stringify(join(packageRoot, 'index.js'))})).default
+    const mnci = (await import(${JSON.stringify(pathToFileURL(join(packageRoot, 'index.js')).href)})).default
     const blocks = mnci({ workspaceRoot: ${JSON.stringify(packageRoot)} })
     process.stdout.write(JSON.stringify(blocks.map(block => block.name ?? null)))
   `
@@ -90,7 +91,7 @@ describe('ignore list', () => {
     // Caught by the real Windows e2e, not by any fixture, because it needs a
     // workspace that has actually BUILT something.
     const script = `
-      const mnci = await import(${JSON.stringify(join(packageRoot, 'index.js'))})
+      const mnci = await import(${JSON.stringify(pathToFileURL(join(packageRoot, 'index.js')).href)})
       process.stdout.write(JSON.stringify(mnci.ignores))
     `
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {

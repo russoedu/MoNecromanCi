@@ -18,16 +18,18 @@
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
     "@mnci/eslint-config": "*",
-    "@nx/eslint": "23.1.0",
-    "@nx/eslint-plugin": "23.1.0",
-    "@nx/jest": "23.1.0",
-    "@nx/js": "23.1.0",
-    "@nx/rollup": "23.1.0",
+    "@nx/devkit": "23.1.1",
+    "@nx/eslint": "23.1.1",
+    "@nx/eslint-plugin": "23.1.1",
+    "@nx/jest": "23.1.1",
+    "@nx/js": "23.1.1",
+    "@nx/rollup": "23.1.1",
     "@swc-node/register": "1.12.1",
     "@swc/cli": "~0.8.1",
-    "@swc/core": "1.15.46",
+    "@swc/core": "1.16.1",
     "@swc/helpers": "0.5.23",
     "@swc/jest": "~0.2.38",
+    "@types/cross-spawn": "^6.0.6",
     "@types/jest": "~30.0.0",
     "@types/node": "^26.2.0",
     "@typescript/native": "npm:typescript@^7.0.2",
@@ -40,8 +42,7 @@
     "jest-util": "~30.4.1",
     "nx": "23.1.1",
     "rollup": "^4.62.4",
-    "swc-loader": "0.1.15",
-    "ts-jest": "^29.4.7",
+    "ts-jest": "^29.4.11",
     "ts-node": "10.9.2",
     "tslib": "^2.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
@@ -54,7 +55,7 @@
   "overrides": {
     "nx": {
       "axios": "^1.18.1",
-      "brace-expansion": "^5.0.8"
+      "brace-expansion": "^5.0.9"
     },
     "@verdaccio/config": {
       "js-yaml": "^4.3.1"

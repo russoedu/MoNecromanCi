@@ -506,6 +506,29 @@ absence. Do not reintroduce a protection the configuration cannot give.
 "Connect to feed" instructions hand you, as-is. `twine` wants the **raw** token,
 which `releaseGuard` decodes. Easy to get backwards.
 
+**`_password` and never `_authToken`, because of the SCHEME.** The feed answers an
+unauthenticated PUT to its publish endpoint with `www-authenticate: Bearer
+authorization_uri=https://login.windows.net/<tenant>, Basic realm="...",
+TFS-Federated`. Bearer there wants an **Entra ID access token**; a PAT is not one.
+npm sends `_authToken` verbatim as a Bearer header, so a PAT lands there as a
+malformed Entra token and is rejected with "Unable to authenticate, your
+authentication token seems to be invalid". A PAT authenticates only through Basic.
+The Packaging REST API *does* accept a PAT as Bearer, which is what made the wrong
+generalisation look verified — measure the endpoint the code actually calls.
+
+**Both feed path forms are keyed.** npm matches credentials by URL prefix and walks
+only *up* a path, so `/npm/registry/` is never found for a request to `/npm/`.
+
+**Precedence, if a credential seems to be ignored.** npm resolves `_authToken` before
+`username`/`_password` for a registry key, so *key* precedence beats *file*
+precedence: a stale `_authToken` in a build agent's user-level `.npmrc` outranks the
+project-level `_password`. `npm config get userconfig` is the check.
+
+**The PAT-free alternative on Azure** is `npmAuthenticate@0`, which injects the build
+identity's Entra-issued token. mnci does not generate it — it is Azure-only, and
+`mnci upgrade` would rewrite `.npmrc` over it — but it removes the expiring-secret
+class entirely. See `packages/cli/README.md` for the steps.
+
 An unset `${PAT}`/`${NODE_AUTH_TOKEN}` breaks nothing locally — verified that
 `npm install` of a public dependency still succeeds with the variable absent.
 

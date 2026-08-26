@@ -210,7 +210,98 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Prettier Fully Retired, and Two Gates That Had Never Worked (Latest)
+### Generated Workspaces Get Launch Configs, Not Just Tasks (Latest)
+
+The `.code-workspace` file carried a `tasks` array and no `launch` section, so the
+**Run and Debug** panel in a generated workspace was empty. A `tasks` entry is
+reachable only through *Terminal -> Run Task*; the dropdown people actually open
+reads `launch`. Four configs now cover the verify targets: `build`, `test`, `lint`,
+`typecheck`.
+
+- **`node-terminal`, not `node`, and that is the load-bearing choice.** `nx run-many`
+  runs every target in a **child** process. A plain `node` launch attaches to the Nx
+  parent alone, so a breakpoint inside a spec never binds; `node-terminal` runs in
+  VS Code's JS Debug Terminal, which instruments children as they spawn. It also
+  sidesteps a second trap: a `node` launch defaults to `internalConsole`, which
+  renders none of Nx's progress output, so a build there looks like a hang.
+- **They drive `npm run <script>`, never a path into `node_modules`.** The obvious
+  `program: node_modules/nx/bin/nx.js` is simply wrong — Nx ships its bin at
+  `dist/bin/nx.js`, and that path is version-dependent. Driving the root script
+  tracks `ROOT_SCRIPTS` for free, and a test asserts every launched script exists in
+  the generated manifest.
+- **`cwd` is scoped by folder NAME** (`${workspaceFolder:<name>}`), not a bare
+  `${workspaceFolder}`, which is ambiguous the moment a user adds a second folder —
+  VS Code then refuses to resolve it and every config breaks at once.
+- **The array is MERGED on upgrade, unlike `tasks`.** mnci replaces only entries
+  named `mnci: *` and carries every other one through, so a hand-written debug
+  config survives. `tasks` is carried through wholesale instead, because `mnci add`
+  — not the overlay — is what writes it.
+- Both non-obvious choices were mutation-tested: reverting to `node` and dropping
+  the folder-scoped `cwd` each fail their guard.
+- **This repo does not dogfood the template here.** Its own
+  `MoNecromanCi.code-workspace` is hand-written rather than mnci-generated, nests
+  `launch` inside `settings`, and still lists `mpa:serve`/`po:serve` — projects that
+  do not exist in this workspace. Left alone deliberately; it is a separate cleanup.
+
+### Azure Artifacts Rejects a PAT as a Bearer Token
+
+A generated workspace could not publish to Azure Artifacts. Three explanations were
+tried; the first two were wrong, and both were disproved by measurement rather than
+argument. **The generated `.npmrc` is unchanged as a result** - the finding is that
+its `username`/`_password` block was right all along, and this entry exists so the
+wrong fix is not attempted again.
+
+- **The failure: `E401 Incorrect or missing password` on `npm view`, then on publish.**
+- **Wrong theory 1: per-package `.npmrc`.** `nx release` was assumed to publish from
+  each project directory, which has no `.npmrc`. It does not: `@nx/js`'s
+  `runPublish` calls `npm publish` with `cwd: context.root` and passes `packageRoot`
+  only as the *directory argument*. The root `.npmrc` is always the one read.
+- **Wrong theory 2: a stale token on the agent.** npm resolves `_authToken` BEFORE
+  basic auth for a registry key (`hasAuth` in `npm-registry-fetch/lib/auth.js`), so
+  **key** precedence settles before **file** precedence applies - a leftover
+  `_authToken` in a persistent agent's user-level `.npmrc` really would outrank a
+  project-level `_password`. Confirmed reproducible against a local server echoing
+  the Authorization header. But a probe on the real agent found **no user-level
+  `.npmrc` at all**, so nothing was shadowing anything.
+- **The actual cause is the auth SCHEME.** The feed answers an unauthenticated PUT
+  to its publish endpoint with:
+
+  ```
+  www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+                    Basic realm="...", TFS-Federated
+  ```
+
+  `authorization_uri` pointing at `login.windows.net` means the **Bearer scheme wants
+  an Entra ID access token**. A PAT is not one. npm sends `_authToken` verbatim as a
+  Bearer header, so a PAT there is rejected with "Unable to authenticate, your
+  authentication token seems to be invalid". **A PAT authenticates only through
+  Basic**, which is `username`/`_password` - exactly what `npmrcContent()` emits.
+- **The trap that produced the wrong fix, and the rule to take from it.** A PAT WAS
+  verified as a Bearer token first - against `https://feeds.dev.azure.com/.../
+  _apis/packaging/feeds`, which returned 200. That looked like proof and was not:
+  the Packaging REST API and the npm registry endpoint answer differently.
+  **Measure the endpoint the code actually calls.** A shipped `_authToken` change
+  had to be reverted because of this.
+- **Reads on that feed are anonymous, which is what made the diagnosis possible.**
+  Metadata returned 200 with no credential, with garbage, and with a wrong-but-well-
+  formed PAT (the project is public, so the feed is world-readable). A 401 therefore
+  could only come from a credential the feed *recognised and rejected* - which is
+  what pointed at the scheme rather than the token.
+- **What actually fixed the real workspace: `npmAuthenticate@0`.** It injects the
+  build service identity's token, which IS Entra-issued, so it satisfies the Bearer
+  scheme - and there is no secret to store, encode, rotate or expire. Verified end to
+  end: three packages versioned, tagged and published. `overlay.ts` still declines
+  that task, on the grounds that it would overwrite the hand-set password; that
+  reason holds for the PAT design but the trade is now known to favour the task on
+  Azure. **Not yet changed - see ROADMAP.**
+- **One kept improvement:** both feed path forms are keyed. npm matches credentials
+  by URL prefix and walks only *up* the path, so an entry on `/npm/registry/` is
+  never found for a request to `/npm/`. Azure's own "Connect to feed" instructions
+  emit both.
+- A test asserts the generated `.npmrc` carries `_password` and **no** `_authToken`
+  directive, with the `www-authenticate` evidence in the comment beside it.
+
+### Prettier Fully Retired, and Two Gates That Had Never Worked
 
 The tail of the ESLint-only migration, plus the two defects the first honest
 nightly exposed. `npm run format:check` no longer exists anywhere, and the
@@ -1372,7 +1463,8 @@ mnci worked while everything it produced did not.
    `.prettierignore`, `.oxfmtrc.json` and `oxlint.config.ts` if a past version wrote them)*
 5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
-7. `<workspace-name>.code-workspace` (VS Code configuration)
+7. `<workspace-name>.code-workspace` (VS Code configuration: folders, settings,
+   extensions, per-project tasks, and `launch` configs for build/test/lint/typecheck)
 8. CI pipeline file(s) (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`)
 9. `.github/dependabot.yml` (`--ci=github|both` only)
 10. `.devcontainer/devcontainer.json` (a local environment matching CI's toolchain)
