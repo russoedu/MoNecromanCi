@@ -140,26 +140,11 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  * line at all, and `overlay.test.ts` asserted the line's absence. Do not
  * reintroduce a protection that the configuration cannot provide.
  *
- * **One PAT, one encoding — this used to be two.** `_authToken` is sent to the
- * feed *verbatim* as a Bearer header (npm decodes only `_password`), and `twine`
- * wants that same raw token, so the `PAT` variable now holds the token exactly as
- * Azure issues it and nothing decodes anything. The previous split — base64 for
- * npm's `_password`, decoded for twine — was a documented trap that existed only
- * because of the `_password` choice.
- *
- * **Why `_authToken` and not `username`/`_password`.** npm resolves `_authToken`
- * *before* basic auth for a given registry key (`hasAuth` in
- * `npm-registry-fetch/lib/auth.js`), so key precedence is decided before file
- * precedence ever applies: a stale `_authToken` in the build agent's user-level
- * `.npmrc` outranks a project-level `_password`, and the workspace's own
- * credential never reaches the wire. Measured against a local server echoing the
- * Authorization header: with `username`/`_password` in the project `.npmrc` and a
- * leftover `_authToken` in the user config, npm sent the *user* token. Keyed the
- * same way, project config wins — which is the precedence npm actually honours.
- *
- * **Both path forms are keyed.** npm matches credentials by URL prefix and walks
- * only *up* the path, so an entry on `/npm/registry/` is never found for a request
- * to `/npm/`. Azure's own "Connect to feed" instructions emit both for that reason.
+ * **The one PAT, two encodings.** `_password` takes the base64 value Azure
+ * Artifacts' own "Connect to feed" instructions hand you, so it is used as-is.
+ * `twine` wants the *raw* token and the release guard decodes it there
+ * ({@link releaseGuard}). Easy to get backwards; check before wiring a third
+ * protocol.
  *
  * An unset `${PAT}`/`${NODE_AUTH_TOKEN}` does not break anything locally —
  * verified that `npm install` of a public dependency still succeeds with the
@@ -192,9 +177,6 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   const feedUrl = registryUrl(registry) as string
   // npm keys per-registry credentials by the URL with the protocol stripped.
   const feedKey = feedUrl.replace(/^https:/, '')
-  // npm matches credentials by URL prefix and walks only UP the path, so an entry
-  // on '/npm/registry/' is never found for a request to '/npm/'. Both are keyed.
-  const feedShortKey = feedKey.replace('npm/registry/', 'npm/')
   return `; Publish + resolution routing for this workspace's own scope.
 ;
 ; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
@@ -206,22 +188,13 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
 ; public packages.
 ${scope}:registry=${feedUrl}
 
-; Feed credentials. PAT is the token EXACTLY as Azure Artifacts issues it: raw,
-; never base64. npm sends _authToken verbatim as a Bearer header, and twine wants
-; that same raw value, so one encoding now serves every protocol here.
-;
-; _authToken rather than username/_password, and that is load-bearing rather than
-; taste: npm resolves _authToken BEFORE basic auth for a given registry key, so a
-; stale _authToken left behind in the build agent's user-level .npmrc outranks a
-; project-level _password and this workspace's own credential never reaches the
-; wire at all. Keyed the same way here, project config wins, which is the
-; precedence npm actually honours.
-;
-; Both path forms are keyed because npm walks only UP a URL when matching: an
-; entry on '/npm/registry/' is never found for a request to '/npm/'. Azure's own
-; "Connect to feed" instructions emit both for exactly this reason.
-${feedKey}:_authToken=\${PAT}
-${feedShortKey}:_authToken=\${PAT}
+; Feed credentials. PAT is the BASE64 value Azure Artifacts' "Connect to feed"
+; instructions give you, which is exactly what _password expects, so it is used
+; as-is. (twine wants the RAW token; the CI release step decodes it there.)
+; Azure ignores the username, and npm requires an email it never uses.
+${feedKey}:username=AzureArtifacts
+${feedKey}:_password=\${PAT}
+${feedKey}:email=npm-requires-this-and-never-uses-it
 `
 }
 
@@ -1807,7 +1780,7 @@ const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'d
  * @remarks
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
  * — `pythonPublishEnv` is the only provider-specific fragment (both providers
- * read the same raw `PAT` env var, so the fragment itself is identical
+ * decode the same base64 `PAT` env var, so the fragment itself is identical
  * too; only the caller decides whether to inject it). Skips cleanly when
  * there is nothing to release (`nx release` hard-errors on an empty scope).
  *
@@ -1823,10 +1796,8 @@ function releaseGuard (pythonPublishEnv: string): string {
 
 /**
  * Injected into {@link releaseGuard}: when there are Python packages and a
- * configured Azure feed, export twine publish credentials. The `PAT` env var
- * both providers read already holds the raw token (see {@link npmrcContent}),
- * so it is passed through unchanged — it used to be base64-decoded here, back
- * when npm's `_password` required the encoded form.
+ * configured Azure feed, export twine publish credentials (the raw PAT,
+ * decoded from the base64 value both providers read from a `PAT` env var).
  *
  * @param pythonPublishUrl - The twine upload URL for Python packages, or
  * `undefined` to leave Python publishing unconfigured (public npm).
@@ -1836,7 +1807,7 @@ function releaseGuard (pythonPublishEnv: string): string {
  */
 function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
   return pythonPublishUrl
-    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=process.env.PAT}`
+    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
     : ''
 }
 
@@ -1845,7 +1816,7 @@ function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
  * keyed by registry kind — two genuinely different secrets, never conflated.
  *
  * @remarks
- * Azure Artifacts' `.npmrc` (`npmrcContent`) reads a raw PAT via
+ * Azure Artifacts' `.npmrc` (`npmrcContent`) reads a base64-encoded PAT via
  * `${PAT}`; public npm's reads a raw npm automation token via
  * `${NODE_AUTH_TOKEN}`. Before this, both {@link azurePipelinesYaml} and
  * {@link githubActionsYaml} always exported `PAT` regardless of registry —
@@ -1909,9 +1880,9 @@ export function poolBlock (agent: string): string {
  * release/CD pipeline keys off it), then `nx release`s: **publish packages +
  * tag main** (versions from conventional commits, tag-only push).
  *
- * npm auth is the raw PAT from the `variableGroup` (default `Build`): the
+ * npm auth is the base64 PAT from the `variableGroup` (default `Build`): the
  * group exposes `$(PAT)`, mapped as env on the npm steps and read by the root
- * `.npmrc`'s `_authToken` block. No `npmAuthenticate@0` (it would overwrite
+ * `.npmrc`'s `_password` block. No `npmAuthenticate@0` (it would overwrite
  * that password).
  *
  * Hard-won Azure lessons carried over:
@@ -1926,7 +1897,7 @@ export function poolBlock (agent: string): string {
  * (Python) from conventional commits and tags each — one unified release. When
  * `pythonPublishUrl` is set (Azure Artifacts — {@link pythonPublishUrl}), the
  * release step also exports `TWINE_*` so `nx release` publishes the Python
- * packages with `twine`, reusing the very same raw `PAT` npm authenticates with
+ * packages with `twine`, reusing the base64 `PAT` decoded to the raw token
  * twine/pypi basic-auth needs (no second secret; Azure accepts any username).
  * For the public-npm registry that env is omitted, so a Python package there
  * is still versioned + tagged but its publish needs user-provided `TWINE_*`.
@@ -1939,7 +1910,7 @@ export function poolBlock (agent: string): string {
  * no Python projects.
  *
  * @param agent - The build agent (vmImage or self-hosted pool name).
- * @param variableGroup - The Library variable group holding the raw `PAT`.
+ * @param variableGroup - The Library variable group holding the base64 `PAT`.
  * @param pythonPublishUrl - The twine upload URL for Python packages, or
  * `undefined` to leave Python publishing unconfigured (public npm).
  * @returns The full text of `azure-pipelines.yml`.
@@ -2032,7 +2003,7 @@ pool:
 ${poolBlock(agent)}
 
 variables:
-  # Holds the npm auth secret the root .npmrc reads: the raw \`PAT\`
+  # Holds the npm auth secret the root .npmrc reads: the base64-encoded \`PAT\`
   # for an Azure Artifacts feed, or a raw npm automation token as \`NPM_TOKEN\`
   # for public npm. Mark it secret in Library. Add app build vars here too if needed.
   - group: ${variableGroup}
@@ -2189,7 +2160,7 @@ steps:
   # (python-packages/*) — conventional commits, tag-only push. Portable guard:
   # nx release errors on an empty scope, so skip cleanly when there is nothing
   # to release. When there are Python packages and an Azure feed, twine
-  # publish credentials are exported (the same raw PAT npm uses).
+  # publish credentials are exported (raw PAT, decoded from the base64 variable).
   - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
     displayName: Release — version, tag and publish (npm + Python)
     condition: ${onMain}
@@ -2439,7 +2410,7 @@ jobs:
       # (python-packages/*) — conventional commits, tag-only push. Portable guard:
       # nx release errors on an empty scope, so skip cleanly when there is nothing
       # to release. When there are Python packages and an Azure feed, twine
-      # publish credentials are exported (the same raw PAT npm uses).${
+      # publish credentials are exported (raw PAT, decoded from the base64 secret).${
         githubReleases
           ? `
       # This provider also creates a per-project GitHub Release (changelog
@@ -2558,7 +2529,7 @@ export interface OverlayOptions {
   registry: RegistryConfig
   /** The CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
   agent: string
-  /** The Library variable group holding the raw npm `PAT` (e.g. `Build`). */
+  /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
   variableGroup: string
   /** Which CI provider(s) to write a pipeline file for. */
   ci: CiProvider

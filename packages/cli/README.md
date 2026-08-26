@@ -447,8 +447,8 @@ Pushes to `main` then:
   conventional commits → `{projectName}@{version}` git tag pushed to `main`
   (tag-only, never a commit) → publish to the feed (npm via `.npmrc`, Python via
   `twine` when an Azure feed is configured — installed from the generated
-  `requirements-dev.txt`, no uv, no Poetry). Reuses the very same raw `PAT` npm
-  authenticates with — twine wants the token unencoded too. Skipped cleanly when there
+  `requirements-dev.txt`, no uv, no Poetry). Reuses the base64 `PAT`, decoded to
+  the raw token twine needs for the Python publish. Skipped cleanly when there
   is nothing to release. A guarded step installs the fixed Python toolchain
   (`ruff`/`pytest`/`build`/`twine`/`pip-audit`) before any Python target runs,
   skipped cleanly on a workspace with no Python projects. On a `--ci=github`
@@ -471,8 +471,8 @@ supplies the feed's credentials:
 
 ```ini
 @my:registry=https://pkgs.dev.azure.com/<org>/<proj>/_packaging/<feed>/npm/registry/
-//pkgs.dev.azure.com/.../npm/registry/:_authToken=${PAT}
-//pkgs.dev.azure.com/.../npm/:_authToken=${PAT}
+//pkgs.dev.azure.com/.../npm/registry/:username=AzureArtifacts
+//pkgs.dev.azure.com/.../npm/registry/:_password=${PAT}
 ```
 
 Scope routing is **real protection** here, not decoration: npm prefers a scope's
@@ -498,29 +498,15 @@ it protection against an accidental public publish would be false, because the
 public registry is the intended target. Worth stating plainly because this file
 previously claimed exactly that protection while emitting no routing line at all.
 
-**npm auth** is the raw `PAT`, read the same way on both providers but from
+**npm auth** is the base64 `PAT`, read the same way on both providers but from
 a different place: on Azure Pipelines, a **variable group**
 (`--variable-group`, default `Build`) exposes it as `$(PAT)`; on GitHub
 Actions it's a plain repository (or environment) **secret** named `PAT`, read
 as `${{ secrets.PAT }}` — GitHub has no "variable group" concept, so unlike
 Azure this needs no CLI-collected name, just a secret you create once in the
 repo settings. Either way it's mapped as `env` on the npm steps and read by
-the root `.npmrc`'s `_authToken` block — the PAT value never lands in a file.
-No `npmAuthenticate@0` task (it would overwrite the hand-set token).
-
-**`_authToken`, not `username`/`_password`, and the reason is precedence.** npm
-resolves `_authToken` *before* basic auth for a given registry key (`hasAuth` in
-`npm-registry-fetch/lib/auth.js`), so **key** precedence is decided before **file**
-precedence ever applies. A stale `_authToken` left in a build agent's user-level
-`.npmrc` therefore outranks a project-level `_password`, and the workspace's own
-credential never reaches the wire at all — which on a persistent agent pool looks
-exactly like a bad PAT and is not one. Measured against a local server echoing the
-Authorization header: project `username`/`_password` plus a leftover user-level
-`_authToken` sent the **user** token. Keyed the same way, project config wins.
-
-**Both path forms are keyed.** npm matches credentials by URL prefix and walks only
-*up* the path, so an entry on `/npm/registry/` is never found for a request to
-`/npm/`. Azure's own "Connect to feed" instructions emit both for that reason.
+the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
+No `npmAuthenticate@0` task (it would overwrite the hand-set password).
 
 On Azure, two one-time grants are required (project admin): **Contribute** on
 the repo for the _Project Collection Build Service_ account (tag push), and
@@ -531,18 +517,19 @@ line (already generated) and, for a fork-based PR, GitHub disables
 write permissions by default (not a concern for pushes to `main` from the
 repo itself, which is the only case this pipeline ever releases from).
 
-**One PAT, one encoding — this used to be two.** The `PAT` value (`$(PAT)` on
-Azure, `secrets.PAT` on GitHub) is the token **exactly as Azure Artifacts issues
-it**: raw, never base64. npm sends `_authToken` to the feed verbatim as a Bearer
-header (it base64-decodes only `_password`), and `twine`/pypi basic auth wants
-that same raw token, so the shared `releaseGuard` fragment now passes it straight
-through as `TWINE_PASSWORD` with no decode step.
-
-It was previously split — base64 for `_password`, `Buffer.from(..., 'base64')` for
-twine — and that split was documented here as a trap to get backwards. It existed
-only because of the `_password` choice; switching to `_authToken` removed it. If
-you wire a third registry protocol, it almost certainly wants the raw token too,
-but check rather than assume.
+**The one PAT, two different encodings — read this before wiring a third
+protocol.** The same `PAT` value (`$(PAT)` on Azure, `secrets.PAT` on GitHub)
+is base64-encoded throughout — that's the raw value Azure Artifacts' "Connect
+to feed" instructions give you. npm's `.npmrc` `_password` field expects
+exactly that pre-encoded form, so it's used as-is. `twine`/pypi basic auth, by
+contrast, wants the **raw** token — so the shared `releaseGuard` fragment
+(`overlay.ts`, used by both `azurePipelinesYaml` and `githubActionsYaml`)
+explicitly _decodes_ the same `PAT`
+(`Buffer.from(process.env.PAT, 'base64').toString()`) before handing it to
+`TWINE_PASSWORD`. Both are correct for their protocol today, but it's an easy
+trap to get backwards: if you ever wire a third registry protocol, check
+whether it wants the pre-encoded or the raw form before assuming either
+convention.
 
 ### Dependency updates (`.github/dependabot.yml`, `github`/`both` only)
 
@@ -842,7 +829,7 @@ release version --dry-run`), which wins over the workspace's default
   (npm's) `versionActions` for that one project. **Publishing** reuses the
   registry: an Azure Artifacts feed is **multi-protocol**, so the same
   org/project/feed serves Python — the release step exports `TWINE_*` (URL +
-  the very same raw `PAT` npm authenticates with, no second secret) and
+  the base64 `PAT` decoded to the raw token twine needs, no second secret) and
   `nx release` publishes the wheels with `twine`. (On a public-npm workspace a
   Python package is still versioned + tagged, but publishing it needs
   user-provided `TWINE_*` — e.g. a PyPI token.)

@@ -473,8 +473,9 @@ Publish auth is wired. The variants differ because the honest answer differs.
 
 ```
 @<scope>:registry=https://pkgs.dev.azure.com/<org>/<proj>/_packaging/<feed>/npm/registry/
-//pkgs.dev.azure.com/.../npm/registry/:_authToken=${PAT}
-//pkgs.dev.azure.com/.../npm/:_authToken=${PAT}
+//pkgs.dev.azure.com/.../npm/registry/:username=AzureArtifacts
+//pkgs.dev.azure.com/.../npm/registry/:_password=${PAT}
+//pkgs.dev.azure.com/.../npm/registry/:email=npm-requires-this-and-never-uses-it
 ```
 
 Scope routing is **real protection** here: npm prefers a scope's registry over the
@@ -501,22 +502,9 @@ public registry is the intended target. The old file made exactly that claim in
 the README while emitting no routing line, and the test suite asserted the line's
 absence. Do not reintroduce a protection the configuration cannot give.
 
-**One PAT, one encoding — this used to be two.** `_authToken` is sent to the feed
-verbatim as a Bearer header (npm base64-decodes only `_password`), and `twine`
-wants that same raw token, so nothing decodes anything. The old split — base64 for
-`_password`, `Buffer.from(..., 'base64')` for twine — existed only because of the
-`_password` choice.
-
-**`_authToken` over `username`/`_password` is about precedence, not taste.** npm
-resolves `_authToken` *before* basic auth for a given registry key, so **key**
-precedence settles the matter before **file** precedence applies: a stale
-`_authToken` in a build agent's user-level `.npmrc` outranks a project-level
-`_password` and the workspace's own credential never reaches the wire — which on a
-persistent agent pool is indistinguishable from a bad PAT. Measured against a local
-server echoing the Authorization header. Keyed the same way, project config wins.
-
-**Both path forms are keyed** because npm matches by URL prefix and walks only *up*
-the path: an entry on `/npm/registry/` is never found for a request to `/npm/`.
+**The one PAT, two encodings.** npm's `_password` takes the base64 value Azure's
+"Connect to feed" instructions hand you, as-is. `twine` wants the **raw** token,
+which `releaseGuard` decodes. Easy to get backwards.
 
 An unset `${PAT}`/`${NODE_AUTH_TOKEN}` breaks nothing locally — verified that
 `npm install` of a public dependency still succeeds with the variable absent.
