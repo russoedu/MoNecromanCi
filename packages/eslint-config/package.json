@@ -2,7 +2,7 @@
   "name": "@mnci/eslint-config",
   "version": "0.1.0",
   "type": "module",
-  "description": "The shared ESLint flat config every mnci-generated monorepo uses \u2014 one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
+  "description": "The shared ESLint flat config every mnci-generated monorepo uses — one root config, non-stylistic rules only, covering TS/JS, React, JSON/JSONC/JSON5, YAML, Markdown, CSS and HTML.",
   "publishConfig": {
     "access": "public"
   },
@@ -49,8 +49,8 @@
     "@eslint/css": "^1.4.0",
     "@eslint/js": "^10.0.0",
     "@eslint/markdown": "^8.0.2",
-    "@html-eslint/eslint-plugin": "^0.64.0",
-    "@html-eslint/parser": "^0.64.0",
+    "@html-eslint/eslint-plugin": "^0.65.0",
+    "@html-eslint/parser": "^0.65.0",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@typescript-eslint/parser": "^8.67.0",
     "eslint-import-resolver-node": "^0.4.0",
@@ -72,13 +72,5 @@
     "jsonc-eslint-parser": "^3.3.0",
     "toml-eslint-parser": "^1.0.3",
     "typescript-eslint": "^8.62.0"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^26.2.0",
-    "eslint": "^10.8.1",
-    "jest": "^30.4.2",
-    "ts-jest": "^29.4.11",
-    "typescript": "^6.0.3"
   }
 }
