@@ -1296,6 +1296,26 @@ section('js stack', [], () => {
 
   // Declaration maps reference ../src/*.ts, which `files: ["dist"]` never ships, so
   // they are dead weight in the tarball and land an editor on nothing.
+  // A module specifier is URL-style: `/` is correct on every platform and a
+  // backslash on none. @nx/rollup builds its stub specifier with path.relative(),
+  // which returns an OS-native path, so on a Windows agent it emits
+  // `export * from "./src\\\\index"` - untyped for every Linux and macOS
+  // consumer. mnci points `types` past the stub, but the stub still ships, so this
+  // records whether upstream has fixed it (ROADMAP 7c).
+  const sdkStubPath = path.join(workspace, 'packages/sdk/dist/index.d.ts')
+  const sdkStub = existsSync(sdkStubPath) ? readFileSync(sdkStubPath, 'utf8') : ''
+  const label =
+    'sdk: the @nx/rollup declaration stub uses a URL-style module specifier'
+  if (sdkStub.includes('\\\\')) {
+    skip(
+      label,
+      'upstream Nx bug: path.relative() gives an OS-native path on Windows. mnci points ' +
+        'types past the stub, so this is recorded rather than fatal (ROADMAP 7c)'
+    )
+  } else {
+    enforce(label, true)
+  }
+
   enforce(
     'sdk: no dead declaration maps in the tarball',
     sdkPackedFiles.every(file => !file.endsWith('.d.ts.map')),

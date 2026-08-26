@@ -144,8 +144,34 @@ export function markPublic (manifestPath: string): void {
  */
 const WRONG_TYPES_PATH = './dist/index.esm.d.ts'
 
-/** The declaration path the rollup build actually emits. */
-const ACTUAL_TYPES_PATH = './dist/index.d.ts'
+/**
+ * The real declaration file, pointed at directly rather than through the stub.
+ *
+ * @remarks
+ * `@nx/rollup`'s `dts-bundle` plugin emits declarations at `dist/src/index.d.ts` and
+ * then writes a stub `dist/index.d.ts` that re-exports from them. The obvious target
+ * is that stub, and it is the wrong one: the plugin builds the specifier with
+ * `path.relative()`, which returns an OS-NATIVE path, so on a Windows agent the stub
+ * reads
+ *
+ * ```
+ * export * from "./src\\\\index";
+ * ```
+ *
+ * A module specifier is URL-style, not a filesystem path - `/` is correct on every
+ * platform and `\\` is correct on none. It resolves on Windows only because the
+ * resolver normalises separators there; on Linux and macOS a backslash is an ordinary
+ * filename character, so the package is untyped for those consumers. Confirmed in a
+ * real published tarball built on a Windows CI pool.
+ *
+ * Both library kinds share the layout, so this path is right for both:
+ * `@nx/rollup`'s configuration generator writes `main: './src/index.ts'` for every
+ * project it configures, and `@nx/js:lib` and `@nx/react:library` both route through
+ * it.
+ *
+ * The stub still ships and is simply unused. Upstream fix tracked in ROADMAP 7c.
+ */
+const ACTUAL_TYPES_PATH = './dist/src/index.d.ts'
 
 /**
  * Keeps declaration source maps out of the published tarball.
