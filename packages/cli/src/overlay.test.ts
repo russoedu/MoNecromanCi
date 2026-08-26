@@ -149,19 +149,41 @@ describe('npmrcContent', () => {
     const npmrc = npmrcContent(azure, '@demo')
     const key = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
 
-    expect(directives(npmrc)).toContain(`${key}:_password=\${PAT}`)
-    expect(directives(npmrc)).toContain(`${key}:username=AzureArtifacts`)
-    // npm refuses to authenticate without an email field, and never uses it.
-    expect(npmrc).toContain(`${key}:email=`)
+    expect(directives(npmrc)).toContain(`${key}:_authToken=\${PAT}`)
   })
 
-  it('uses the base64 PAT as-is for npm, unlike twine which needs it decoded', () => {
-    // The trap: the same PAT is consumed in two encodings. npm's _password wants
-    // the pre-encoded value Azure hands out; twine wants the raw token, which the
-    // CI release step decodes. Getting these backwards fails at publish time only.
+  it('keys BOTH path forms, because npm walks only up a URL when matching', () => {
+    // npm resolves credentials by URL prefix and strips one segment at a time, so
+    // an entry on '/npm/registry/' is never found for a request to '/npm/'. Azure's
+    // own "Connect to feed" instructions emit both for exactly this reason.
+    const npmrc = npmrcContent(azure, '@demo')
+    const long = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/'
+    const short = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/'
+
+    expect(directives(npmrc)).toContain(`${long}:_authToken=\${PAT}`)
+    expect(directives(npmrc)).toContain(`${short}:_authToken=\${PAT}`)
+  })
+
+  it('uses _authToken, never username/_password, so a stale agent token cannot win', () => {
+    // npm resolves _authToken BEFORE basic auth for a given registry key, so key
+    // precedence is decided before file precedence applies: a leftover _authToken in
+    // a build agent's user-level .npmrc outranks a project-level _password, and the
+    // workspace's own credential never reaches the wire at all. Keyed the same way,
+    // project config wins. Measured against a server echoing the Authorization
+    // header, not inferred from docs.
     const npmrc = npmrcContent(azure, '@demo')
 
-    expect(npmrc).toContain('_password=${PAT}')
+    expect(npmrc).not.toContain('_password=')
+    expect(npmrc).not.toContain('username=')
+  })
+
+  it('takes the RAW PAT, because _authToken is sent verbatim as a Bearer header', () => {
+    // npm base64-decodes _password but sends _authToken untouched, and twine wants
+    // that same raw token, so one encoding now serves every protocol here. This used
+    // to be two, and getting them backwards failed at publish time only.
+    const npmrc = npmrcContent(azure, '@demo')
+
+    expect(npmrc).toContain('_authToken=${PAT}')
     expect(npmrc).not.toContain('Buffer.from')
   })
 
@@ -299,7 +321,7 @@ describe('azurePipelinesYaml', () => {
     expect(releaseIndex).toBeGreaterThan(verifyIndex)
   })
 
-  it('authenticates npm via the base64 PAT env, not npmAuthenticate', () => {
+  it('authenticates npm via the raw PAT env, not npmAuthenticate', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
 
     expect(pipeline).toContain('persistCredentials: true')
@@ -438,7 +460,7 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('pwsh')
   })
 
-  it('folds twine publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
+  it('folds twine publish credentials (the same raw PAT) into the release step for an Azure feed', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', url)
 
@@ -447,8 +469,10 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('nx run-many -t publish')
     // The release step exports twine publish creds when there are Python packages.
     expect(pipeline).toContain(`TWINE_REPOSITORY_URL='${url}'`)
-    // Reuses the base64 PAT from the group, decoded to the raw token twine needs.
-    expect(pipeline).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    // Reuses the very same raw PAT npm authenticates with: nothing decodes anything
+    // now that .npmrc uses _authToken, which is sent verbatim.
+    expect(pipeline).toContain('TWINE_PASSWORD=process.env.PAT')
+    expect(pipeline).not.toContain('Buffer.from(process.env.PAT,\'base64\')')
     // Guarded on either publishable dir.
     expect(pipeline).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     expect(pipeline).toContain('globSync(\'packages/*/package.json\')')
@@ -790,14 +814,15 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('.mjs')
   })
 
-  it('folds twine publish credentials (base64 PAT decoded) into the release step for an Azure feed', () => {
+  it('folds twine publish credentials (the same raw PAT) into the release step for an Azure feed', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const workflow = githubActionsYaml('ubuntu-latest', url)
 
     expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python)')
     expect(workflow).not.toContain('nx run-many -t publish')
     expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
-    expect(workflow).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(workflow).toContain('TWINE_PASSWORD=process.env.PAT')
+    expect(workflow).not.toContain('Buffer.from(process.env.PAT,\'base64\')')
     expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     expect(workflow).toContain('globSync(\'packages/*/package.json\')')
     expect(workflow).toContain('-m pip install -r requirements-dev.txt')
@@ -972,8 +997,8 @@ describe('githubActionsYaml', () => {
     expect(azure).toContain('globSync(\'apps/*/pyproject.toml\')')
     expect(github).toContain('globSync(\'apps/*/project.json\')')
     expect(azure).toContain('globSync(\'apps/*/project.json\')')
-    expect(github).toContain('Buffer.from(process.env.PAT,\'base64\')')
-    expect(azure).toContain('Buffer.from(process.env.PAT,\'base64\')')
+    expect(github).toContain('TWINE_PASSWORD=process.env.PAT')
+    expect(azure).toContain('TWINE_PASSWORD=process.env.PAT')
 
     // The Flutter SDK install and the root pub get are byte-identical in both.
     // Only the PATH step legitimately differs, because the two providers have
