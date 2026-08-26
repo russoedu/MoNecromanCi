@@ -5,19 +5,17 @@
   "scripts": {
     "build": "nx run-many -t build",
     "lint": "nx run-many -t lint",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "eslint . --fix --cache",
     "test": "nx run-many -t test",
     "typecheck": "nx run-many -t typecheck",
     "affected": "nx affected -t lint,typecheck,test,build",
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
-    "prepare": "husky",
-    "lint:ox": "oxlint packages"
+    "prepare": "husky"
   },
   "private": true,
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
+    "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
     "@mnci/eslint-config": "*",
     "@nx/eslint": "23.1.0",
@@ -31,24 +29,23 @@
     "@swc/helpers": "0.5.23",
     "@swc/jest": "~0.2.38",
     "@types/jest": "~30.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.2.0",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "eslint": "^10.8.0",
+    "eslint": "^10.8.1",
     "eslint-plugin-tsdoc": "^0.5.2",
     "eslint-plugin-tsdoc-require-2": "^1.2.3",
     "husky": "^9.1.7",
     "jest": "~30.4.2",
     "jest-environment-node": "~30.4.1",
     "jest-util": "~30.4.1",
-    "nx": "23.1.0",
-    "prettier": "^3.8.1",
+    "nx": "23.1.1",
     "rollup": "^4.62.4",
     "swc-loader": "0.1.15",
     "ts-jest": "^29.4.7",
     "ts-node": "10.9.2",
     "tslib": "^2.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "verdaccio": "^6.9.2"
+    "verdaccio": "^6.10.0"
   },
   "workspaces": [
     "packages/*"
@@ -80,7 +77,10 @@
       "js-yaml": "^3.15.1"
     },
     "fast-uri": "^3.1.5",
-    "postcss": "^8.5.26",
+    "postcss": {
+      ".": "^8.5.26",
+      "nanoid": "^3.3.18"
+    },
     "cosmiconfig": {
       "js-yaml": "^4.3.1"
     }

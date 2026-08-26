@@ -51,7 +51,7 @@ const ACTUAL_TYPES_PATH = './dist/index.d.ts'
  * @throws Propagates any `fs`/JSON error reading or writing the manifest.
  * @typeParam None - this function has no generic type parameters.
  */
-function repairTypesPath(manifestPath: string): void {
+function repairTypesPath (manifestPath: string): void {
   const manifest = readJson<{
     types?: string
     exports?: Record<string, string | { types?: string }>
@@ -120,7 +120,7 @@ const REACT_LIB_BUNDLER = 'rollup'
  * @throws Error when the generator or the plugin install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function addReactLib(
+export async function addReactLib (
   workspaceRoot: string,
   name: string,
   options: AddOptions,
@@ -178,7 +178,7 @@ export async function addReactLib(
  * @throws Error when the generator or the plugin install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addReactInternalLib(
+export function addReactInternalLib (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack

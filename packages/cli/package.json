@@ -1,7 +1,7 @@
 {
   "name": "@mnci/cli",
   "version": "1.0.0",
-  "description": "MoNecromanCI CLI — a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint + Prettier, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), and npm/Python/Go/Flutter libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for npm, Python and Dart packages.",
+  "description": "MoNecromanCI CLI \u2014 a thin CLI over official and community Nx plugins: create an opinionated Nx monorepo (interactive wizard or flags; ESLint + Prettier, Jest/Vitest) and add React apps, Node apps, Azure Function apps (Node or Python), and npm/Python/Go/Flutter libraries and internal libraries, with automatic conventional-commit versioning (tag-only, nothing pushed to main) for npm, Python and Dart packages.",
   "bin": {
     "mnci": "./dist/cli.js"
   },
@@ -55,8 +55,8 @@
     "@types/cross-spawn": "^6.0.6",
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^26.0.1",
-    "eslint": "^9.39.0",
+    "@types/node": "^26.2.0",
+    "eslint": "^10.8.1",
     "jest": "^30.4.2",
     "js-yaml": "^5.2.3",
     "ts-jest": "^29.4.11",

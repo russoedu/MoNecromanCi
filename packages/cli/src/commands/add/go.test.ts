@@ -18,7 +18,7 @@ const mockRunShell = jest.mocked(runShell)
 let workspaceRoot: string
 
 /** Pre-creates the `project.json` the (mocked) plugin generator would write. */
-function seedProjectJson(relativeDirectory: string, name: string): void {
+function seedProjectJson (relativeDirectory: string, name: string): void {
   mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
   writeFileSync(
     join(workspaceRoot, relativeDirectory, 'project.json'),
@@ -27,8 +27,11 @@ function seedProjectJson(relativeDirectory: string, name: string): void {
 }
 
 /** Reads a generated project.json back. */
-function readProjectJson(relativeDirectory: string): {
-  targets: Record<string, { executor?: string; options?: Record<string, unknown> }>
+function readProjectJson (relativeDirectory: string): {
+  targets: Record<
+    string,
+    { executor?: string; options?: Record<string, unknown>; parallelism?: boolean }
+  >
 } {
   return JSON.parse(
     readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8')
@@ -36,7 +39,7 @@ function readProjectJson(relativeDirectory: string): {
 }
 
 /** The argv of every `runNx` call, flattened for easy matching. */
-function nxCalls(): string[][] {
+function nxCalls (): string[][] {
   return mockRunNx.mock.calls.map(call => call[0])
 }
 
@@ -166,6 +169,31 @@ describe('runAdd go', () => {
     const { targets } = readProjectJson('apps/api')
     expect(targets.lint.executor).toBe('@nx-go/nx-go:lint')
     expect(targets.lint.options).toEqual({ linter: 'golangci-lint', args: ['run'] })
+  })
+
+  it('serialises the lint target, because golangci-lint refuses to run beside itself', async () => {
+    // A correctness fix, not tuning. `golangci-lint` takes a machine-global lock
+    // and exits non-zero with `parallel golangci-lint is running` when a second
+    // copy starts. Nx runs `lint` across projects concurrently, so a workspace
+    // with two or more Go projects failed `nx run-many -t lint` at random — one
+    // project printing `0 issues` while a sibling died on the lock, and the
+    // victim moving between runs.
+    //
+    // Found the first time CI ever ran the Go lint assertion: golangci-lint had
+    // never been installed on the runner, so the check reported SKIPPED and this
+    // shipped unnoticed. Only `lint` is serialised; build and test still run in
+    // parallel.
+    seedProjectJson('apps/api', 'api')
+    seedProjectJson('apps/fn', 'fn')
+
+    await runAdd('go-app', 'api', {})
+    await runAdd('go-function-app', 'fn', {})
+
+    expect(readProjectJson('apps/api').targets.lint.parallelism).toBe(false)
+    expect(readProjectJson('apps/fn').targets.lint.parallelism).toBe(false)
+    // ...and nothing else was serialised as collateral.
+    expect(readProjectJson('apps/api').targets.build.parallelism).toBeUndefined()
+    expect(readProjectJson('apps/api').targets.test.parallelism).toBeUndefined()
   })
 
   it('warns but does not fail when golangci-lint is missing', async () => {

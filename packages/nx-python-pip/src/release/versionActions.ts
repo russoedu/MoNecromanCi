@@ -40,7 +40,7 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Error when the manifest exists but has no `version = "..."` line.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromSourceManifest(
+  async readCurrentVersionFromSourceManifest (
     tree: Tree
   ): Promise<{ currentVersion: string; manifestPath: string } | null> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pyproject.toml')
@@ -72,7 +72,7 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - a lookup failure yields `null`, not a throw.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionFromRegistry(
+  async readCurrentVersionFromRegistry (
     _tree: Tree,
     _currentVersionResolverMetadata: Record<string, unknown> | undefined
   ): Promise<{ currentVersion: string | null; logText: string } | null> {
@@ -105,7 +105,7 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async readCurrentVersionOfDependency(
+  async readCurrentVersionOfDependency (
     _tree: Tree,
     _projectGraph: ProjectGraph,
     _dependencyProjectName: string
@@ -123,7 +123,7 @@ export default class PythonVersionActions extends VersionActions {
    * (would already have thrown in `readCurrentVersionFromSourceManifest`).
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectVersion(tree: Tree, newVersion: string): Promise<string[]> {
+  async updateProjectVersion (tree: Tree, newVersion: string): Promise<string[]> {
     const manifestPath = join(this.projectGraphNode.data.root, 'pyproject.toml')
     const content = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(
@@ -147,7 +147,7 @@ export default class PythonVersionActions extends VersionActions {
    * @throws Never - pure no-op.
    * @typeParam None - this method has no generic type parameters.
    */
-  async updateProjectDependencies(
+  async updateProjectDependencies (
     _tree: Tree,
     _projectGraph: ProjectGraph,
     _dependenciesToUpdate: Record<string, string>

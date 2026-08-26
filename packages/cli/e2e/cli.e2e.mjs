@@ -57,14 +57,14 @@ const PYTHON = process.platform === 'win32' ? 'python' : 'python3'
  * suffix, and never creates a `python3.exe` (only `python.exe`) — so `name`
  * should be the extension-less, `3`-less base name (`'pip'`, `'python'`).
  */
-function venvExecutable(venvPath, name) {
+function venvExecutable (venvPath, name) {
   return process.platform === 'win32'
     ? path.join(venvPath, 'Scripts', `${name}.exe`)
     : path.join(venvPath, 'bin', name)
 }
 
 /** Runs a command inheriting stdio, throwing on non-zero exit. */
-function run(command, cwd) {
+function run (command, cwd) {
   console.log(`\n$ ${command}   (cwd: ${cwd})`)
   execSync(command, {
     cwd,
@@ -74,7 +74,7 @@ function run(command, cwd) {
 }
 
 /** Runs a command, returning true/false instead of throwing. */
-function tryRun(command, cwd) {
+function tryRun (command, cwd) {
   try {
     run(command, cwd)
     return true
@@ -84,7 +84,7 @@ function tryRun(command, cwd) {
 }
 
 /** Runs a command capturing combined output; returns an ok/output record. */
-function tryRunCapture(command, cwd) {
+function tryRunCapture (command, cwd) {
   console.log(`\n$ ${command}   (cwd: ${cwd})`)
   try {
     const output = execSync(command, {
@@ -105,7 +105,7 @@ function tryRunCapture(command, cwd) {
 const results = { enforced: [], skipped: [] }
 
 /** Records an ENFORCED expectation, which fails the run when false. */
-function enforce(label, ok, detail = '') {
+function enforce (label, ok, detail = '') {
   results.enforced.push({ label, ok, detail })
   console.log(`  ${ok ? '✓' : '✗'} ${label}${ok ? '' : `  — ${detail}`}`)
 }
@@ -118,7 +118,7 @@ function enforce(label, ok, detail = '') {
  * NOT fail the run, but is printed in the summary so a skipped section can
  * never be mistaken for a passing one.
  */
-function skip(label, reason) {
+function skip (label, reason) {
   results.skipped.push({ label, reason })
   console.log(`  ⊘ SKIPPED ${label} — ${reason}`)
 }
@@ -146,7 +146,7 @@ const failedSections = new Set()
  * @param needs - Labels of sections this one cannot run without.
  * @param body - The section itself.
  */
-function section(label, needs, body) {
+function section (label, needs, body) {
   const blockedBy = needs.find(name => failedSections.has(name))
   if (blockedBy) {
     failedSections.add(label)
@@ -175,7 +175,7 @@ function section(label, needs, body) {
 const SANDBOX_INJECTED = ['.agents', '.opencode', '.github/skills']
 
 /** Removes the sandbox-injected paths from a generated workspace. */
-function dropSandboxInjected(root) {
+function dropSandboxInjected (root) {
   for (const injected of SANDBOX_INJECTED) {
     rmSync(path.join(root, injected), { recursive: true, force: true })
   }
@@ -189,7 +189,49 @@ function dropSandboxInjected(root) {
  * workspace and would drag in hundreds of third-party config files —
  * defeating the "exactly one config" assertions this exists to serve.
  */
-function findFiles(directory, predicate, base = directory) {
+/**
+ * Rewrites a file with `pattern` replaced, and THROWS when it did not match.
+ *
+ * @remarks
+ * `String.replace` on a non-matching pattern is a silent no-op: it returns the
+ * input unchanged and reports nothing. Every edit this suite makes to a
+ * generated file is a precondition for the assertion that follows, so a
+ * no-op does not fail the edit — it fails something further away, if at all.
+ *
+ * This is not hypothetical. The Flutter section injected an internal dependency
+ * into `packages/dartshared/pubspec.yaml` with an LF-only pattern. On Windows,
+ * `flutter create` writes that file with CRLF, so the pattern never matched and
+ * the dependency was never added. It passed anyway for months because the
+ * workspace was formatted by oxfmt, which rewrote the pubspec to LF in passing
+ * — an accidental dependency on a formatter that has since been deleted. The
+ * moment `eslint --fix` replaced it (ESLint does not rewrite YAML at all), the
+ * edit started silently doing nothing and `flutter analyze` began reporting
+ * `depend_on_referenced_packages` on an import the suite had deliberately set
+ * up.
+ *
+ * @param file - Absolute path to the file to rewrite.
+ * @param pattern - The pattern to replace. Use `\r?\n`, never a bare `\n`.
+ * @param replacement - The replacement text.
+ * @returns Nothing.
+ * @throws Error when `pattern` does not match the file's current contents.
+ */
+function replaceInFile (file, pattern, replacement) {
+  const before = readFileSync(file, 'utf8')
+  // A function replacement, not a string — the same reason `internal/pubspec.ts`
+  // uses one: a literal would let a `$&`/`$1` sequence in `replacement` be read
+  // as a capture-group reference rather than as the text it plainly is.
+  const after = before.replace(pattern, () => replacement)
+  if (after === before) {
+    throw new Error(
+      `replaceInFile: ${pattern} did not match ${file}. ` +
+        'A silent no-op here would break a later assertion for an unrelated-looking reason. ' +
+        `First 400 chars:\n${before.slice(0, 400)}`
+    )
+  }
+  writeFileSync(file, after)
+}
+
+function findFiles (directory, predicate, base = directory) {
   const found = []
   const entries = readdirSync(directory, { withFileTypes: true })
   for (const entry of entries) {
@@ -214,13 +256,13 @@ function findFiles(directory, predicate, base = directory) {
  * Re-run after each `add`, because every one of these is something an
  * `@nx/*` generator actively re-creates: a per-project `eslint.config.mjs`,
  * a `.vscode/launch.json` (`@nx/node`), and generator-styled source that
- * would fail `format:check`. Asserting them once after `new` would prove
+ * would fail `lint`. Asserting them once after `new` would prove
  * nothing about the state a real user's workspace is actually in.
  *
  * `stage` names the point in the run, so a failure says which `add`
  * regressed rather than just "the workspace is wrong".
  */
-function enforceWorkspaceShape(root, stage) {
+function enforceWorkspaceShape (root, stage) {
   dropSandboxInjected(root)
 
   const eslintConfigs = findFiles(root, name =>
@@ -232,41 +274,71 @@ function enforceWorkspaceShape(root, stage) {
     `found: ${JSON.stringify(eslintConfigs)}`
   )
 
-  // Two Prettier configs is not a cosmetic duplicate. Prettier's precedence runs
-  // `.prettierrc` -> `.prettierrc.json` -> ... -> `.prettierrc.mjs`, so EITHER of
-  // the earlier names left behind silently discards mnci's entire formatting
-  // opinion. `.prettierrc` is Nx's; `.prettierrc.json` is the one mnci itself
-  // used to write, which is why an upgrade has to delete it too. Asserting the
-  // count is not enough — assert which one Prettier actually resolves.
-  const prettierConfigs = findFiles(root, name => /^\.prettierrc(?:\..+)?$/.test(name))
-  enforce(
-    `${stage}: exactly one Prettier config`,
-    prettierConfigs.length === 1 && prettierConfigs[0] === '.prettierrc.mjs',
-    `found: ${JSON.stringify(prettierConfigs)}`
+  // Every formatter config mnci has ever written must be ABSENT. They are inert
+  // from the command line now that nothing runs Prettier or oxfmt — which is
+  // exactly why this is worth asserting: a globally installed
+  // `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves one and still
+  // reformats on save, quietly undoing Standard while `lint` stays green
+  // because the damage lands after the check ran.
+  const retiredFormatterConfigs = findFiles(root, name =>
+    /^(?:\.prettierrc(?:\..+)?|\.prettierignore|\.oxfmtrc\.json|oxlint\.config\.ts)$/.test(name)
   )
-  const resolved = tryRunCapture('npx prettier --find-config-path package.json', root)
   enforce(
-    `${stage}: Prettier resolves that config, not a stray one`,
-    (resolved.output ?? '').trimEnd().endsWith('.prettierrc.mjs'),
-    `resolved: ${(resolved.output ?? '').trim()}`
+    `${stage}: no retired formatter config survives`,
+    retiredFormatterConfigs.length === 0,
+    `found: ${JSON.stringify(retiredFormatterConfigs)}`
+  )
+  enforce(
+    `${stage}: exactly one eslint.config.mjs, which is the whole opinion`,
+    existsSync(path.join(root, 'eslint.config.mjs'))
   )
 
   // The .code-workspace file covers everything Nx's .vscode/ did. @nx/node
   // re-creates launch.json on every add, so this must hold after each one.
   enforce(`${stage}: no .vscode directory`, !existsSync(path.join(root, '.vscode')))
 
-  // The whole point of the post-generate Prettier pass: a user should never
-  // have to run `npm run format` to make a freshly generated workspace pass
-  // its own CI. This is the check that regresses the moment that call is
-  // dropped, so it runs WITHOUT a format step in front of it.
+  // No formatter EXTENSION may be recommended either, and this is the half a
+  // unit test cannot reach: it reads the files a real `mnci new` wrote. The
+  // extension needs no config file to do harm — with none present it formats
+  // against Prettier's own defaults, semicolons and double quotes, the inverse
+  // of Standard — so recommending it while deleting its config was mnci
+  // installing its own hazard.
+  for (const [label, file] of [
+    ['code-workspace', findFiles(root, name => name.endsWith('.code-workspace'))[0]],
+    ['devcontainer', '.devcontainer/devcontainer.json']
+  ]) {
+    if (!file) continue
+    const contents = readFileSync(path.join(root, file), 'utf8')
+    for (const extension of ['esbenp.prettier-vscode', 'oxc.oxc-vscode']) {
+      enforce(
+        `${stage}: ${label} does not recommend ${extension}`,
+        !contents.includes(extension)
+      )
+    }
+    enforce(
+      `${stage}: ${label} recommends the ESLint extension`,
+      contents.includes('dbaeumer.vscode-eslint')
+    )
+  }
+
+  // A user should never have to run a format step to make a freshly generated
+  // workspace pass its own CI. This is the check that regresses the moment the
+  // post-generate `eslint --fix` call is dropped, so it runs WITHOUT one in
+  // front of it.
+  //
+  // It asserts `lint`, not `format:check`, and that is not a rename: there IS no
+  // `format:check` any more. ESLint reports formatting as ordinary errors, so
+  // `lint` covers strictly more than the old gate did — and this assertion would
+  // have gone red on the first nightly after the collapse onto one tool, since
+  // `npm run format:check` on a missing script exits non-zero.
   enforce(
-    `${stage}: format:check is already green — no manual format needed`,
-    tryRun('npm run format:check', root)
+    `${stage}: lint is already green — no manual format needed`,
+    tryRun('npm run lint', root)
   )
 }
 
 /** Whether the Flutter SDK is available to drive the Flutter section. */
-function hasFlutter() {
+function hasFlutter () {
   try {
     execSync('flutter --version', { stdio: 'ignore' })
     return true
@@ -276,7 +348,7 @@ function hasFlutter() {
 }
 
 /** Whether the Go toolchain is available to drive the Go section. */
-function hasGo() {
+function hasGo () {
   try {
     execSync('go version', { stdio: 'ignore' })
     return true
@@ -296,7 +368,7 @@ function hasGo() {
  * lint assertion alone is gated, so everything else still runs.
  * @returns `true` when the linter can be invoked.
  */
-function hasGolangciLint() {
+function hasGolangciLint () {
   try {
     execSync('golangci-lint --version', { stdio: 'ignore' })
     return true
@@ -338,22 +410,6 @@ const eslintConfigPackOutput = execSync(
 process.env.MNCI_ESLINT_CONFIG_SPEC = path.join(
   eslintConfigPackDirectory,
   eslintConfigPackOutput.split('\n').at(-1)
-)
-
-// Same treatment for the oxlint config, needed by the `alt` workspace below.
-// Without it `npm install` in an oxlint workspace 404s until the package has been
-// published once — the identical trap the ESLint config hit the first time.
-console.log('\n▸ packing @mnci/oxlint-config for the e2e to install locally')
-const oxlintConfigDirectory = path.resolve(SCRIPT_DIR, '..', '..', 'oxlint-config')
-const oxlintConfigPackDirectory = path.join(temporary, 'oxlint-config-pack')
-mkdirSync(oxlintConfigPackDirectory, { recursive: true })
-const oxlintConfigPackOutput = execSync(
-  `npm pack --silent --pack-destination "${oxlintConfigPackDirectory}"`,
-  { cwd: oxlintConfigDirectory, encoding: 'utf8' }
-).trim()
-process.env.MNCI_OXLINT_CONFIG_SPEC = path.join(
-  oxlintConfigPackDirectory,
-  oxlintConfigPackOutput.split('\n').at(-1)
 )
 
 section('js stack', [], () => {
@@ -444,54 +500,60 @@ section('js stack', [], () => {
   // is what would have caught the drift this replaced. (This repo's own config
   // said trailingComma "es5" while it SHIPPED "none", reported by nothing,
   // because the check and the shipped opinion were different files.)
-  enforce(
-    'Prettier config delegates to @mnci/eslint-config/prettier',
-    readFileSync(path.join(workspace, '.prettierrc.mjs'), 'utf8').includes(
-      "from '@mnci/eslint-config/prettier'"
-    )
-  )
-  const standardProbe = path.join(workspace, 'prettier-probe.ts')
-  writeFileSync(standardProbe, 'export const o = {\n  a: "x",\n  b: 2,\n}\n')
-  tryRunCapture('npx prettier --write prettier-probe.ts', workspace)
+  // Formatting is a LINT ERROR now, so this is asserted by running eslint --fix
+  // and diffing, not by running a second binary. The old version of this block
+  // wrote a probe, ran `npx prettier --write`, and compared — which is exactly
+  // the thing that can no longer happen.
+  const standardProbe = path.join(workspace, 'standard-probe.ts')
+  writeFileSync(standardProbe, 'export const o = {\n  a: "x",\n  b: 2,\n}\nexport function f(a) { return a }\n')
+  tryRunCapture('npx eslint standard-probe.ts --fix', workspace)
   const formatted = readFileSync(standardProbe, 'utf8')
   enforce(
-    'Prettier applies Standard for real (no semicolons, single quotes, no trailing commas)',
-    formatted === "export const o = {\n  a: 'x',\n  b: 2\n}\n",
+    'eslint --fix applies Standard for real (single quotes, no semicolons, no trailing comma)',
+    formatted.includes("a: 'x'") && !formatted.includes('"x"') && !formatted.includes('b: 2,'),
+    JSON.stringify(formatted)
+  )
+  // The rule no formatter could ever satisfy, and the headline of the whole
+  // collapse onto one tool: Prettier and oxfmt both rewrite `function f (a)`
+  // back to `function f(a)`, so this was unreachable while either owned
+  // formatting.
+  enforce(
+    'eslint --fix adds the Standard space before function parens',
+    formatted.includes('function f ('),
     JSON.stringify(formatted)
   )
   rmSync(standardProbe, { force: true })
 
-  // The eslint half of the formatter assertions the alt workspace makes for
-  // oxlint. Both halves matter, and for different reasons: prettier must be
-  // DECLARED here (prettier-vscode resolves the formatter from the project's
-  // dependencies and silently falls back to its bundled copy otherwise), and
-  // `[toml]` must NOT be pinned, because routing a `.toml` to Prettier gives
-  // "No parser could be inferred for file" — worse than leaving it unpinned.
   {
     const manifest = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
-    enforce(
-      'prettier is declared, not left to hoisting through @mnci/eslint-config',
-      manifest.devDependencies?.prettier !== undefined
-    )
-    enforce(
-      'and NO oxfmt — exactly one formatter is resolvable in either mode',
-      manifest.devDependencies?.oxfmt === undefined
-    )
+    // No formatter may be DECLARED, and the declaration is the point rather than
+    // the install: the VS Code extension resolves a formatter from the project's
+    // dependencies, so a leftover `prettier` entry is enough for a globally
+    // installed extension to find a real binary and reformat against an opinion
+    // nothing checks.
+    for (const retired of ['prettier', 'eslint-config-prettier', 'oxlint', 'oxfmt']) {
+      enforce(
+        `no retired formatter declared: ${retired}`,
+        manifest.devDependencies?.[retired] === undefined
+      )
+    }
     const codeWorkspace = JSON.parse(
       readFileSync(path.join(workspace, 'demo.code-workspace'), 'utf8')
     )
     enforce(
       'format-on-save pinned for .ts — the reported bug was a missing [typescript]',
       codeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] ===
-        'esbenp.prettier-vscode'
+        'dbaeumer.vscode-eslint'
     )
+    // TOML is pinned now, unconditionally. It used to be impossible under the
+    // Prettier stack — `npx prettier` on a `.toml` exits with "No parser could
+    // be inferred for file" — and it is ESLint's `eslint-plugin-toml` that
+    // parses it here.
     enforce(
-      'no [toml] entry under eslint — Prettier cannot parse TOML at all',
-      codeWorkspace.settings?.['[toml]'] === undefined
+      '[toml] is pinned to ESLint, which Prettier could never parse',
+      codeWorkspace.settings?.['[toml]']?.['editor.defaultFormatter'] === 'dbaeumer.vscode-eslint'
     )
   }
-
-  // Publish auth. This workspace is generated with --registry npm, so the .npmrc
   // is the auth-only variant: the npmjs.org token line and NOTHING else. No
   // @scope:registry line, deliberately — npmjs.org is already the default, so
   // routing the scope there would change nothing, and presenting it as protection
@@ -570,7 +632,7 @@ section('js stack', [], () => {
     pipelineYaml.includes('nx run-many -t package') &&
       pipelineYaml.includes('ArtifactName: drop') &&
       pipelineYaml.includes('##vso[build.addbuildtag]') &&
-      pipelineYaml.includes(`path.basename(f,'.zip')`)
+      pipelineYaml.includes('path.basename(f,\'.zip\')')
   )
   // This workspace was generated with --registry npm, so auth is NODE_AUTH_TOKEN
   // sourced from an NPM_TOKEN variable, not PAT — the azurePipelinesYaml/
@@ -596,13 +658,24 @@ section('js stack', [], () => {
   )
 
   // Runs the EXACT script text extracted from the generated pipeline (not a
-  // re-typed copy) against this real workspace's real node_modules — proves
-  // the non-blocking property for real, not just via a string match on '||'.
+  // re-typed copy) against this real workspace's real node_modules.
+  //
+  // This used to assert the step exits 0 "even when real vulnerabilities are
+  // found", because it was warn-only. It is not any more: it exits 1 on an
+  // advisory that has a published fix, and 0 on anything upstream has not fixed.
+  // The rename is what caught the staleness — the lookup returned undefined and
+  // the assertion failed on a nightly, which is the whole reason a real e2e
+  // exists. A string match on the step name would not have noticed.
+  //
+  // Exit 0 is still the expectation here, but for a different reason: this is a
+  // freshly generated workspace, so it should carry no ACTIONABLE advisory. If
+  // this ever fails, read the log rather than the assertion — it means what mnci
+  // generates ships a fixable vulnerability, which is worth knowing.
   const npmAuditStep = pipelineParsed?.steps?.find(
-    step => step.displayName === 'npm audit (non-blocking)'
+    step => step.displayName === 'npm audit (fails on an actionable advisory)'
   )
   enforce(
-    "pipeline's npm audit step exits 0 even when real vulnerabilities are found",
+    "pipeline's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStep) && tryRun(npmAuditStep.script, workspace),
     'see log above'
   )
@@ -714,10 +787,10 @@ section('js stack', [], () => {
   // Same real-execution proof as the Azure pipeline, against this workspace's
   // real node_modules (generated with --registry npm too).
   const npmAuditStepGithub = workflowParsed?.jobs?.ci?.steps?.find(
-    step => step.name === 'npm audit (non-blocking)'
+    step => step.name === 'npm audit (fails on an actionable advisory)'
   )
   enforce(
-    "workflow's npm audit step exits 0 even when real vulnerabilities are found",
+    "workflow's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStepGithub) && tryRun(npmAuditStepGithub.run, workspaceGithub),
     'see log above'
   )
@@ -872,14 +945,22 @@ section('js stack', [], () => {
   )
   // These two are written already Standard-formatted, unlike the earlier
   // fixtures. Every fixture before this one is followed by another `mnci add`,
-  // whose Prettier pass normalises it in passing — which is itself evidence the
-  // pass works. Nothing runs after this one, so it has to arrive clean or the
-  // "format:check is already green after adds" assertion below fails on the
+  // whose `eslint --fix` pass normalises it in passing — which is itself
+  // evidence the pass works. Nothing runs after this one, so it has to arrive
+  // clean or the "lint is already green after adds" assertion below fails on the
   // harness's own code rather than on anything mnci produced.
+  //
+  // The `@standard-clean` markers below are read by `e2eFixtures.test.ts`, which
+  // lints exactly these fixtures against the real config in seconds. Without it
+  // the contract stated in this comment was enforced only by a 50-minute Windows
+  // run — and it broke the moment `space-before-function-paren` was turned on.
+  // A fixture that is deliberately unformatted must NOT carry the marker.
+  // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/deps.ts'),
-    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps(): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
+    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps (): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
   )
+  // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/main.ts'),
     "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello'\nimport { apiDeps } from './deps'\n\nconsole.log(apiDeps())\n"
@@ -1148,7 +1229,7 @@ section('js stack', [], () => {
   enforce(
     'sdk bundle runs standalone under node, resolving the inlined private lib and the external dependency correctly',
     tryRun(
-      `node --input-type=module -e "import { sdk } from './packages/sdk/dist/index.esm.js'; if (sdk() !== 'sdk uses utils and 1m') { throw new Error('wrong output: ' + sdk()) }"`,
+      'node --input-type=module -e "import { sdk } from \'./packages/sdk/dist/index.esm.js\'; if (sdk() !== \'sdk uses utils and 1m\') { throw new Error(\'wrong output: \' + sdk()) }"',
       workspace
     ),
     'see log above'
@@ -1285,21 +1366,13 @@ section('alt stack', [], () => {
    * dropped, which is what this section used to exercise.
    * ------------------------------------------------------------------------- */
 
-  // NOTE: this used to pass `--linter oxlint`. That flag was removed from the CLI
-  // when oxlint was dropped (the stack has one knob now: the test runner), so the
-  // invocation had been hard-crashing the suite here — taking the whole Python
-  // section, which lives below, down with it.
-  console.log('\n▸ mnci new alt --test-runner vitest --linter oxlint')
-  run(
-    `node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest --linter oxlint`,
-    temporary
-  )
+  console.log('\n▸ mnci new alt --test-runner vitest')
+  run(`node ${CLI} new alt --yes --registry npm --scope @alt --test-runner vitest`, temporary)
 
   const altNx = JSON.parse(readFileSync(path.join(altWorkspace, 'nx.json'), 'utf8'))
-  // This workspace covers the OTHER end of both stack knobs: vitest (the `demo`
-  // workspace above is jest) and oxlint (demo is eslint). Pairing them here rather
-  // than adding a third workspace keeps the matrix covered without another ~8
-  // minutes of real npm installs.
+  // This workspace covers the other end of the ONE remaining stack knob: vitest,
+  // where `demo` above is jest. It used to carry the oxlint half of a two-knob
+  // matrix as well; with a single linter there is nothing left to pair.
   //
   // `linter: 'none'` in the Nx generator defaults is unrelated to mnci's linter
   // choice, and the collision of names is worth stating: it stops a direct `nx g`
@@ -1309,25 +1382,6 @@ section('alt stack', [], () => {
     "alt: stack persisted as nx.json generator defaults (linter 'none' + vitest)",
     altNx.generators?.['@nx/js:library']?.linter === 'none' &&
       altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
-  )
-  enforce(
-    'alt: the oxlint choice is persisted, so mnci upgrade will not revert it',
-    altNx.mnci?.stack?.linter === 'oxlint'
-  )
-  enforce(
-    'alt: oxlint workspace gets oxlint.config.ts and .oxfmtrc.json',
-    existsSync(path.join(altWorkspace, 'oxlint.config.ts')) &&
-      existsSync(path.join(altWorkspace, '.oxfmtrc.json'))
-  )
-  enforce(
-    'alt: and NO Prettier config — two formatter configs is the precedence bug again',
-    !existsSync(path.join(altWorkspace, '.prettierrc.mjs'))
-  )
-  enforce(
-    'alt: ESLint stays, trimmed to what oxlint cannot parse (the hybrid)',
-    readFileSync(path.join(altWorkspace, 'eslint.config.mjs'), 'utf8').includes(
-      "import { nonJs } from '@mnci/eslint-config'"
-    )
   )
   enforce(
     'alt: mnci registers @nx/eslint/plugin — what gives every project its lint target',
@@ -1340,59 +1394,14 @@ section('alt stack', [], () => {
     'alt: lint runs ESLint through nx, for every project',
     altManifest.scripts?.lint === 'nx run-many -t lint'
   )
-  enforce(
-    'alt: oxfmt set up as the formatter (format + format:check scripts)',
-    altManifest.scripts?.format === 'oxfmt .' &&
-      altManifest.scripts?.['format:check'] === 'oxfmt --check .'
-  )
-  enforce(
-    'alt: the whole oxlint toolchain is declared, ESLint alongside it (the hybrid)',
-    ['oxlint', 'oxfmt', '@mnci/oxlint-config', 'eslint', '@mnci/eslint-config'].every(
-      dependency => altManifest.devDependencies?.[dependency] !== undefined
-    ),
-    `devDependencies: ${JSON.stringify(altManifest.devDependencies)}`
-  )
-  // Additive for the LINTER, exclusive for the FORMATTER. prettier is still in
-  // node_modules here — `@mnci/eslint-config` depends on it — and that is the
-  // point of asserting the DECLARATION: prettier-vscode resolves the formatter
-  // from the project's dependencies, so a declared prettier is what lets a
-  // globally installed prettier extension reformat on save against the opinion
-  // oxfmt is not applying, while `format:check` reports the result as
-  // unformatted. Only a real install can tell the two apart.
-  enforce(
-    'alt: prettier is NOT declared, so exactly one formatter is resolvable',
-    altManifest.devDependencies?.prettier === undefined,
-    `devDependencies: ${JSON.stringify(altManifest.devDependencies)}`
-  )
   const altCodeWorkspace = JSON.parse(
     readFileSync(path.join(altWorkspace, 'alt.code-workspace'), 'utf8')
   )
-  // TOML is a capability difference, not a preference: `prettier` on a `.toml`
-  // exits with "No parser could be inferred for file", oxfmt reformats it. So an
-  // oxlint workspace can have a formatted pyproject.toml and the default cannot.
-  enforce(
-    'alt: format-on-save pinned for .toml, which only oxfmt can parse',
-    altCodeWorkspace.settings?.['[toml]']?.['editor.defaultFormatter'] === 'oxc.oxc-vscode',
-    `settings: ${JSON.stringify(altCodeWorkspace.settings?.['[toml]'])}`
-  )
   enforce(
     'alt: and for .ts — the format-on-save bug was a missing [typescript] entry',
-    altCodeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] === 'oxc.oxc-vscode'
+    altCodeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] ===
+      'dbaeumer.vscode-eslint'
   )
-  // oxfmt genuinely reformats a TOML file, verified through the real binary
-  // rather than from its docs. Measured on the way in: `name  =  "x"` becomes
-  // `name = "x"` and `[ 1,2 ]` becomes `[1, 2]`.
-  const tomlProbe = path.join(altWorkspace, 'oxfmt-probe.toml')
-  writeFileSync(tomlProbe, '[tool]\nname  =  "x"\narr = [ 1,2 ]\n')
-  tryRunCapture('npx oxfmt oxfmt-probe.toml', altWorkspace)
-  const formattedToml = readFileSync(tomlProbe, 'utf8')
-  enforce(
-    'alt: oxfmt actually formats TOML, which Prettier cannot parse at all',
-    formattedToml.includes('name = "x"') && formattedToml.includes('arr = [1, 2]'),
-    `oxfmt produced: ${JSON.stringify(formattedToml)}`
-  )
-  rmSync(tomlProbe, { force: true })
-
   run(`node ${CLI} add npm-lib sdk`, altWorkspace)
   run(`node ${CLI} add react-app web`, altWorkspace)
   // This assertion used to require the OPPOSITE — that npm-lib kept its own
@@ -1403,15 +1412,15 @@ section('alt stack', [], () => {
     !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
   )
   dropSandboxInjected(altWorkspace)
-  // Nx generators emit semicolon/double-quote code, but mnci now runs Prettier
-  // itself at the end of `new` and every `add` — so the workspace must already
+  // Nx generators emit semicolon/double-quote code, but mnci now runs
+  // `eslint --fix` itself at the end of `new` and every `add` — so it must already
   // be Standard-formatted, with no manual `npm run format` in front of this.
   // (This check previously ran `format` first, which meant it could not
   // distinguish "Prettier is configured correctly" from "Prettier is configured
   // at all" — and in fact Nx's leftover .prettierrc was winning the whole time.)
   enforce(
-    'alt: format:check is green with no manual format step',
-    tryRun('npm run format:check', altWorkspace),
+    'alt: lint is green with no manual format step',
+    tryRun('npm run lint', altWorkspace),
     'see log above'
   )
 
@@ -1420,17 +1429,7 @@ section('alt stack', [], () => {
   const misformatted = path.join(altWorkspace, 'packages/sdk/src/misformatted.ts')
   writeFileSync(misformatted, 'export const greeting =    "hi";\n')
   run('npm run format', altWorkspace)
-  enforce(
-    'alt: oxfmt applies Standard style (drops semicolons, converts to single quotes)',
-    readFileSync(misformatted, 'utf8') === "export const greeting = 'hi'\n",
-    `got: ${JSON.stringify(readFileSync(misformatted, 'utf8'))}`
-  )
   rmSync(misformatted, { force: true })
-  enforce(
-    'alt: npm run lint runs green on the oxlint hybrid',
-    tryRun('npm run lint', altWorkspace),
-    'see log above'
-  )
   enforce(
     'alt: build (vitest stack) runs green',
     tryRun('npx nx run-many -t build', altWorkspace),
@@ -1616,13 +1615,9 @@ section('python', ['alt stack'], () => {
 
   console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
   const pysvcPyprojectPath = path.join(altWorkspace, 'apps/pysvc/pyproject.toml')
-  writeFileSync(
-    pysvcPyprojectPath,
-    readFileSync(pysvcPyprojectPath, 'utf8').replace(
-      'dependencies = []',
-      'dependencies = ["tomli>=2.0.0"]'
-    )
-  )
+  // Through `replaceInFile` so a shape change in the plugin's emitted pyproject
+  // fails HERE rather than three assertions later as a missing wheel dependency.
+  replaceInFile(pysvcPyprojectPath, 'dependencies = []', 'dependencies = ["tomli>=2.0.0"]')
   // Also named greeting.py for the same shadowing reason as pyshared above.
   // Unlike pycore, tomli is a real installable PyPI package (declared in
   // pysvc's own pyproject.toml dependencies), so `pip install -e .` genuinely
@@ -1766,8 +1761,7 @@ section('python', ['alt stack'], () => {
 
   const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
   const pysvcMetadata = existsSync(pysvcWheelPath)
-    ? // eslint-disable-next-line unicorn/prefer-blob-reading-methods
-      new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA')
+    ? new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: app wheel declares the real external dependency (tomli) — not silently dropped',
@@ -1806,8 +1800,7 @@ section('python', ['alt stack'], () => {
     ? pysvcCombinedZip.getEntries().map(entry => entry.entryName)
     : []
   const pysvcCombinedMetadata = pysvcCombinedZip
-    ? // eslint-disable-next-line unicorn/prefer-blob-reading-methods
-      pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA')
+    ? pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: combined wheel vendors pycore AND keeps the real external dependency declared — no metadata drop (the old @nxlv/python bug does not reproduce with pip)',
@@ -2086,12 +2079,13 @@ section('flutter', [], () => {
 
     // An internal dependency, declared with a PLAIN constraint and no `path:`.
     const dartsharedPubspecPath = path.join(altWorkspace, 'packages/dartshared/pubspec.yaml')
-    writeFileSync(
+    // `\r?\n`, not `\n`: `flutter create` writes CRLF on Windows, which is the
+    // only platform this suite runs on. `internal/pubspec.ts` has always spelled
+    // its own patterns that way; this one did not, and silently matched nothing.
+    replaceInFile(
       dartsharedPubspecPath,
-      readFileSync(dartsharedPubspecPath, 'utf8').replace(
-        /^dependencies:\n {2}flutter:\n {4}sdk: flutter\n/m,
-        'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
-      )
+      /^dependencies:\r?\n {2}flutter:\r?\n {4}sdk: flutter\r?\n/m,
+      'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
     )
     writeFileSync(
       path.join(altWorkspace, 'packages/dartshared/lib/dartshared.dart'),
@@ -2119,12 +2113,37 @@ section('flutter', [], () => {
     const packageConfig = JSON.parse(
       readFileSync(path.join(altWorkspace, '.dart_tool/package_config.json'), 'utf8')
     )
+    // Both halves of the ORIGINAL assertion passed while the dependency was
+    // missing entirely, which is why the failure surfaced two assertions later
+    // as a `flutter analyze` lint instead of here. `package_config.json` lists
+    // every workspace member whether or not this package depends on it, and
+    // "contains no `path:`" is trivially true of a dependency that was never
+    // written. So the declaration itself is now asserted directly.
+    const dartsharedPubspec = readFileSync(dartsharedPubspecPath, 'utf8')
+    enforce(
+      'flutter: dartshared actually DECLARES dartcore, with a plain version constraint',
+      /^ {2}dartcore: \^\d/m.test(dartsharedPubspec),
+      dartsharedPubspec
+    )
     enforce(
       'flutter: the internal dep resolved to the LOCAL package with no `path:` dependency',
       packageConfig.packages.some(
         entry => entry.name === 'dartcore' && entry.rootUri.includes('libs/dartcore')
-      ) && !readFileSync(dartsharedPubspecPath, 'utf8').includes('path:'),
+      ) && !dartsharedPubspec.includes('path:'),
       JSON.stringify(packageConfig.packages.find(entry => entry.name === 'dartcore'))
+    )
+
+    // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
+    // `require-lang` reports as an ERROR — so a generated Flutter app failed
+    // `npm run lint` on a file the user never opened. It surfaced here only as
+    // three non-fatal `eslint could not format '.'` lines during `mnci add`,
+    // which is exactly why it needs an assertion of its own rather than relying
+    // on someone reading the add output.
+    const webIndex = readFileSync(path.join(altWorkspace, 'apps/hello/web/index.html'), 'utf8')
+    enforce(
+      'flutter: the generated web shell declares a lang, so the workspace lints clean',
+      /<html lang="[^"]+"/.test(webIndex),
+      webIndex.slice(0, 200)
     )
 
     const flutterVerify = tryRunCapture(

@@ -21,7 +21,7 @@ import type { LibraryGeneratorSchema } from './schema.d'
  * @throws Never - pure Tree writes.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function libraryGenerator(
+export default async function libraryGenerator (
   tree: Tree,
   options: LibraryGeneratorSchema
 ): Promise<void> {

@@ -21,7 +21,7 @@ import { checkForUpdate, readCliVersion } from './util/versionChecker'
  * @throws Never - wiring only; execution errors surface when commands run.
  * @typeParam None - this function has no generic type parameters.
  */
-export function buildProgram(cliVersion: string): Command {
+export function buildProgram (cliVersion: string): Command {
   const program = new Command()
 
   program
@@ -46,10 +46,6 @@ export function buildProgram(cliVersion: string): Command {
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
-    .option(
-      '--linter <linter>',
-      'linter + formatter: eslint (ESLint + Prettier) | oxlint (oxlint + oxfmt for JS/TS, ESLint for the rest)'
-    )
     .option('--nx-cloud', 'connect the workspace to Nx Cloud (remote caching + CI insights)')
     .action(async (name: string | undefined, options: NewOptions) => {
       await runNew(name, options)
@@ -71,10 +67,6 @@ export function buildProgram(cliVersion: string): Command {
     .option(
       '--test-runner <runner>',
       'unit-test runner: jest | vitest (overrides the persisted value)'
-    )
-    .option(
-      '--linter <linter>',
-      'linter + formatter: eslint | oxlint (overrides the persisted value)'
     )
     .action((options: UpgradeOptions) => {
       runUpgrade(process.cwd(), options)
@@ -138,7 +130,7 @@ export function buildProgram(cliVersion: string): Command {
  * @throws Never - failures are logged and turned into a non-zero exit code.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function main(): Promise<void> {
+export async function main (): Promise<void> {
   try {
     const cliVersion = readCliVersion(__dirname)
     const program = buildProgram(cliVersion)

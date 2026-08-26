@@ -1,5 +1,4 @@
 import spawn from 'cross-spawn'
-import type { LinterChoice } from './overlay'
 import { logger } from './util/logger'
 
 /**
@@ -29,7 +28,7 @@ import { logger } from './util/logger'
  * @throws Never - spawn failures surface through the returned status, not a throw.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runShell(command: string, arguments_: string[], cwd: string): number {
+export function runShell (command: string, arguments_: string[], cwd: string): number {
   const result = spawn.sync(command, arguments_, { stdio: 'inherit', cwd })
   return result.status ?? 1
 }
@@ -47,7 +46,7 @@ export function runShell(command: string, arguments_: string[], cwd: string): nu
  * @throws Error when the Nx process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNx(arguments_: string[], cwd: string): void {
+export function runNx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', ['nx', ...arguments_], cwd)
   if (status !== 0) {
     throw new Error(`nx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -67,7 +66,7 @@ export function runNx(arguments_: string[], cwd: string): void {
  * @throws Error when the process exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runNpx(arguments_: string[], cwd: string): void {
+export function runNpx (arguments_: string[], cwd: string): void {
   const status = runShell('npx', arguments_, cwd)
   if (status !== 0) {
     throw new Error(`npx ${arguments_.join(' ')} failed with exit code ${status}`)
@@ -80,24 +79,23 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * @remarks
  * Nx's own generators emit semicolons, double quotes and trailing commas —
  * the opposite of the JavaScript Standard Style mnci configures. Without this
- * pass a workspace fails its own `npm run format:check` the moment it is
- * created, which is a poor first impression and, worse, buries every real
- * formatting change under a wall of generator noise on the first commit.
- * Running it here means what mnci hands back is already normalised.
+ * pass a workspace fails its own `lint` the moment it is created, which is a
+ * poor first impression and, worse, buries every real formatting change under a
+ * wall of generator noise on the first commit. Running it here means what mnci
+ * hands back is already normalised.
  *
- * **Which formatter is not a detail, and hardcoding Prettier here was a real
- * bug.** An oxlint workspace has no `.prettierrc.mjs` — the overlay deletes it
- * — so `npx prettier --write .` there does not fail, it silently formats the
- * whole workspace against **Prettier's own defaults**: semicolons, double
- * quotes, trailing commas. The exact opposite of the shared opinion, applied to
- * files mnci itself had just written correctly. `oxfmt --check` then reported
- * 19 files unformatted in a freshly generated workspace, `eslint.config.mjs`
- * and `oxlint.config.ts` among them. Caught by the real e2e; no fixture could
- * have, since it needs a generated workspace with both configs in play.
+ * **There is no formatter to choose any more, and that is what makes this
+ * safe.** This function used to take the workspace's linter choice and pick a
+ * binary from it, because getting that wrong was a real bug: running
+ * `npx prettier --write .` in a workspace with no Prettier config does not
+ * fail, it silently reformats everything against its own defaults — semicolons, double
+ * quotes, trailing commas — over files mnci had just written correctly. Now
+ * ESLint is the only tool, so the config that decides the style and the binary
+ * that applies it cannot disagree: there is only one of each.
  *
- * `.prettierignore` (written by the overlay) keeps this off `node_modules`,
- * build output and lockfiles, and oxfmt reads that same file by default — so
- * the pass stays cheap either way, with one ignore list rather than two.
+ * The ignore list comes from `eslint.config.mjs` for the same reason, rather
+ * than from a separate `.prettierignore` that a second tool had to be taught to
+ * read.
  *
  * Deliberately non-fatal. The project has already been generated and wired by
  * the time this runs; aborting on a formatter hiccup would leave a usable
@@ -105,8 +103,6 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * re-run instead.
  *
  * @param cwd - The workspace root to run in.
- * @param linter - The workspace's linter choice, which picks the formatter:
- * `eslint` pairs with Prettier, `oxlint` with oxfmt.
  * @param target - What to format, relative to `cwd`. Defaults to the whole
  * workspace (`.`); `add` passes the new project's root to keep the pass
  * proportional to what actually changed.
@@ -114,18 +110,19 @@ export function runNpx(arguments_: string[], cwd: string): void {
  * @throws Never - a non-zero exit is reported as a warning.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runFormatter(cwd: string, linter: LinterChoice, target = '.'): void {
-  // `--write` is oxfmt's default, but it is passed explicitly so the intent
-  // survives a future change of that default — this call REWRITES a user's
-  // files, which is not something to leave implicit.
-  const [command, arguments_] =
-    linter === 'oxlint'
-      ? ['oxfmt', ['--write', target]]
-      : ['prettier', ['--write', '--log-level', 'warn', target]]
-  const status = runShell('npx', [command, ...arguments_], cwd)
+export function runFormatter (cwd: string, target = '.'): void {
+  // ESLint IS the formatter now, so formatting a generated project is
+  // `eslint --fix` rather than a separate binary. Nx's generators emit
+  // semicolons and double quotes, so without this pass a fresh workspace fails
+  // its own `lint` before the user has written a line.
+  //
+  // No `--cache` here: this runs once on freshly written files, where a cache
+  // can only cost a write. The lint TARGETS carry it, which is where repeat
+  // runs actually happen.
+  const status = runShell('npx', ['eslint', target, '--fix'], cwd)
   if (status !== 0) {
     logger.warn(
-      `${command} could not format '${target}' (exit code ${status}). ` +
+      `eslint could not format '${target}' (exit code ${status}). ` +
         "The project was generated; run 'npm run format' to normalise it."
     )
   }

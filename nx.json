@@ -1,7 +1,10 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
     "production": [
       "default",
       "!{projectRoot}/.eslintrc.json",
@@ -18,10 +21,7 @@
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/packages/eslint-config/package.json",
       "{workspaceRoot}/packages/eslint-config/index.js",
-      "{workspaceRoot}/packages/eslint-config/configs/**/*.js",
-      "{workspaceRoot}/packages/oxlint-config/package.json",
-      "{workspaceRoot}/packages/oxlint-config/index.js",
-      "{workspaceRoot}/packages/oxlint-config/configs/**/*.js"
+      "{workspaceRoot}/packages/eslint-config/configs/**/*.js"
     ]
   },
   "plugins": [
@@ -64,7 +64,10 @@
   "defaultBase": "main",
   "release": {
     "projectsRelationship": "independent",
-    "projects": ["packages/*", "python-packages/*"],
+    "projects": [
+      "packages/*",
+      "python-packages/*"
+    ],
     "releaseTag": {
       "pattern": "{projectName}@{version}"
     },
@@ -114,7 +117,9 @@
   },
   "targetDefaults": {
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     }
   }
 }

@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -8,8 +7,9 @@ import {
   type Tree
 } from '@nx/devkit'
 import { dartPackageName } from './dartPackageName'
-import { flutterCommand } from './flutterCommand'
+import { runFlutter } from './runFlutter'
 import { withWorkspaceResolution } from './pubspec'
+import { withHtmlLang } from './webIndex'
 import { addWorkspaceMember, ensureWorkspaceRoot, memberAnalysisOptions } from './workspace'
 
 /**
@@ -58,12 +58,12 @@ export interface FlutterProjectOptions {
 }
 
 /** The `lint` target: `flutter analyze`, with info-level issues fatal. */
-function lintTarget(): ProjectConfiguration['targets'] {
+function lintTarget (): ProjectConfiguration['targets'] {
   return { lint: { executor: '@mnci/nx-flutter:lint', options: {} } }
 }
 
 /** The `test` target: `flutter test`. */
-function testTarget(): ProjectConfiguration['targets'] {
+function testTarget (): ProjectConfiguration['targets'] {
   return { test: { executor: '@mnci/nx-flutter:test', options: {} } }
 }
 
@@ -83,7 +83,7 @@ function testTarget(): ProjectConfiguration['targets'] {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function buildTarget(name: string): ProjectConfiguration['targets'] {
+function buildTarget (name: string): ProjectConfiguration['targets'] {
   return {
     build: {
       executor: '@mnci/nx-flutter:build',
@@ -107,7 +107,7 @@ function buildTarget(name: string): ProjectConfiguration['targets'] {
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function packageTarget(name: string): ProjectConfiguration['targets'] {
+function packageTarget (name: string): ProjectConfiguration['targets'] {
   const zip = `dist/drop/flutter-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
   return {
@@ -148,7 +148,7 @@ function packageTarget(name: string): ProjectConfiguration['targets'] {
  * @throws Error when `flutter create` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function flutterCreateTask(
+function flutterCreateTask (
   workspaceRoot: string,
   options: FlutterProjectOptions
 ): GeneratorCallback {
@@ -157,6 +157,22 @@ function flutterCreateTask(
     const template = options.buildable ? 'app' : 'package'
     const arguments_ = [
       'create',
+      // `--no-pub` is load-bearing, and its absence is what broke this for real.
+      //
+      // `flutter create` finishes with an implicit `flutter pub get`. By the time
+      // it runs, Nx has already flushed the Tree — which means the ROOT
+      // `pubspec.yaml` already lists this project in its `workspace:` block,
+      // while the project's own `pubspec.yaml`, which `flutter create` has just
+      // written from its template, does not yet carry `resolution: workspace`.
+      // That combination is one pub rejects outright: a package named in a
+      // workspace must declare it is resolved by that workspace. So the implicit
+      // `pub get` fails and takes `flutter create` down with it.
+      //
+      // `resolution: workspace` is added a few lines below, immediately after
+      // this call. Skipping the premature resolve and doing it once at the root
+      // afterwards is therefore the whole fix: same end state, in an order pub
+      // accepts.
+      '--no-pub',
       '--template',
       template,
       '--project-name',
@@ -164,11 +180,13 @@ function flutterCreateTask(
       ...(options.buildable ? ['--platforms', 'web'] : []),
       options.directory
     ]
-    const result = spawnSync(flutterCommand(), arguments_, { cwd: workspaceRoot, stdio: 'inherit' })
-    if (result.status !== 0) {
-      throw new Error(
-        `flutter ${arguments_.join(' ')} failed with exit code ${result.status ?? 1}. Is the Flutter SDK on your PATH? https://docs.flutter.dev/get-started/install`
-      )
+    // Every invocation goes through `runFlutter`, which uses cross-spawn and
+    // reports a spawn failure distinctly from a command failure. See its remarks:
+    // calling `spawnSync` directly made this fail on Windows before the process
+    // started, and report it as "exit code 1" with no output.
+    const created = runFlutter(arguments_, workspaceRoot)
+    if (!created.ok) {
+      throw new Error(`flutter ${arguments_.join(' ')} ${created.reason}`)
     }
 
     const pubspecPath = join(workspaceRoot, options.directory, 'pubspec.yaml')
@@ -179,6 +197,39 @@ function flutterCreateTask(
       join(workspaceRoot, options.directory, 'analysis_options.yaml'),
       memberAnalysisOptions(depth)
     )
+
+    // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
+    // `require-lang` reports as an error — so a freshly generated Flutter app
+    // failed `npm run lint` on a file the user never opened. See `withHtmlLang`.
+    //
+    // Tolerant on purpose: a missing or unreadable file is a no-op, never a
+    // failed generation. The project is already created and resolving by now,
+    // and an upstream template that fixes this must not start breaking `add`.
+    if (options.buildable) {
+      const indexPath = join(workspaceRoot, options.directory, 'web/index.html')
+      try {
+        const contents = readFileSync(indexPath, 'utf8')
+        const patched = withHtmlLang(contents)
+        if (patched !== contents) {
+          writeFileSync(indexPath, patched)
+        }
+      } catch {
+        // Never fail an otherwise-successful generation over the web shell.
+      }
+    }
+
+    // The resolve `--no-pub` skipped, now that the member declares
+    // `resolution: workspace`. Run at the workspace ROOT rather than in the new
+    // project, because that is what a pub workspace means: one resolution for
+    // every member, into a single root `pubspec.lock`.
+    //
+    // Failing here is a real failure. `mnci add flutter-app` that leaves a
+    // project pub cannot resolve has not produced a working project, and saying
+    // so now beats a confusing error at the user's first `flutter run`.
+    const resolved = runFlutter(['pub', 'get'], workspaceRoot)
+    if (!resolved.ok) {
+      throw new Error(`flutter pub get (after creating ${options.directory}) ${resolved.reason}`)
+    }
   }
 }
 
@@ -197,7 +248,7 @@ function flutterCreateTask(
  * @throws Never - falls back to `workspace` when the manifest is unreadable.
  * @typeParam None - this function has no generic type parameters.
  */
-function workspacePackageName(tree: Tree): string {
+function workspacePackageName (tree: Tree): string {
   const manifest = tree.read('package.json', 'utf8')
   const name = manifest ? (JSON.parse(manifest) as { name?: string }).name : undefined
   const unscoped = name?.split('/').pop()
@@ -220,7 +271,7 @@ function workspacePackageName(tree: Tree): string {
  * `flutter create`.
  * @typeParam None - this function has no generic type parameters.
  */
-export function generateFlutterProject(
+export function generateFlutterProject (
   tree: Tree,
   options: FlutterProjectOptions
 ): GeneratorCallback {

@@ -1,6 +1,7 @@
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn(() => ({ status: 0 })) }))
 
 import { spawnSync } from 'node:child_process'
+import { isAbsolute, join } from 'node:path'
 import type { ExecutorContext } from '@nx/devkit'
 import buildExecutor from './build/executor'
 import lintExecutor from './lint/executor'
@@ -9,7 +10,7 @@ import testExecutor from './test/executor'
 const mockSpawnSync = jest.mocked(spawnSync)
 
 /** A context shaped like the one Nx passes a target invocation. */
-function contextFor(root: string, projectRoot: string): ExecutorContext {
+function contextFor (root: string, projectRoot: string): ExecutorContext {
   return {
     root,
     projectName: 'web',
@@ -18,7 +19,7 @@ function contextFor(root: string, projectRoot: string): ExecutorContext {
 }
 
 /** The argv of the single spawnSync call. */
-function spawnArguments(): { command: string; argv: string[]; cwd: string } {
+function spawnArguments (): { command: string; argv: string[]; cwd: string } {
   const [command, argv, options] = mockSpawnSync.mock.calls[0] as [
     string,
     string[],
@@ -74,10 +75,18 @@ describe('test executor', () => {
 })
 
 describe('build executor', () => {
-  it('converts the workspace-relative outputPath into one relative to the project', async () => {
+  it('resolves the workspace-relative outputPath to an ABSOLUTE path for flutter', async () => {
     // The target declares `dist/apps/web` (workspace-relative, matching its Nx
-    // `outputs` token), but flutter resolves --output against its own cwd — the
-    // project directory — so it must arrive as `../../dist/apps/web`.
+    // `outputs` token). It must reach flutter absolute.
+    //
+    // These two tests previously asserted the opposite — `../../dist/apps/web` —
+    // and that relative form is the bug. flutter passes `--output` through to
+    // `impellerc`, the shader compiler it spawns, which does not run with the
+    // cwd set here; the two then resolve the same relative string against
+    // different directories. The Dart bundle compiles, then asset copying dies
+    // with `Could not write file to "..\..\dist\apps\hello\assets\shaders/
+    // ink_sparkle.frag"`. Upstream: flutter/flutter#148542 and #157886, and
+    // every report shares the relative `--output`.
     const result = await buildExecutor(
       { outputPath: 'dist/apps/web' },
       contextFor('/ws', 'apps/web')
@@ -86,14 +95,24 @@ describe('build executor', () => {
     expect(result).toEqual({ success: true })
     const { command, argv, cwd } = spawnArguments()
     expect(command).toBe('flutter')
-    expect(argv).toEqual(['build', 'web', '--output', '../../dist/apps/web'])
-    expect(cwd).toBe('/ws/apps/web')
+    expect(argv).toEqual(['build', 'web', '--output', join('/ws', 'dist/apps/web')])
+    expect(cwd).toBe(join('/ws', 'apps/web'))
   })
 
-  it('handles a deeper project root', async () => {
-    await buildExecutor({ outputPath: 'dist/apps/web' }, contextFor('/ws', 'apps/nested/web'))
+  it('passes an absolute --output at every project depth, never a `..` path', async () => {
+    // The regression guard, asserted as a property rather than on one fixture:
+    // the old code produced a different number of `../` segments per depth, so a
+    // single-path assertion is exactly what let the shape look intentional.
+    for (const projectRoot of ['apps/web', 'apps/nested/web', 'apps/a/b/c/web']) {
+      mockSpawnSync.mockClear()
+      await buildExecutor({ outputPath: 'dist/apps/web' }, contextFor('/ws', projectRoot))
 
-    expect(spawnArguments().argv).toEqual(['build', 'web', '--output', '../../../dist/apps/web'])
+      const output = spawnArguments().argv.at(-1) as string
+
+      expect(isAbsolute(output)).toBe(true)
+      expect(output).not.toContain('..')
+      expect(output).toBe(join('/ws', 'dist/apps/web'))
+    }
   })
 
   it('reports failure when the build exits non-zero', async () => {

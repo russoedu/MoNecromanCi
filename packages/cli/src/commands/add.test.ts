@@ -74,14 +74,14 @@ describe('runAdd', () => {
     await expect(runAdd('react-app', 'web', {})).resolves.toBeUndefined()
   })
 
-  it('formats the workspace after adding a project, so format:check stays green', async () => {
+  it('formats the workspace after adding a project, so lint stays green', async () => {
     // Nx's generators write semicolons and double quotes; `nx sync` and the
     // root-manifest/.code-workspace edits touch files outside the new project.
     // Without this the workspace fails its own `npm run format:check` the
     // moment a project is added.
     await runAdd('react-app', 'web', {})
 
-    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot, 'eslint')
+    expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot)
   })
 
   it('generates an internal lib under libs/ — buildable (tsc) but marked private', async () => {

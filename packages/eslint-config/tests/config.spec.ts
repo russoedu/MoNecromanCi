@@ -37,7 +37,11 @@ const FIXTURES: Record<string, string> = {
   'comment.ts': '//not spaced\nexport const a = 1\n',
   'members.ts':
     'export class C {\n  a(): number {\n    return 1\n  }\n  b(): number {\n    return 2\n  }\n}\n',
-  'formatting.ts': 'export const a =        "x";\n',
+  // Genuinely badly formatted, in four separate ways: extra inline spaces, a
+  // double-quoted string, a semicolon, and a real indentation error. The old
+  // fixture was a single line, so it could not exercise `indent` at all while
+  // the assertion's comment claimed it did.
+  'formatting.ts': 'export function f () {\n      const a =        "x";\n  return a\n}\n',
   'dupe.json': '{"a": 1, "a": 2}\n',
   'dupe.json5': '{a: 1, a: 2}\n',
   'ci.yaml': 'a: 1\na: 2\n',
@@ -82,8 +86,11 @@ const FIXTURES: Record<string, string> = {
 
   // JSX accessibility. `@html-eslint/require-img-alt` covers `**/*.html` only, so
   // an <img> in a component used to be checked by nothing at all.
-  'a11y.tsx': 'export const Bad = (): JSX.Element => <img src="x.png" />\n',
-  'a11y-ok.tsx': 'export const Good = (): JSX.Element => <img src="x.png" alt="a cat" />\n',
+  // JSX attributes use SINGLE quotes: Standard's `jsx-quotes` is `prefer-single`,
+  // and these fixtures must be style-clean now that ESLint owns formatting. They
+  // were written when Prettier did, so ESLint had no opinion on them at all.
+  'a11y.tsx': "export const Bad = (): JSX.Element => <img src='x.png' />\n",
+  'a11y-ok.tsx': "export const Good = (): JSX.Element => <img src='x.png' alt='a cat' />\n",
   // React correctness, now from @eslint-react rather than eslint-plugin-react.
   // A list rendered without a key is the canonical example, and it is a real
   // defect: React reconciles by position instead of identity and silently
@@ -132,7 +139,7 @@ let workspace: string
 let reported: Record<string, string[]>
 
 /** Writes a root config that loads this package exactly as a consumer would. */
-function writeConfig(directory: string, options = ''): void {
+function writeConfig (directory: string, options = ''): void {
   writeFileSync(
     join(directory, 'eslint.config.mjs'),
     `import mnci from ${JSON.stringify(join(packageRoot, 'index.js'))}\nexport default mnci(${options})\n`
@@ -140,7 +147,7 @@ function writeConfig(directory: string, options = ''): void {
 }
 
 /** Runs the real eslint over `directory`, returning filename → reported rule IDs. */
-function lintAll(directory: string): Record<string, string[]> {
+function lintAll (directory: string): Record<string, string[]> {
   const result = spawnSync(
     eslintBin,
     ['.', '--format', 'json', '--no-error-on-unmatched-pattern'],
@@ -167,7 +174,7 @@ function lintAll(directory: string): Record<string, string[]> {
 }
 
 /** The rule IDs reported for one fixture (empty when it linted clean). */
-function rulesFor(filename: string): string[] {
+function rulesFor (filename: string): string[] {
   return reported[filename] ?? []
 }
 
@@ -184,7 +191,7 @@ function rulesFor(filename: string): string[] {
  * @param filename - File whose resolved config is wanted, relative to `directory`.
  * @returns The parsed config, with its `rules` map.
  */
-function printConfig(directory: string, filename: string): { rules: Record<string, unknown[]> } {
+function printConfig (directory: string, filename: string): { rules: Record<string, unknown[]> } {
   const result = spawnSync(eslintBin, ['--print-config', filename], {
     cwd: directory,
     encoding: 'utf8',
@@ -233,12 +240,17 @@ describe('@mnci/eslint-config', () => {
     expect(rulesFor('members.ts')).toContain('@stylistic/lines-between-class-members')
   })
 
-  it('never re-enables a rule that would fight Prettier', () => {
-    // `space-before-function-paren` is Standard's signature rule and the
-    // tempting thing to add back. It must stay off: Prettier rewrites
-    // `function f (a)` to `function f(a)` on every run, so enabling it makes
-    // `npm run lint` and `npm run format:check` mutually unsatisfiable.
-    expect(rulesFor('spacing.ts')).not.toContain('@stylistic/space-before-function-paren')
+  it('enforces `space-before-function-paren`, which no formatter now contradicts', () => {
+    // The assertion this replaces said the exact opposite, and was right at the
+    // time: `eslint-config-prettier` switched the rule off because Prettier
+    // rewrites `function f (a)` back to `function f(a)` on every run, so
+    // enabling it made `lint` and `format:check` mutually unsatisfiable. oxfmt
+    // had the identical limitation.
+    //
+    // With ESLint as the only tool there is nothing left to contradict it, so
+    // Standard's signature rule is finally reachable. This is the single most
+    // visible consequence of dropping the formatter.
+    expect(rulesFor('spacing.ts')).toContain('@stylistic/space-before-function-paren')
   })
 
   it('does not fail generated build config over numeric separators', () => {
@@ -251,11 +263,21 @@ describe('@mnci/eslint-config', () => {
     expect(rulesFor('rollup.fixture.ts')).not.toContain('unicorn/numeric-separators-style')
   })
 
-  it('does NOT re-enable the formatting rules Prettier owns', () => {
-    // Badly indented, double-quoted, semicolon-terminated — all Prettier's job.
+  it('owns formatting itself, reporting it as ordinary lint errors', () => {
+    // Also inverted. This used to assert ZERO stylistic rules fired on a badly
+    // formatted file, because Prettier owned formatting and ESLint deliberately
+    // had no opinion — which is exactly why a formatting mistake produced no
+    // squiggle, no message and no Problems entry in the editor.
+    //
+    // Now the same fixture — badly indented, double-quoted,
+    // semicolon-terminated — must report each of those as a normal, fixable
+    // lint error with a rule name attached.
     const stylistic = rulesFor('formatting.ts').filter(rule => rule.startsWith('@stylistic/'))
 
-    expect(stylistic).toEqual([])
+    expect(stylistic).toContain('@stylistic/indent')
+    expect(stylistic).toContain('@stylistic/quotes')
+    expect(stylistic).toContain('@stylistic/semi')
+    expect(stylistic).toContain('@stylistic/no-multi-spaces')
   })
 
   it('lints JSON and JSON5', () => {

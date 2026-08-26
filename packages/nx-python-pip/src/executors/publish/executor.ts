@@ -29,7 +29,7 @@ import type { PublishExecutorSchema } from './schema.d'
  * @throws Never - failures surface through the returned `success: false`.
  * @typeParam None - this function has no generic type parameters.
  */
-export default async function publishExecutor(
+export default async function publishExecutor (
   options: PublishExecutorSchema,
   context: ExecutorContext
 ): Promise<{ success: boolean }> {

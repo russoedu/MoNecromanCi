@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runFormatter, runNpx, runShell } from '../nx'
 import {
@@ -41,8 +42,6 @@ export interface NewOptions {
   ci?: CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
-  /** Linter + paired formatter. See {@link StackConfig}. */
-  linter?: StackConfig['linter']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
   nxCloud?: boolean
 }
@@ -72,7 +71,7 @@ export interface NewOptions {
  * @throws Never - pure mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
+function nxCloudProviderValue (ci: CiProvider): 'github' | 'azure' {
   return ci === 'azure' ? 'azure' : 'github'
 }
 
@@ -88,20 +87,14 @@ function nxCloudProviderValue(ci: CiProvider): 'github' | 'azure' {
  * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-async function resolveStack(options: NewOptions): Promise<StackConfig> {
-  // Either flag skips the prompt, so a caller can pin one half of the stack and
-  // take the default for the other without being asked about it.
-  if (options.testRunner || options.linter || options.yes) {
-    return {
-      testRunner: options.testRunner ?? DEFAULT_STACK.testRunner,
-      linter: options.linter ?? DEFAULT_STACK.linter
-    }
+async function resolveStack (options: NewOptions): Promise<StackConfig> {
+  // The flag skips the prompt entirely: the stack is one choice now that the
+  // linter is no longer part of it.
+  if (options.testRunner || options.yes) {
+    return { testRunner: options.testRunner ?? DEFAULT_STACK.testRunner }
   }
   const prompted = await promptStack()
-  return {
-    testRunner: prompted.testRunner,
-    linter: prompted.linter
-  }
+  return { testRunner: prompted.testRunner }
 }
 
 /**
@@ -121,7 +114,7 @@ async function resolveStack(options: NewOptions): Promise<StackConfig> {
  */
 const CI_PROVIDERS: ReadonlySet<CiProvider> = new Set(['azure', 'github', 'both'])
 
-async function resolveCi(options: NewOptions): Promise<CiProvider> {
+async function resolveCi (options: NewOptions): Promise<CiProvider> {
   if (options.ci && CI_PROVIDERS.has(options.ci)) {
     return options.ci
   }
@@ -139,7 +132,7 @@ async function resolveCi(options: NewOptions): Promise<CiProvider> {
  * @throws Propagates prompt errors (e.g. when stdin is not a TTY).
  * @typeParam None - this function has no generic type parameters.
  */
-async function resolveRegistry(options: NewOptions): Promise<RegistryConfig> {
+async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
   if (options.registry === 'azure-artifacts' || (options.organization && options.artifactsFeed)) {
     return {
       kind: 'azure-artifacts',
@@ -170,7 +163,7 @@ async function resolveRegistry(options: NewOptions): Promise<RegistryConfig> {
  * @throws Error when any underlying command exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runNew(name: string | undefined, options: NewOptions): Promise<void> {
+export async function runNew (name: string | undefined, options: NewOptions): Promise<void> {
   const workspaceName = name ?? (await promptText('Workspace name'))
   // Fails fast, before any further prompt or side effect: the name becomes a
   // directory, a `create-nx-workspace` argument and (derived) an npm scope, so
@@ -227,9 +220,32 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   )
   applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
 
+  // npm honours `overrides` only when it RESOLVES a tree, and by this point
+  // `create-nx-workspace` has already installed one and written its lockfile —
+  // both without the overrides `applyOverlay` just added. npm then reuses that
+  // tree wholesale on the next install, so the overrides are silently ignored.
+  //
+  // This is not theoretical, and it is npm-version dependent, which is what
+  // made it survive three nightlies. Reproduced on nx 23.1.1, which nests a
+  // vulnerable `brace-expansion@5.0.8` under `node_modules/nx`:
+  //
+  //   npm 10.9.7  create → overlay → install  →  0 advisories
+  //   npm 11.19.0 create → overlay → install  →  6 advisories
+  //
+  // So the generated workspace shipped six high advisories while this repo —
+  // whose own lockfile was resolved WITH the overrides present — read 0, and
+  // every local check agreed with the wrong one.
+  //
+  // Both artifacts have to go. Removing only the lockfile still reports 6 under
+  // npm 11: an existing `node_modules` is by itself enough for npm to keep the
+  // stale tree. Measured both ways rather than assumed.
+  rmSync(join(workspaceRoot, 'node_modules'), { recursive: true, force: true })
+  rmSync(join(workspaceRoot, 'package-lock.json'), { force: true })
+
   // One install. It also pulls in everything `applyOverlay` just added to the
   // manifest — Prettier, ESLint and `@mnci/eslint-config` — which is why the
-  // formatting pass below can run immediately after.
+  // formatting pass below can run immediately after. It resolves from scratch,
+  // by construction of the two removals above.
   logger.step('Installing the toolchain (commitlint + husky + linting/formatting)')
   const installStatus = runShell(
     'npm',
@@ -243,12 +259,10 @@ export async function runNew(name: string | undefined, options: NewOptions): Pro
   runShell('npx', ['husky'], workspaceRoot)
 
   // `create-nx-workspace` wrote its scaffold in its own style, which is not
-  // mnci's. Normalise it now so the workspace passes its own `format:check`
-  // from the very first commit.
-  logger.step(
-    `Formatting the workspace (${stack.linter === 'oxlint' ? 'oxfmt' : 'Prettier'}, JavaScript Standard Style)`
-  )
-  runFormatter(workspaceRoot, stack.linter)
+  // mnci's. Normalise it now so the workspace passes its own `lint` from the
+  // very first commit.
+  logger.step('Formatting the workspace (eslint --fix, JavaScript Standard Style)')
+  runFormatter(workspaceRoot)
 
   logger.success('Done. Next steps:')
   logger.info(`  cd ${workspaceName}`)

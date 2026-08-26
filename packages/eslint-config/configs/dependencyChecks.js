@@ -45,7 +45,7 @@ try {
  * @param workspaceRoot - Absolute path to the workspace root.
  * @returns The flat config blocks, or an empty array when Nx is absent.
  */
-export default function dependencyChecks(workspaceRoot) {
+export default function dependencyChecks (workspaceRoot) {
   // No Nx present means no project graph to check against — skip rather than
   // crash, so this package stays usable outside an Nx workspace.
   if (!nxPlugin) {

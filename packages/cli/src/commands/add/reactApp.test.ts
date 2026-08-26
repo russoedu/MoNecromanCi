@@ -132,7 +132,7 @@ describe('runAdd react-app', () => {
       '{workspaceRoot}/dist/drop/react-app-web-uat.zip',
       '{workspaceRoot}/dist/drop/react-app-web-prod.zip'
     ])
-    expect(targets.package.options.command).toContain(`writeZip('dist/drop/react-app-web-uat.zip')`)
+    expect(targets.package.options.command).toContain('writeZip(\'dist/drop/react-app-web-uat.zip\')')
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {

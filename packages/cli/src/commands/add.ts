@@ -103,25 +103,25 @@ export type { AddOptions } from './add/shared'
  * @typeParam None - this type has no generic type parameters.
  */
 export type ProjectKind =
-  | 'react-app'
-  | 'react-lib'
-  | 'react-internal-lib'
-  | 'node-app'
-  | 'node-function-app'
-  | 'npm-lib'
-  | 'internal-lib'
-  | 'python-app'
-  | 'python-function-app'
-  | 'python-lib'
-  | 'python-internal-lib'
-  | 'python-vendor'
-  | 'go-app'
-  | 'go-function-app'
-  | 'go-lib'
-  | 'go-internal-lib'
-  | 'flutter-app'
-  | 'flutter-lib'
-  | 'flutter-internal-lib'
+  | 'react-app' |
+  'react-lib' |
+  'react-internal-lib' |
+  'node-app' |
+  'node-function-app' |
+  'npm-lib' |
+  'internal-lib' |
+  'python-app' |
+  'python-function-app' |
+  'python-lib' |
+  'python-internal-lib' |
+  'python-vendor' |
+  'go-app' |
+  'go-function-app' |
+  'go-lib' |
+  'go-internal-lib' |
+  'flutter-app' |
+  'flutter-lib' |
+  'flutter-internal-lib'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -172,7 +172,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
  * @throws Error when run outside a workspace root or a generator fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export async function runAdd(
+export async function runAdd (
   kind: ProjectKind | undefined,
   name: string | undefined,
   options: AddOptions
@@ -299,7 +299,7 @@ export async function runAdd(
       // generic "Added ... 'name'" success message below reads wrong for
       // this kind, so it returns early with its own message instead.
       syncProjectReferences(workspaceRoot)
-      runFormatter(workspaceRoot, stack.linter)
+      runFormatter(workspaceRoot)
       return
     }
     default: {
@@ -322,7 +322,7 @@ export async function runAdd(
   // `nx sync` plus the root-manifest/`.code-workspace` edits above touch files
   // outside the new project — so this formats the workspace, not just
   // `<projectRoot>`. Keeps `npm run format:check` green after every add.
-  runFormatter(workspaceRoot, stack.linter)
+  runFormatter(workspaceRoot)
 
   logger.success(`Added ${resolvedKind} '${resolvedName}'.`)
 }
@@ -348,7 +348,7 @@ export async function runAdd(
  * @throws Never - a non-zero `nx sync` is reported as a warning, not thrown.
  * @typeParam None - this function has no generic type parameters.
  */
-function syncProjectReferences(workspaceRoot: string): void {
+function syncProjectReferences (workspaceRoot: string): void {
   logger.step('Syncing TypeScript project references (nx sync)')
   if (runShell('npx', ['nx', 'sync'], workspaceRoot) !== 0) {
     logger.warn(
@@ -377,19 +377,12 @@ function syncProjectReferences(workspaceRoot: string): void {
  * @throws Propagates any `fs`/JSON error reading `nx.json`.
  * @typeParam None - this function has no generic type parameters.
  */
-function readWorkspaceStack(workspaceRoot: string): WorkspaceStack {
+function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
   const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string; linter?: string } } }>(
     join(workspaceRoot, 'nx.json')
   )
   const stack = nxJson.mnci?.stack
   return {
-    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
-    // Defaults to `eslint` when absent, the same call `mnci upgrade` makes and
-    // for the same reason: every workspace generated before the choice existed
-    // has no persisted value and is an ESLint workspace. Reading it at all is
-    // the fix — this function returned `testRunner` alone, so `add` finished by
-    // formatting an oxlint workspace with Prettier, against Prettier's defaults,
-    // since the overlay had deleted the config that would have corrected it.
-    linter: stack?.linter === 'oxlint' ? 'oxlint' : 'eslint'
+    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest'
   }
 }

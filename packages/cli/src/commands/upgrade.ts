@@ -45,8 +45,6 @@ export interface UpgradeOptions {
   ci?: CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
   testRunner?: StackConfig['testRunner']
-  /** Override the persisted linter choice. See {@link StackConfig}. */
-  linter?: StackConfig['linter']
 }
 
 /**
@@ -65,7 +63,7 @@ export interface UpgradeOptions {
  * be resolved from either flags or the persisted config.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveRegistry(
+function resolveRegistry (
   options: UpgradeOptions,
   persisted: RegistryConfig | undefined
 ): RegistryConfig {
@@ -125,7 +123,7 @@ function resolveRegistry(
  * @throws Never - an unreadable directory falls through to the basename.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveWorkspaceName(workspaceRoot: string, persisted: Partial<OverlayOptions>): string {
+function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<OverlayOptions>): string {
   if (persisted.workspaceName) {
     return persisted.workspaceName
   }
@@ -156,7 +154,7 @@ function resolveWorkspaceName(workspaceRoot: string, persisted: Partial<OverlayO
  * the persisted config, naming the flag needed to supply it.
  * @typeParam None - this function has no generic type parameters.
  */
-function resolveOverlayOptions(
+function resolveOverlayOptions (
   workspaceRoot: string,
   options: UpgradeOptions,
   persisted: Partial<OverlayOptions>
@@ -182,11 +180,6 @@ function resolveOverlayOptions(
   // missing persisted value is not an error the way scope/ci/agent are.
   const variableGroup = options.variableGroup ?? persisted.variableGroup ?? 'Build'
   // Defaults to `eslint` rather than erroring when absent, unlike testRunner
-  // above. Every workspace generated before the linter choice existed has no
-  // persisted value and is an ESLint workspace, so an upgrade of one must be a
-  // no-op here — demanding a flag would break `mnci upgrade` for every existing
-  // workspace, which is the one thing that command must never do.
-  const linter = options.linter ?? persisted.stack?.linter ?? 'eslint'
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
   if (!testRunner) {
     throw new Error(
@@ -201,7 +194,7 @@ function resolveOverlayOptions(
     agent,
     variableGroup,
     ci,
-    stack: { testRunner, linter }
+    stack: { testRunner }
   }
 }
 
@@ -234,7 +227,7 @@ function resolveOverlayOptions(
  * config.
  * @typeParam None - this function has no generic type parameters.
  */
-export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void {
+export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): void {
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
     throw new Error(
       `No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`
@@ -252,11 +245,7 @@ export function runUpgrade(workspaceRoot: string, options: UpgradeOptions): void
   // `nx.json` it had just rewritten mis-formatted — which now fails the
   // workspace's own `format:check` CI gate. Non-fatal for the same reason it is
   // there: the overlay is already applied by this point.
-  //
-  // The linter comes from `resolved`, which is what `applyOverlay` was just
-  // given — so a `mnci upgrade --linter=oxlint` formats with the formatter it
-  // has this moment switched TO, not the one the workspace had on the way in.
-  runFormatter(workspaceRoot, resolved.stack.linter)
+  runFormatter(workspaceRoot)
 
   logger.success('Done. Review the changes with `git diff` before committing.')
 }

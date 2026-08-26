@@ -23,7 +23,7 @@
  * @param blocks - The preset's config blocks.
  * @returns The same blocks, each with a `name`.
  */
-export function named(prefix, blocks) {
+export function named (prefix, blocks) {
   return blocks.map((block, index) => ({
     ...block,
     name: block.name ?? (blocks.length === 1 ? prefix : `${prefix}/${index}`)

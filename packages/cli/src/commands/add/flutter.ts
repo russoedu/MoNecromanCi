@@ -21,7 +21,7 @@ import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
  * @throws Propagates any `fs`/JSON error reading or writing the file.
  * @typeParam None - this function has no generic type parameters.
  */
-function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<string, unknown>): void {
+function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
   const project = readJson<Record<string, unknown>>(projectJsonPath)
   const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
   writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
@@ -41,7 +41,7 @@ function addProjectJsonTargets(projectJsonPath: string, newTargets: Record<strin
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function flutterAppStartTarget(name: string): Record<string, unknown> {
+function flutterAppStartTarget (name: string): Record<string, unknown> {
   return {
     executor: 'nx:run-commands',
     continuous: true,
@@ -67,7 +67,7 @@ function flutterAppStartTarget(name: string): Record<string, unknown> {
  * @throws Error when `flutter` cannot be run.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureFlutter(workspaceRoot: string): void {
+function ensureFlutter (workspaceRoot: string): void {
   if (runShell('flutter', ['--version'], workspaceRoot) !== 0) {
     throw new Error(
       'Flutter not found. Install the Flutter SDK first (3.27+, for Dart 3.6+ pub workspaces): https://docs.flutter.dev/get-started/install'
@@ -89,7 +89,7 @@ function ensureFlutter(workspaceRoot: string): void {
  * @throws Never - reads an environment variable.
  * @typeParam None - this function has no generic type parameters.
  */
-function nxFlutterPluginSpec(): string {
+function nxFlutterPluginSpec (): string {
   return process.env.MNCI_NX_FLUTTER_SPEC ?? '@mnci/nx-flutter'
 }
 
@@ -108,7 +108,7 @@ function nxFlutterPluginSpec(): string {
  * @throws Error when the install exits non-zero.
  * @typeParam None - this function has no generic type parameters.
  */
-function ensureNxFlutterPlugin(workspaceRoot: string): void {
+function ensureNxFlutterPlugin (workspaceRoot: string): void {
   if (hasPlugin(workspaceRoot, '@mnci/nx-flutter')) {
     return
   }
@@ -122,7 +122,7 @@ function ensureNxFlutterPlugin(workspaceRoot: string): void {
 }
 
 /** Shared preflight for every Flutter kind: toolchain, then plugin. */
-function prepareFlutter(workspaceRoot: string): void {
+function prepareFlutter (workspaceRoot: string): void {
   ensureFlutter(workspaceRoot)
   ensureNxFlutterPlugin(workspaceRoot)
 }
@@ -148,7 +148,7 @@ function prepareFlutter(workspaceRoot: string): void {
  * @throws Error when Flutter is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addFlutterApp(workspaceRoot: string, name: string): void {
+export function addFlutterApp (workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   ensureAdmZip(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:application', name, '--no-interactive'], workspaceRoot)
@@ -177,7 +177,7 @@ export function addFlutterApp(workspaceRoot: string, name: string): void {
  * @throws Error when Flutter is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addFlutterLib(workspaceRoot: string, name: string): void {
+export function addFlutterLib (workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:library', name, '--no-interactive'], workspaceRoot)
   registerProjectCommands(workspaceRoot, name, { build: false })
@@ -200,7 +200,7 @@ export function addFlutterLib(workspaceRoot: string, name: string): void {
  * @throws Error when Flutter is missing, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addFlutterInternalLib(workspaceRoot: string, name: string): void {
+export function addFlutterInternalLib (workspaceRoot: string, name: string): void {
   prepareFlutter(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:internal-library', name, '--no-interactive'], workspaceRoot)
   registerProjectCommands(workspaceRoot, name, { build: false })

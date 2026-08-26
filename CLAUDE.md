@@ -14,8 +14,7 @@ This monorepo is itself an Nx monorepo, built and maintained by the CLI it ships
 ```
 packages/
 ├── cli/                  # @mnci/cli — the CLI binary (mnci new/add/upgrade)
-├── eslint-config/        # @mnci/eslint-config — the shared ESLint + Prettier config
-├── oxlint-config/        # @mnci/oxlint-config — the same opinion on oxlint + oxfmt
+├── eslint-config/        # @mnci/eslint-config — the whole opinion: quality, types AND formatting
 ├── nx-python-pip/        # @mnci/nx-python-pip — Nx plugin for pip-native Python projects
 └── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
 
@@ -33,8 +32,7 @@ azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initia
 nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
 eslint.config.mjs         # ESLint flat config — mnci-owned; one import from @mnci/eslint-config,
                           #   plus a named inventory of every block and how to override it
-.prettierrc.mjs           # re-exports @mnci/eslint-config/prettier (JavaScript Standard Style)
-.prettierignore           # paths Prettier skips
+                          #   (there is NO formatter config: ESLint is the formatter)
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
 .npmrc                    # publish auth (azure also routes @scope to the feed)
@@ -58,8 +56,10 @@ does it too — the docs already tell users to `git diff` before committing an u
 
 - **Bundler**: npm workspaces (TypeScript project references, no per-project `project.json`)
 - **Language**: TypeScript (with dual compiler: TS 6 for API, TS 7 `tsc` for compile)
-- **Linting**: ESLint (flat config) — code quality only
-- **Formatting**: Prettier — JavaScript Standard Style (no semicolons, single quotes, 2-space)
+- **Linting AND formatting**: ESLint (flat config) — one tool. Code quality,
+  type-aware rules and JavaScript Standard Style, including
+  `space-before-function-paren`, which no formatter could ever satisfy. There is
+  no Prettier and no oxfmt; `eslint --fix` is the formatter
 - **Testing**: Jest (default) or Vitest
 - **Build**: esbuild (Node apps), Rollup (npm libs), `python -m build` (Python), `go build` (Go), `flutter build web` (Flutter)
 - **Release**: `nx release` (versioning from conventional commits, git tag-only push)
@@ -82,7 +82,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 
 - **`packages/cli/src/overlay.ts`** — the config files mnci owns (see "Files `mnci` owns" below):
   - Exports `applyOverlay()` (pure file writer, deterministic)
-  - Exports config constants: `ROOT_SCRIPTS`, `RELEASE_CONFIG`, `PRETTIER_CONFIG`, etc.
+  - Exports config constants: `ROOT_SCRIPTS`, `RELEASE_CONFIG`, `RETIRED_FORMATTER_FILES`, etc.
   - Exports VS Code workspace file template (`vscodeWorkspace()`)
   - Exports CI YAML generators: `azurePipelinesYaml()`, `githubActionsYaml()`
   - Exports shared guard scripts (Python install, pack, release) used by both CI providers
@@ -154,8 +154,8 @@ does it too — the docs already tell users to `git diff` before committing an u
 ```bash
 npm run build          # build @mnci/cli, @mnci/nx-python-pip, @mnci/nx-flutter
 npm run test           # unit tests (cli, nx-python-pip, nx-flutter)
-npm run lint           # ESLint (code quality) + Prettier (formatting check)
-npm run format         # Prettier --write (auto-fix formatting)
+npm run lint           # ESLint — code quality, type-aware rules AND formatting
+npm run format         # eslint . --fix --cache (auto-fix, incl. formatting)
 npm run typecheck      # tsc across the workspace (bundlers do not type-check)
 npm run affected       # lint + typecheck + test + build for changed projects only
 npm run graph          # open Nx project graph
@@ -164,7 +164,7 @@ npm run release:preview  # dry-run what nx release would do
 
 ### Key Commands
 
-- **`npm run format`** before committing — workspace is generated with semicolons/double-quotes, needs normalization to Standard Style
+- **`npm run format`** before committing — `eslint . --fix --cache`; Nx generates semicolons/double-quotes, which needs normalising to Standard Style
 - **`git diff`** before pushing — review what `mnci upgrade` or any overlay change actually touches
 - **No breaking of tools** — the CLI is dogfooded; if a change breaks the e2e or generated workspace lint/test/build, the CI will catch it
 
@@ -210,7 +210,229 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### The e2e Now Installs Go's Linter and the Flutter SDK (Latest)
+### Prettier Fully Retired, and Two Gates That Had Never Worked (Latest)
+
+The tail of the ESLint-only migration, plus the two defects the first honest
+nightly exposed. `npm run format:check` no longer exists anywhere, and the
+Windows e2e is green: **176 enforced checks, 0 failures**, with Go, Flutter and
+Python all genuinely running rather than skipped.
+
+- **mnci recommended the extension it warns about.** Every generated
+  `.code-workspace` AND devcontainer listed `esbenp.prettier-vscode`, while
+  `applyOverlay()` deleted every Prettier config and `mnci doctor` reported a
+  survivor as a failure. The extension needs no config file to act — with none
+  present it formats against Prettier's own defaults, the exact inverse of
+  Standard — and it runs on save, so the damage lands *after* every gate. mnci
+  was installing its own hazard and then cleaning up after it.
+- **The root manifest still declared `prettier`**, and it was the last thing in
+  the whole tree that did. `mnci doctor` would have failed this repo on the check
+  this repo ships. `dogfood.test.ts` now holds mnci to the invariants it enforces
+  elsewhere — the gap existed because every gate pointed at generated workspaces
+  rather than at mnci.
+- **The shipped `eslint.config.mjs` comment said the opposite of the truth**,
+  telling users `space-before-function-paren` "cannot work". That rule is ON;
+  dropping the formatter is what made it reachable. It now carries the inverse
+  warning: do not add a formatter.
+- **`@stylistic/comma-dangle` enforced NOTHING** — `['warn', { …: 'ignore' }]`,
+  every context ignored. The programmatic extraction from neostandard picked up a
+  disable layer instead of Standard's setting. Audited: the only one of the 60
+  rules affected (`jsx-wrap-multilines`'s ignores are genuine).
+- **The Flutter internal-dep injection had never worked on Windows.** The e2e's
+  pubspec pattern was LF-only; `flutter create` writes CRLF, and
+  `String.replace` on a non-match is a silent no-op. It passed for months only
+  because the `alt` workspace was then formatted by **oxfmt**, which rewrote the
+  pubspec to LF in passing — 21 oxfmt invocations in the last passing nightly, 0
+  in the first failing one. Retiring oxfmt did not break the test; it removed the
+  accident hiding a test that never worked. `replaceInFile` now throws on a
+  non-match, and the assertion that should have caught it (which checked
+  `package_config.json` — true of *any* workspace member — and "no `path:`" —
+  trivially true of a dependency never written) now asserts the declaration.
+- **`mnci add flutter-app` shipped an inaccessible web shell.** `flutter create`
+  writes `<html>` with no `lang`, which `@html-eslint/require-lang` errors on, so
+  a generated app failed its own `npm run lint` on a file the user never opened.
+  Patched (`withHtmlLang`), not linted around — switching off an a11y rule for
+  upstream boilerplate is the worse trade.
+- **THREE wrong versions of one guard, each caught by execution, not review.**
+  `e2eFixtures.test.ts` lints the e2e's own fixtures in seconds instead of
+  leaving the contract to a 50-minute Windows run. v1 wrote its probe to
+  `os.tmpdir()`, where flat config replies `File ignored because outside of base
+path` — a *warning* with a null `ruleId`, which the `@stylistic/` filter
+  discarded, so all seven tests passed while checking nothing. v2 moved it to the
+  repo root and **raced `@mnci/source:lint`** under `nx run-many`
+  (`ENOENT` on the probe), which a warm Nx cache hid locally — use
+  `--skip-nx-cache`. v3 uses `eslint --stdin --stdin-filename`: no file, no race.
+  It reads an explicit `// @standard-clean` marker, because most fixtures are
+  *deliberately* unformatted as evidence the `add` formatter pass works — v1 of
+  that logic flagged four correct-by-design fixtures, a guard that would have
+  been "fixed" by breaking the suite.
+- **The standing lesson: a passing guard is not a working guard.** Five inert or
+  wrong gates surfaced in this stretch alone. Mutation-test every one, and never
+  report a CI verdict from the tail of a log — one such reading here reported
+  "one failure" for a run that had five.
+
+### ESLint Is the Only Tool: Quality, Types and Formatting
+
+`@mnci/oxlint-config` is deleted, Prettier is gone, the `--linter` choice is
+gone, and `@mnci/eslint-config` now carries the formatting opinion as rules.
+One tool, one config, one command — and **nothing to keep in sync**, which was
+the whole argument for collapsing rather than pairing.
+
+- **The user's own reasoning drove this, and it was right.** A formatter and a
+  linter that both hold style opinions must be kept in agreement; the previous
+  arrangement avoided that only because `eslint-config-prettier` switched every
+  stylistic rule OFF, so ESLint had no opinion at all. That is also precisely why
+  a formatting mistake produced no squiggle, no message and no Problems entry —
+  the complaint that started this.
+- **`space-before-function-paren` is ON.** Standard's signature rule was
+  unreachable for as long as a Prettier-compatible formatter owned formatting:
+  Prettier and oxfmt both rewrite `function f (a)` back to `function f(a)`, so
+  enabling it made `lint` and `format:check` mutually unsatisfiable. With no
+  formatter, nothing contradicts it. 82 files reformatted; 306 problems in
+  `@mnci/cli` alone, 99% auto-fixed.
+- **`eslint-config-prettier` is removed, and that removal is load-bearing.** It
+  exists to switch stylistic rules off so a formatter can own them. Composing it
+  after the new block would silently disable all sixty Standard rules — a
+  disabled rule reports nothing, so `lint` would pass while enforcing nothing.
+- **Rules derived from `neostandard`, which is deliberately NOT a dependency.**
+  Extracted programmatically and ported to `@stylistic` v5 so no rule or option
+  is mistyped. neostandard itself was measured and rejected: it pins `@stylistic`
+  at exactly `2.11.0`, which calls `sourceCode.isSpaceBetweenTokens` — removed in
+  ESLint 10 — so it throws on the first file; forcing it onto v5 fails
+  differently, since its config names `func-call-spacing`, which v5 dropped. Its
+  `eslint: ^9` peer is accurate, not stale. **An override made it install and it
+  still did not work** — the same shape as the audit gate that verified nothing.
+- **`jsx-indent` was the subtle one.** Dropping the deprecated rule alone would
+  have left JSX indentation checked by **nothing**, because Standard also lists
+  all sixteen JSX node types in `indent`'s `ignoredNodes`. Both halves go, so
+  `indent` genuinely covers JSX — verified on a real `.tsx`. `TemplateLiteral *`
+  stays, since it is not a JSX node and removing it false-positives inside
+  template literals.
+- **`format:check` is gone from both CI providers and from the root scripts**,
+  and the anti-drift test now asserts its ABSENCE in both — the same property as
+  asserting presence, in the other direction. `lint` reports formatting now, so a
+  second step would run the same binary twice over the same tree.
+- **Speed: `--cache` adopted, `--concurrency` REJECTED, both measured.**
+  Best-of-3 on this repo: baseline 9,546ms, `--concurrency=auto` **10,286ms (8%
+  slower)**, `--cache` on an unchanged re-run **2,835ms (3.4x)**. An earlier
+  reading showed concurrency 2.6x faster; that was entirely TypeScript's
+  type-service warm-up on a cold first run. On 4 cores with type-aware linting,
+  per-worker service startup costs more than the parallelism saves.
+- **A pre-existing defect surfaced on the way**: `@mnci/cli`, `@mnci/nx-flutter`
+  and `@mnci/nx-python-pip` each declared `eslint: ^9.39.0` while the root
+  declared `^10.8.0`, so npm nested **ESLint 9.39.5** in all three. The ESLint 10
+  migration had only ever taken effect at the ROOT — every package had been
+  linting on 9. Correcting the ranges was not enough: npm kept the stale nested
+  copies (reporting them `invalid`) until the lockfile entries were deleted, the
+  same reuse-an-existing-tree behaviour fixed for generated workspaces in #143.
+- **`mnci doctor` keeps one check where it had three.** The eslint/oxlint mode
+  checks are meaningless now; `checkNoRetiredFormatter` replaces them with the
+  failure that survives: a leftover `.prettierrc.mjs` or `.oxfmtrc.json` is inert
+  from the command line, and that is exactly what makes it dangerous — a globally
+  installed `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves it and
+  reformats on save, quietly undoing Standard while `lint` stays green because
+  the damage lands after the check.
+- **`oxc-standard` was researched and rejected** before any of this was written:
+  it is a copied-file scaffold rather than a shareable config, peers
+  `oxfmt: ^0.48.0` (which cannot resolve to the 0.61 in use), was published in a
+  single 13-minute burst three months ago, has no
+  `space-before-function-paren` anywhere, and ships `trailingComma: "es5"` —
+  which Standard forbids and which is the exact drift that cost this repo 86
+  files once already.
+
+### Flutter Never Ran on Windows At All, and Generated Workspaces Shipped 6 CVEs
+
+Nightly #293 went 4 failures → 3, and the two that remained were both real. The
+Go `parallelism: false` fix is **confirmed** — that failure is gone.
+
+- **`--no-pub` was the wrong diagnosis, and the fixed error reporting said so.**
+  The run showed `flutter create --no-pub … failed with exit code 1` and
+  `flutter said: (no output)`. Nothing printed on either stream, which is not how
+  a command that ran and failed behaves.
+- **The real cause: `spawnSync` cannot execute a `.bat` at all.** Since the fix
+  for CVE-2024-27980 (Node 18.20.2 / 20.12.0 / 21.7.3), `child_process.spawnSync`
+  **refuses** `.bat`/`.cmd` without `shell: true`. It does not throw — it returns
+  `{ error, status: null, stdout: null }`. The code then reported
+  `status ?? 1` as "exit code 1" with empty output, and Nx's wrapper helpfully
+  suggested checking PATH. The SDK was on PATH and had printed its version
+  seconds earlier. **Every Flutter invocation on Windows failed before the process
+  started**, across all three executors as well as the generator — so
+  `@mnci/nx-flutter` has never worked on Windows in any published release.
+- **`flutterCommand()` was the bug, and its own doc comment named the fix.** It
+  returned `flutter.bat` on Windows to keep calls working "without `shell: true`
+  (which would reintroduce the argument-quoting hazard the CLI deliberately
+  avoids by using `cross-spawn`)". Correct about the hazard; wrong that naming the
+  `.bat` is sufficient. **cross-spawn resolves `.bat` shims without a shell**, so
+  the plugin now uses the same library the CLI does, and the dead helper is
+  deleted rather than left as a trap.
+- **Not reading `result.error` is what made this invisible for two nightlies.**
+  Capturing stdout/stderr was not enough: a spawn that never started and a command
+  that ran and failed produced the same message. `runFlutter()` now distinguishes
+  them, and every Flutter call in the package goes through it.
+- **Generated workspaces shipped SIX high advisories.** The audit step, running
+  inside a generated workspace for the first time, reported `brace-expansion` plus
+  the five `nx` packages that inherit it, all `fix available (semver-major)` —
+  so `npm audit fix` would try to bump `nx` itself. **This repo has carried the
+  targeted `nx` → `brace-expansion` override the whole time**, which is why its
+  own audit reads 0 while what it generates read 6. Same dogfooding drift as the
+  missing audit step: fixed here, never shipped. This is the audit gate earning
+  its keep the first time it ran somewhere that mattered.
+
+### The First Nightly With Go and Flutter Provisioned: Four Failures
+
+Exactly the informative-not-green run the previous entry predicted. All four
+provisioning steps succeeded, so both toolchains were genuinely present and the
+suite itself failed. Two of the four were regressions from this repo's own recent
+work; two were real defects that newly-enabled coverage exposed.
+
+- **Two stale e2e assertions, and they were mine.** The e2e looked the audit step
+  up by `displayName === 'npm audit (non-blocking)'` and asserted it "exits 0 even
+  when real vulnerabilities are found". Making the step blocking renamed it, so the
+  lookup returned `undefined` and the assertion failed. The unit tests were
+  updated in that change; these were missed. **The e2e caught what the unit tests
+  could not** — a string-match on the step name would have passed.
+- **`golangci-lint` self-locks, and mnci generated a workspace that trips it.**
+  `Error: parallel golangci-lint is running`. It takes a machine-global lock, Nx
+  runs `lint` across projects concurrently, so any workspace with two Go projects
+  fails `nx run-many -t lint` at random — one project printing `0 issues` while a
+  sibling dies on the lock, the victim moving between runs. Fixed with
+  `parallelism: false` on the Go lint target only. This is a **user-facing bug in
+  generated workspaces**, invisible for as long as the runner had no linter.
+- **`flutter create` fails because the generator resolves the pub workspace too
+  early — and the error was unreadable, which is why it took a nightly to see.**
+
+  The ordering, now traced through the code rather than guessed: Nx flushes the
+  Tree before any `GeneratorCallback` runs, so by the time `flutter create` is
+  invoked the ROOT `pubspec.yaml` already lists the new project in its
+  `workspace:` block. `flutter create` then writes the project's own
+  `pubspec.yaml` from its template — **without** `resolution: workspace`, which
+  the generator adds a few lines later — and finishes with an implicit
+  `flutter pub get`. Pub rejects that state outright: a package named in a
+  workspace must declare it is resolved by that workspace. The implicit resolve
+  fails and takes `flutter create` down with it.
+
+  Fixed with `--no-pub` on `flutter create`, plus one `flutter pub get` at the
+  **root** after the post-create edits — same end state, in an order pub accepts.
+  Root rather than in-project because that is what a pub workspace means: one
+  resolution for every member, one `pubspec.lock`. A failure there now throws,
+  since an `add` that leaves a project pub cannot resolve has not produced a
+  working project.
+
+  **Only reachable with a real SDK**, which is why three published releases of
+  this plugin never hit it, and why the e2e is the gate rather than a mocked unit
+  test — `generators.spec.ts` deliberately does not mock `flutter create`.
+
+  The diagnosis was only possible after fixing the error reporting. The generator used `stdio: 'inherit'` inside a
+  `GeneratorCallback`, where Nx owns the terminal and swallowed everything flutter
+  said. A whole nightly produced nothing but Nx's generic `failed with exit code
+  1. Is the Flutter SDK on your PATH?`, which was actively misleading: the SDK was
+on PATH and had printed `Flutter 3.44.8 • channel [user-branch]`two lines
+earlier. Output is now captured, echoed, and folded into the thrown error.
+**No fix is claimed for the underlying failure.** The leading hypothesis is
+ordering: the generator writes the root`pubspec.yaml`with its`workspace:`list *before*`flutter create`runs, and`flutter create`ends with an implicit`pub get`— while the new package does not carry`resolution: workspace` until
+     the post-create edit. That would make it a pub-workspace resolution failure, and
+     it would only ever appear with a real SDK. The next nightly should say.
+
+### The e2e Now Installs Go's Linter and the Flutter SDK
 
 `@mnci/nx-flutter` is a first-party, published plugin that had **never once been
 exercised in CI**, and the reason was not a missing test — the tests exist. Every
@@ -1146,7 +1368,8 @@ mnci worked while everything it produced did not.
 2. `package.json` (curated root scripts only — name, scripts, the dual TS compiler deps,
    the ESLint toolchain)
 3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
-4. `.prettierrc.mjs` (re-exports `@mnci/eslint-config/prettier`) + `.prettierignore`
+4. *(nothing — there is no formatter config; `mnci upgrade` DELETES `.prettierrc*`,
+   `.prettierignore`, `.oxfmtrc.json` and `oxlint.config.ts` if a past version wrote them)*
 5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
 7. `<workspace-name>.code-workspace` (VS Code configuration)

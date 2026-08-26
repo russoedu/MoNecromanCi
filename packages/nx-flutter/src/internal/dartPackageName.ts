@@ -20,6 +20,6 @@
  * @throws Never - pure string transformation.
  * @typeParam None - this function has no generic type parameters.
  */
-export function dartPackageName(name: string): string {
+export function dartPackageName (name: string): string {
   return name.replaceAll(/[-.]/g, '_')
 }
