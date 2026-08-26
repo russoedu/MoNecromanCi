@@ -508,6 +508,95 @@ repo settings. Either way it's mapped as `env` on the npm steps and read by
 the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
 No `npmAuthenticate@0` task (it would overwrite the hand-set password).
 
+#### Why `_password` and never `_authToken` — read this before "fixing" it
+
+Basic auth here is not a legacy choice. Azure Artifacts answers an unauthenticated
+`PUT` to its npm publish endpoint with:
+
+```
+www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+                  Basic realm="...", TFS-Federated
+```
+
+`authorization_uri` pointing at `login.windows.net` means its **Bearer scheme expects
+an Entra ID access token**. A PAT is not one. npm sends `_authToken` *verbatim* as a
+Bearer header (it base64-decodes only `_password`), so a PAT placed there is rejected
+with:
+
+```
+npm publish error:
+Unable to authenticate, your authentication token seems to be invalid.
+```
+
+**A PAT can only authenticate through the Basic scheme**, which is
+`username` + base64 `_password`. That is what this file emits.
+
+The trap worth knowing: a PAT *is* accepted as a Bearer token by the Packaging REST
+API (`https://feeds.dev.azure.com/<org>/<proj>/_apis/packaging/feeds` returns 200),
+so testing there looks like proof and is not. **Measure the endpoint the code
+actually calls.** An `_authToken` change was shipped and reverted on exactly this.
+
+Both feed path forms are keyed (`…/npm/registry/` and `…/npm/`) because npm matches
+credentials by URL prefix and walks only *up* a path, so an entry on
+`/npm/registry/` is never found for a request to `/npm/`.
+
+#### The alternative on Azure: build-identity auth, no PAT at all
+
+mnci does not generate this, but it is the better setup for an Azure Artifacts feed
+in the **same organisation** as the pipeline, and it is what a real workspace uses
+today. `npmAuthenticate@0` injects the build service identity's token — which *is*
+Entra-issued, so it satisfies the Bearer scheme the feed advertises — and there is no
+secret to store, encode, rotate or let expire.
+
+To switch a generated workspace over by hand:
+
+1. Delete the credential lines from the root `.npmrc`, keeping only the
+   `@scope:registry=` routing line. (`mnci upgrade` will rewrite them back — see the
+   caveat below.)
+2. Add this step **before** `npm ci` in `azure-pipelines.yml`:
+
+```yaml
+- task: npmAuthenticate@0
+  displayName: Authenticate npm against the feed (build identity, no PAT)
+  inputs:
+    workingFile: .npmrc
+```
+
+3. Grant the build identity **Feed Publisher (Contributor)** on the feed (Artifacts →
+   Feed Settings → Permissions). Which identity depends on the job authorization
+   scope: `<Project> Build Service (<org>)` when scoped to the project (the default),
+   or `Project Collection Build Service (<org>)` when not. A **403** rather than a
+   401 is the tell that the wrong identity is in play.
+
+Caveats, stated rather than glossed. This is **Azure-only** — GitHub Actions has no
+equivalent task, so a `--ci=github` or `--ci=both` workspace still needs the PAT.
+Local development then needs `npx vsts-npm-auth -config .npmrc` (Windows) or a
+hand-added credential, since developers no longer inherit one from the file.
+And `mnci upgrade` rewrites `.npmrc`, so it will restore the PAT block — `git diff`
+before committing an upgrade, which the upgrade docs already tell you to do.
+
+#### Diagnosing an auth failure
+
+The error text distinguishes the two schemes, and that is the fastest signal:
+
+| message | meaning |
+| --- | --- |
+| `E401 Incorrect or missing password` | Basic auth was used and rejected — check the base64 `_password` value |
+| `Unable to authenticate, your authentication token seems to be invalid` | a token went out as Bearer and was rejected — a PAT cannot go here |
+| `E403` | the credential is valid but lacks publish rights on the feed |
+
+Two things are easy to get wrong when chasing this:
+
+- **`nx release` publishes from the workspace root, not from each project.**
+  `@nx/js`'s `runPublish` uses `cwd: context.root` and passes `packageRoot` only as
+  the directory argument, so a missing per-package `.npmrc` is never the cause.
+- **npm resolves `_authToken` before `username`/`_password` for a given registry
+  key** (`hasAuth` in `npm-registry-fetch/lib/auth.js`), and *key* precedence is
+  decided before *file* precedence. So a stale `_authToken` in a persistent build
+  agent's user-level `.npmrc` outranks the project-level `_password` and the
+  workspace's own credential never reaches the wire. Check
+  `npm config get userconfig` on the agent before blaming the secret.
+
 On Azure, two one-time grants are required (project admin): **Contribute** on
 the repo for the _Project Collection Build Service_ account (tag push), and
 **publish** rights on the feed for the PAT's owner. On GitHub, the workflow's

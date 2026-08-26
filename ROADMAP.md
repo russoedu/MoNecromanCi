@@ -211,6 +211,40 @@ Four cheap wins, all originally verified absent:
 | 6. ~~`concurrency` group~~           | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
 | 7. Deploy stage                      | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
 
+### 7b. Build-identity npm auth on Azure, instead of a PAT — P2
+
+Generated Azure workspaces authenticate to Azure Artifacts with a base64 PAT in
+`.npmrc`'s `username`/`_password` block. That is **correct** — a PAT can only
+authenticate through the Basic scheme, since the feed's Bearer scheme wants an
+Entra ID access token (see `packages/cli/README.md` and the CLAUDE.md entry). It is
+not, however, the best option available on Azure Pipelines.
+
+`npmAuthenticate@0` injects the build service identity's token, which *is*
+Entra-issued and therefore satisfies Bearer. No secret to store, encode, rotate or
+let expire — and an expired PAT is exactly the failure that started this. Verified
+working end to end on a real workspace: three packages versioned, tagged, published.
+
+What makes it a real change rather than a one-line swap:
+
+- **It is Azure-only.** GitHub Actions has no equivalent, so `npmrcContent()` would
+  need to emit credentials for `--ci=github`/`both` and omit them for `azure`. Today
+  the file depends on the *registry* kind alone; this makes it depend on the **CI
+  provider** too, which no other overlay file does.
+- **`--ci=both` has no single right answer** — the same `.npmrc` would have to serve
+  a provider that injects credentials and one that cannot.
+- **Local development regresses.** Today a developer with `PAT` set can publish and
+  install; with no credentials in the file they need `vsts-npm-auth` or a hand-added
+  entry. Worth stating in the generated file rather than discovering.
+- **`overlay.ts` currently documents the opposite** ("No `npmAuthenticate@0` — it
+  would overwrite the hand-set password"). True for the PAT design; the trade simply
+  favours the task once there is no password to overwrite.
+- **`mnci doctor` and the anti-drift test both need to follow**, and the drift test
+  compares guard bodies between providers — a deliberately provider-specific step is
+  new territory for it.
+
+Until then the PAT path is documented, including the exact manual steps to switch a
+workspace over, in `packages/cli/README.md`.
+
 ### 5. `nx affected` for PR runs — ✅ done
 
 Both providers now verify **only the affected projects on a pull request, and
