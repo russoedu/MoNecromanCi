@@ -165,6 +165,35 @@ describe('npmrcContent', () => {
     expect(npmrc).not.toContain('Buffer.from')
   })
 
+  it('keys BOTH path forms, because npm walks only up a URL when matching', () => {
+    // npm resolves credentials by URL prefix and strips one segment at a time, so
+    // an entry on '/npm/registry/' is never found for a request to '/npm/'.
+    const npmrc = npmrcContent(azure, '@demo')
+    const short = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/'
+
+    expect(directives(npmrc)).toContain(`${short}:_password=\${PAT}`)
+    expect(directives(npmrc)).toContain(`${short}:username=AzureArtifacts`)
+  })
+
+  it('uses Basic auth, never _authToken, because Bearer here wants an Entra token', () => {
+    // Measured against the real feed. An unauthenticated PUT to the publish
+    // endpoint answers with:
+    //   www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+    //                     Basic realm="...", TFS-Federated
+    // so Bearer wants an Entra ID access token, not a PAT. npm sends _authToken
+    // verbatim as a Bearer header, and Azure rejects a PAT there with "Unable to
+    // authenticate, your authentication token seems to be invalid". A PAT goes
+    // through Basic, which is username/_password. This was shipped the wrong way
+    // round once; the Packaging REST API accepts a PAT as Bearer, which is what
+    // made the wrong generalisation look verified.
+    const npmrc = npmrcContent(azure, '@demo')
+
+    // Asserted on directives, not raw text: the comment above them names
+    // _authToken precisely so nobody reintroduces it.
+    expect(directives(npmrc).some((line) => line.includes('_authToken'))).toBe(false)
+    expect(directives(npmrc).some((line) => line.includes('_password'))).toBe(true)
+  })
+
   it('drops legacy-peer-deps, added for a plugin removed long ago', () => {
     // @nxazure/func is gone; the flag stayed behind and quietly weakened
     // dependency resolution in every generated workspace.

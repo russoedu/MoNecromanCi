@@ -177,6 +177,9 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   const feedUrl = registryUrl(registry) as string
   // npm keys per-registry credentials by the URL with the protocol stripped.
   const feedKey = feedUrl.replace(/^https:/, '')
+  // npm matches credentials by URL prefix and walks only UP the path, so an entry
+  // on '/npm/registry/' is never found for a request to '/npm/'. Both are keyed.
+  const feedShortKey = feedKey.replace('npm/registry/', 'npm/')
   return `; Publish + resolution routing for this workspace's own scope.
 ;
 ; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
@@ -192,9 +195,24 @@ ${scope}:registry=${feedUrl}
 ; instructions give you, which is exactly what _password expects, so it is used
 ; as-is. (twine wants the RAW token; the CI release step decodes it there.)
 ; Azure ignores the username, and npm requires an email it never uses.
+;
+; NOT _authToken, and that is measured rather than assumed. The feed answers an
+; unauthenticated PUT to the publish endpoint with:
+;   www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+;                     Basic realm="...", TFS-Federated
+; so its Bearer scheme wants an Entra ID access token, NOT a PAT. npm sends
+; _authToken verbatim as a Bearer header, so a PAT there is rejected with
+; "Unable to authenticate, your authentication token seems to be invalid". A PAT
+; authenticates through the Basic scheme, which is username/_password. Note the
+; Packaging REST API DOES accept a PAT as Bearer - do not generalise from it.
+;
+; Both path forms are keyed because npm walks only UP a URL when matching.
 ${feedKey}:username=AzureArtifacts
 ${feedKey}:_password=\${PAT}
 ${feedKey}:email=npm-requires-this-and-never-uses-it
+${feedShortKey}:username=AzureArtifacts
+${feedShortKey}:_password=\${PAT}
+${feedShortKey}:email=npm-requires-this-and-never-uses-it
 `
 }
 
