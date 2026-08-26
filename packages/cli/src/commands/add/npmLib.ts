@@ -6,6 +6,7 @@ import {
   markPublic,
   registerProjectCommands,
   removeGeneratedEslintConfig,
+  repairPublishableManifest,
   type AddOptions,
   type WorkspaceStack
 } from './shared'
@@ -61,7 +62,12 @@ export async function addNpmLib (
     ],
     workspaceRoot
   )
-  markPublic(join(workspaceRoot, 'packages', name, 'package.json'))
+  const manifestPath = join(workspaceRoot, 'packages', name, 'package.json')
+  markPublic(manifestPath)
+  // @nx/js:lib --bundler=rollup writes types: './dist/index.esm.d.ts', a file its
+  // own build never emits, so every TypeScript consumer of the published package
+  // would get `any`. See repairPublishableManifest.
+  repairPublishableManifest(manifestPath)
   // The @nx/dependency-checks exclusions this kind needs now live in the ROOT
   // config (@mnci/eslint-config's dependencyChecks block), so the generator's
   // per-project config is deleted rather than overwritten.

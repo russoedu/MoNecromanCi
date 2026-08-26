@@ -211,6 +211,32 @@ Four cheap wins, all originally verified absent:
 | 6. ~~`concurrency` group~~           | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
 | 7. Deploy stage                      | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
 
+### 7c. The declaration entry carries a Windows path separator — P2
+
+A publishable library built on a Windows agent emits `dist/index.d.ts` containing
+`export * from "./src\index"`. That resolves on Windows and does NOT resolve on
+Linux, where a backslash is an ordinary filename character — so the package is
+untyped for any Linux consumer or bundler.
+
+Confirmed in a real published tarball (`@auto/env`), built on a Windows CI pool.
+Nx generates the stub; mnci cannot repair it at generate time, because `dist/` does
+not exist until the build runs.
+
+Three candidate fixes, none yet taken:
+
+- **Release from a Linux agent.** The stub is then written with `/` and the problem
+  disappears. Costs nothing in mnci but is a per-workspace pipeline decision.
+- **Point `types` at `./dist/src/index.d.ts`**, the real declaration file, skipping
+  the stub entirely. Measured working for `npm-lib` on the published package. NOT
+  verified for `react-lib`, whose existing repair was validated against
+  `./dist/index.d.ts`, so changing the shared constant on that assumption would risk
+  regressing a path that currently works.
+- **Upstream fix in Nx**, which is where the bug is.
+
+Until then the e2e guard added alongside `repairPublishableManifest` catches the
+weaker form of this (a `types` path missing from the tarball) but not the separator,
+since the file it names does exist — it is only unresolvable elsewhere.
+
 ### 7b. Build-identity npm auth on Azure, instead of a PAT — P2
 
 Generated Azure workspaces authenticate to Azure Artifacts with a base64 PAT in
