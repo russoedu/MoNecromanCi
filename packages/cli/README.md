@@ -119,6 +119,39 @@ accordingly, `start` marked `isBackground` since it runs a process that
 doesn't exit on its own. Re-running `add` for the same project name
 overwrites its own scripts/tasks rather than duplicating them.
 
+#### Run and Debug: the `launch` section
+
+Tasks are reachable **only** through Terminal → Run Task. The **Run and Debug**
+panel reads a separate `launch` section, so a workspace with tasks alone offers
+nothing in the dropdown people actually open. Every generated workspace therefore
+also gets four launch configurations, one per verify target:
+
+| configuration | runs |
+| --- | --- |
+| `mnci: build` | `npm run build` |
+| `mnci: test` | `npm run test` |
+| `mnci: lint` | `npm run lint` |
+| `mnci: typecheck` | `npm run typecheck` |
+
+Three details are load-bearing rather than incidental:
+
+- **`type: node-terminal`, not `node`.** `nx run-many` executes every target in a
+  **child** process. A plain `node` launch attaches to the Nx parent alone, so a
+  breakpoint inside a spec never binds; `node-terminal` runs the command in VS
+  Code's JS Debug Terminal, which instruments children as they spawn. It also avoids
+  a second trap — a `node` launch defaults to `internalConsole`, which renders none
+  of Nx's progress output, so a build there looks like it has hung.
+- **They drive `npm run <script>`, never a path into `node_modules`.** The obvious
+  `program: node_modules/nx/bin/nx.js` is wrong: Nx ships its bin at
+  `dist/bin/nx.js`, and that path moves between versions. Driving the root script
+  tracks whatever it does, so a change to the scripts reaches these for free.
+- **`cwd` is `${workspaceFolder:<name>}`, scoped by folder name.** A bare
+  `${workspaceFolder}` is ambiguous the moment a second folder joins the workspace,
+  and VS Code then refuses to resolve it — breaking all four at once.
+
+Your own configurations are safe: `mnci upgrade` replaces only the entries named
+`mnci: *` and carries every other one through untouched.
+
 `:start` resolves differently per kind — an existing generator target where
 one already exists, a small `nx:run-commands` target mnci writes where none
 did:
@@ -190,6 +223,12 @@ folders, settings and extensions are regenerated, but the **`tasks` array is rea
 back and carried through unchanged**. Those tasks are per-project state written by
 `mnci add`, not overlay-owned, so regenerating them wholesale would wipe every
 project's build/qa/start entry on upgrade.
+
+The `launch` array is handled differently again — **merged, not carried through**.
+mnci owns the four `mnci: *` configurations and replaces them, while any
+configuration you added yourself survives. The asymmetry is deliberate: tasks are
+written by `mnci add` and the overlay has no idea which projects exist, whereas the
+launch entries are entirely overlay-authored and should track an upgrade.
 
 `upgrade` also **deletes** things, which is stronger than the overwriting it
 has always done — one more reason to run `git diff` first, as the command's own

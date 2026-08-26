@@ -210,7 +210,40 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Azure Artifacts Rejects a PAT as a Bearer Token (Latest)
+### Generated Workspaces Get Launch Configs, Not Just Tasks (Latest)
+
+The `.code-workspace` file carried a `tasks` array and no `launch` section, so the
+**Run and Debug** panel in a generated workspace was empty. A `tasks` entry is
+reachable only through *Terminal -> Run Task*; the dropdown people actually open
+reads `launch`. Four configs now cover the verify targets: `build`, `test`, `lint`,
+`typecheck`.
+
+- **`node-terminal`, not `node`, and that is the load-bearing choice.** `nx run-many`
+  runs every target in a **child** process. A plain `node` launch attaches to the Nx
+  parent alone, so a breakpoint inside a spec never binds; `node-terminal` runs in
+  VS Code's JS Debug Terminal, which instruments children as they spawn. It also
+  sidesteps a second trap: a `node` launch defaults to `internalConsole`, which
+  renders none of Nx's progress output, so a build there looks like a hang.
+- **They drive `npm run <script>`, never a path into `node_modules`.** The obvious
+  `program: node_modules/nx/bin/nx.js` is simply wrong — Nx ships its bin at
+  `dist/bin/nx.js`, and that path is version-dependent. Driving the root script
+  tracks `ROOT_SCRIPTS` for free, and a test asserts every launched script exists in
+  the generated manifest.
+- **`cwd` is scoped by folder NAME** (`${workspaceFolder:<name>}`), not a bare
+  `${workspaceFolder}`, which is ambiguous the moment a user adds a second folder —
+  VS Code then refuses to resolve it and every config breaks at once.
+- **The array is MERGED on upgrade, unlike `tasks`.** mnci replaces only entries
+  named `mnci: *` and carries every other one through, so a hand-written debug
+  config survives. `tasks` is carried through wholesale instead, because `mnci add`
+  — not the overlay — is what writes it.
+- Both non-obvious choices were mutation-tested: reverting to `node` and dropping
+  the folder-scoped `cwd` each fail their guard.
+- **This repo does not dogfood the template here.** Its own
+  `MoNecromanCi.code-workspace` is hand-written rather than mnci-generated, nests
+  `launch` inside `settings`, and still lists `mpa:serve`/`po:serve` — projects that
+  do not exist in this workspace. Left alone deliberately; it is a separate cleanup.
+
+### Azure Artifacts Rejects a PAT as a Bearer Token
 
 A generated workspace could not publish to Azure Artifacts. Three explanations were
 tried; the first two were wrong, and both were disproved by measurement rather than
@@ -1430,7 +1463,8 @@ mnci worked while everything it produced did not.
    `.prettierignore`, `.oxfmtrc.json` and `oxlint.config.ts` if a past version wrote them)*
 5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
-7. `<workspace-name>.code-workspace` (VS Code configuration)
+7. `<workspace-name>.code-workspace` (VS Code configuration: folders, settings,
+   extensions, per-project tasks, and `launch` configs for build/test/lint/typecheck)
 8. CI pipeline file(s) (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`)
 9. `.github/dependabot.yml` (`--ci=github|both` only)
 10. `.devcontainer/devcontainer.json` (a local environment matching CI's toolchain)

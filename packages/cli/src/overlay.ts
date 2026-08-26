@@ -1121,6 +1121,71 @@ export function vscodeSettings (): Record<string, unknown> {
 }
 
 /**
+ * Prefix marking a launch configuration as mnci-owned.
+ *
+ * @remarks
+ * `vscodeWorkspace` replaces every configuration carrying this prefix and carries
+ * every other one through untouched, so a hand-written debug config survives
+ * `mnci upgrade`. Renaming it would orphan the previous generation's entries,
+ * leaving a workspace with two of each.
+ */
+export const LAUNCH_CONFIG_PREFIX = 'mnci: '
+
+/**
+ * The verify targets exposed in VS Code's **Run and Debug** panel.
+ *
+ * @remarks
+ * Tasks alone were not enough. A `tasks` entry is only reachable through
+ * *Terminal -\> Run Task*; the Run and Debug dropdown reads `launch`, so a workspace
+ * with tasks and no launch section offers nothing there at all. These four are the
+ * same targets the root `affected` script runs.
+ *
+ * **They drive npm scripts, not the Nx binary.** Pointing `program` at
+ * `node_modules/nx/bin/nx.js` would be wrong: Nx ships its bin at
+ * `dist/bin/nx.js`, and that path is version-dependent. `npm run \<script\>` is stable,
+ * needs no path into `node_modules`, and tracks whatever the root script does — so a
+ * change to `ROOT_SCRIPTS` reaches these for free.
+ *
+ * **`node-terminal`, not `node`, and that is the load-bearing choice.** It runs the
+ * command in VS Code's JS Debug Terminal, which instruments **child** processes as
+ * they spawn. `nx run-many` executes every target in a child process, so a plain
+ * `node` launch would attach to the Nx parent alone and a breakpoint inside a spec
+ * would never bind. It also needs no `console` setting: a plain `node` launch
+ * defaults to `internalConsole`, which renders none of Nx's progress output, so a
+ * build there looks like a hang.
+ */
+export const LAUNCH_CONFIGURATIONS = ['build', 'test', 'lint', 'typecheck'] as const
+
+/**
+ * Builds the `launch.configurations` array for a generated workspace.
+ *
+ * @remarks
+ * One entry per {@link LAUNCH_CONFIGURATIONS} target, each named with
+ * {@link LAUNCH_CONFIG_PREFIX} so an upgrade can tell its own entries from a
+ * user's. Order matches the verify order the root `affected` script runs.
+ *
+ * @param workspaceName - The workspace name, used to scope `${workspaceFolder}`.
+ * @returns One configuration per entry in {@link LAUNCH_CONFIGURATIONS}.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function launchConfigurations (workspaceName: string): Record<string, unknown>[] {
+  return LAUNCH_CONFIGURATIONS.map((script, index) => ({
+    type: 'node-terminal',
+    request: 'launch',
+    name: `${LAUNCH_CONFIG_PREFIX}${script}`,
+    command: `npm run ${script}`,
+    // Scoped by folder name rather than a bare ${workspaceFolder}: that variable is
+    // ambiguous once a second folder is added to the workspace, and VS Code then
+    // refuses to resolve it.
+    cwd: `\${workspaceFolder:${workspaceName}}`,
+    // One shared group keeps the four together in the dropdown; a per-entry group
+    // would make four groups of one. `order` holds them in verify order.
+    presentation: { group: 'mnci', order: index + 1 }
+  }))
+}
+
+/**
  * VS Code workspace file template for generated monorepos.
  *
  * @remarks
@@ -1132,6 +1197,11 @@ export function vscodeSettings (): Record<string, unknown> {
  * itself carries no project-specific content — it must stay generic across
  * every `mnci new`-generated workspace, not just this repo's own dogfooded
  * root.
+ * It also carries a `launch` section, because a `tasks` entry is reachable only
+ * through *Terminal -\> Run Task* while the **Run and Debug** panel reads `launch` —
+ * a workspace with tasks alone offers nothing there. See
+ * {@link LAUNCH_CONFIGURATIONS}. Unlike `tasks`, which is carried through wholesale,
+ * the launch array is merged: mnci replaces only its own `mnci: *` entries.
  * Users open this file in VS Code (`File > Open Workspace from File`).
  *
  * **`existingTasks` is what keeps `mnci upgrade` non-destructive**, and the need
@@ -1153,8 +1223,16 @@ export function vscodeSettings (): Record<string, unknown> {
  */
 export function vscodeWorkspace (
   workspaceName: string,
-  existingTasks?: { version?: string; tasks?: Record<string, unknown>[] }
+  existingTasks?: { version?: string; tasks?: Record<string, unknown>[] },
+  existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] }
 ): string {
+  // Additive, like nx.json's sharedGlobals: mnci replaces only the configurations it
+  // owns (named `mnci: *`) and carries every other one through, so a hand-written
+  // debug config survives `mnci upgrade`. Tasks are carried through wholesale
+  // instead, because `mnci add` — not the overlay — is what writes them.
+  const userConfigurations = (existingLaunch?.configurations ?? []).filter(
+    (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX)
+  )
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
@@ -1163,6 +1241,10 @@ export function vscodeWorkspace (
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
         tasks: existingTasks?.tasks ?? []
+      },
+      launch: {
+        version: existingLaunch?.version ?? '0.2.0',
+        configurations: [...launchConfigurations(workspaceName), ...userConfigurations]
       }
     },
     null,
@@ -2779,10 +2861,11 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const codeWorkspacePath = join(workspaceRoot, `${options.workspaceName}.code-workspace`)
   const existing = readCodeWorkspace<{
     tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+    launch?: { version?: string; configurations?: Record<string, unknown>[] }
   }>(codeWorkspacePath)
   writeFileEnsured(
     codeWorkspacePath,
-    vscodeWorkspace(options.workspaceName, existing?.tasks)
+    vscodeWorkspace(options.workspaceName, existing?.tasks, existing?.launch)
   )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename

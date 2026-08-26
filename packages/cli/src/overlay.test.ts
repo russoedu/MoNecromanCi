@@ -37,6 +37,7 @@ import {
   SHARED_GLOBAL_INPUTS,
   type StackConfig,
   VSCODE_RECOMMENDED_EXTENSIONS,
+  LAUNCH_CONFIGURATIONS,
   vscodeWorkspace,
   withEslintPlugin,
   withReleaseConfig,
@@ -2225,6 +2226,85 @@ describe('applyOverlay', () => {
 
     expect(container.customizations.vscode.extensions).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
     expect(workspace.extensions.recommendations).toEqual([...VSCODE_RECOMMENDED_EXTENSIONS])
+  })
+
+  it('exposes the four verify targets in Run and Debug, not only as tasks', () => {
+    // A `tasks` entry is reachable only through Terminal -> Run Task. The Run and
+    // Debug dropdown reads `launch`, so a workspace with tasks alone offers nothing
+    // there — which is exactly what every generated workspace used to do.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { version: string; configurations: Record<string, unknown>[] }
+    }
+
+    expect(workspace.launch.configurations.map((c) => c.name)).toEqual([
+      'mnci: build',
+      'mnci: test',
+      'mnci: lint',
+      'mnci: typecheck'
+    ])
+  })
+
+  it('drives npm scripts rather than a path into node_modules', () => {
+    // Pointing `program` at node_modules/nx/bin/nx.js would be wrong twice over: Nx
+    // ships its bin at dist/bin/nx.js, and that path is version-dependent. Driving
+    // the root script instead tracks ROOT_SCRIPTS for free.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.program).toBeUndefined()
+      expect(configuration.command).toMatch(/^npm run /)
+    }
+    // Every script it launches must actually exist in the generated manifest.
+    const scripts = Object.keys(rootScripts())
+    for (const target of LAUNCH_CONFIGURATIONS) expect(scripts).toContain(target)
+  })
+
+  it('uses node-terminal, so a breakpoint in an nx-spawned child can bind', () => {
+    // nx run-many executes every target in a CHILD process. A plain `node` launch
+    // attaches to the Nx parent alone, so a breakpoint inside a spec never binds;
+    // node-terminal runs in VS Code's JS Debug Terminal, which instruments children
+    // as they spawn. This is the whole reason for the type, so it is pinned.
+    const workspace = JSON.parse(vscodeWorkspace('demo')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.type).toBe('node-terminal')
+    }
+  })
+
+  it('scopes cwd by folder NAME, which a second folder would otherwise break', () => {
+    // A bare ${workspaceFolder} is ambiguous in a multi-root workspace and VS Code
+    // refuses to resolve it. The generated file has one folder today, but a user
+    // adding a second must not silently break every launch config.
+    const workspace = JSON.parse(vscodeWorkspace('acme')) as {
+      launch: { configurations: Record<string, unknown>[] }
+    }
+
+    for (const configuration of workspace.launch.configurations) {
+      expect(configuration.cwd).toBe('${workspaceFolder:acme}')
+    }
+  })
+
+  it('keeps a hand-written launch config across an upgrade, replacing only its own', () => {
+    // Additive like nx.json sharedGlobals. Tasks are carried through wholesale
+    // because `mnci add` writes them; launch entries are overlay-owned, so only the
+    // `mnci: ` ones may be replaced.
+    const mine = { type: 'node', request: 'launch', name: 'debug my thing' }
+    const workspace = JSON.parse(
+      vscodeWorkspace('demo', undefined, {
+        version: '0.2.0',
+        configurations: [{ name: 'mnci: build', stale: true }, mine]
+      })
+    ) as { launch: { configurations: Record<string, unknown>[] } }
+
+    expect(workspace.launch.configurations).toContainEqual(mine)
+    // The stale mnci-owned entry is replaced, not duplicated or preserved.
+    const builds = workspace.launch.configurations.filter((c) => c.name === 'mnci: build')
+    expect(builds).toHaveLength(1)
+    expect(builds[0].stale).toBeUndefined()
   })
 
   it('deletes every formatter config a past mnci version could have written', () => {
