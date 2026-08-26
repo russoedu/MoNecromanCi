@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 /**
  * These are integration tests on purpose, and they shell out to the real
@@ -140,9 +141,14 @@ let reported: Record<string, string[]>
 
 /** Writes a root config that loads this package exactly as a consumer would. */
 function writeConfig (directory: string, options = ''): void {
+  const entry = pathToFileURL(join(packageRoot, 'index.js')).href
   writeFileSync(
     join(directory, 'eslint.config.mjs'),
-    `import mnci from ${JSON.stringify(join(packageRoot, 'index.js'))}\nexport default mnci(${options})\n`
+    // A file:// URL, not a bare path. Node's ESM loader rejects an absolute
+    // Windows path as an import specifier (ERR_UNSUPPORTED_ESM_URL_SCHEME,
+    // "Received protocol 'c:'"), which eslint surfaced from 10.9.1 onward.
+    // The bare path was always wrong here; it just used to be tolerated.
+    `import mnci from ${JSON.stringify(entry)}\nexport default mnci(${options})\n`
   )
 }
 
