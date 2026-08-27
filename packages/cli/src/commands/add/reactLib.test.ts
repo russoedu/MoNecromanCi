@@ -129,7 +129,11 @@ describe('react-lib', () => {
     await runAdd('react-lib', 'ui', {})
 
     // @nx/react:library --bundler=rollup writes types: './dist/index.esm.d.ts',
-    // but its build emits dist/index.d.ts — so the referenced file never exists
+    // but its build emits declarations at dist/src/index.d.ts — so the referenced
+    // file never exists. The stub dist/index.d.ts that re-exports from them is NOT
+    // the target: @nx/rollup builds its specifier with path.relative(), so on a
+    // Windows agent it reads `export * from "./src\index"`, which is not a valid
+    // module specifier anywhere. Point at the real file instead.
     // and every consumer fails with TS7016 "Could not find a declaration file".
     // Verified against a real generated pair: typecheck fails before this, passes
     // after.
@@ -137,8 +141,8 @@ describe('react-lib', () => {
       readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8')
     ) as { types?: string; main?: string; exports?: { '.': { types?: string } } }
 
-    expect(manifest.types).toBe('./dist/index.d.ts')
-    expect(manifest.exports?.['.'].types).toBe('./dist/index.d.ts')
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.exports?.['.'].types).toBe('./dist/src/index.d.ts')
     // main/module are correct as generated — index.esm.js IS emitted. Only the
     // declaration paths were wrong, so only those are touched.
     expect(manifest.main).toBe('./dist/index.esm.js')
@@ -186,7 +190,7 @@ describe('react-internal-lib', () => {
     ) as { types?: string }
     // The types repair applies to the private kind too — it is the one a
     // react-lib consumes, so a wrong declaration path breaks the consumer.
-    expect(privateManifest.types).toBe('./dist/index.d.ts')
+    expect(privateManifest.types).toBe('./dist/src/index.d.ts')
 
     const generate = generatorCalls().find(call => call.includes('@nx/react:library'))
     expect(generate).toContain('libs/design')

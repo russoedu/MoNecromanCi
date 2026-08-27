@@ -229,8 +229,8 @@ error TS7016: Could not find a declaration file for module '@auto/env'.
   one path stay broken while the other was fixed.
 - **Verified against the published tarball**, downloaded from the feed (reads are
   anonymous there): `types` names a file absent from the package, and repointing it
-  at `./dist/index.d.ts` makes a consumer resolve — with a deliberate type error then
-  reported as `TS2322`, so the real overloads are present. `main`/`module` were
+  at the real declarations makes a consumer resolve — with a deliberate type error
+  then reported as `TS2322`, so the real overloads are present. `main`/`module` were
   always fine; `index.esm.js` IS emitted.
 - **The gate that was missing is the interesting part.** The e2e already packed the
   lib and asserted `dist/index.esm.js` was in the tarball — a check that passed while
@@ -245,15 +245,25 @@ error TS7016: Could not find a declaration file for module '@auto/env'.
   mnci's, and it earns its keep for cross-project go-to-definition INSIDE the
   monorepo. Only the tarball is trimmed.
 
-**Still open, and recorded rather than fixed: the declaration entry carries a Windows
-path separator.** `dist/index.d.ts` is a stub reading
-`export * from "./src\index"`, produced by Nx's declaration step on a Windows
-agent. It resolves on Windows and will NOT resolve on Linux, where `` is an
-ordinary filename character. Confirmed in the published tarball, which was built on
-a Windows CI pool. mnci cannot repair this at generate time — `dist/` does not exist
-yet — so the options are an upstream Nx fix, releasing from a Linux agent, or
-pointing `types` at `./dist/src/index.d.ts` (measured working, but unverified for
-`react-lib`, whose repair was validated against `./dist/index.d.ts`).
+- **The obvious target was the wrong one, and that is the sharpest part.**
+  `@nx/rollup`'s `dts-bundle` plugin emits declarations at `dist/src/index.d.ts`, then
+  writes a stub `dist/index.d.ts` re-exporting from them. Pointing `types` at that
+  stub looks right and is not: the plugin builds the specifier with
+  `path.relative()`, which returns an **OS-native** path, so on a Windows agent the
+  stub reads ``export * from "./src\\index"``. A module specifier is URL-style
+  — `/` is correct on every platform and a backslash on none — so it resolves on
+  Windows only because the resolver normalises separators there, and the package is
+  **untyped on Linux and macOS**. `types` therefore points past the stub at
+  `./dist/src/index.d.ts`, which is correct everywhere.
+- **That path is right for BOTH library kinds, established rather than assumed:**
+  `@nx/rollup`'s configuration generator writes `main: './src/index.ts'` for every
+  project it configures, and `@nx/js:lib` and `@nx/react:library` both route through
+  it, so the declaration layout is identical.
+
+**Still open upstream (ROADMAP 7c):** the stub itself is still emitted with a
+backslash when built on Windows. mnci no longer routes `types` through it, and the
+e2e reports it as a loud `SKIPPED` rather than a failure, since nothing in this repo
+can fix it — the bug is one `path.relative()` call in `@nx/rollup`.
 
 ### Generated Workspaces Get Launch Configs, Not Just Tasks
 

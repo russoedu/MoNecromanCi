@@ -109,8 +109,8 @@ describe('runAdd npm-lib', () => {
     const manifest = JSON.parse(
       readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
     ) as { types: string; exports: Record<string, { types?: string }> }
-    expect(manifest.types).toBe('./dist/index.d.ts')
-    expect(manifest.exports['.'].types).toBe('./dist/index.d.ts')
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.exports['.'].types).toBe('./dist/src/index.d.ts')
   })
 
   it('leaves main and module alone — index.esm.js IS emitted, only the types path is wrong', async () => {
@@ -146,7 +146,7 @@ describe('runAdd npm-lib', () => {
   it('leaves an already-correct types path untouched, so an upstream fix is not undone', async () => {
     writeFileSync(
       join(workspaceRoot, 'packages/sdk/package.json'),
-      JSON.stringify({ name: '@demo/sdk', types: './dist/index.d.ts', files: ['dist'] })
+      JSON.stringify({ name: '@demo/sdk', types: './dist/src/index.d.ts', files: ['dist'] })
     )
 
     await runAdd('npm-lib', 'sdk', {})
@@ -154,7 +154,7 @@ describe('runAdd npm-lib', () => {
     const manifest = JSON.parse(
       readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
     ) as { types: string }
-    expect(manifest.types).toBe('./dist/index.d.ts')
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
   })
 
   it('leaves no per-project eslint config behind — an mnci workspace has exactly one, at the root', async () => {
