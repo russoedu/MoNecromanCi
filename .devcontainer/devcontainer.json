@@ -1,0 +1,23 @@
+{
+  "name": "MoNecromanCi",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "latest"
+    }
+  },
+  "postCreateCommand": "npm install -g npm@11 && npm ci && npm run python:install && node -e \"const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('go.mod')){console.log('No Go projects - skipping.');process.exit(0)}if(cp.spawnSync('golangci-lint',['--version'],{stdio:'ignore'}).status===0){console.log('golangci-lint already installed - skipping.');process.exit(0)}process.exit(cp.spawnSync('go',['install','github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest'],{stdio:'inherit'}).status ?? 1)\" && node -e \"const fs=require('node:fs'),cp=require('node:child_process');if(!fs.existsSync('pubspec.yaml')){console.log('No Flutter projects - skipping.');process.exit(0)}if(cp.spawnSync('flutter',['--version'],{stdio:'ignore',shell:process.platform==='win32'}).status===0){console.log('Flutter SDK already on PATH - skipping.');process.exit(0)}const sdk=require('node:path').join(require('node:os').homedir(),'.mnci-flutter-3.44.8');if(fs.existsSync(sdk)){console.log('Flutter SDK already installed at '+sdk+' - skipping.');process.exit(0)}process.exit(cp.spawnSync('git',['clone','--depth','1','--branch','3.44.8','https://github.com/flutter/flutter.git',sdk],{stdio:'inherit'}).status ?? 1)\"",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "nrwl.angular-console",
+        "firsttris.vscode-jest-runner"
+      ]
+    }
+  }
+}
+

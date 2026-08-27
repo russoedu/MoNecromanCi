@@ -1224,7 +1224,8 @@ export function launchConfigurations (workspaceName: string): Record<string, unk
 export function vscodeWorkspace (
   workspaceName: string,
   existingTasks?: { version?: string; tasks?: Record<string, unknown>[] },
-  existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] }
+  existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] },
+  existingSettings?: Record<string, unknown>
 ): string {
   // Additive, like nx.json's sharedGlobals: mnci replaces only the configurations it
   // owns (named `mnci: *`) and carries every other one through, so a hand-written
@@ -1233,10 +1234,17 @@ export function vscodeWorkspace (
   const userConfigurations = (existingLaunch?.configurations ?? []).filter(
     (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX)
   )
+  // Settings are MERGED, with mnci winning on the keys it owns. Replacing them
+  // wholesale destroyed every setting a workspace had added for itself — measured on
+  // this repo's own file, where an upgrade would have deleted a 1,179-entry
+  // `cSpell.words` dictionary that nothing else stores. mnci overwrites only the
+  // keys it actually sets, so its opinion still lands on every upgrade while
+  // anything it has no opinion about survives.
+  const settings = { ...existingSettings, ...vscodeSettings() }
   return JSON.stringify(
     {
       folders: [{ path: '.', name: workspaceName }],
-      settings: vscodeSettings(),
+      settings,
       extensions: { recommendations: VSCODE_RECOMMENDED_EXTENSIONS },
       tasks: {
         version: existingTasks?.version ?? '2.0.0',
@@ -2881,10 +2889,16 @@ export function applyOverlay (
   const existing = readCodeWorkspace<{
     tasks?: { version?: string; tasks?: Record<string, unknown>[] }
     launch?: { version?: string; configurations?: Record<string, unknown>[] }
+    settings?: Record<string, unknown>
   }>(codeWorkspacePath)
   writeFileEnsured(
     codeWorkspacePath,
-    vscodeWorkspace(options.workspaceName, existing?.tasks, existing?.launch)
+    vscodeWorkspace(
+      options.workspaceName,
+      existing?.tasks,
+      existing?.launch,
+      existing?.settings
+    )
   )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename
