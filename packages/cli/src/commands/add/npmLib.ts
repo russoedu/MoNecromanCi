@@ -6,6 +6,7 @@ import {
   markPublic,
   registerProjectCommands,
   removeGeneratedEslintConfig,
+  repairDeclarationSpecifiers,
   repairPublishableManifest,
   type AddOptions,
   type WorkspaceStack
@@ -68,6 +69,9 @@ export async function addNpmLib (
   // own build never emits, so every TypeScript consumer of the published package
   // would get `any`. See repairPublishableManifest.
   repairPublishableManifest(manifestPath)
+  // The build writes dist/index.d.ts as a stub whose specifier @nx/rollup builds
+  // with path.relative(), so on Windows it is not a valid module specifier at all.
+  repairDeclarationSpecifiers(join(workspaceRoot, `packages/${name}`))
   // The @nx/dependency-checks exclusions this kind needs now live in the ROOT
   // config (@mnci/eslint-config's dependencyChecks block), so the generator's
   // per-project config is deleted rather than overwritten.

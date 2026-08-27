@@ -1,4 +1,4 @@
-import { readdirSync, rmSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
@@ -190,6 +190,95 @@ const ACTUAL_TYPES_PATH = './dist/src/index.d.ts'
  * navigation keeps working.
  */
 const DECLARATION_MAP_EXCLUSION = '!**/*.d.ts.map'
+
+const ROLLUP_CONFIG_PLACEHOLDER = [
+  '  {',
+  '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+  '    // e.g.',
+  '    // output: { sourcemap: true },',
+  '  }'
+].join('\n')
+
+/** The same slot, carrying a plugin that repairs the declaration stub. */
+const ROLLUP_CONFIG_WITH_DTS_FIX = [
+  '  {',
+  "    // Added by MoNecromanCI. @nx/rollup's dts-bundle plugin writes dist/index.d.ts",
+  '    // as a stub re-exporting the real declarations, and builds that specifier with',
+  '    // path.relative() - an OS-NATIVE path. On Windows it emits',
+  String.raw`    //   export * from "./src\\index";`,
+  '    // which is not a valid module specifier on ANY platform: a specifier is',
+  '    // URL-style, so / is correct everywhere and a backslash nowhere. It resolves on',
+  '    // Windows only because the resolver normalises separators there, leaving the',
+  '    // package untyped on Linux and macOS.',
+  '    //',
+  '    // mnci also points `types` past this stub, so nothing depends on it being',
+  '    // correct; this makes the emitted file correct too. Remove once Nx fixes the',
+  '    // plugin - its own devkit already exports normalizePath for exactly this.',
+  '    plugins: [',
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle (outputOptions) {',
+  "          const { readFileSync, writeFileSync } = require('node:fs')",
+  "          const { join } = require('node:path')",
+  "          const stub = join(outputOptions.dir ?? './dist', 'index.d.ts')",
+  '          let source',
+  '          try {',
+  "            source = readFileSync(stub, 'utf8')",
+  '          } catch {',
+  '            return',
+  '          }',
+  '          // The stub carries a TWO-character escape (JSON.stringify escaped one',
+  '          // backslash), so this must not match a single one - that would turn',
+  String.raw`          // "./src\index" into "./src//index". Built from char codes so there is`,
+  '          // no escaping in this file to get wrong.',
+  '          const separator = String.fromCharCode(92, 92)',
+  "          const normalised = source.replaceAll(separator, '/')",
+  '          if (normalised !== source) writeFileSync(stub, normalised)',
+  '        }',
+  '      }',
+  '    ]',
+  '  }'
+].join('\n')
+
+/**
+ * Adds a rollup plugin that repairs the declaration stub the build emits.
+ *
+ * @remarks
+ * `@nx/rollup` writes `dist/index.d.ts` as a stub re-exporting the real
+ * declarations, building the specifier with `path.relative()` — an OS-native path.
+ * On a Windows agent that yields `export * from "./src\\index"`, which is not a
+ * valid module specifier on any platform: a specifier is URL-style, so `/` is right
+ * everywhere and a backslash nowhere. It resolves on Windows only because the
+ * resolver normalises separators there, so a package built there is untyped on Linux
+ * and macOS. Confirmed in a real published tarball.
+ *
+ * mnci already points `types` past the stub ({@link repairPublishableManifest}), so
+ * nothing depends on it — this makes the emitted artifact correct rather than merely
+ * bypassed. The two repairs are deliberately independent: the manifest one keeps
+ * consumers working even if this config is later hand-edited.
+ *
+ * Guarded on the exact placeholder the generators write, so a change to their
+ * template makes this a no-op rather than corrupting the config.
+ *
+ * @param projectRoot - Absolute path to the generated project's directory.
+ * @returns Nothing.
+ * @throws Propagates any `fs` error raised while rewriting the config.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function repairDeclarationSpecifiers (projectRoot: string): void {
+  const configPath = join(projectRoot, 'rollup.config.cjs')
+  if (!fileExists(configPath)) {
+    return
+  }
+  const config = readFileSync(configPath, 'utf8')
+  if (!config.includes(ROLLUP_CONFIG_PLACEHOLDER)) {
+    return
+  }
+  writeFileEnsured(
+    configPath,
+    config.split(ROLLUP_CONFIG_PLACEHOLDER).join(ROLLUP_CONFIG_WITH_DTS_FIX)
+  )
+}
 
 /**
  * Repairs the manifest of a generated publishable library: repoints its `types`

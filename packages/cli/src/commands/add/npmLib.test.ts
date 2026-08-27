@@ -45,6 +45,26 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
+/** What the shared rollup configuration generator writes, verbatim. */
+const GENERATED_ROLLUP_CONFIG = [
+  "const { withNx } = require('@nx/rollup/with-nx');",
+  '',
+  'module.exports = withNx(',
+  '  {',
+  "    main: './src/index.ts',",
+  "    outputPath: './dist',",
+  "    tsConfig: './tsconfig.lib.json',",
+  "    compiler: 'swc',",
+  '    format: ["esm"],',
+  '  },',
+  '  {',
+  '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+  '    // e.g.',
+  '    // output: { sourcemap: true },',
+  '  }',
+  ');'
+].join('\n')
+
 // What @nx/js:lib --bundler=rollup actually writes into the manifest.
 const seedGeneratedManifest = (): void => {
   writeFileSync(
@@ -141,6 +161,42 @@ describe('runAdd npm-lib', () => {
     // The generator entries survive.
     expect(manifest.files).toContain('dist')
     expect(manifest.files).toContain('!**/*.tsbuildinfo')
+  })
+
+  it('adds a plugin that repairs the declaration stub the build emits', async () => {
+    // @nx/rollup builds the stub's specifier with path.relative(), an OS-native
+    // path, so on Windows dist/index.d.ts reads `export * from "./src\index"` -
+    // not a valid module specifier anywhere. Verified against a real build: the
+    // stub comes out as "./src/index" with the plugin in place.
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      GENERATED_ROLLUP_CONFIG
+    )
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const config = readFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      'utf8'
+    )
+    expect(config).toContain('mnci-normalise-declaration-specifiers')
+    // The placeholder it replaced is gone, and the rest of the config survives.
+    expect(config).not.toContain('Provide additional rollup configuration here')
+    expect(config).toContain("main: './src/index.ts'")
+    // No backslash literal in the emitted plugin - the separator is built from
+    // char codes precisely so there is no escaping here to get wrong.
+    expect(config).toContain('String.fromCharCode(92, 92)')
+  })
+
+  it('leaves a rollup config it does not recognise alone', async () => {
+    // Guarded on the exact placeholder the generators write, so an upstream change
+    // to their template makes this a no-op rather than corrupting the config.
+    const hand = '// hand-written config\nmodule.exports = {}\n'
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), hand)
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    expect(readFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), 'utf8')).toBe(hand)
   })
 
   it('leaves an already-correct types path untouched, so an upstream fix is not undone', async () => {
