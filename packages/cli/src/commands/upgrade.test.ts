@@ -47,6 +47,50 @@ afterEach(() => {
 })
 
 describe('runUpgrade', () => {
+  it('reports each file group it rewrites, and names the slow step before entering it', () => {
+    // An upgrade used to print one line and then sit silent through
+    // `eslint --fix` over the whole workspace — minutes on a large one, with no
+    // way to tell work from a hang. `new` already announced its formatting pass;
+    // upgrade did not.
+    seedWorkspace()
+    applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
+    const logged: string[] = []
+    jest.spyOn(console, 'log').mockImplementation((message: unknown) => {
+      logged.push(String(message))
+    })
+
+    runUpgrade(workspaceRoot, {})
+
+    const output = logged.join('\n')
+    expect(output).toContain('nx.json')
+    expect(output).toContain('package.json')
+    expect(output).toContain('.npmrc')
+    expect(output).toContain('commitlint.config.mjs')
+    expect(output).toContain('eslint.config.mjs')
+    expect(output).toContain('demo.code-workspace')
+    // The github fixture writes the workflow, not the Azure pipeline.
+    expect(output).toContain('.github/workflows/ci.yml')
+    // The formatting pass is announced BEFORE it runs, not after.
+    const formatIndex = logged.findIndex(line => line.includes('eslint --fix'))
+    expect(formatIndex).toBeGreaterThan(-1)
+    expect(logged.findIndex(line => line.includes('Done.'))).toBeGreaterThan(formatIndex)
+  })
+
+  it('reports the pipeline it actually writes, not both', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, { ...FIXTURE_OPTIONS, ci: 'azure' })
+    const logged: string[] = []
+    jest.spyOn(console, 'log').mockImplementation((message: unknown) => {
+      logged.push(String(message))
+    })
+
+    runUpgrade(workspaceRoot, { ci: 'azure' })
+
+    const output = logged.join('\n')
+    expect(output).toContain('azure-pipelines.yml')
+    expect(output).not.toContain('.github/workflows/ci.yml')
+  })
+
   it('throws when the directory has no nx.json (not an Nx workspace at all)', () => {
     expect(() => runUpgrade(workspaceRoot, {})).toThrow('No nx.json found')
   })

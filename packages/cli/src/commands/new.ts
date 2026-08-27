@@ -218,7 +218,11 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   logger.step(
     'Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)'
   )
-  applyOverlay(workspaceRoot, { workspaceName, scope, registry, agent, variableGroup, ci, stack })
+  applyOverlay(
+    workspaceRoot,
+    { workspaceName, scope, registry, agent, variableGroup, ci, stack },
+    logger.detail
+  )
 
   // npm honours `overrides` only when it RESOLVES a tree, and by this point
   // `create-nx-workspace` has already installed one and written its lockfile —

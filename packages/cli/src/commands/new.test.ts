@@ -76,7 +76,9 @@ describe('runNew', () => {
       variableGroup: 'Build',
       ci: 'azure',
       stack: DEFAULT_STACK
-    })
+    },
+    expect.any(Function)
+    )
   })
 
   it('passes an explicit agent and variable group through to the overlay', async () => {
@@ -87,7 +89,8 @@ describe('runNew', () => {
       expect.objectContaining({
         agent: 'MyPool',
         variableGroup: 'CiSecrets'
-      })
+      }),
+      expect.any(Function)
     )
   })
 
@@ -96,7 +99,8 @@ describe('runNew', () => {
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ ci: 'github' })
+      expect.objectContaining({ ci: 'github' }),
+      expect.any(Function)
     )
     expect(mockPromptCi).not.toHaveBeenCalled()
   })
@@ -106,7 +110,8 @@ describe('runNew', () => {
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ ci: 'both' })
+      expect.objectContaining({ ci: 'both' }),
+      expect.any(Function)
     )
   })
 
@@ -127,7 +132,8 @@ describe('runNew', () => {
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ ci: 'github', variableGroup: 'Build' })
+      expect.objectContaining({ ci: 'github', variableGroup: 'Build' }),
+      expect.any(Function)
     )
   })
 
@@ -257,7 +263,8 @@ describe('runNew', () => {
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } }),
+      expect.any(Function)
     )
   })
 
@@ -283,7 +290,9 @@ describe('runNew', () => {
       variableGroup: 'Build',
       ci: 'azure',
       stack: DEFAULT_STACK
-    })
+    },
+    expect.any(Function)
+    )
     expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptRegistry).not.toHaveBeenCalled()
     expect(mockPromptStack).not.toHaveBeenCalled()
@@ -316,7 +325,8 @@ describe('runNew', () => {
     expect(mockPromptStack).toHaveBeenCalled()
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ stack: { testRunner: 'vitest' } })
+      expect.objectContaining({ stack: { testRunner: 'vitest' } }),
+      expect.any(Function)
     )
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })

@@ -2760,7 +2760,11 @@ export function removeProjectEslintConfigs (workspaceRoot: string): void {
  * @throws Propagates any Node.js `fs` error raised while reading or writing.
  * @typeParam None - this function has no generic type parameters.
  */
-export function applyOverlay (workspaceRoot: string, options: OverlayOptions): void {
+export function applyOverlay (
+  workspaceRoot: string,
+  options: OverlayOptions,
+  onProgress: (message: string) => void = () => {}
+): void {
   // Patch nx.json with the release opinion, the stack generator defaults, the
   // shared global inputs (so `nx affected` on a PR is not blind to the root
   // config files — see SHARED_GLOBAL_INPUTS) and sync.applyChanges (so a stale
@@ -2777,6 +2781,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
   const patched = withSharedGlobals(withEslintPlugin(withReleaseConfig(nxJson, options.ci)))
+  onProgress('nx.json — release, sync, generators, shared inputs, mnci block')
   writeFileEnsured(nxJsonPath, toJson({ ...patched, generators, sync, mnci }))
 
   // The preset names the root package a placeholder ('@org/source'); stamp the
@@ -2786,6 +2791,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // for `typescript` replaces the plain TS 6 the preset installed, and
   // `@typescript/native` adds the TS 7 `tsc`. The caller's `npm install`
   // materialises them.
+  onProgress('package.json — root scripts, TS compilers, ESLint toolchain, overrides')
   const manifestPath = join(workspaceRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
@@ -2829,7 +2835,15 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
     })
   )
 
+  onProgress(
+    `.npmrc — ${
+      options.registry.kind === 'azure-artifacts'
+        ? 'Azure Artifacts feed routing and credentials'
+        : 'public npm registry auth'
+    }`
+  )
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
+  onProgress('commitlint.config.mjs and .husky/commit-msg — conventional commit enforcement')
   writeFileEnsured(join(workspaceRoot, 'commitlint.config.mjs'), COMMITLINT_CONFIG)
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
   writeFileEnsured(hookPath, COMMIT_MSG_HOOK)
@@ -2837,6 +2851,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // ESLint handles code quality, type-aware correctness AND formatting
   // (JavaScript Standard Style) — one tool, so one config file, at the root.
   // `add` deletes the per-project ones Nx generators write.
+  onProgress('eslint.config.mjs — the shared lint AND formatting opinion')
   writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
   // Every config a previous mnci version could have written for a second tool
   // has to be REMOVED, not merely left unwritten. A stale `.prettierrc.mjs` or
@@ -2849,6 +2864,7 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
     removeIfPresent(join(workspaceRoot, retired))
   }
   // Makes a local environment match the one CI verifies — see devcontainerJson.
+  onProgress('.devcontainer/devcontainer.json — a local toolchain matching CI')
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),
     devcontainerJson(options.workspaceName)
@@ -2858,6 +2874,9 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // `tasks` array is read back first and carried through: it is per-project state
   // written by `mnci add`, not overlay-owned, so regenerating it wholesale would
   // wipe every registered build/qa/start task on `mnci upgrade`.
+  onProgress(
+    `${options.workspaceName}.code-workspace — settings, extensions, launch configs`
+  )
   const codeWorkspacePath = join(workspaceRoot, `${options.workspaceName}.code-workspace`)
   const existing = readCodeWorkspace<{
     tasks?: { version?: string; tasks?: Record<string, unknown>[] }
@@ -2880,12 +2899,14 @@ export function applyOverlay (workspaceRoot: string, options: OverlayOptions): v
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)
   if (options.ci === 'azure' || options.ci === 'both') {
+    onProgress('azure-pipelines.yml — build, verify, pack and release')
     writeFileEnsured(
       join(workspaceRoot, 'azure-pipelines.yml'),
       azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind)
     )
   }
   if (options.ci === 'github' || options.ci === 'both') {
+    onProgress('.github/workflows/ci.yml and dependabot.yml')
     writeFileEnsured(
       join(workspaceRoot, '.github/workflows/ci.yml'),
       githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci)
