@@ -185,7 +185,7 @@ describe('runAdd npm-lib', () => {
     expect(config).toContain("main: './src/index.ts'")
     // No backslash literal in the emitted plugin - the separator is built from
     // char codes precisely so there is no escaping here to get wrong.
-    expect(config).toContain('String.fromCharCode(92, 92)')
+    expect(config).toContain('String.fromCodePoint(92, 92)')
   })
 
   it('leaves a rollup config it does not recognise alone', async () => {

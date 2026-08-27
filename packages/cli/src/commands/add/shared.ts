@@ -231,7 +231,7 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '          // backslash), so this must not match a single one - that would turn',
   String.raw`          // "./src\index" into "./src//index". Built from char codes so there is`,
   '          // no escaping in this file to get wrong.',
-  '          const separator = String.fromCharCode(92, 92)',
+  '          const separator = String.fromCodePoint(92, 92)',
   "          const normalised = source.replaceAll(separator, '/')",
   '          if (normalised !== source) writeFileSync(stub, normalised)',
   '        }',
