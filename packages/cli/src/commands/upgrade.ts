@@ -236,15 +236,21 @@ export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): voi
   const persisted = readMnciConfig(workspaceRoot)
   const resolved = resolveOverlayOptions(workspaceRoot, options, persisted)
 
-  logger.step(
-    'Re-applying the MoNecromanCI overlay (release config, .npmrc, commitlint, pipeline, stack)'
-  )
-  applyOverlay(workspaceRoot, resolved)
+  logger.step('Re-applying the MoNecromanCI overlay')
+  applyOverlay(workspaceRoot, resolved, logger.detail)
 
   // `new` and every `add` end this way; `upgrade` did not, so it left the
   // `nx.json` it had just rewritten mis-formatted — which now fails the
   // workspace's own `format:check` CI gate. Non-fatal for the same reason it is
   // there: the overlay is already applied by this point.
+  //
+  // Announced because it is by far the slowest part of an upgrade — `eslint --fix`
+  // over the whole workspace — and it used to run in silence after the overlay
+  // message, so a large workspace looked hung for a minute or more. `new` already
+  // logged this; `upgrade` did not.
+  logger.step(
+    'Formatting the workspace (eslint --fix) — the slowest step, minutes on a large workspace'
+  )
   runFormatter(workspaceRoot)
 
   logger.success('Done. Review the changes with `git diff` before committing.')
