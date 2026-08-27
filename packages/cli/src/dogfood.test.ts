@@ -1,6 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { RETIRED_FORMATTER_FILES, VSCODE_RECOMMENDED_EXTENSIONS } from './overlay'
+import {
+  devcontainerJson,
+  LAUNCH_CONFIG_PREFIX,
+  LAUNCH_CONFIGURATIONS,
+  RETIRED_FORMATTER_FILES,
+  VSCODE_RECOMMENDED_EXTENSIONS
+} from './overlay'
 
 /**
  * This repo is generated and maintained by the CLI it ships, so every invariant
@@ -48,6 +54,45 @@ const RETIRED_FORMATTER_PACKAGES = [
 ]
 
 describe('mnci holds itself to the invariants it enforces elsewhere', () => {
+  it('carries the devcontainer it generates for everyone else', () => {
+    // It did not, for as long as the devcontainer existed. Every generated
+    // workspace got a toolchain matching CI while the repo that writes it had
+    // none — the same shape as the prettier gap above: the gate pointed at what
+    // mnci produces rather than at mnci.
+    const path = join(WORKSPACE_ROOT, '.devcontainer/devcontainer.json')
+    expect(existsSync(path)).toBe(true)
+
+    const generated = JSON.parse(devcontainerJson('MoNecromanCi')) as { image: string }
+    const onDisk = JSON.parse(readFileSync(path, 'utf8')) as { image: string }
+    expect(onDisk.image).toBe(generated.image)
+  })
+
+  it('carries the launch configs it generates, so Run and Debug is not empty here either', () => {
+    const workspace = JSON.parse(
+      readFileSync(join(WORKSPACE_ROOT, 'MoNecromanCi.code-workspace'), 'utf8')
+    ) as { launch?: { configurations: { name: string }[] } }
+
+    const names = (workspace.launch?.configurations ?? []).map((entry) => entry.name)
+    for (const target of LAUNCH_CONFIGURATIONS) {
+      expect(names).toContain(`${LAUNCH_CONFIG_PREFIX}${target}`)
+    }
+  })
+
+  it('lints itself through the shared config rather than a hand-maintained copy', () => {
+    // The whole reason @mnci/eslint-config exists: this repo had drifted to a rich
+    // root config while overlay.ts shipped Nx's bare default, so every generated
+    // workspace got the worse one and dogfooding hid it. The spread is what makes
+    // that drift impossible to reintroduce.
+    //
+    // Extras layered ON TOP are fine and deliberate (repo-only ignores, TSDoc
+    // enforcement); what must never happen is this file ceasing to be the shared
+    // config plus extras.
+    const config = readFileSync(join(WORKSPACE_ROOT, 'eslint.config.mjs'), 'utf8')
+
+    expect(config).toContain("from '@mnci/eslint-config'")
+    expect(config).toContain('...mnci(')
+  })
+
   it('declares no retired formatter in its own root manifest', () => {
     const { dependencies = {}, devDependencies = {} } = rootManifest()
     const declared = RETIRED_FORMATTER_PACKAGES.filter(

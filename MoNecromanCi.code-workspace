@@ -1,4 +1,10 @@
 {
+  "folders": [
+    {
+      "path": ".",
+      "name": "MoNecromanCi"
+    }
+  ],
   "settings": {
     "files.exclude": {
       ".git": true,
@@ -7,8 +13,7 @@
       "node_modules": true,
       ".nx": true,
       "tmp": true,
-
-      ".azurite": true,
+      ".azurite": true
     },
     "eslint.useFlatConfig": true,
     "LineCount.comment": [
@@ -1226,191 +1231,170 @@
       "zts",
       "zxauto"
     ],
+    "eslint.validate": [
+      "javascript",
+      "javascriptreact",
+      "typescript",
+      "typescriptreact",
+      "json",
+      "jsonc",
+      "yaml",
+      "markdown",
+      "css",
+      "html",
+      "toml"
+    ],
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+    "editor.formatOnSave": true,
+    "[javascript]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[jsonc]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[yaml]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[markdown]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[css]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[html]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[toml]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    }
   },
-  "launch": {
-      "configurations": [
-        {
-          "name": "Serve MPA",
-          "command": "npx nx run mpa:serve --verbose",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Serve PO",
-          "command": "npx nx run po:serve --verbose",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Build All",
-          "command": "npm run build",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Build Affected",
-          "command": "npm run build:affected",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Generate All Docs",
-          "command": "npm run doc",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "QA Affected",
-          "command": "npm run affected",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Test Affected",
-          "command": "npx nx affected -t test",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Test All",
-          "command": "npm run test",
-          "request": "launch",
-          "type": "node-terminal"
-        },
-        {
-          "name": "Test Affected",
-          "command": "npm run test:affected",
-          "request": "launch",
-          "type": "node-terminal"
-        }
-      ],
-      "tasks": {
-        "version": "2.0.0",
-        "tasks": [
-          {
-            "label": "nx build all",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "build"
-            ],
-            "problemMatcher": ["$tsc"]
-          },
-          {
-            "label": "nx test all",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "test"
-            ],
-            "problemMatcher": []
-          },
-          {
-            "label": "nx build all (retry)",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "build"
-            ],
-            "problemMatcher": ["$tsc"]
-          },
-          {
-            "label": "nx test all (retry)",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "test"
-            ],
-            "problemMatcher": []
-          },
-          {
-            "label": "nx build all (post-fix)",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "build"
-            ],
-            "problemMatcher": ["$tsc"]
-          },
-          {
-            "label": "nx test all (post-fix)",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "test"
-            ],
-            "problemMatcher": []
-          },
-          {
-            "label": "nx lint all (post-fix)",
-            "type": "shell",
-            "command": "npm",
-            "args": [
-              "run",
-              "lint"
-            ],
-            "problemMatcher": []
-          },
-          {
-            "type": "shell",
-            "label": "nx serve MPA",
-            "command": "npx nx run mpa:serve",
-            "problemMatcher": "$tsc-watch",
-            "isBackground": true,
-            "group": {
-              "kind": "build",
-              "isDefault": true
-            }
-          },
-          {
-            "type": "shell",
-            "label": "nx build Price Offers",
-            "command": "npx nx run price-offers:build",
-            "problemMatcher": "$tsc"
-          },
-          {
-            "type": "shell",
-            "label": "nx serve MPA",
-            "command": "npx nx run mpa:serve",
-            "isBackground": true,
-            "problemMatcher": []
-          },
-          {
-            "type": "shell",
-            "label": "nx serve Price Offers",
-            "command": "npx nx run price-offers:serve",
-            "isBackground": true,
-            "problemMatcher": []
-          },
-          {
-            "type": "shell",
-            "label": "npm install",
-            "command": "npm install"
-          },
-          {
-            "type": "shell",
-            "label": "nx affected",
-            "command": "npx nx affected -t lint,test,build",
-            "problemMatcher": []
-          }
-        ]
-      },
-    },
-  "folders": [
-    {
-      "name": "MPA Validator",
-      "path": "."
-    },
-  ],
   "extensions": {
     "recommendations": [
-      "Azurite.azurite"
+      "dbaeumer.vscode-eslint",
+      "nrwl.angular-console",
+      "firsttris.vscode-jest-runner"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": []
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "mnci: build",
+        "command": "npm run build",
+        "cwd": "${workspaceFolder:MoNecromanCi}",
+        "presentation": {
+          "group": "mnci",
+          "order": 1
+        }
+      },
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "mnci: test",
+        "command": "npm run test",
+        "cwd": "${workspaceFolder:MoNecromanCi}",
+        "presentation": {
+          "group": "mnci",
+          "order": 2
+        }
+      },
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "mnci: lint",
+        "command": "npm run lint",
+        "cwd": "${workspaceFolder:MoNecromanCi}",
+        "presentation": {
+          "group": "mnci",
+          "order": 3
+        }
+      },
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "mnci: typecheck",
+        "command": "npm run typecheck",
+        "cwd": "${workspaceFolder:MoNecromanCi}",
+        "presentation": {
+          "group": "mnci",
+          "order": 4
+        }
+      },
+      {
+        "name": "Serve MPA",
+        "command": "npx nx run mpa:serve --verbose",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Serve PO",
+        "command": "npx nx run po:serve --verbose",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Build All",
+        "command": "npm run build",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Build Affected",
+        "command": "npm run build:affected",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Generate All Docs",
+        "command": "npm run doc",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "QA Affected",
+        "command": "npm run affected",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Test Affected",
+        "command": "npx nx affected -t test",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Test All",
+        "command": "npm run test",
+        "request": "launch",
+        "type": "node-terminal"
+      },
+      {
+        "name": "Test Affected",
+        "command": "npm run test:affected",
+        "request": "launch",
+        "type": "node-terminal"
+      }
     ]
   }
 }

@@ -38,6 +38,7 @@ import {
   type StackConfig,
   VSCODE_RECOMMENDED_EXTENSIONS,
   LAUNCH_CONFIGURATIONS,
+  vscodeSettings,
   vscodeWorkspace,
   withEslintPlugin,
   withReleaseConfig,
@@ -2285,6 +2286,29 @@ describe('applyOverlay', () => {
 
     for (const configuration of workspace.launch.configurations) {
       expect(configuration.cwd).toBe('${workspaceFolder:acme}')
+    }
+  })
+
+  it('keeps settings mnci has no opinion about, and wins on the ones it does', () => {
+    // Settings used to be replaced wholesale, which deleted everything a workspace
+    // had added for itself. Measured on this repo's own file: an upgrade would have
+    // destroyed a 1,179-entry cSpell.words dictionary that lives nowhere else.
+    const workspace = JSON.parse(
+      vscodeWorkspace('demo', undefined, undefined, {
+        'cSpell.words': ['mnci', 'monecromanci'],
+        'editor.rulers': [100],
+        // A key mnci DOES own: its value must not survive.
+        'editor.defaultFormatter': 'someone.else'
+      })
+    ) as { settings: Record<string, unknown> }
+
+    expect(workspace.settings['cSpell.words']).toEqual(['mnci', 'monecromanci'])
+    expect(workspace.settings['editor.rulers']).toEqual([100])
+    expect(workspace.settings['editor.defaultFormatter']).not.toBe('someone.else')
+    // The mnci opinion still lands in full.
+    for (const key of Object.keys(vscodeSettings())) {
+      // Keys here contain literal dots, so toHaveProperty would read them as paths.
+      expect(Object.keys(workspace.settings)).toContain(key)
     }
   })
 
