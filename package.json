@@ -11,7 +11,9 @@
     "affected": "nx affected -t lint,typecheck,test,build",
     "graph": "nx graph",
     "release:preview": "nx release --dry-run",
-    "prepare": "husky"
+    "prepare": "husky",
+    "az-durable:qa": "nx run az-durable:lint && nx run az-durable:test",
+    "az-durable:build": "nx run az-durable:build"
   },
   "private": true,
   "devDependencies": {
@@ -42,6 +44,7 @@
     "jest-util": "~30.4.1",
     "nx": "23.1.1",
     "rollup": "^4.62.4",
+    "swc-loader": "0.1.15",
     "ts-jest": "^29.4.11",
     "ts-node": "10.9.2",
     "tslib": "^2.3.0",
