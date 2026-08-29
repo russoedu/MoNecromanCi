@@ -679,6 +679,58 @@ export const ROOT_LINT_TARGET = {
 } as const
 
 /**
+ * The `@nx/react` express-peer override, written only when the workspace has express.
+ *
+ * @remarks
+ * `@nx/react@23.1.2` **added** `express: '^4.21.2'` as an optional peer in a
+ * PATCH release — 23.1.0 and 23.1.1 declare no express peer at all. mnci's own
+ * `node-app --framework express` installs express 5, so the two are
+ * irreconcilable and `npm install` fails outright:
+ *
+ * ```
+ * npm error Could not resolve dependency:
+ * npm error peerOptional express@"^4.21.2" from @nx/react@23.1.2
+ * npm error Conflicting peer dependency: express@4.22.2
+ * ```
+ *
+ * `optional: true` is the trap: it means "you needn't install it", NOT "any
+ * version is fine if you do". Once express is present the range is enforced.
+ *
+ * **Conditional, and that is the whole design.** Every simpler form was measured
+ * against a real generated workspace and each breaks a different shape:
+ *
+ * | override value | express 5 | express 4 | react-only |
+ * | -------------- | --------- | --------- | ---------- |
+ * | `'$express'`   | works     | works     | **FAILS** — `Unable to resolve reference $express` |
+ * | `'*'`          | FAILS     | works     | works      |
+ * | `'^5.1.0'`     | works     | FAILS     | works      |
+ *
+ * So an unconditional `$express` would be worse than the bug it fixes: it turns
+ * a conflict that only affects express+react workspaces into a hard failure in
+ * EVERY react-only one. Written only when the root manifest declares express —
+ * which is exactly when the conflict can occur, and exactly when `$express`
+ * resolves.
+ *
+ * `$express` rather than a literal range because it means the correct thing:
+ * resolve `@nx/react`'s express peer to whatever express THIS workspace uses.
+ * A literal pins a major and breaks the other one.
+ *
+ * @param manifest - The workspace's root `package.json`, already parsed.
+ * @returns The override entry, or an empty object when express is absent.
+ * @throws Never - pure inspection.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function reactExpressPeerOverride (
+  manifest: Record<string, unknown>
+): Record<string, unknown> {
+  const declared = {
+    ...(manifest.dependencies as Record<string, string> | undefined),
+    ...(manifest.devDependencies as Record<string, string> | undefined)
+  }
+  return declared.express === undefined ? {} : { '@nx/react': { express: '$express' } }
+}
+
+/**
  * npm `overrides` a generated workspace needs for its ESLint toolchain to install.
  *
  * @remarks
@@ -2817,7 +2869,12 @@ export function applyOverlay (
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
     ...ESLINT_PEER_OVERRIDES,
-    ...SECURITY_OVERRIDES
+    ...SECURITY_OVERRIDES,
+    // Last, and conditional — see reactExpressPeerOverride. At `mnci new` there
+    // is no express yet, so this is a no-op; `mnci add node-app --framework
+    // express` is what puts express in the root manifest, and syncs the override
+    // itself. This line is what carries it across an `mnci upgrade`.
+    ...reactExpressPeerOverride(manifest)
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why

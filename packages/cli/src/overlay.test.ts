@@ -32,6 +32,7 @@ import {
   readMnciConfig,
   registryUrl,
   RETIRED_FORMATTER_FILES,
+  reactExpressPeerOverride,
   ROOT_LINT_TARGET,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
@@ -340,6 +341,33 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('NODE_AUTH_TOKEN')
     expect(pipeline).toContain("in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')")
     expect(pipeline).toContain("eq(variables['Build.SourceBranchName'], 'main')")
+  })
+
+  it('overrides @nx/react\'s express peer ONLY when the workspace has express', () => {
+    // @nx/react@23.1.2 added `express: ^4.21.2` as an optional peer in a PATCH
+    // release; 23.1.1 declares none. mnci's own `node-app --framework express`
+    // installs express 5, so `npm install` fails outright with ERESOLVE. The
+    // generated manifest pins `@nx/react: ^23.1.1`, which ADMITS 23.1.2 — so the
+    // same manifest resolves differently depending on when npm runs, which is
+    // why CI hit it and a local install with a warm cache did not.
+    expect(reactExpressPeerOverride({ dependencies: { express: '^5.1.0' } })).toEqual({
+      '@nx/react': { express: '$express' }
+    })
+    expect(reactExpressPeerOverride({ devDependencies: { express: '^4.21.2' } })).toEqual({
+      '@nx/react': { express: '$express' }
+    })
+  })
+
+  it('writes NOTHING for a workspace with no express, which is the load-bearing half', () => {
+    // Measured, not assumed: an unconditional `$express` override is WORSE than
+    // the bug. npm reports `Unable to resolve reference $express` when the root
+    // declares no express, so it would turn a conflict that only affects
+    // express+react workspaces into a hard install failure in every react-only
+    // one. The other two candidate values each break a different shape —
+    // `'*'` fails on express 5, `'^5.1.0'` fails on express 4.
+    expect(reactExpressPeerOverride({})).toEqual({})
+    expect(reactExpressPeerOverride({ dependencies: { react: '^19.0.0' } })).toEqual({})
+    expect(reactExpressPeerOverride({ devDependencies: { '@nx/react': '^23.1.2' } })).toEqual({})
   })
 
   it('gates every release-only step on a CI push to main, never merely "not a PR"', () => {
