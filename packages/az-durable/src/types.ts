@@ -1,4 +1,9 @@
-import type { RegisteredActivity, RegisteredOrchestration, Task } from 'durable-functions'
+import type {
+  OrchestrationContext,
+  RegisteredActivity,
+  RegisteredOrchestration,
+  Task
+} from 'durable-functions'
 
 /**
  * An activity with its input and output types attached.
@@ -44,6 +49,18 @@ export interface TypedOrchestration<TInput, TOutput> {
   readonly name: string
   /** The value `durable-functions` returned from `app.orchestration`. */
   readonly registered: RegisteredOrchestration
+  /**
+   * The handler, retained so `runWorkflow` can drive it directly.
+   *
+   * @remarks
+   * The SDK keeps no accessible reference to the generator once registered, so
+   * without this the testing harness would have to go through the Functions
+   * host. Reading it outside `@mnci/az-durable/testing` is not supported.
+   */
+  readonly handler: (
+    context: OrchestrationContext,
+    input: TInput
+  ) => Generator<Task, TOutput, unknown>
   /** Phantom. Never assigned. Makes `TInput` contravariant. */
   readonly __input?: (input: TInput) => void
   /** Phantom. Never assigned. Carries `TOutput`. */

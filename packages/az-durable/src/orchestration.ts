@@ -60,7 +60,7 @@ export function defineOrchestration<TInput, TOutput> (
     const input = parse === undefined ? (raw as TInput) : parse(raw)
     return yield * handler(context, input)
   })
-  return { name, registered }
+  return { name, registered, handler }
 }
 
 /**
@@ -79,12 +79,19 @@ export function defineOrchestration<TInput, TOutput> (
  * @typeParam TOutput - The sub-orchestration's output type.
  */
 export function * callSubOrchestration<TInput, TOutput> (
+  context: OrchestrationContext,
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
   options?: { instanceId?: string; retry?: RetryOptions }
 ): Generator<Task, TOutput, unknown> {
-  const scheduled = orchestration.registered(input, options?.instanceId)
   const retry = options?.retry
-  const result = yield retry === undefined ? scheduled : scheduled.withRetry(retry)
+  const result = yield retry === undefined
+    ? context.df.callSubOrchestrator(orchestration.name, input, options?.instanceId)
+    : context.df.callSubOrchestratorWithRetry(
+        orchestration.name,
+        retry,
+        input,
+        options?.instanceId
+      )
   return result as TOutput
 }

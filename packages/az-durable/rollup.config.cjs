@@ -1,9 +1,10 @@
 const { withNx } = require('@nx/rollup/with-nx')
 
 // Three entry points, deliberately separate:
-// `./testing` and `./eslint-plugin` entry points are added in Phases 5 and 6,
-// each with its `exports` entry, because an export naming a file that does not
-// exist is the dangling-entry-point bug #158 fixed for npm-lib.
+// `./testing` is a SEPARATE entry point so the harness never enters a
+// production bundle. `./eslint-plugin` arrives in Phase 6, with its `exports`
+// entry, because an export naming a file that does not exist is the
+// dangling-entry-point bug #158 fixed for npm-lib.
 //
 // ESM ONLY, though the build plan asked for dual CJS/ESM. `@nx/rollup` refuses
 // CJS for a `"type": "module"` package — and its refusal is broken: it logs
@@ -22,6 +23,7 @@ const { withNx } = require('@nx/rollup/with-nx')
 module.exports = withNx(
   {
     main: './src/index.ts',
+    additionalEntryPoints: ['./src/testing.ts'],
     outputPath: './dist',
     tsConfig: './tsconfig.lib.json',
     compiler: 'swc',

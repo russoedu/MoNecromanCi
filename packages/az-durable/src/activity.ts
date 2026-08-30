@@ -1,6 +1,6 @@
 import * as df from 'durable-functions'
 import type { InvocationContext } from '@azure/functions'
-import type { RetryOptions, Task } from 'durable-functions'
+import type { OrchestrationContext, RetryOptions, Task } from 'durable-functions'
 import { claimName } from './registry'
 import type { TypedActivity, TypedTask } from './types'
 
@@ -44,10 +44,29 @@ export function defineActivity<TInput, TOutput> (
  * Schedules an activity without yielding it, for fan-out.
  *
  * @remarks
- * The single place in this package that calls the SDK to schedule an activity.
- * `callActivity` is implemented in terms of it, so there is exactly one line to
- * audit against an SDK change.
+ * The single place in this package that schedules an activity. `callActivity`
+ * is implemented in terms of it, so there is exactly one line to audit against
+ * an SDK change.
  *
+ * **Scheduled through `context`, not through `activity.registered`,** and the
+ * two are equivalent — verified in the SDK source rather than assumed:
+ *
+ * ```
+ * registered(input)             -> new AtomicTask(false, new CallActivityAction(name, input))
+ * context.df.callActivity(...)  -> new AtomicTask(false, new CallActivityAction(name, input))
+ * ```
+ *
+ * `RegisteredActivityTask` is an `AtomicTask` subclass that only ADDS
+ * `withRetry`; the retry paths are identical too, both producing
+ * `RetryableTask(AtomicTask(CallActivityWithRetryAction(...)))`. The action is
+ * what enters orchestration history, so replay is unaffected.
+ *
+ * Routing through `context` is what makes {@link runWorkflow} possible without
+ * reading `task.action.functionName` — an undocumented internal the package's
+ * non-goals forbid depending on. It also makes every helper here uniformly
+ * context-first.
+ *
+ * @param context - The orchestration context.
  * @param activity - The activity to schedule.
  * @param input - The input, checked against the activity's declared type.
  * @param retry - Optional retry policy.
@@ -57,12 +76,16 @@ export function defineActivity<TInput, TOutput> (
  * @typeParam TOutput - The activity's output type.
  */
 export function activityTask<TInput, TOutput> (
+  context: OrchestrationContext,
   activity: TypedActivity<TInput, TOutput>,
   input: TInput,
   retry?: RetryOptions
 ): TypedTask<TOutput> {
-  const scheduled = activity.registered(input)
-  return { task: retry === undefined ? scheduled : scheduled.withRetry(retry) }
+  const task =
+    retry === undefined
+      ? context.df.callActivity(activity.name, input)
+      : context.df.callActivityWithRetry(activity.name, retry, input)
+  return { task }
 }
 
 /**
@@ -81,6 +104,7 @@ export function activityTask<TInput, TOutput> (
  * identical object a hand-written call would yield, so replay history and
  * in-flight instances are untouched. This is a type-level change only.
  *
+ * @param context - The orchestration context.
  * @param activity - The activity to call.
  * @param input - The input, checked against the activity's declared type.
  * @param retry - Optional retry policy.
@@ -90,11 +114,12 @@ export function activityTask<TInput, TOutput> (
  * @typeParam TOutput - The activity's output type.
  */
 export function * callActivity<TInput, TOutput> (
+  context: OrchestrationContext,
   activity: TypedActivity<TInput, TOutput>,
   input: TInput,
   retry?: RetryOptions
 ): Generator<Task, TOutput, unknown> {
-  const result = yield activityTask(activity, input, retry).task
+  const result = yield activityTask(context, activity, input, retry).task
   // The one cast in the package. The SDK resumes the generator with the
   // activity's result typed `any`; `TOutput` is the claim `defineActivity`
   // captured from the handler's real signature.

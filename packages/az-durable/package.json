@@ -11,6 +11,11 @@
       "types": "./dist/src/index.d.ts",
       "import": "./dist/index.esm.js",
       "default": "./dist/index.esm.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing.d.ts",
+      "import": "./dist/testing.esm.js",
+      "default": "./dist/testing.esm.js"
     }
   },
   "files": [

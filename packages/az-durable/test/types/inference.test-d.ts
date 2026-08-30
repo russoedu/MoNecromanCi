@@ -29,7 +29,7 @@ declare const probe: TypedActivity<{ id: string }, { count: number }>
  * @typeParam None - this function has no generic type parameters.
  */
 export function * happy (_c: OrchestrationContext): Generator<Task, number, unknown> {
-  const result = yield * callActivity(probe, { id: 'x' })
+  const result = yield * callActivity(_c, probe, { id: 'x' })
   const n: number = result.count
   return n
 }
@@ -48,7 +48,7 @@ export function * happy (_c: OrchestrationContext): Generator<Task, number, unkn
  */
 export function * badInput (_c: OrchestrationContext): Generator<Task, void, unknown> {
   // @ts-expect-error wrong input type
-  yield * callActivity(probe, 42)
+  yield * callActivity(_c, probe, 42)
 }
 
 /**
@@ -66,7 +66,7 @@ export function * badInput (_c: OrchestrationContext): Generator<Task, void, unk
  */
 export function * badOutput (_c: OrchestrationContext): Generator<Task, void, unknown> {
   // @ts-expect-error wrong output assignment
-  const s: string = yield * callActivity(probe, { id: 'x' })
+  const s: string = yield * callActivity(_c, probe, { id: 'x' })
   void s
 }
 
@@ -83,7 +83,7 @@ export function * badOutput (_c: OrchestrationContext): Generator<Task, void, un
  * @typeParam None - this function has no generic type parameters.
  */
 export function * badProp (_c: OrchestrationContext): Generator<Task, void, unknown> {
-  const r = yield * callActivity(probe, { id: 'x' })
+  const r = yield * callActivity(_c, probe, { id: 'x' })
   // @ts-expect-error property does not exist on output
   void r.nope
 }
