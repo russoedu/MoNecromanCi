@@ -16,6 +16,11 @@
       "types": "./dist/src/testing.d.ts",
       "import": "./dist/testing.esm.js",
       "default": "./dist/testing.esm.js"
+    },
+    "./eslint-plugin": {
+      "types": "./dist/src/eslint-plugin.d.ts",
+      "import": "./dist/eslint-plugin.esm.js",
+      "default": "./dist/eslint-plugin.esm.js"
     }
   },
   "files": [
@@ -28,6 +33,7 @@
   },
   "devDependencies": {
     "@azure/functions": "^4.16.2",
+    "@typescript-eslint/parser": "^8.68.0",
     "durable-functions": "^3.5.0"
   },
   "description": "Compile-time type safety across the Azure Durable Functions orchestrator/activity boundary.",
@@ -36,10 +42,9 @@
     "node": ">=18.0.0"
   },
   "peerDependencies": {
-    "durable-functions": ">=3.0.0 <4",
-    "@azure/functions": ">=4.0.0 <5"
+    "@azure/functions": ">=4.0.0 <5",
+    "durable-functions": ">=3.0.0 <4"
   },
-  "dependencies": {},
   "scripts": {
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.types.json",
