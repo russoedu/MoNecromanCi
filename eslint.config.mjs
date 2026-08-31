@@ -46,5 +46,19 @@ export default [
       'tsdoc-require-2/require-param': 'off',
       'tsdoc-require-2/require-type-param': 'off'
     }
+  },
+  // The az-durable dogfood workflows are reconstructions of CONSUMER code, and
+  // their value is that they read like something a user would actually write.
+  // A user's workflow file does not carry `@remarks`/`@typeParam` on every
+  // interface, so requiring it here would make the fixtures less
+  // representative — which is the one thing they cannot afford to be.
+  // Deliberately narrow: `tsdoc/syntax` stays ON, so a malformed comment is
+  // still an error, and this covers one directory rather than tests at large.
+  {
+    files: ['packages/az-durable/test/dogfood/**/*.ts'],
+    rules: {
+      'tsdoc-require-2/require-remarks': 'off',
+      'tsdoc-require-2/require-type-param': 'off'
+    }
   }
 ]

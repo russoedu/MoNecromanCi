@@ -1292,7 +1292,22 @@
   },
   "tasks": {
     "version": "2.0.0",
-    "tasks": []
+    "tasks": [
+      {
+        "label": "az-durable: qa",
+        "type": "npm",
+        "script": "az-durable:qa",
+        "problemMatcher": [],
+        "group": "qa"
+      },
+      {
+        "label": "az-durable: build",
+        "type": "npm",
+        "script": "az-durable:build",
+        "problemMatcher": [],
+        "group": "build"
+      }
+    ]
   },
   "launch": {
     "version": "0.2.0",
