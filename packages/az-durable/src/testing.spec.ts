@@ -1,6 +1,9 @@
 import { callActivity } from './activity'
 import { defineActivity } from './activity'
+import { defineEvent, eventTask } from './events'
 import { defineOrchestration } from './orchestration'
+import { any } from './parallel'
+import { timerTask } from './time'
 import { defineStatuses, setStatus } from './status'
 import { resetRegistryForTests } from './registry'
 import { runWorkflow } from './testing'
@@ -85,6 +88,59 @@ describe('runWorkflow', () => {
         }
       })
     ).toThrow('storage unavailable')
+  })
+
+  it('marks the race winner completed and leaves the loser pending', () => {
+    // Mutation testing found `isCompleted = true` on the winner observed by
+    // nothing. It is not decoration: production code reads it to decide
+    // whether a losing timer still needs cancelling, so a harness that left
+    // the winner pending would send a test down the opposite branch.
+    resetRegistryForTests()
+    const signal = defineEvent<{ ok: boolean }>('signal')
+    const seen: Array<[boolean, boolean]> = []
+    const workflow = defineOrchestration('racing', function * (context, _input: null) {
+      const waiter = eventTask(context, signal)
+      const deadline = timerTask(context, 1000)
+      const winner = yield * any(context, [waiter, deadline])
+      seen.push([winner === deadline, deadline.isCompleted()])
+      return { timedOut: winner === deadline }
+    })
+
+    const run = runWorkflow(workflow, null, {
+      activities: { signal: () => ({ ok: true }) },
+      raceWinner: names => names.find(n => n === '__timer') ?? names[0]
+    })
+    expect(run.result).toEqual({ timedOut: true })
+    expect(seen).toEqual([[true, true]])
+  })
+
+  it("injects the stub's Error INTO the orchestration, so a catch can handle it", () => {
+    // The guard the original test was missing. Asserting only that
+    // `runWorkflow` throws passes whether the error is injected into the
+    // generator or merely thrown by the driver — and it was the latter, so
+    // every compensation branch was unreachable while the docstring promised
+    // otherwise. Only an orchestration that CATCHES can tell the two apart.
+    resetRegistryForTests()
+    const risky = defineActivity('risky', (input: { id: string }) => input.id)
+    const compensate = defineActivity('compensate', (input: { id: string }) => input.id)
+    const workflow = defineOrchestration('compensating', function * (context, input: { id: string }) {
+      try {
+        yield * callActivity(context, risky, input)
+        return { recovered: false }
+      } catch {
+        yield * callActivity(context, compensate, input)
+        return { recovered: true }
+      }
+    })
+
+    const run = runWorkflow(workflow, { id: 'x' }, {
+      activities: {
+        risky: () => new Error('boom'),
+        compensate: () => 'x'
+      }
+    })
+    expect(run.result).toEqual({ recovered: true })
+    expect(run.calls.map(c => c.name)).toEqual(['risky', 'compensate'])
   })
 
   it('names the activity when a stub is missing', () => {

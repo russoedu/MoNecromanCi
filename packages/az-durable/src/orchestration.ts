@@ -1,7 +1,7 @@
 import * as df from 'durable-functions'
 import type { OrchestrationContext, RetryOptions, Task } from 'durable-functions'
 import { claimName } from './registry'
-import type { TypedOrchestration } from './types'
+import type { TypedOrchestration, TypedTask } from './types'
 
 /**
  * Options accepted by {@link defineOrchestration}.
@@ -84,14 +84,43 @@ export function * callSubOrchestration<TInput, TOutput> (
   input: TInput,
   options?: { instanceId?: string; retry?: RetryOptions }
 ): Generator<Task, TOutput, unknown> {
-  const retry = options?.retry
-  const result = yield retry === undefined
-    ? context.df.callSubOrchestrator(orchestration.name, input, options?.instanceId)
-    : context.df.callSubOrchestratorWithRetry(
-        orchestration.name,
-        retry,
-        input,
-        options?.instanceId
-      )
+  const result = yield subOrchestrationTask(context, orchestration, input, options).task
   return result as TOutput
+}
+
+/**
+ * Schedules a sub-orchestration without yielding it.
+ *
+ * @remarks
+ * The task form of {@link callSubOrchestration}, so several sub-orchestrations
+ * can run concurrently through `all`. Fanning out over sub-orchestrations is
+ * the standard way to bound a large batch — each child gets its own history,
+ * so the parent's history does not grow with the batch size.
+ *
+ * @param context - The orchestration context.
+ * @param orchestration - The sub-orchestration to schedule.
+ * @param input - Its input, checked against its declared type.
+ * @param options - Optional fixed instance id and retry policy.
+ * @returns A task carrying the sub-orchestration's output type.
+ * @throws Never - scheduling only.
+ * @typeParam TInput - The sub-orchestration's input type.
+ * @typeParam TOutput - The sub-orchestration's output type.
+ */
+export function subOrchestrationTask<TInput, TOutput> (
+  context: OrchestrationContext,
+  orchestration: TypedOrchestration<TInput, TOutput>,
+  input: TInput,
+  options?: { instanceId?: string; retry?: RetryOptions }
+): TypedTask<TOutput> {
+  const retry = options?.retry
+  const task =
+    retry === undefined
+      ? context.df.callSubOrchestrator(orchestration.name, input, options?.instanceId)
+      : context.df.callSubOrchestratorWithRetry(
+          orchestration.name,
+          retry,
+          input,
+          options?.instanceId
+        )
+  return { task }
 }

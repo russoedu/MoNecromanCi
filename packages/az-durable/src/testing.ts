@@ -51,6 +51,18 @@ export interface WorkflowStub {
   readonly now?: Date
   /** Instance id the orchestration sees. Defaults to `test-instance`. */
   readonly instanceId?: string
+  /**
+   * Picks the winner of a `Task.any` race, by scheduled name.
+   *
+   * @remarks
+   * Defaults to the first candidate, and returning `undefined` accepts that
+   * default — so a selector only has to name the cases it cares about, rather
+   * than inventing a fallback for a list it knows is non-empty. Worth setting
+   * whenever a race decides something important: the approval-versus-timeout
+   * pattern has a branch per outcome, and with a fixed winner only one of them
+   * is ever reachable. A timer candidate is named `__timer`.
+   */
+  readonly raceWinner?: (candidates: string[]) => string | undefined
 }
 
 /**
@@ -71,10 +83,29 @@ export interface WorkflowRun<TOutput> {
   readonly statuses: string[]
 }
 
+/**
+ * A stub's request that the orchestration see a thrown error.
+ *
+ * @remarks
+ * Returned by `resolve` rather than thrown, so the driver can inject it with
+ * `generator.throw` — which is what puts it inside the orchestration's own
+ * `try`. Harness errors (a missing stub, a bad `raceWinner`) keep throwing
+ * normally: those are the test author's mistakes, and swallowing one in an
+ * orchestration's `catch` would turn a broken test green.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+interface ThrowRequest {
+  readonly __throw: Error
+}
+
 /** A task the fake context hands back; carries what was scheduled. */
 interface FakeTask extends Task {
   readonly __name: string
   readonly __input: unknown
+  /** Present on timers only. Set by `cancel()`. */
+  isCanceled?: boolean
+  cancel?: () => void
 }
 
 /**
@@ -131,15 +162,27 @@ export function runWorkflow<TInput, TOutput> (
         schedule(name, i),
       waitForExternalEvent: (name: string) => schedule(name, undefined),
       // Timers complete immediately: there is no real time to wait for, and a
-      // harness that blocked on one would be useless.
-      createTimer: (fireAt: Date) => schedule('__timer', fireAt.toISOString()),
+      // harness that blocked on one would be useless. `cancel` is real,
+      // because an orchestration that correctly cancels its losing timer must
+      // not crash in a test for doing the right thing.
+      createTimer: (fireAt: Date) => {
+        const timer = schedule('__timer', fireAt.toISOString())
+        timer.isCanceled = false
+        timer.cancel = () => {
+          timer.isCanceled = true
+        }
+        return timer
+      },
       setCustomStatus: (value: unknown) => {
         statuses.push(String(value))
       },
       Task: {
         all: (tasks: Task[]) => ({ isCompleted: false, isFaulted: false, __all: tasks }),
-        // First, not fastest: there is no concurrency here to race.
-        any: (tasks: Task[]) => tasks[0]
+        // A marker, not a winner. `Task.any` resolves to the winning TASK, not
+        // to its value, so choosing here would hand the orchestration the
+        // wrong kind of thing — which is exactly the bug the reconstructed
+        // workflows found.
+        any: (tasks: Task[]) => ({ isCompleted: false, isFaulted: false, __any: tasks })
       }
     }
   } as unknown as OrchestrationContext
@@ -147,7 +190,13 @@ export function runWorkflow<TInput, TOutput> (
   const generator = orchestration.handler(context, input)
   let step = generator.next()
   while (!step.done) {
-    step = generator.next(resolve(step.value, stub))
+    const resumed = resolve(step.value, stub)
+    // INTO the generator, not out of the driver. Throwing here instead is the
+    // bug the reconstructed workflows found: every compensation branch was
+    // unreachable, while the docstring promised the opposite.
+    step = isThrowRequest(resumed)
+      ? generator.throw(resumed.__throw)
+      : generator.next(resumed)
   }
   return { result: step.value, calls, statuses }
 }
@@ -161,14 +210,18 @@ export function runWorkflow<TInput, TOutput> (
  *
  * @param task - The task the orchestration yielded.
  * @param stub - The stubs to resolve against.
- * @returns The value to resume with.
- * @throws The stub's `Error`, or an Error naming an activity with no stub.
+ * @returns The value to resume with, or a {@link ThrowRequest} for the driver to inject.
+ * @throws Error naming an activity with no stub registered.
  * @typeParam None - this function has no generic type parameters.
  */
 function resolve (task: Task, stub: WorkflowStub): unknown {
   const fanOut = (task as { __all?: Task[] }).__all
   if (fanOut !== undefined) {
     return fanOut.map(t => resolve(t, stub))
+  }
+  const race = (task as { __any?: Task[] }).__any
+  if (race !== undefined) {
+    return resolveRace(race, stub)
   }
   const { __name: name, __input: input } = task as FakeTask
   if (name === '__timer') {
@@ -185,8 +238,55 @@ function resolve (task: Task, stub: WorkflowStub): unknown {
   const result = activity(input)
   if (result instanceof Error) {
     // A returned Error becomes a THROWN error inside the orchestration, which
-    // is what makes failure branches testable at all.
-    throw result
+    // is what makes failure branches testable at all. Handed back as a request
+    // so the DRIVER injects it; see {@link ThrowRequest}.
+    return { __throw: result }
   }
   return result
+}
+
+/**
+ * Settles a `Task.any` race and returns the winning TASK.
+ *
+ * @remarks
+ * The distinction that matters: the SDK's `Task.any` resolves to the winning
+ * task object, not to its value, and callers read the value afterwards with
+ * `resultOf`. An earlier harness returned the resolved value instead, which
+ * made every orchestration using a race fail with "Task.any returned a task
+ * that was not one of the inputs" — correct code, rejected by the fake.
+ *
+ * The winner's `result` is populated and `isCompleted` set, so `resultOf` and
+ * an `isCompleted` check on the loser both behave as they do in production.
+ *
+ * @param candidates - The racing tasks.
+ * @param stub - The stubs to resolve the winner against.
+ * @returns The winning task, completed and carrying its result.
+ * @throws Error when `raceWinner` names a task that is not racing.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function resolveRace (candidates: Task[], stub: WorkflowStub): Task {
+  const names = candidates.map(c => (c as FakeTask).__name)
+  const chosen = stub.raceWinner?.(names) ?? names[0]
+  const winner = candidates.find(c => (c as FakeTask).__name === chosen)
+  if (winner === undefined) {
+    throw new Error(
+      `raceWinner chose '${String(chosen)}', which is not racing. Candidates: ${names.join(', ')}.`
+    )
+  }
+  const mutable = winner as { result?: unknown; isCompleted: boolean }
+  mutable.result = (winner as FakeTask).__name === '__timer' ? undefined : resolve(winner, stub)
+  mutable.isCompleted = true
+  return winner
+}
+
+/**
+ * Whether a resolved value is a request to throw inside the orchestration.
+ *
+ * @param value - Whatever `resolve` produced.
+ * @returns `true` when the driver should call `generator.throw`.
+ * @throws Never - a type guard.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function isThrowRequest (value: unknown): value is ThrowRequest {
+  return typeof value === 'object' && value !== null && '__throw' in value
 }

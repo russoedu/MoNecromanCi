@@ -1,4 +1,5 @@
 import type { DurableClient, OrchestrationContext, Task } from 'durable-functions'
+import type { TypedTask } from './types'
 
 /**
  * An external event name with its payload type attached.
@@ -50,8 +51,32 @@ export function * waitForEvent<TPayload> (
   context: OrchestrationContext,
   event: EventRef<TPayload>
 ): Generator<Task, TPayload, unknown> {
-  const payload = yield context.df.waitForExternalEvent(event.name)
+  const payload = yield eventTask(context, event).task
   return payload as TPayload
+}
+
+/**
+ * Schedules a wait for an external event, without yielding it.
+ *
+ * @remarks
+ * The task form of {@link waitForEvent}, and the reason it exists is a gap the
+ * reconstructed workflows found: `any` and `all` take `TypedTask`s, so with
+ * only the generator form the single most common Durable Functions pattern —
+ * **wait for human approval, or time out** — could not be expressed at all.
+ *
+ * Pair it with {@link timerTask} and hand both to `any`.
+ *
+ * @param context - The orchestration context.
+ * @param event - The event to wait for.
+ * @returns A task carrying the event's payload type.
+ * @throws Never - scheduling only.
+ * @typeParam TPayload - The payload type.
+ */
+export function eventTask<TPayload> (
+  context: OrchestrationContext,
+  event: EventRef<TPayload>
+): TypedTask<TPayload> {
+  return { task: context.df.waitForExternalEvent(event.name) }
 }
 
 /**

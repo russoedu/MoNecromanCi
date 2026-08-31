@@ -2,7 +2,8 @@ import type {
   OrchestrationContext,
   RegisteredActivity,
   RegisteredOrchestration,
-  Task
+  Task,
+  TimerTask
 } from 'durable-functions'
 
 /**
@@ -82,4 +83,26 @@ export interface TypedTask<TOutput> {
   readonly task: Task
   /** Phantom. Never assigned. Carries `TOutput`. */
   readonly __output?: () => TOutput
+}
+
+/**
+ * A durable timer, scheduled but not yet yielded.
+ *
+ * @remarks
+ * Separate from {@link TypedTask} because a timer carries `cancel`, and losing
+ * it is a real bug rather than a missing convenience: **an orchestration does
+ * not complete until every scheduled timer has fired or been cancelled**, so a
+ * timeout timer left pending after its race is won keeps the instance alive
+ * until it expires. The SDK documents this on `TimerTask`; surfacing `cancel`
+ * here is what lets a caller obey it without reaching for the raw task.
+ *
+ * @typeParam None - this interface has no generic type parameters.
+ */
+export interface TypedTimerTask extends TypedTask<void> {
+  /** The underlying SDK timer. */
+  readonly task: TimerTask
+  /** Requests cancellation, applied on the next `yield` or `return`. */
+  readonly cancel: () => void
+  /** Whether the timer has fired. */
+  readonly isCompleted: () => boolean
 }

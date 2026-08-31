@@ -1,4 +1,5 @@
 import type { OrchestrationContext, Task } from 'durable-functions'
+import type { TypedTimerTask } from './types'
 
 /**
  * The current time, safely for replay.
@@ -59,4 +60,47 @@ export function * sleepFor (
   ms: number
 ): Generator<Task, void, unknown> {
   yield * sleepUntil(context, new Date(now(context).getTime() + ms))
+}
+
+/**
+ * Schedules a durable timer for an absolute instant, without yielding it.
+ *
+ * @remarks
+ * The task form of {@link sleepUntil}, so a timer can race an event or an
+ * activity through `any`. See {@link TypedTimerTask} for why the returned
+ * value carries `cancel` — **a pending timer keeps the instance alive**, so the
+ * loser of a race must be cancelled.
+ *
+ * @param context - The orchestration context.
+ * @param when - The instant to fire at.
+ * @returns A cancellable timer task.
+ * @throws Never - scheduling only.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function timerTaskUntil (context: OrchestrationContext, when: Date): TypedTimerTask {
+  const task = context.df.createTimer(when)
+  return {
+    task,
+    cancel: () => {
+      task.cancel()
+    },
+    isCompleted: () => task.isCompleted
+  }
+}
+
+/**
+ * Schedules a durable timer a fixed duration ahead, without yielding it.
+ *
+ * @remarks
+ * Computes the deadline from `context.df.currentUtcDateTime`, never
+ * `Date.now()` — the same replay-safety reason {@link sleepFor} does.
+ *
+ * @param context - The orchestration context.
+ * @param ms - How far ahead to fire, in milliseconds.
+ * @returns A cancellable timer task.
+ * @throws Never - scheduling only.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function timerTask (context: OrchestrationContext, ms: number): TypedTimerTask {
+  return timerTaskUntil(context, new Date(now(context).getTime() + ms))
 }
