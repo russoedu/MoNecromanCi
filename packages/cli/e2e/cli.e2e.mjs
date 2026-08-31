@@ -1304,17 +1304,11 @@ section('js stack', [], () => {
   // records whether upstream has fixed it (ROADMAP 7c).
   const sdkStubPath = path.join(workspace, 'packages/sdk/dist/index.d.ts')
   const sdkStub = existsSync(sdkStubPath) ? readFileSync(sdkStubPath, 'utf8') : ''
-  const label =
-    'sdk: the @nx/rollup declaration stub uses a URL-style module specifier'
-  if (sdkStub.includes('\\\\')) {
-    skip(
-      label,
-      'upstream Nx bug: path.relative() gives an OS-native path on Windows. mnci points ' +
-        'types past the stub, so this is recorded rather than fatal (ROADMAP 7c)'
-    )
-  } else {
-    enforce(label, true)
-  }
+  enforce(
+    'sdk: the declaration stub uses a URL-style module specifier',
+    !sdkStub.includes(String.fromCodePoint(92)),
+    sdkStub
+  )
 
   enforce(
     'sdk: no dead declaration maps in the tarball',

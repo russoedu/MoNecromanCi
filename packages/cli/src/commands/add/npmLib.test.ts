@@ -45,6 +45,26 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
+/** What the shared rollup configuration generator writes, verbatim. */
+const GENERATED_ROLLUP_CONFIG = [
+  "const { withNx } = require('@nx/rollup/with-nx');",
+  '',
+  'module.exports = withNx(',
+  '  {',
+  "    main: './src/index.ts',",
+  "    outputPath: './dist',",
+  "    tsConfig: './tsconfig.lib.json',",
+  "    compiler: 'swc',",
+  '    format: ["esm"],',
+  '  },',
+  '  {',
+  '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+  '    // e.g.',
+  '    // output: { sourcemap: true },',
+  '  }',
+  ');'
+].join('\n')
+
 // What @nx/js:lib --bundler=rollup actually writes into the manifest.
 const seedGeneratedManifest = (): void => {
   writeFileSync(
@@ -143,6 +163,42 @@ describe('runAdd npm-lib', () => {
     expect(manifest.files).toContain('!**/*.tsbuildinfo')
   })
 
+  it('adds a plugin that repairs the declaration stub the build emits', async () => {
+    // @nx/rollup builds the stub's specifier with path.relative(), an OS-native
+    // path, so on Windows dist/index.d.ts reads `export * from "./src\index"` -
+    // not a valid module specifier anywhere. Verified against a real build: the
+    // stub comes out as "./src/index" with the plugin in place.
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      GENERATED_ROLLUP_CONFIG
+    )
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const config = readFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      'utf8'
+    )
+    expect(config).toContain('mnci-normalise-declaration-specifiers')
+    // The placeholder it replaced is gone, and the rest of the config survives.
+    expect(config).not.toContain('Provide additional rollup configuration here')
+    expect(config).toContain("main: './src/index.ts'")
+    // No backslash literal in the emitted plugin - the separator is built from
+    // char codes precisely so there is no escaping here to get wrong.
+    expect(config).toContain('String.fromCodePoint(92, 92)')
+  })
+
+  it('leaves a rollup config it does not recognise alone', async () => {
+    // Guarded on the exact placeholder the generators write, so an upstream change
+    // to their template makes this a no-op rather than corrupting the config.
+    const hand = '// hand-written config\nmodule.exports = {}\n'
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), hand)
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    expect(readFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), 'utf8')).toBe(hand)
+  })
+
   it('leaves an already-correct types path untouched, so an upstream fix is not undone', async () => {
     writeFileSync(
       join(workspaceRoot, 'packages/sdk/package.json'),
@@ -155,6 +211,53 @@ describe('runAdd npm-lib', () => {
       readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
     ) as { types: string }
     expect(manifest.types).toBe('./dist/src/index.d.ts')
+  })
+
+  it('replaces the stock README, which credits Nx rather than mnci', async () => {
+    // Nx did not generate this project - mnci did, delegating one step to an Nx
+    // generator. Its README also names the project by directory rather than by the
+    // package the workspace publishes. (The directory form works; it is just the
+    // more ambiguous of two working forms.)
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      '# sdk\n\nThis library was generated with [Nx](https://nx.dev).\n'
+    )
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const readme = readFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      'utf8'
+    )
+    expect(readme).toContain('MoNecromanCI')
+    expect(readme).not.toContain('generated with [Nx]')
+    // Named by the package, which is what nx show projects prints.
+    expect(readme).toContain('@demo/sdk')
+  })
+
+  it('names the workspace test runner in the README it writes', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    const readme = readFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      'utf8'
+    )
+    expect(readme).toContain('Jest')
+  })
+
+  it('removes the .gitkeep from a scaffold directory that now holds a project', async () => {
+    // create-nx-workspace drops one into apps/, libs/ and packages/ so git tracks
+    // them while empty. Once a project lands there it is not merely redundant, it
+    // says "this directory is empty" about a directory that is not.
+    mkdirSync(join(workspaceRoot, 'libs'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/.gitkeep'), '')
+    writeFileSync(join(workspaceRoot, 'libs/.gitkeep'), '')
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    expect(existsSync(join(workspaceRoot, 'packages/.gitkeep'))).toBe(false)
+    // libs/ is still empty, so its marker is still doing its job.
+    expect(existsSync(join(workspaceRoot, 'libs/.gitkeep'))).toBe(true)
   })
 
   it('leaves no per-project eslint config behind — an mnci workspace has exactly one, at the root', async () => {
