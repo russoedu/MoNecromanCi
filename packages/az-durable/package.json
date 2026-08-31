@@ -1,0 +1,54 @@
+{
+  "name": "@mnci/az-durable",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.esm.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "default": "./dist/index.esm.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing.d.ts",
+      "import": "./dist/testing.esm.js",
+      "default": "./dist/testing.esm.js"
+    },
+    "./eslint-plugin": {
+      "types": "./dist/src/eslint-plugin.d.ts",
+      "import": "./dist/eslint-plugin.esm.js",
+      "default": "./dist/eslint-plugin.esm.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!**/*.tsbuildinfo",
+    "!**/*.d.ts.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@azure/functions": "^4.16.2",
+    "@typescript-eslint/parser": "^8.68.0",
+    "durable-functions": "^3.5.0"
+  },
+  "description": "Compile-time type safety across the Azure Durable Functions orchestrator/activity boundary.",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@azure/functions": ">=4.0.0 <5",
+    "durable-functions": ">=3.0.0 <4"
+  },
+  "scripts": {
+    "test": "jest",
+    "typecheck": "tsc --noEmit -p tsconfig.types.json",
+    "lint": "eslint .",
+    "check:entrypoints": "node scripts/checkEntryPoints.mjs"
+  }
+}

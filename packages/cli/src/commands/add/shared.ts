@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { dependabotConfig, reactExpressPeerOverride } from '../../overlay'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
@@ -653,12 +654,35 @@ export function registerProjectCommands (
     scripts[`${name}:start`] = commands.start
   }
 
+  // Re-derived after every add, because whether the pip/pub blocks belong
+  // depends on what projects now EXIST, and this add may have created the
+  // first one. Cheap (a directory scan) and idempotent. Skipped when the
+  // workspace has no dependabot.yml, i.e. it was generated with --ci=azure.
+  const dependabotPath = join(workspaceRoot, '.github/dependabot.yml')
+  if (existsSync(dependabotPath)) {
+    writeFileEnsured(dependabotPath, dependabotConfig(workspaceRoot))
+  }
+
   const manifestPath = join(workspaceRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const existingScripts = (manifest.scripts as Record<string, string> | undefined) ?? {}
+  // Synced on EVERY add, not only the express one, because the override depends
+  // on the manifest's state rather than on which generator just ran — and this
+  // runs after that generator has written its dependencies. `mnci add node-app
+  // --framework express` is what introduces express, and the very next add would
+  // otherwise be the one that fails. See reactExpressPeerOverride for why it is
+  // conditional and why an unconditional form is worse than the bug.
+  const overrides = {
+    ...(manifest.overrides as Record<string, unknown> | undefined),
+    ...reactExpressPeerOverride(manifest)
+  }
   writeFileEnsured(
     manifestPath,
-    toJson({ ...manifest, scripts: { ...existingScripts, ...scripts } })
+    toJson({
+      ...manifest,
+      scripts: { ...existingScripts, ...scripts },
+      ...((Object.keys(overrides).length > 0) && { overrides })
+    })
   )
 
   const codeWorkspacePath = findCodeWorkspaceFile(workspaceRoot)

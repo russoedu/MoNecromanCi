@@ -1,4 +1,4 @@
-import { globSync, rmSync } from 'node:fs'
+import { existsSync, globSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { markExecutable, readCodeWorkspace, readJson, toJson, writeFileEnsured } from './util/fsx'
 
@@ -677,6 +677,58 @@ export const ROOT_LINT_TARGET = {
     cwd: '.'
   }
 } as const
+
+/**
+ * The `@nx/react` express-peer override, written only when the workspace has express.
+ *
+ * @remarks
+ * `@nx/react@23.1.2` **added** `express: '^4.21.2'` as an optional peer in a
+ * PATCH release — 23.1.0 and 23.1.1 declare no express peer at all. mnci's own
+ * `node-app --framework express` installs express 5, so the two are
+ * irreconcilable and `npm install` fails outright:
+ *
+ * ```
+ * npm error Could not resolve dependency:
+ * npm error peerOptional express@"^4.21.2" from @nx/react@23.1.2
+ * npm error Conflicting peer dependency: express@4.22.2
+ * ```
+ *
+ * `optional: true` is the trap: it means "you needn't install it", NOT "any
+ * version is fine if you do". Once express is present the range is enforced.
+ *
+ * **Conditional, and that is the whole design.** Every simpler form was measured
+ * against a real generated workspace and each breaks a different shape:
+ *
+ * | override value | express 5 | express 4 | react-only |
+ * | -------------- | --------- | --------- | ---------- |
+ * | `'$express'`   | works     | works     | **FAILS** — `Unable to resolve reference $express` |
+ * | `'*'`          | FAILS     | works     | works      |
+ * | `'^5.1.0'`     | works     | FAILS     | works      |
+ *
+ * So an unconditional `$express` would be worse than the bug it fixes: it turns
+ * a conflict that only affects express+react workspaces into a hard failure in
+ * EVERY react-only one. Written only when the root manifest declares express —
+ * which is exactly when the conflict can occur, and exactly when `$express`
+ * resolves.
+ *
+ * `$express` rather than a literal range because it means the correct thing:
+ * resolve `@nx/react`'s express peer to whatever express THIS workspace uses.
+ * A literal pins a major and breaks the other one.
+ *
+ * @param manifest - The workspace's root `package.json`, already parsed.
+ * @returns The override entry, or an empty object when express is absent.
+ * @throws Never - pure inspection.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function reactExpressPeerOverride (
+  manifest: Record<string, unknown>
+): Record<string, unknown> {
+  const declared = {
+    ...(manifest.dependencies as Record<string, string> | undefined),
+    ...(manifest.devDependencies as Record<string, string> | undefined)
+  }
+  return declared.express === undefined ? {} : { '@nx/react': { express: '$express' } }
+}
 
 /**
  * npm `overrides` a generated workspace needs for its ESLint toolchain to install.
@@ -2554,36 +2606,111 @@ ${
 }`
 }
 
+/** Where a `pip` project's manifest can live, relative to the workspace root. */
+const PIP_PROJECT_GLOBS = ['apps', 'python-packages', 'libs'] as const
+/** Where a `pub` project's manifest can live, relative to the workspace root. */
+const PUB_PROJECT_GLOBS = ['apps', 'packages', 'libs'] as const
+/** Manifest filenames that mark a directory as belonging to each ecosystem. */
+const ECOSYSTEM_MANIFESTS = {
+  pip: ['pyproject.toml', 'requirements.txt'],
+  pub: ['pubspec.yaml']
+} as const
+
+/**
+ * Whether the workspace has at least one project of the given ecosystem.
+ *
+ * @remarks
+ * Detection rather than assumption, and that distinction is the whole point of
+ * {@link dependabotConfig} — see there.
+ *
+ * @param workspaceRoot - The workspace to scan.
+ * @param roots - The directories whose immediate children are projects.
+ * @param manifests - Filenames that mark a project of this ecosystem.
+ * @returns `true` when any project directory holds one of the manifests.
+ * @throws Never - a missing directory reads as empty.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function hasEcosystemProject (
+  workspaceRoot: string,
+  roots: readonly string[],
+  manifests: readonly string[]
+): boolean {
+  return roots.some(root => {
+    const base = join(workspaceRoot, root)
+    if (!existsSync(base)) {
+      return false
+    }
+    return readdirSync(base, { withFileTypes: true }).some(
+      entry =>
+        entry.isDirectory() &&
+        manifests.some(manifest => existsSync(join(base, entry.name, manifest)))
+    )
+  })
+}
+
+/**
+ * One `updates:` entry, covering a whole ecosystem by glob.
+ *
+ * @param ecosystem - The `package-ecosystem` value.
+ * @param roots - Directories whose immediate children hold the manifests.
+ * @returns The YAML block, with a leading blank line.
+ * @throws Never - string building.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function dependabotBlock (ecosystem: string, roots: readonly string[]): string {
+  return (
+    `\n  - package-ecosystem: ${ecosystem}\n    directories:\n` +
+    roots.map(root => `      - "/${root}/*"\n`).join('') +
+    '    schedule:\n      interval: weekly\n'
+  )
+}
+
 /**
  * The `.github/dependabot.yml` written for GitHub-hosted workspaces.
  *
  * @remarks
  * Cheap, high-signal hygiene every generated workspace gets automatically —
  * this very repo shipped without one and GitHub had to flag vulnerabilities
- * after the fact on every push instead of proposing update PRs proactively
- * (see the `fix(deps)` overrides commit). Dependabot is a GitHub-native
- * feature (no app/extension install, unlike Renovate), so it is written only
- * for `github`/`both` workspaces — the same conditional {@link applyOverlay}
- * already uses for `.github/workflows/ci.yml`.
+ * after the fact on every push instead of proposing update PRs proactively.
+ * Dependabot is a GitHub-native feature (no app install, unlike Renovate), so
+ * it is written only for `github`/`both` workspaces.
  *
- * Three ecosystems, each on a weekly cadence (batches noise instead of a PR
- * per bump):
- * - `npm` at the workspace root — covers every `packages/*` project, since
- *   `npm ci` installs from the one root lockfile.
- * - `github-actions` at the root — keeps `actions/checkout`, `setup-node`,
- *   etc. patched too (the workflow {@link githubActionsYaml} writes).
- * - `pip`, via `directories` **globs** (`/apps/*`, `/python-packages/*`,
- *   `/libs/*`) rather than one entry per project: Python projects do not
- *   exist yet at `mnci new` time (`add python-*` writes them later), and a
- *   glob that currently matches nothing is not an error — Dependabot simply
- *   finds no manifest there yet. This is written unconditionally (no
- *   Python-project detection here), so it starts covering Python
- *   dependencies automatically the moment the first one is added, with no
- *   `mnci upgrade` needed.
+ * `npm` and `github-actions` are unconditional, both at the workspace root:
+ * `npm ci` installs every `packages/*` project from the one root lockfile, and
+ * the actions entry patches the workflow {@link githubActionsYaml} writes.
+ *
+ * **`pip` and `pub` are emitted only when such a project actually exists, and
+ * that is a bug fix rather than a refinement.** These blocks used to be written
+ * unconditionally, on the stated reasoning that "a glob matching nothing yet is
+ * not an error — Dependabot simply finds no manifest there yet". That claim was
+ * false, and nothing ever re-checked it. Measured against this repo's own
+ * Dependabot Updates history: the `pip` job failed on EVERY weekly run for over
+ * a month, and `pub` on every run since it was added, while `npm_and_yarn` and
+ * `github_actions` succeeded alongside them. An ecosystem entry whose globs
+ * match no manifest is a hard failure, so every generated workspace without a
+ * Python or Dart project produced two red Dependabot runs a week, for the whole
+ * of its life, over projects it does not have.
+ *
+ * The globs are kept for the ecosystems that ARE emitted, so a second Python
+ * project needs no rewrite. What changed is only whether the block appears at
+ * all. `registerProjectCommands` re-runs this after every `mnci add`, so the
+ * block appears the moment the first such project lands, and `mnci upgrade`
+ * back-fills an existing workspace.
+ *
+ * @param workspaceRoot - The workspace to scan for Python and Dart projects.
+ * @returns The YAML to write to `.github/dependabot.yml`.
+ * @throws Never - a missing directory reads as empty.
+ * @typeParam None - this function has no generic type parameters.
  */
-export const DEPENDABOT_CONFIG = `# Generated by MoNecromanCI. Weekly dependency-update PRs so vulnerable or
+export function dependabotConfig (workspaceRoot: string): string {
+  let config = `# Generated by MoNecromanCI. Weekly dependency-update PRs so vulnerable or
 # stale dependencies surface as a reviewable PR instead of only a push-time
 # warning.
+#
+# pip and pub appear here only once the workspace HAS a Python or Dart project.
+# An ecosystem entry whose directories match no manifest is a hard Dependabot
+# failure, not a no-op, so emitting them unconditionally cost every workspace
+# two red runs a week over projects it does not have.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -2595,30 +2722,18 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-
-  # Globs, not one entry per project: Python projects are added later via
-  # 'mnci add python-*', so this starts covering them automatically the
-  # moment the first one exists — a glob matching nothing yet is not an error.
-  - package-ecosystem: pip
-    directories:
-      - "/apps/*"
-      - "/python-packages/*"
-      - "/libs/*"
-    schedule:
-      interval: weekly
-
-  # Same glob reasoning as pip above. Dart projects are pub workspace members,
-  # so each one declares its own dependencies even though they all resolve
-  # through the single root pubspec.lock — hence the per-project directories
-  # rather than just "/".
-  - package-ecosystem: pub
-    directories:
-      - "/apps/*"
-      - "/packages/*"
-      - "/libs/*"
-    schedule:
-      interval: weekly
 `
+  if (hasEcosystemProject(workspaceRoot, PIP_PROJECT_GLOBS, ECOSYSTEM_MANIFESTS.pip)) {
+    config += dependabotBlock('pip', PIP_PROJECT_GLOBS)
+  }
+  // Dart projects are pub workspace members, so each declares its own
+  // dependencies even though they all resolve through one root pubspec.lock —
+  // hence per-project directories rather than just "/".
+  if (hasEcosystemProject(workspaceRoot, PUB_PROJECT_GLOBS, ECOSYSTEM_MANIFESTS.pub)) {
+    config += dependabotBlock('pub', PUB_PROJECT_GLOBS)
+  }
+  return config
+}
 
 /**
  * Options for {@link applyOverlay}.
@@ -2817,7 +2932,12 @@ export function applyOverlay (
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
     ...ESLINT_PEER_OVERRIDES,
-    ...SECURITY_OVERRIDES
+    ...SECURITY_OVERRIDES,
+    // Last, and conditional — see reactExpressPeerOverride. At `mnci new` there
+    // is no express yet, so this is a no-op; `mnci add node-app --framework
+    // express` is what puts express in the root manifest, and syncs the override
+    // itself. This line is what carries it across an `mnci upgrade`.
+    ...reactExpressPeerOverride(manifest)
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
@@ -2925,6 +3045,6 @@ export function applyOverlay (
       join(workspaceRoot, '.github/workflows/ci.yml'),
       githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci)
     )
-    writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), DEPENDABOT_CONFIG)
+    writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), dependabotConfig(workspaceRoot))
   }
 }

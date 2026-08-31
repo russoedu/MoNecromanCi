@@ -16,7 +16,8 @@ packages/
 ├── cli/                  # @mnci/cli — the CLI binary (mnci new/add/upgrade)
 ├── eslint-config/        # @mnci/eslint-config — the whole opinion: quality, types AND formatting
 ├── nx-python-pip/        # @mnci/nx-python-pip — Nx plugin for pip-native Python projects
-└── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
+├── nx-flutter/           # @mnci/nx-flutter — Nx plugin for Flutter/Dart pub workspaces
+└── az-durable/           # @mnci/az-durable — typed Azure Durable Functions boundary
 
 tsconfig.base.json        # shared TypeScript configuration
 
@@ -210,7 +211,62 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### A Published `npm-lib` Shipped No Types At All (Latest)
+### A Fifth Package: `@mnci/az-durable` (Latest)
+
+Typed compile-time safety across the Azure Durable Functions
+orchestrator/activity boundary. **Scaffolded with `mnci add npm-lib`**, so the
+CLI got exercised on a real package rather than a fixture — which is how the
+dangling-`types` bug two entries down came to be found on a published artefact.
+
+- **The mechanism is `yield *`, and nothing else would do.** A generator has ONE
+  `TNext` shared by every `yield`, so `const x = yield callActivity(...)` can
+  never be typed per call. `yield *` returns the *delegated* generator's
+  `TReturn`, which IS per call. Every scheduling helper is therefore a generator
+  you delegate to; getting it wrong is a compile error, not a silent `any`.
+- **Phantom members carry the types** `RegisteredActivity` forgets. `__input` is
+  written as a function *parameter* rather than a property, deliberately: that
+  makes `TInput` contravariant, and with a covariant property an activity taking
+  a wider input would be assignable where a narrower one is expected.
+- **Dogfooding found six defects that 41 green tests had not**, and three were in
+  the test harness itself — which is the argument for the exercise. `Task.any`
+  resolves to the winning TASK, not its value, so every race failed; fake timers
+  had no `cancel()`, so an orchestration doing the right thing crashed in its own
+  test; and **stub errors were thrown in the DRIVER**, outside the generator, so
+  no orchestration `try/catch` could ever see one. Every compensation path was
+  untestable while the docstring promised the opposite. The existing test passed
+  because it asserted only that `runWorkflow` throws — true either way over an
+  orchestration with no `catch`. Another gate that verified nothing.
+- **The API could not express a race at all.** `all`/`any` take `TypedTask`s and
+  only `activityTask` produced one, so "wait for approval, or time out" — the
+  most common Durable pattern there is — was unwritable. `eventTask`,
+  `timerTask`, `timerTaskUntil` and `subOrchestrationTask` close it, each
+  `call*`/`wait*` generator now delegating to its task form so there is one
+  scheduling site per kind.
+- **`continueAsNew` is a handler argument, not a free function.** It restarts
+  *this* orchestration, so its input must be this orchestration's own `TInput`;
+  a free function could only be generic on a type nothing constrains, which is
+  the unchecked cast the package exists to remove. Naming the orchestration
+  constant inside its own handler is not available either — it is not
+  initialised yet.
+- **One finding was recorded as unfixable on a reason that was simply wrong.**
+  `retryPolicy` was declined because constructing the SDK's `RetryOptions` class
+  would make `durable-functions` a value import against the zero-dependency
+  design. It would not: `activity.ts` and `orchestration.ts` already
+  value-import it, and must, to call `df.app.*`. **No runtime dependencies means
+  an empty `dependencies` block** — a peer dependency is imported at runtime by
+  design. One `grep` settled what had been asserted without one.
+- **Verified from the packed tarball, not the source tree.** Installed into a
+  fresh consumer with no reference to this repo: all three entry points resolve,
+  the ESM loads and runs, and `article.titel` is a compile error naming the real
+  type. `check:entrypoints` makes it repeatable, checking EVERY declared entry
+  point rather than a representative one — the precise gap that let a published
+  `npm-lib` ship a `types` field pointing at a file its build never emitted.
+- **`test/dogfood/` holds RECONSTRUCTIONS, not the real workflows**, which live
+  in a private project. Its README says so, because a fixture written by the
+  API's own author confirms the design by construction. Read a green run there
+  as "the API composes over these shapes", never as production validation.
+
+### A Published `npm-lib` Shipped No Types At All
 
 Found on a **real published package**, not a fixture: `@nx/js:lib --bundler=rollup`
 writes `types: './dist/index.esm.d.ts'`, and its own build never emits that file. So
@@ -1650,6 +1706,18 @@ guard decodes. Check which before wiring a third protocol.
 2. **Lint errors on TSDoc** → verify `@param`, `@returns`, `@throws` tags; check eslint.config.mjs for exceptions
 3. **E2E failures on new kind** → verify `add/<kind>.ts` generates valid project.json + runs nx:run-many for lint/test/build
 4. **CI hangs on Python** → ensure `pip-audit` is guarded; if workspace has no Python projects, step should no-op cleanly
+5. **`nx release --dry-run` reports absurd versions** → **run `git fetch --tags` first.**
+   A clone made without tags (which is what a fresh CI or remote-agent checkout
+   gives you) makes the dry run *silently wrong* rather than failing: with no tag
+   to resolve, every project falls back to `fallbackCurrentVersionResolver: "disk"`,
+   and the manifests on disk are stale **by design** — `release.git.commit` is
+   `false`, so a release tags and publishes without ever writing the bump back.
+   `@mnci/cli` reads `1.0.0` on disk against `4.0.6` published, so a tagless dry
+   run proposes `2.0.0`: a version that already exists, from a diagnosis that
+   looks authoritative. The real answer with tags fetched is `4.0.7`. `ci.yml`
+   already does this (`git fetch --all --prune --tags`, commented "Version
+   resolution needs the release tags") — the trap is for whoever debugs locally.
+   **Read a release dry run only from a clone that has the tags.**
 
 ### Key Invariants to Preserve
 

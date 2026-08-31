@@ -32,6 +32,7 @@ import {
   readMnciConfig,
   registryUrl,
   RETIRED_FORMATTER_FILES,
+  reactExpressPeerOverride,
   ROOT_LINT_TARGET,
   rootScripts,
   SHARED_GLOBAL_INPUTS,
@@ -340,6 +341,33 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).not.toContain('NODE_AUTH_TOKEN')
     expect(pipeline).toContain("in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')")
     expect(pipeline).toContain("eq(variables['Build.SourceBranchName'], 'main')")
+  })
+
+  it('overrides @nx/react\'s express peer ONLY when the workspace has express', () => {
+    // @nx/react@23.1.2 added `express: ^4.21.2` as an optional peer in a PATCH
+    // release; 23.1.1 declares none. mnci's own `node-app --framework express`
+    // installs express 5, so `npm install` fails outright with ERESOLVE. The
+    // generated manifest pins `@nx/react: ^23.1.1`, which ADMITS 23.1.2 — so the
+    // same manifest resolves differently depending on when npm runs, which is
+    // why CI hit it and a local install with a warm cache did not.
+    expect(reactExpressPeerOverride({ dependencies: { express: '^5.1.0' } })).toEqual({
+      '@nx/react': { express: '$express' }
+    })
+    expect(reactExpressPeerOverride({ devDependencies: { express: '^4.21.2' } })).toEqual({
+      '@nx/react': { express: '$express' }
+    })
+  })
+
+  it('writes NOTHING for a workspace with no express, which is the load-bearing half', () => {
+    // Measured, not assumed: an unconditional `$express` override is WORSE than
+    // the bug. npm reports `Unable to resolve reference $express` when the root
+    // declares no express, so it would turn a conflict that only affects
+    // express+react workspaces into a hard install failure in every react-only
+    // one. The other two candidate values each break a different shape —
+    // `'*'` fails on express 5, `'^5.1.0'` fails on express 4.
+    expect(reactExpressPeerOverride({})).toEqual({})
+    expect(reactExpressPeerOverride({ dependencies: { react: '^19.0.0' } })).toEqual({})
+    expect(reactExpressPeerOverride({ devDependencies: { '@nx/react': '^23.1.2' } })).toEqual({})
   })
 
   it('gates every release-only step on a CI push to main, never merely "not a PR"', () => {
@@ -1799,21 +1827,75 @@ describe('applyOverlay', () => {
     const parsed = yaml.load(dependabot) as {
       updates: Array<{ 'package-ecosystem': string; directory?: string; directories?: string[] }>
     }
+    // A fresh workspace has NO Python or Dart project, so pip and pub must be
+    // absent. They used to be written unconditionally, on the belief that
+    // "directories matching nothing is not an error for Dependabot". It is a
+    // hard failure: this repo's own Dependabot history shows the pip job red on
+    // every weekly run for over a month, beside a green npm job.
     expect(parsed.updates.map(update => update['package-ecosystem'])).toEqual([
       'npm',
-      'github-actions',
-      'pip',
-      'pub'
+      'github-actions'
     ])
-    // pip covers wherever a Python project might later land (add python-*),
-    // via directories that currently match nothing — not an error for Dependabot.
+  })
+
+  it('adds the pip block once a Python project exists, and not before', () => {
+    const options = {
+      workspaceName: 'demo',
+      scope: '@demo',
+      registry: { kind: 'npm' as const },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github' as const,
+      stack: DEFAULT_STACK
+    }
+    const ecosystems = (): string[] => {
+      const parsed = yaml.load(
+        readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+      ) as { updates: Array<{ 'package-ecosystem': string }> }
+      return parsed.updates.map(update => update['package-ecosystem'])
+    }
+
+    applyOverlay(workspaceRoot, options)
+    expect(ecosystems()).not.toContain('pip')
+
+    mkdirSync(join(workspaceRoot, 'python-packages/api'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'python-packages/api/pyproject.toml'), '[project]\n')
+    applyOverlay(workspaceRoot, options)
+    expect(ecosystems()).toContain('pip')
+    expect(ecosystems()).not.toContain('pub')
+
+    const parsed = yaml.load(
+      readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+    ) as { updates: Array<{ 'package-ecosystem': string; directories?: string[] }> }
+    // Globs are KEPT for an ecosystem that is emitted, so a second Python
+    // project needs no rewrite. Only whether the block appears at all changed.
     expect(
       parsed.updates.find(update => update['package-ecosystem'] === 'pip')?.directories
     ).toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
-    // pub, same reasoning, for the three directories Flutter projects land in.
-    // Per-project rather than just "/" because each pub workspace member
-    // declares its own dependencies even though they all resolve through the
-    // single root pubspec.lock.
+  })
+
+  it('adds the pub block once a Dart project exists', () => {
+    const options = {
+      workspaceName: 'demo',
+      scope: '@demo',
+      registry: { kind: 'npm' as const },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github' as const,
+      stack: DEFAULT_STACK
+    }
+    mkdirSync(join(workspaceRoot, 'apps/mobile'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/mobile/pubspec.yaml'), 'name: mobile\n')
+    applyOverlay(workspaceRoot, options)
+
+    const parsed = yaml.load(
+      readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+    ) as { updates: Array<{ 'package-ecosystem': string; directories?: string[] }> }
+    expect(parsed.updates.map(update => update['package-ecosystem'])).toEqual([
+      'npm',
+      'github-actions',
+      'pub'
+    ])
     expect(
       parsed.updates.find(update => update['package-ecosystem'] === 'pub')?.directories
     ).toEqual(['/apps/*', '/packages/*', '/libs/*'])
