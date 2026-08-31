@@ -48,6 +48,7 @@
   "scripts": {
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.types.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:entrypoints": "node scripts/checkEntryPoints.mjs"
   }
 }
