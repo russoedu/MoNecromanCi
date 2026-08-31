@@ -87,6 +87,9 @@
     },
     "cosmiconfig": {
       "js-yaml": "^4.3.1"
+    },
+    "durable-functions": {
+      "uuid": "^11.1.1"
     }
   },
   "nx": {
