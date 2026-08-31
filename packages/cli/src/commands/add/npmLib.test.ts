@@ -213,6 +213,53 @@ describe('runAdd npm-lib', () => {
     expect(manifest.types).toBe('./dist/src/index.d.ts')
   })
 
+  it('replaces the stock README, which credits Nx rather than mnci', async () => {
+    // Nx did not generate this project - mnci did, delegating one step to an Nx
+    // generator. Its README also names the project by directory rather than by the
+    // package the workspace publishes. (The directory form works; it is just the
+    // more ambiguous of two working forms.)
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      '# sdk\n\nThis library was generated with [Nx](https://nx.dev).\n'
+    )
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const readme = readFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      'utf8'
+    )
+    expect(readme).toContain('MoNecromanCI')
+    expect(readme).not.toContain('generated with [Nx]')
+    // Named by the package, which is what nx show projects prints.
+    expect(readme).toContain('@demo/sdk')
+  })
+
+  it('names the workspace test runner in the README it writes', async () => {
+    await runAdd('npm-lib', 'sdk', {})
+
+    const readme = readFileSync(
+      join(workspaceRoot, 'packages/sdk/README.md'),
+      'utf8'
+    )
+    expect(readme).toContain('Jest')
+  })
+
+  it('removes the .gitkeep from a scaffold directory that now holds a project', async () => {
+    // create-nx-workspace drops one into apps/, libs/ and packages/ so git tracks
+    // them while empty. Once a project lands there it is not merely redundant, it
+    // says "this directory is empty" about a directory that is not.
+    mkdirSync(join(workspaceRoot, 'libs'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/.gitkeep'), '')
+    writeFileSync(join(workspaceRoot, 'libs/.gitkeep'), '')
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    expect(existsSync(join(workspaceRoot, 'packages/.gitkeep'))).toBe(false)
+    // libs/ is still empty, so its marker is still doing its job.
+    expect(existsSync(join(workspaceRoot, 'libs/.gitkeep'))).toBe(true)
+  })
+
   it('leaves no per-project eslint config behind — an mnci workspace has exactly one, at the root', async () => {
     // The @nx/js:lib generator writes one; mnci used to overwrite it with its
     // own (NPM_LIB_ESLINT_CONFIG) carrying the @nx/dependency-checks

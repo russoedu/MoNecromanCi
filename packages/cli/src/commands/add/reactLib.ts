@@ -10,6 +10,7 @@ import {
   removeGeneratedEslintConfig,
   repairDeclarationSpecifiers,
   repairPublishableManifest,
+  writeProjectReadme,
   type AddOptions,
   type WorkspaceStack
 } from './shared'
@@ -99,6 +100,7 @@ export async function addReactLib (
   markPublic(publishableManifest)
   repairPublishableManifest(publishableManifest)
   repairDeclarationSpecifiers(join(workspaceRoot, 'packages', name))
+  writeProjectReadme(join(workspaceRoot, 'packages', name), `${scope}/${name}`, stack.testRunner)
   removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
@@ -149,6 +151,7 @@ export function addReactInternalLib (
   markPrivate(privateManifest)
   repairPublishableManifest(privateManifest)
   repairDeclarationSpecifiers(join(workspaceRoot, 'libs', name))
+  writeProjectReadme(join(workspaceRoot, 'libs', name), name, stack.testRunner)
   removeGeneratedEslintConfig(workspaceRoot, `libs/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
