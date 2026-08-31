@@ -72,15 +72,28 @@ export interface WorkflowStub {
  * `calls` and `statuses` are ordered lists rather than sets because the order
  * is the property worth asserting: it is what replay compatibility depends on.
  *
+ * @typeParam TInput - The orchestration's input type.
  * @typeParam TOutput - The orchestration's return type.
  */
-export interface WorkflowRun<TOutput> {
+export interface WorkflowRun<TInput, TOutput> {
   /** The orchestration's return value. */
   readonly result: TOutput
   /** Every activity and sub-orchestration call, in order. */
   readonly calls: RecordedCall[]
   /** Every `setCustomStatus` transition, in order. */
   readonly statuses: string[]
+  /**
+   * The input the orchestration asked to restart with, if it called
+   * `self.continueAsNew`.
+   *
+   * @remarks
+   * The harness records the request and lets the run finish rather than
+   * looping: an eternal orchestration restarts forever by design, so a harness
+   * that honoured it would never return. What is worth asserting is that the
+   * restart was requested and with what — the next generation is then a
+   * separate `runWorkflow` call with that input.
+   */
+  readonly continuedAsNew?: TInput
 }
 
 /**
@@ -140,9 +153,10 @@ export function runWorkflow<TInput, TOutput> (
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
   stub: WorkflowStub
-): WorkflowRun<TOutput> {
+): WorkflowRun<TInput, TOutput> {
   const calls: RecordedCall[] = []
   const statuses: string[] = []
+  let continuedAsNew: TInput | undefined
   const clock = stub.now ?? new Date(0)
 
   const schedule = (name: string, scheduledInput: unknown): FakeTask => {
@@ -176,6 +190,9 @@ export function runWorkflow<TInput, TOutput> (
       setCustomStatus: (value: unknown) => {
         statuses.push(String(value))
       },
+      continueAsNew: (next: unknown) => {
+        continuedAsNew = next as TInput
+      },
       Task: {
         all: (tasks: Task[]) => ({ isCompleted: false, isFaulted: false, __all: tasks }),
         // A marker, not a winner. `Task.any` resolves to the winning TASK, not
@@ -198,7 +215,9 @@ export function runWorkflow<TInput, TOutput> (
       ? generator.throw(resumed.__throw)
       : generator.next(resumed)
   }
-  return { result: step.value, calls, statuses }
+  return continuedAsNew === undefined
+    ? { result: step.value, calls, statuses }
+    : { result: step.value, calls, statuses, continuedAsNew }
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   defineActivity,
   defineOrchestration,
   defineStatuses,
+  retryPolicy,
   setStatus,
   sleepFor,
   subOrchestrationTask
@@ -64,6 +65,8 @@ const statuses = defineStatuses({
 
 /** How many items one child orchestration handles. */
 const BATCH_SIZE = 2
+/** Stop after this many items and restart, so history stays bounded. */
+const MAX_ITEMS_PER_GENERATION = 4
 /** Pause between batches, so the sweep does not saturate the downstream API. */
 const BATCH_PAUSE_MS = 5000
 
@@ -85,9 +88,13 @@ export const cleanupBatch = defineOrchestration(
 /** Reconstruction of `cleanup`. */
 export const cleanup = defineOrchestration(
   'Cleanup',
-  function * (context, input: { olderThanDays: number }) {
+  function * (context, input: { olderThanDays: number }, self) {
     setStatus(context, statuses, 'listing')
-    const stale = yield * callActivity(context, listStale, input)
+    const stale = yield * callActivity(context, listStale, input, retryPolicy({
+      firstRetryIntervalInMilliseconds: 1000,
+      maxNumberOfAttempts: 3,
+      backoffCoefficient: 2
+    }))
 
     // Nullable activity results, filtered before use.
     const archives = yield * all(
@@ -118,6 +125,13 @@ export const cleanup = defineOrchestration(
     }
 
     setStatus(context, statuses, 'done')
+    if (stale.length >= MAX_ITEMS_PER_GENERATION) {
+      // An eternal sweep: history grows with every activity call, so a backlog
+      // larger than one generation must restart rather than keep going. The
+      // input is checked against this orchestration's own type.
+      self.continueAsNew({ olderThanDays: input.olderThanDays })
+      return { swept: stale.length, archived: archived.length, bytes: totalBytes }
+    }
     return { swept: stale.length, archived: archived.length, bytes: totalBytes }
   }
 )

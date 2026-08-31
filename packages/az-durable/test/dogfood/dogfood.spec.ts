@@ -1,3 +1,5 @@
+import { RetryOptions } from 'durable-functions'
+import { retryPolicy } from '../../src/retry'
 import { runWorkflow } from '../../src/testing'
 import { cleanup } from './cleanup'
 import { createArticle } from './createArticle'
@@ -135,5 +137,61 @@ describe('reconstructed workflows (see ./README.md — NOT the real ones)', () =
       expect(run.result).toEqual({ reset: false, reason: 'reset failed; snapshot restored' })
       expect(run.calls.map(c => c.name)).toContain('RestoreSnapshot')
     })
+  })
+})
+
+describe('continueAsNew and retryPolicy (Phase 7 follow-ups)', () => {
+  const many = Array.from({ length: 5 }, (_, i) => ({
+    id: String(i),
+    path: `/${i}`,
+    ageDays: 40
+  }))
+  const stubs = {
+    ListStaleItems: () => many,
+    ArchiveItem: () => ({ archiveUrl: 'u' }),
+    CleanupBatch: () => ({ deleted: 2, bytes: 10 }),
+    EmitAudit: () => undefined
+  }
+
+  it('requests a restart, with the input checked against its own type', () => {
+    const run = runWorkflow(cleanup, { olderThanDays: 30 }, { activities: stubs })
+    expect(run.continuedAsNew).toEqual({ olderThanDays: 30 })
+  })
+
+  it('does not request a restart when the backlog fits one generation', () => {
+    const run = runWorkflow(
+      cleanup,
+      { olderThanDays: 30 },
+      { activities: { ...stubs, ListStaleItems: () => many.slice(0, 2) } }
+    )
+    expect(run.continuedAsNew).toBeUndefined()
+  })
+
+  it('passes a real RetryOptions instance through to the SDK call', () => {
+    const policy = retryPolicy({
+      firstRetryIntervalInMilliseconds: 1000,
+      maxNumberOfAttempts: 3,
+      backoffCoefficient: 2
+    })
+    expect(policy).toBeInstanceOf(RetryOptions)
+    expect(policy.firstRetryIntervalInMilliseconds).toBe(1000)
+    expect(policy.maxNumberOfAttempts).toBe(3)
+    expect(policy.backoffCoefficient).toBe(2)
+  })
+
+  it('leaves an unsupplied setting ABSENT, not set to undefined', () => {
+    // Asserting on the VALUE cannot tell these apart — both read `undefined`.
+    // The SDK constructor leaves the three optional settings off the object
+    // entirely, so key presence is the only observable difference, and it is
+    // the one that matters: an assignment would add a key the SDK never had.
+    const bare = new RetryOptions(1000, 3)
+    const built = retryPolicy({
+      firstRetryIntervalInMilliseconds: 1000,
+      maxNumberOfAttempts: 3
+    })
+    expect(new Set(Object.keys(built))).toEqual(new Set(Object.keys(bare)))
+    expect('maxRetryIntervalInMilliseconds' in built).toBe(false)
+    expect('retryTimeoutInMilliseconds' in built).toBe(false)
+    expect('backoffCoefficient' in built).toBe(false)
   })
 })

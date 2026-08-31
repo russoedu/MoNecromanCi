@@ -22,16 +22,27 @@ yield * callActivity(context, store, input, {
 //         retryTimeoutInMilliseconds
 ```
 
-The working form is `new RetryOptions(1000, 3)`, which means a **value** import
-of `durable-functions` in consumer code.
+**Fixed** with `retryPolicy(...)`, which takes the plain object and returns a
+real `RetryOptions` instance.
 
-**Not changed, deliberately.** Accepting a plain object and passing it to
-`callActivityWithRetry` would rely on the SDK reading it structurally at
-runtime — undocumented behaviour, which §14 of the plan forbids working around.
-Constructing the class inside the package would make `durable-functions` a value
-import here, which the zero-runtime-dependency design rules out. So the finding
-is a **documentation** one: the retry form must be shown, or every consumer
-rediscovers this.
+**This was first recorded as unfixable, on a reason that was simply wrong.**
+The claim was that constructing the class here would make `durable-functions` a
+value import, against the zero-dependency design. It would not: `activity.ts`
+and `orchestration.ts` **already** value-import it — they have to, to call
+`df.app.activity` and `df.app.orchestration`. "No runtime dependencies" means an
+empty `dependencies` block; `durable-functions` is a *peer* dependency and is
+imported at runtime by design. A one-line `grep` settled it, and the reason had
+been asserted without one.
+
+The other half of the original reasoning does hold, and is why `retryPolicy`
+constructs a real instance rather than passing the literal through: handing
+`callActivityWithRetry` a structurally-similar object would depend on the SDK
+reading it structurally, which is undocumented.
+
+One detail measured rather than assumed: the SDK constructor leaves the three
+optional settings **absent** from the object, not set to `undefined`. So
+`retryPolicy` assigns only what was supplied — and the test asserts on key
+presence, because asserting on the value cannot tell the two apart.
 
 ## 2. Only activities had a task form, so no race could be written
 
@@ -98,6 +109,29 @@ be reached by any test.
 
 **Fixed**: `WorkflowStub.raceWinner` picks the winner by scheduled name.
 
+## 7. `continueAsNew` was not exposed at all
+
+An eternal orchestration — a sweep over a backlog larger than one generation —
+has to restart itself, because history grows with every activity call. The
+package had no way to do it, so a real `cleanup` could not be written against
+it.
+
+**Fixed**, and the shape is the interesting part. `continueAsNew` restarts
+**this** orchestration, so its argument must be this orchestration's own
+`TInput`. A free `continueAsNew(context, input)` could only be generic on a type
+nothing constrains, so it would accept any shape at all — reintroducing exactly
+the unchecked cast this package exists to remove. Referring to the
+orchestration constant from inside its own handler does not work either: it is
+not initialised yet.
+
+So the handler receives a third argument, `self`, carrying a `continueAsNew`
+already bound to `TInput`. Existing two-parameter handlers are unaffected.
+
+The harness records the request and lets the run finish rather than looping: an
+eternal orchestration restarts forever by design, so a harness that honoured it
+would never return. `run.continuedAsNew` carries the next input, and the next
+generation is a separate `runWorkflow` call.
+
 ## What is still not verified
 
 These reconstructions were written by the same author as the API, so they
@@ -105,6 +139,5 @@ confirm that the API composes over shapes that author thought of. Findings 2–6
 are real defects it found, which is evidence the exercise was worth doing — but
 it is not the evidence the real workflows would give. Specifically untested:
 real SDK behaviour end to end (no Functions host is involved anywhere here),
-retry exhaustion, `continueAsNew` for eternal orchestrations (not exposed by
-this package at all — no reconstruction needed it, and the real `cleanup` may),
-and entity functions.
+retry exhaustion (the harness throws once; it does not exhaust attempts), and
+entity functions.

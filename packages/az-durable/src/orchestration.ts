@@ -4,6 +4,38 @@ import { claimName } from './registry'
 import type { TypedOrchestration, TypedTask } from './types'
 
 /**
+ * The orchestration's handle on itself, handed to its own handler.
+ *
+ * @remarks
+ * Exists so `continueAsNew` can be typed. See the member for why it cannot be
+ * a free function.
+ *
+ * @typeParam TInput - This orchestration's input type.
+ */
+export interface OrchestrationSelf<TInput> {
+  /** The orchestration's own registered name. */
+  readonly name: string
+  /**
+   * Restarts this orchestration with fresh input, discarding its history.
+   *
+   * @remarks
+   * Handed to the handler rather than exported as a free function, and that is
+   * the whole design: `continueAsNew` restarts **this** orchestration, so its
+   * argument must be this orchestration's own `TInput`. A free
+   * `continueAsNew(context, input)` could only be generic on a type nothing
+   * constrains, so it would accept any shape at all — precisely the unchecked
+   * cast this package exists to remove. Referring to the orchestration
+   * constant from inside its own handler is not an option either: it is not
+   * initialised yet.
+   *
+   * The call does not by itself end the generator. Return immediately after
+   * it, as the SDK requires; anything scheduled afterwards is discarded when
+   * the instance restarts.
+   */
+  readonly continueAsNew: (input: TInput) => void
+}
+
+/**
  * Options accepted by {@link defineOrchestration}.
  *
  * @remarks
@@ -49,18 +81,29 @@ export function defineOrchestration<TInput, TOutput> (
   name: string,
   handler: (
     context: OrchestrationContext,
-    input: TInput
+    input: TInput,
+    self: OrchestrationSelf<TInput>
   ) => Generator<Task, TOutput, unknown>,
   options?: DefineOrchestrationOptions<TInput>
 ): TypedOrchestration<TInput, TOutput> {
   claimName('orchestration', name)
   const parse = options?.parse
+  const bind = (context: OrchestrationContext): OrchestrationSelf<TInput> => ({
+    name,
+    continueAsNew: (next: TInput) => {
+      context.df.continueAsNew(next)
+    }
+  })
   const registered = df.app.orchestration(name, function * (context: OrchestrationContext) {
     const raw: unknown = context.df.getInput()
     const input = parse === undefined ? (raw as TInput) : parse(raw)
-    return yield * handler(context, input)
+    return yield * handler(context, input, bind(context))
   })
-  return { name, registered, handler }
+  return {
+    name,
+    registered,
+    handler: (context, input) => handler(context, input, bind(context))
+  }
 }
 
 /**
