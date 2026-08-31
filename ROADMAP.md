@@ -589,6 +589,9 @@ Carried over from `mnci-details.md` §12 so this file is the single list.
 | Flutter apps build web only                  | Android needs the SDK + NDK on every agent; iOS is impossible on Linux                                                                                                                                                                                                                                                                                               | P3  |
 | Python has no lock file                      | Plain pip has none, and `requirements-dev.txt` is unpinned — deliberate, but revisit if reproducible CI is wanted                                                                                                                                                                                                                                                    | P3  |
 | `flutter-lib` / `go-lib` publish by tag only | Azure Artifacts has no pub/Dart feed type                                                                                                                                                                                                                                                                                                                            | —   |
+| **`@mnci/az-durable` dogfooded against reconstructions only** | `createArticle`/`cleanup`/`resetSharePoint` live in a private project this repo cannot reach, so `test/dogfood/` holds reconstructions written by the API's own author — which confirm the design by construction. They found six real defects, so the exercise paid; it is still not the evidence the real workflows would give. Do this pass before 1.0 | P2  |
+| `az-durable` does not simulate retry exhaustion | A stub returning an `Error` throws once, so a policy that should give up after N attempts is untested; `retryPolicy` is exercised only for the object it builds | P3  |
+| `az-durable` does not cover entity functions | Orchestrations and activities only. Stated in the README rather than left to be discovered | P3  |
 
 ---
 
@@ -1308,20 +1311,22 @@ non-zero, and shebangs on scripts run via `node`. Zero real bugs. The four rules
 already enabled in `configs/base.js` are the ones that pay for themselves; the rest
 are not worth the exceptions they would need.
 
-**Before adding anything else here, see #26.** `@eslint-react/eslint-plugin`
-(<https://eslint-react.xyz/docs/migrating-from-eslint-plugin-react>) is a candidate
-replacement for `eslint-plugin-react`, and it is the plugin whose lack of an ESLint 10
-release pins this whole config to 9. Swapping it is worth doing _before_ any further
-rule work, because it changes what the second constraint below even permits.
+~~**Before adding anything else here, see #26.**~~ Done: `eslint-plugin-react`
+is gone, replaced by `@eslint-react/eslint-plugin`, and that is what unpinned
+the config from ESLint 9.
 
-**Two constraints any addition must respect** — both already load-bearing, both
-easy to break from here:
+**Two constraints any addition must respect. BOTH HAVE SINCE INVERTED**, and the
+inverted forms are what hold now. The originals are struck through rather than
+deleted, because reinstating either by reflex would quietly undo a migration:
 
-1. **Correctness only, never formatting.** `eslint-config-prettier` is composed
-   LAST and the stylistic block after it holds only rules Prettier never touches.
-   A new plugin's `recommended` set will bring formatting rules with it; they must
-   land _before_ `prettierConfig` so it can switch them off. Adding one after it
-   makes `npm run lint` and `npm run format:check` mutually unsatisfiable — the
-   exact trap `space-before-function-paren` documents.
-2. **ESLint 9, decided by the plugins.** Any candidate whose peer range excludes
-   9 is not an option yet, whatever its merits.
+1. ~~Correctness only, never formatting; `eslint-config-prettier` composed
+   LAST.~~ **Formatting IS linting here.** There is no formatter and no
+   `format:check` — `eslint --fix` is the formatter — and `eslint-config-prettier`
+   is *removed*. Composing it would switch off all sixty Standard rules, and a
+   disabled rule reports nothing, so `lint` would pass while enforcing nothing.
+   A new plugin's stylistic rules are now welcome rather than a hazard, provided
+   they do not contradict the `@stylistic` Standard block.
+2. ~~ESLint 9, decided by the plugins.~~ **ESLint 10** (#26, done). The live
+   constraint is narrower: `jsx-a11y`'s stale peer cap still needs the
+   `ESLINT_PEER_OVERRIDES` entry every generated root manifest carries, and that
+   entry should go the moment jsx-a11y declares 10.
