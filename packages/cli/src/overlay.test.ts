@@ -1827,21 +1827,75 @@ describe('applyOverlay', () => {
     const parsed = yaml.load(dependabot) as {
       updates: Array<{ 'package-ecosystem': string; directory?: string; directories?: string[] }>
     }
+    // A fresh workspace has NO Python or Dart project, so pip and pub must be
+    // absent. They used to be written unconditionally, on the belief that
+    // "directories matching nothing is not an error for Dependabot". It is a
+    // hard failure: this repo's own Dependabot history shows the pip job red on
+    // every weekly run for over a month, beside a green npm job.
     expect(parsed.updates.map(update => update['package-ecosystem'])).toEqual([
       'npm',
-      'github-actions',
-      'pip',
-      'pub'
+      'github-actions'
     ])
-    // pip covers wherever a Python project might later land (add python-*),
-    // via directories that currently match nothing — not an error for Dependabot.
+  })
+
+  it('adds the pip block once a Python project exists, and not before', () => {
+    const options = {
+      workspaceName: 'demo',
+      scope: '@demo',
+      registry: { kind: 'npm' as const },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github' as const,
+      stack: DEFAULT_STACK
+    }
+    const ecosystems = (): string[] => {
+      const parsed = yaml.load(
+        readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+      ) as { updates: Array<{ 'package-ecosystem': string }> }
+      return parsed.updates.map(update => update['package-ecosystem'])
+    }
+
+    applyOverlay(workspaceRoot, options)
+    expect(ecosystems()).not.toContain('pip')
+
+    mkdirSync(join(workspaceRoot, 'python-packages/api'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'python-packages/api/pyproject.toml'), '[project]\n')
+    applyOverlay(workspaceRoot, options)
+    expect(ecosystems()).toContain('pip')
+    expect(ecosystems()).not.toContain('pub')
+
+    const parsed = yaml.load(
+      readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+    ) as { updates: Array<{ 'package-ecosystem': string; directories?: string[] }> }
+    // Globs are KEPT for an ecosystem that is emitted, so a second Python
+    // project needs no rewrite. Only whether the block appears at all changed.
     expect(
       parsed.updates.find(update => update['package-ecosystem'] === 'pip')?.directories
     ).toEqual(['/apps/*', '/python-packages/*', '/libs/*'])
-    // pub, same reasoning, for the three directories Flutter projects land in.
-    // Per-project rather than just "/" because each pub workspace member
-    // declares its own dependencies even though they all resolve through the
-    // single root pubspec.lock.
+  })
+
+  it('adds the pub block once a Dart project exists', () => {
+    const options = {
+      workspaceName: 'demo',
+      scope: '@demo',
+      registry: { kind: 'npm' as const },
+      agent: 'ubuntu-latest',
+      variableGroup: 'Build',
+      ci: 'github' as const,
+      stack: DEFAULT_STACK
+    }
+    mkdirSync(join(workspaceRoot, 'apps/mobile'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/mobile/pubspec.yaml'), 'name: mobile\n')
+    applyOverlay(workspaceRoot, options)
+
+    const parsed = yaml.load(
+      readFileSync(join(workspaceRoot, '.github/dependabot.yml'), 'utf8')
+    ) as { updates: Array<{ 'package-ecosystem': string; directories?: string[] }> }
+    expect(parsed.updates.map(update => update['package-ecosystem'])).toEqual([
+      'npm',
+      'github-actions',
+      'pub'
+    ])
     expect(
       parsed.updates.find(update => update['package-ecosystem'] === 'pub')?.directories
     ).toEqual(['/apps/*', '/packages/*', '/libs/*'])

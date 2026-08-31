@@ -1706,6 +1706,18 @@ guard decodes. Check which before wiring a third protocol.
 2. **Lint errors on TSDoc** → verify `@param`, `@returns`, `@throws` tags; check eslint.config.mjs for exceptions
 3. **E2E failures on new kind** → verify `add/<kind>.ts` generates valid project.json + runs nx:run-many for lint/test/build
 4. **CI hangs on Python** → ensure `pip-audit` is guarded; if workspace has no Python projects, step should no-op cleanly
+5. **`nx release --dry-run` reports absurd versions** → **run `git fetch --tags` first.**
+   A clone made without tags (which is what a fresh CI or remote-agent checkout
+   gives you) makes the dry run *silently wrong* rather than failing: with no tag
+   to resolve, every project falls back to `fallbackCurrentVersionResolver: "disk"`,
+   and the manifests on disk are stale **by design** — `release.git.commit` is
+   `false`, so a release tags and publishes without ever writing the bump back.
+   `@mnci/cli` reads `1.0.0` on disk against `4.0.6` published, so a tagless dry
+   run proposes `2.0.0`: a version that already exists, from a diagnosis that
+   looks authoritative. The real answer with tags fetched is `4.0.7`. `ci.yml`
+   already does this (`git fetch --all --prune --tags`, commented "Version
+   resolution needs the release tags") — the trap is for whoever debugs locally.
+   **Read a release dry run only from a clone that has the tags.**
 
 ### Key Invariants to Preserve
 

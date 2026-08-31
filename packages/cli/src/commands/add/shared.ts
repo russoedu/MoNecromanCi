@@ -1,7 +1,7 @@
-import { readdirSync, rmSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
-import { reactExpressPeerOverride } from '../../overlay'
+import { dependabotConfig, reactExpressPeerOverride } from '../../overlay'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
@@ -482,6 +482,15 @@ export function registerProjectCommands (
   }
   if (commands.start) {
     scripts[`${name}:start`] = commands.start
+  }
+
+  // Re-derived after every add, because whether the pip/pub blocks belong
+  // depends on what projects now EXIST, and this add may have created the
+  // first one. Cheap (a directory scan) and idempotent. Skipped when the
+  // workspace has no dependabot.yml, i.e. it was generated with --ci=azure.
+  const dependabotPath = join(workspaceRoot, '.github/dependabot.yml')
+  if (existsSync(dependabotPath)) {
+    writeFileEnsured(dependabotPath, dependabotConfig(workspaceRoot))
   }
 
   const manifestPath = join(workspaceRoot, 'package.json')
