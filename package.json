@@ -20,7 +20,7 @@
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
     "@mnci/eslint-config": "*",
-    "@nx/devkit": "23.1.1",
+    "@nx/devkit": "23.1.2",
     "@nx/eslint": "23.1.1",
     "@nx/eslint-plugin": "23.1.1",
     "@nx/jest": "23.1.1",
