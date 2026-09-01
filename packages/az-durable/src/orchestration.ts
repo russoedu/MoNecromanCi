@@ -1,7 +1,7 @@
 import * as df from 'durable-functions'
 import type { OrchestrationContext, RetryOptions, Task } from 'durable-functions'
-import { claimName } from './registry'
-import type { TypedOrchestration, TypedTask } from './types'
+import { claimName } from './registry.js'
+import type { TypedOrchestration, TypedTask } from './types.js'
 
 /**
  * The orchestration's handle on itself, handed to its own handler.

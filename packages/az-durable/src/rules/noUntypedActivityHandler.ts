@@ -1,4 +1,4 @@
-import type { Node, Rule } from './shared'
+import type { Node, Rule } from './shared.js'
 
 /** SDK handler aliases that erase a handler's real signature. */
 const ERASING_TYPES = new Set(['ActivityHandler', 'OrchestrationHandler', 'FunctionHandler'])

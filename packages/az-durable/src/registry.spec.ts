@@ -1,4 +1,4 @@
-import { claimName, resetRegistryForTests } from './registry'
+import { claimName, resetRegistryForTests } from './registry.js'
 
 describe('duplicate name detection', () => {
   beforeEach(() => {

@@ -1,4 +1,4 @@
-import { calleeName, isOrchestrationRegistration, type Node, type Rule } from './shared'
+import { calleeName, isOrchestrationRegistration, type Node, type Rule } from './shared.js'
 
 /** Global reads that differ on every replay, with the replacement to suggest. */
 const FORBIDDEN_CALLS: Record<string, string> = {

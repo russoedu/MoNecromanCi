@@ -1,5 +1,5 @@
 import type { OrchestrationContext, Task } from 'durable-functions'
-import { now, sleepFor, sleepUntil } from './time'
+import { now, sleepFor, sleepUntil } from './time.js'
 
 /** A context stub exposing only what these functions touch. */
 function contextAt (fixed: Date): OrchestrationContext {

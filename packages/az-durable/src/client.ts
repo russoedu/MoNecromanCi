@@ -1,5 +1,5 @@
 import type { DurableClient } from 'durable-functions'
-import type { TypedOrchestration } from './types'
+import type { TypedOrchestration } from './types.js'
 
 /**
  * Starts an orchestration with an input checked against its declared type.

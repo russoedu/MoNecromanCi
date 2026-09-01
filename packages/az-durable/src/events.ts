@@ -1,5 +1,5 @@
 import type { DurableClient, OrchestrationContext, Task } from 'durable-functions'
-import type { TypedTask } from './types'
+import type { TypedTask } from './types.js'
 
 /**
  * An external event name with its payload type attached.

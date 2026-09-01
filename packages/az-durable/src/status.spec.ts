@@ -1,5 +1,5 @@
 import type { OrchestrationContext } from 'durable-functions'
-import { defineStatuses, setStatus } from './status'
+import { defineStatuses, setStatus } from './status.js'
 
 describe('custom status', () => {
   it('sets the mapped value, not the key', () => {

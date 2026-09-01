@@ -1,8 +1,8 @@
 import * as df from 'durable-functions'
 import type { InvocationContext } from '@azure/functions'
 import type { OrchestrationContext, RetryOptions, Task } from 'durable-functions'
-import { claimName } from './registry'
-import type { TypedActivity, TypedTask } from './types'
+import { claimName } from './registry.js'
+import type { TypedActivity, TypedTask } from './types.js'
 
 /**
  * Registers an activity and remembers its input and output types.

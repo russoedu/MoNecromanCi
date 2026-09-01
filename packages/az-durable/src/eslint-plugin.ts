@@ -1,9 +1,9 @@
-import { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator'
-import { noUntypedActivityHandler } from './rules/noUntypedActivityHandler'
-import { requireYieldStar } from './rules/requireYieldStar'
-import type { Rule } from './rules/shared'
+import { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator.js'
+import { noUntypedActivityHandler } from './rules/noUntypedActivityHandler.js'
+import { requireYieldStar } from './rules/requireYieldStar.js'
+import type { Rule } from './rules/shared.js'
 
-export type { Rule } from './rules/shared'
+export type { Rule } from './rules/shared.js'
 
 /**
  * Every rule this plugin ships, by name.
@@ -46,6 +46,6 @@ export const recommended = {
   }
 } as const
 
-export { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator'
-export { requireYieldStar } from './rules/requireYieldStar'
-export { noUntypedActivityHandler } from './rules/noUntypedActivityHandler'
+export { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator.js'
+export { requireYieldStar } from './rules/requireYieldStar.js'
+export { noUntypedActivityHandler } from './rules/noUntypedActivityHandler.js'

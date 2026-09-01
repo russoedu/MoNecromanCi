@@ -1,5 +1,5 @@
 import type { OrchestrationContext, Task } from 'durable-functions'
-import type { TypedOrchestration } from './types'
+import type { TypedOrchestration } from './types.js'
 
 /**
  * A recorded activity or sub-orchestration call.

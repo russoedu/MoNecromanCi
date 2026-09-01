@@ -1,12 +1,12 @@
-import { callActivity } from './activity'
-import { defineActivity } from './activity'
-import { defineEvent, eventTask } from './events'
-import { defineOrchestration } from './orchestration'
-import { any } from './parallel'
-import { timerTask } from './time'
-import { defineStatuses, setStatus } from './status'
-import { resetRegistryForTests } from './registry'
-import { runWorkflow } from './testing'
+import { callActivity } from './activity.js'
+import { defineActivity } from './activity.js'
+import { defineEvent, eventTask } from './events.js'
+import { defineOrchestration } from './orchestration.js'
+import { any } from './parallel.js'
+import { timerTask } from './time.js'
+import { defineStatuses, setStatus } from './status.js'
+import { resetRegistryForTests } from './registry.js'
+import { runWorkflow } from './testing.js'
 
 const STATUSES = defineStatuses({ validating: 'Validating', storing: 'Storing', done: 'Done' })
 
