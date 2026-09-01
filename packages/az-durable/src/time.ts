@@ -1,5 +1,5 @@
 import type { OrchestrationContext, Task } from 'durable-functions'
-import type { TypedTimerTask } from './types'
+import type { TypedTimerTask } from './types.js'
 
 /**
  * The current time, safely for replay.

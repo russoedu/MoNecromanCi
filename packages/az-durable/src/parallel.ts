@@ -1,5 +1,5 @@
 import type { OrchestrationContext, Task } from 'durable-functions'
-import type { TypedTask } from './types'
+import type { TypedTask } from './types.js'
 
 /**
  * The outputs of a tuple of tasks, in the same positions.

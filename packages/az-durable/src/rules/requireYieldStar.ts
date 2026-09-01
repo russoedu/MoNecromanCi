@@ -1,4 +1,4 @@
-import type { Node, Rule } from './shared'
+import type { Node, Rule } from './shared.js'
 
 /** The wrapper calls that must be delegated to, not yielded. */
 const DELEGATED = new Set([

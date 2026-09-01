@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { recommended, rules } from './eslint-plugin'
-import * as api from './index'
+import { recommended, rules } from './eslint-plugin.js'
+import * as api from './index.js'
 
 const README = readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
 

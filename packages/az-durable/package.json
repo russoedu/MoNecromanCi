@@ -49,6 +49,7 @@
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.types.json",
     "lint": "eslint .",
-    "check:entrypoints": "node scripts/checkEntryPoints.mjs"
+    "check:entrypoints": "node scripts/checkEntryPoints.mjs",
+    "check:consumer": "node scripts/checkConsumerTypes.mjs"
   }
 }
