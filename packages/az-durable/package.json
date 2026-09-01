@@ -1,26 +1,27 @@
 {
   "name": "@mnci/az-durable",
   "version": "0.0.1",
-  "type": "module",
-  "main": "./dist/index.esm.js",
-  "module": "./dist/index.esm.js",
+  "main": "./dist/index.cjs.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
     "./package.json": "./package.json",
     ".": {
       "types": "./dist/src/index.d.ts",
-      "import": "./dist/index.esm.js",
-      "default": "./dist/index.esm.js"
+      "require": "./dist/index.cjs.js",
+      "import": "./dist/index.cjs.js",
+      "default": "./dist/index.cjs.js"
     },
     "./testing": {
       "types": "./dist/src/testing.d.ts",
-      "import": "./dist/testing.esm.js",
-      "default": "./dist/testing.esm.js"
+      "require": "./dist/testing.cjs.js",
+      "import": "./dist/testing.cjs.js",
+      "default": "./dist/testing.cjs.js"
     },
     "./eslint-plugin": {
       "types": "./dist/src/eslint-plugin.d.ts",
-      "import": "./dist/eslint-plugin.esm.js",
-      "default": "./dist/eslint-plugin.esm.js"
+      "require": "./dist/eslint-plugin.cjs.js",
+      "import": "./dist/eslint-plugin.cjs.js",
+      "default": "./dist/eslint-plugin.cjs.js"
     }
   },
   "files": [
