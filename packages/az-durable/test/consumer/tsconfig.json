@@ -3,11 +3,18 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "es2022",
-    "lib": ["ESNext"],
+    "lib": [
+      "ESNext"
+    ],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": false,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["consumer.ts"]
+  "include": [
+    "consumer.mts",
+    "consumer.cts"
+  ]
 }
