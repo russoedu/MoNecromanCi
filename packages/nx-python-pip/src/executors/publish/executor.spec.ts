@@ -1,5 +1,7 @@
 import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
+import { pythonCommand } from '../../internal/pythonCommand'
 import publishExecutor from './executor'
 
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
@@ -29,9 +31,9 @@ describe('publishExecutor', () => {
 
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenCalledWith(
-      'python3',
+      pythonCommand(),
       ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'],
-      { cwd: '/workspace/python-packages/shared', stdio: 'inherit' }
+      { cwd: join('/workspace', 'python-packages/shared'), stdio: 'inherit' }
     )
   })
 

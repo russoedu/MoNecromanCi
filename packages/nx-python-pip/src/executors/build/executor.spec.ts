@@ -1,6 +1,8 @@
 import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pythonCommand } from '../../internal/pythonCommand'
 import buildExecutor from './executor'
 
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
@@ -50,13 +52,13 @@ describe('buildExecutor', () => {
 
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenCalledWith(
-      'python3',
+      pythonCommand(),
       [
         '-m',
         'build',
         '--outdir',
-        '/workspace/python-packages/pyshared/dist',
-        '/workspace/python-packages/pyshared'
+        join('/workspace', 'python-packages/pyshared', 'dist'),
+        join('/workspace', 'python-packages/pyshared')
       ],
       { stdio: 'inherit' }
     )
@@ -84,28 +86,28 @@ describe('buildExecutor', () => {
     // Stages the project itself, then vendors pycore's module directory in.
     expect(mockCpSync).toHaveBeenNthCalledWith(
       1,
-      '/workspace/python-packages/pyshared',
+      join('/workspace', 'python-packages/pyshared'),
       '/tmp/nx-python-pip-build-abc123',
       { recursive: true }
     )
     expect(mockCpSync).toHaveBeenNthCalledWith(
       2,
-      '/workspace/libs/pycore/pycore',
-      '/tmp/nx-python-pip-build-abc123/pycore',
+      join('/workspace', 'libs/pycore', 'pycore'),
+      join('/tmp/nx-python-pip-build-abc123', 'pycore'),
       { recursive: true }
     )
     // Patches the staged pyproject.toml's wheel packages list.
     expect(mockWriteFileSync).toHaveBeenCalledWith(
-      '/tmp/nx-python-pip-build-abc123/pyproject.toml',
+      join('/tmp/nx-python-pip-build-abc123', 'pyproject.toml'),
       expect.stringContaining('packages = ["pyshared", "pycore"]')
     )
     expect(mockSpawnSync).toHaveBeenCalledWith(
-      'python3',
+      pythonCommand(),
       [
         '-m',
         'build',
         '--outdir',
-        '/workspace/python-packages/pyshared/dist',
+        join('/workspace', 'python-packages/pyshared', 'dist'),
         '/tmp/nx-python-pip-build-abc123'
       ],
       { stdio: 'inherit' }

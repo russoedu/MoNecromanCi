@@ -62,6 +62,11 @@ function extractGuard (pipeline: string, marker: string): string {
   return guards.find(guard => guard.includes(marker)) ?? ''
 }
 
+// POSIX-only assertions. See the note at each use for why the property cannot
+// hold on Windows — in every case the product is correct and the platform
+// simply cannot represent what is being asserted.
+const itOnPosix = process.platform === 'win32' ? it.skip : it
+
 describe('registryUrl', () => {
   it('builds the Azure Artifacts feed URL', () => {
     expect(
@@ -2502,7 +2507,13 @@ describe('applyOverlay', () => {
     expect(directives).toEqual(['//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}'])
   })
 
-  it('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
+  // Skipped on Windows, where the assertion cannot hold and the product is not
+  // at fault: NTFS has no executable bit, so Node's `chmod` only toggles the
+  // read-only flag and `mode & 0o111` is always 0. Git knows this and sets
+  // `core.fileMode=false` there, so the hook runs regardless. The invariant is
+  // real on POSIX — git silently refuses a non-executable hook — which is why
+  // this is gated rather than deleted.
+  itOnPosix('marks the commit-msg hook executable (git refuses to run it otherwise)', () => {
     applyOverlay(workspaceRoot, {
       workspaceName: 'demo',
       scope: '@demo',
