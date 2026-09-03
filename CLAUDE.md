@@ -78,6 +78,9 @@ does it too — the docs already tell users to `git diff` before committing an u
 - **`packages/cli/src/commands/add.ts`** — per-project scaffolding (delegates to Nx generators)
 - **`packages/cli/src/commands/upgrade.ts`** — re-apply overlay to existing workspace
 - **`packages/cli/src/commands/doctor.ts`** — read-only invariant check (`mnci doctor`); exits non-zero on any finding, and every finding names its remedy
+- **`packages/cli/src/commands/sync.ts`** — `mnci sync`: converge every external dependency range declared at more than one version, then run `nx sync` for TypeScript project references. Owns the one call to `nx sync` (`mnci add` imports it from here)
+- **`packages/cli/src/commands/up.ts`** — `mnci up`: `npm-check -u`'s grouped report and multiselect, plus the projects column, across npm/pip/pub/go
+- **`packages/cli/src/deps/`** — the cross-language machinery both commands share: `inventory.ts` (read and minimally rewrite every manifest shape), `semver.ts` (parse, compare, bucket), `registry.ts` (latest version per ecosystem)
 
 ### Core Implementation
 
@@ -211,7 +214,152 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### A Fifth Package: `@mnci/az-durable` (Latest)
+### Every Generated Library Was Undebuggable (Latest)
+
+Reported as "VS Code ignores my breakpoints and marks them grey" in a real
+generated workspace. Three independent causes, none of which reports an error,
+and **each one alone is sufficient** — so fixing any two would have looked like
+no progress at all.
+
+- **No source maps were emitted, at all.** `withNx` passes
+  `sourcemap: options.sourceMap` to rollup and `sourceMap` has **no default**,
+  so an unset value means no `.js.map` and no `sourceMappingURL`. Nothing to
+  bind a breakpoint to.
+- **`sourceMap` only works in `withNx`'s FIRST argument**, and the obvious
+  alternative silently does nothing: `withNx` spreads `...rollupConfig.output`
+  and *then* assigns `sourcemap: options.sourceMap`, so
+  `output: { sourcemap: true }` in the second argument — which the generator's
+  own placeholder comment suggests — is always overwritten.
+- **The compiler made the maps EMPTY, and this is the one that hides.**
+  `@nx/js:lib --bundler=rollup` passes `compiler: 'swc'` hardcoded; it never
+  uses `@nx/rollup`'s own `babel` default. `@nx/rollup`'s swc plugin calls
+  `transform()` without `sourceMaps`, so swc returns no map, the rollup chain
+  breaks, and the output map is structurally valid and semantically empty —
+  `sources: []`. Measured both ways on one package: swc 0 sources, babel 9, all
+  resolving. **I asserted the opposite while diagnosing** — that babel was the
+  default and swc "a compiler mnci never selects" — and reading
+  `library.js:61` is what corrected it. The generator's default only applies
+  when the caller omits the option, and this caller never does.
+- **The `sources` paths were wrong twice over.** Measured by instrumenting
+  `sourcemapPathTransform` rather than reasoning about it: rollup passes
+  `..\..\src\rules\shared.ts` for a map in `dist/` — one parent segment too
+  many (resolving above the project to nothing) and OS-native, when a sourcemap
+  `sources` entry is URL-style and a backslash is wrong on every platform. The
+  same bug class as the declaration stub, in the same file.
+- **Always built, never published.** `!**/*.js.map` joins `files`. A dev-build
+  flag was rejected: an env var is not portable across npm scripts without a
+  fourth runtime dependency, and a second build target is one more thing to
+  remember at exactly the moment you are already debugging.
+- **The retrofit needed a second anchor, and that is the non-obvious part.** The
+  add-time repair keys on the generator's placeholder comment, which mnci itself
+  deletes at `add` time — so a placeholder-anchored fix works for a brand-new
+  project and silently no-ops for every existing one, which is the entire
+  population `mnci upgrade` exists to reach. `withRollupSourceMaps` anchors on
+  the `},` / `{` boundary between `withNx`'s two arguments instead, present in
+  both shapes. Order is load-bearing: the declaration-stub swap must run first,
+  because the source-map insertion rewrites the same `{` line the placeholder
+  starts with.
+- **The user's Copilot had independently re-created two of these** — the
+  declaration-stub normaliser mnci already owns, and a sourcemap `sources` fix
+  hardcoding four parent segments for that workspace's depth. mnci's collapses
+  any run to one, so it cannot go stale at another depth.
+
+### `mnci sync` and `mnci up`, and What `nx sync` Does Not Do
+
+Two new commands, and the correction that motivated them. Prompted by
+`@nx/dependency-checks` flagging an `axios` that had been moved from a package's
+manifest into the root of a real generated workspace — a complaint that was
+**right**, and whose reason is sharper than a lint nitpick.
+
+- **`nx sync` does not synchronise dependency versions, and believing it does is
+  the trap.** It runs the workspace's *sync generators*; the only one a generated
+  workspace registers is `@nx/js:typescript-sync`, which reconciles TypeScript
+  project references and has no opinion at all about versions. Verified by
+  running it. npm also has no `catalog:`, so one-version-per-workspace is a
+  convention nothing enforced. `mnci sync` is both halves: converge the ranges,
+  then run `nx sync`.
+- **`@nx/dependency-checks` was KEPT, deliberately.** It is the only thing that
+  catches the axios class, and the mechanism is worth stating: `@nx/rollup`
+  externalises exactly what a project's OWN manifest declares, so hoisting a
+  dependency to the root does not share it — rollup **inlines a private copy**.
+  Measured on a real package: 14.5 KB became 832 KB, silently. `mnci sync`
+  converges towards the *installed* version specifically so it and the rule's own
+  auto-fix reach the same answer instead of overwriting each other.
+- **`mnci doctor` gained the check for the other direction.** The rule fails the
+  project whose import went undeclared; the new check fails the root that took
+  it. `devDependencies` at the root are untouched — sharing the toolchain is what
+  the root is for, and npm honours `overrides` only there.
+- **Dogfooding found two wrong answers that 500 green tests had not**, which is
+  the argument for running a new command against this repo before shipping it.
+  The first `mnci sync --check` reported six findings and **five were peer
+  ranges** — `@nx/devkit: >=21.0.0` is a compatibility declaration, and
+  converging it on the 23.x resolved here would have dropped two majors of
+  consumers of two published plugins. The first `mnci up --check` offered
+  "typescript 6.0.2 › 7.0.2", which is real TypeScript's version: the root
+  manifest pins the dual compiler as `typescript: npm:@typescript/typescript6`,
+  so the registry was being asked about a package the workspace does not have.
+  Both are now excluded, each with a test naming the run that found it.
+- **Latest versions come from each ecosystem's own tooling, never a hand-rolled
+  HTTP call.** `npm view` (so a scoped Azure Artifacts feed and its `.npmrc`
+  Basic credentials just work — hand-rolling that is how the `_authToken`-as-
+  Bearer trap below gets re-entered), `pip index versions` (the call
+  `nx-python-pip`'s `VersionActions` already makes), one `go list -m -u -json
+  all`, one `flutter pub outdated --json`.
+- **`mnci up` reproduces `npm-check -u`** — same four sections, same order, same
+  multiselect — plus the column `npm-check` cannot produce in a monorepo: every
+  project declaring the package. Selecting a row rewrites **every** declaration
+  of it, which is what stops `up` from creating the drift `sync` repairs.
+- **A Go module is upgraded with `go get`, never by editing `go.mod`**, and Go is
+  excluded from `sync` entirely with an explicit "nothing to sync" line rather
+  than a silent zero-findings pass — one root module means one version, so
+  nothing *can* disagree.
+- **`nx.ts` gained its first stdout-capturing helpers.** Every existing helper
+  used `stdio: 'inherit'` and returned only an exit code. `runCapture`,
+  `runCaptureAsync` and a bounded `pool` (8) keep the same no-shell `cross-spawn`
+  contract — a hundred concurrent `npm view` processes is how a laptop runs out
+  of file descriptors.
+- **The regexes were written twice.** The first pass drew nine
+  `regexp/no-super-linear-backtracking` errors on manifest parsers that read
+  user-controlled text; `parseRequirement`, `pyprojectDependencies` and
+  `pubspecBlockEntries` are index scans now, with a test asserting a 20 000-char
+  pathological line stays under a second.
+- **Two guards were mutation-tested**: dropping `toPosix` fails six tests (Windows
+  `globSync` backslashes make one project read as two), and letting `--check`
+  write fails the "touches nothing" test.
+- **Three test suites were red before any of this, and all three are fixed.**
+  Two were *real* Windows bugs, not test artefacts. Both plugins' release
+  `VersionActions` built their Nx **`Tree`** path with `node:path`'s `join`,
+  which emits `packages\shared\pubspec.yaml` on Windows — and a Tree path is
+  forward-slashed on every platform, so the value handed back to `nx release`
+  (and interpolated into the user-facing error) was wrong on every Windows
+  machine. `posix.join` now, deliberately not devkit's `joinPathFragments`:
+  that is a VALUE import from `@nx/devkit`, which drags Nx's whole plugin
+  runtime into a module that only ever needed a string — enough to break a spec
+  that mocks `node:child_process`, and dead weight on the release path.
+  Mutation-tested: reverting it fails four tests.
+- **`@mnci/nx-flutter`'s executor spec had stopped being a gate entirely.** It
+  mocked `node:child_process`, but `runFlutter` moved to `cross-spawn` when
+  `spawnSync` turned out to refuse `flutter.bat` outright (the CVE-2024-27980
+  fix). The mock therefore intercepted nothing: the specs were spawning the REAL
+  flutter binary into a directory that does not exist. **A mock that no longer
+  matches its subject is the quietest way for a suite to stop testing anything**
+  — it fails loudly only on machines without the SDK, and would have "passed"
+  for the wrong reason on machines with it.
+- **The rest were assertions about a platform rather than a behaviour**: the
+  `@mnci/nx-python-pip` executor specs hardcoded `python3` and POSIX `cwd`
+  strings, and now use the package's own `pythonCommand()` (whose mapping is
+  pinned independently in `pythonCommand.spec.ts`, so this is not tautological)
+  and `join()`. The `commit-msg` executable-bit test is gated to POSIX with
+  `itOnPosix`: NTFS has no executable bit, so `mode & 0o111` is always 0 there
+  and git sets `core.fileMode=false` anyway — the invariant is real on POSIX,
+  which is why it is gated rather than deleted.
+- **Still open**: pip has no lockfile, so its "resolved version" comes from
+  `pip show` and is weaker than npm's; a pub dependency expressed as a nested map
+  (`git:`, `path:`) is reported and never rewritten; `requirements-dev.txt`
+  entries are deliberately unpinned, so `up` reports them but writing a pin would
+  reverse a design decision.
+
+### A Fifth Package: `@mnci/az-durable`
 
 Typed compile-time safety across the Azure Durable Functions
 orchestrator/activity boundary. **Scaffolded with `mnci add npm-lib`**, so the
@@ -1725,6 +1873,9 @@ guard decodes. Check which before wiring a third protocol.
 - `mnci upgrade` re-applies overlay safely (overwrites mnci-owned files only)
 - Stack is persisted in `nx.json`'s `mnci` block (upgrade reads it back)
 - All shell commands use cross-spawn (safe from injection)
+- Shared dev/tool packages live at the ROOT; runtime dependencies belong to the package that imports them. Go is the stated exception — one root `go.mod` means there is no per-project manifest to own anything
+- A peer range is never rewritten by mnci: it declares compatibility, not a version choice, and narrowing it drops consumers
+- `nx sync` reconciles TypeScript project references ONLY — it has no opinion about dependency versions
 - Python toolchain is invoked as `python3 -m <tool>` (not venv paths, works cross-platform)
 - Go uses a SINGLE root `go.mod`; never reintroduce `go.work` (a stale `use` entry breaks the whole Nx graph)
 - Go targets are written explicitly by `add/go.ts` — `@nx-go/nx-go`'s inference needs a per-project `go.mod`, which the single-module layout has not

@@ -46,13 +46,15 @@ tsconfig.base.json    # shared TS config
 
 ---
 
-## 2. The four commands
+## 2. The six commands
 
 ```
 mnci new [name]      Create a monorepo (Nx TS preset + the mnci overlay)
 mnci add [kind] [name]  Add a project by delegating to a generator
 mnci upgrade         Re-apply the latest overlay to an existing workspace
 mnci doctor          Check the workspace's invariants (read-only; non-zero on failure)
+mnci sync            Converge dependency ranges, then nx sync (TypeScript project refs)
+mnci up              Report every newer release, grouped, and update what you pick
 ```
 
 Running `mnci` bare enters an interactive wizard.
@@ -698,6 +700,35 @@ the default PR job does not run it.
     keep passing while enforcing nothing.
 16. **Adding a package requires `npx nx sync`** and committing the resulting
     `tsconfig.json` change, or `nx sync:check` fails in CI.
+17. **Shared development and tool packages live at the ROOT; runtime dependencies
+    belong to the package that imports them.** Two independent reasons, and the
+    second is the one that bites. The root manifest is `private` and never
+    published, so a runtime dependency declared there reaches no consumer of any
+    package. And `@nx/rollup` externalises exactly what a project's OWN manifest
+    declares — pull a dependency out of `packages/thing/package.json` and rollup
+    stops treating it as external and **inlines a private copy into the bundle**.
+    Measured on a real generated workspace: moving `axios` out of one package's
+    manifest took its published bundle from 14.5 KB to 832 KB, silently.
+    `@nx/dependency-checks` fails the project whose import is now undeclared;
+    `mnci doctor` fails the root that took it.
+
+    **Go is the stated exception, not an oversight.** Its single root `go.mod`
+    (invariant 4) means there are no per-project manifests to own anything, so
+    every Go dependency is a root dependency by construction. Making Go comply
+    would require the `go.work` layout invariant 4 forbids.
+18. **A peer range is never rewritten by mnci.** `>=21.0.0` on `@nx/devkit` is a
+    compatibility declaration, not a version choice: narrowing it to whatever the
+    workspace happens to resolve drops support for every earlier major, for every
+    consumer of that published package. `mnci sync` excludes peers from drift
+    entirely (they are not *in conflict* — two packages declaring different
+    ranges are making different, equally valid statements) and `mnci up` never
+    writes one. The first `mnci sync --check` run against this repo reported six
+    findings, five of which were exactly this mistake.
+19. **`nx sync` does not synchronise dependency versions.** It runs the
+    workspace's sync generators, and the only one registered is
+    `@nx/js:typescript-sync` — TypeScript project references, nothing else. Do
+    not reach for it to explain why ranges agree; that is `mnci sync`'s other
+    half, and npm has no `catalog:` to do it natively.
 
 ---
 

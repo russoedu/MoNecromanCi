@@ -211,6 +211,39 @@ Four cheap wins, all originally verified absent:
 | 6. ~~`concurrency` group~~           | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
 | 7. Deploy stage                      | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
 
+### 7d. `@nx/rollup` runs swc with source maps off — P3, upstream
+
+**What.** `@nx/rollup`'s swc plugin
+(`node_modules/@nx/rollup/dist/src/plugins/swc.js`) calls swc's `transform()`
+with `filename`, `inputSourceMap: false` and a `jsc` block — and **no
+`sourceMaps` option**. swc therefore returns `{ code }` with no `map`. A rollup
+`transform` hook that returns no map breaks the sourcemap chain, so the bundle's
+map comes out structurally valid and semantically **empty**: `sources: []`,
+`sourcesContent: []`, every mapping segment blank.
+
+**Why it matters.** `@nx/js:lib --bundler=rollup` passes `compiler: 'swc'`
+*hardcoded* (`node_modules/@nx/js/dist/src/generators/library/library.js:61`) —
+it never uses `@nx/rollup`'s own `babel` default. So this reaches **every**
+publishable library the generator produces. The symptom is maximally unhelpful:
+the build succeeds, a `.js.map` is written, and every breakpoint in a `.ts` file
+stays grey with nothing anywhere saying why.
+
+**Measured, not inferred.** The same package in this repo built both ways:
+`compiler: 'swc'` gave 0 sources; `compiler: 'babel'` gave 9, all resolving,
+with `sourcesContent`.
+
+**What mnci does about it.** `withRollupSourceMaps` in `add/shared.ts` swaps the
+compiler to `babel` in the generated config, with the reason in a comment beside
+it. A plugin that re-ran swc with maps on was rejected: two transform hooks would
+both compile the same source, and the second would see the first's output.
+
+**The upstream fix is one option.** Adding `sourceMaps: true` to that
+`transform()` call. Drop mnci's swap the moment it lands — the swap is the only
+thing standing between a generated library and swc's faster builds.
+
+**Verify:** build any rollup library, then read `dist/*.js.map` and assert
+`sources.length > 0` and that each entry resolves from the map's directory.
+
 ### 7c. `@nx/rollup` writes a declaration stub with an OS-native separator — P3, upstream
 
 `@nx/rollup`'s `dts-bundle` plugin emits declarations at `dist/src/index.d.ts` and
@@ -1126,6 +1159,51 @@ One thing still to check rather than trust: `@nx/react`'s generator pinned
 outright. It is **not installed anywhere in this repo** now, and mnci runs those
 generators with `--linter=none`, so it is probably gone — but this repo has no React
 project, so that is weak evidence. Re-test in a generated workspace during step 5.
+
+### 30. Source maps: the two limits shipped with them — P3
+
+- **`sourcemapPathTransform` collapses the leading parent-segment run to
+  exactly one**, which is correct because `dist/` and `src/` are siblings in
+  every project mnci generates. A project whose `outputPath` nests deeper
+  (`dist/foo/`) would need one more segment. Written as a collapse rather than
+  a fixed prefix precisely so it degrades predictably instead of silently
+  pointing one directory wrong at a different depth.
+- **No e2e assertion yet.** The unit tests pin the emitted *config text*, and the
+  real build was verified by hand against `az-durable` (15 sources across three
+  entry points, 0 unresolved). What is not automated is "generate a lib, build
+  it, read the map back" — the assertion that would catch an upstream change to
+  either bug. It belongs in the e2e's `js stack` section, next to the packing
+  checks, and costs one extra build.
+
+### 29. `mnci sync`/`mnci up` — the four limits shipped with them — P3
+
+All four are stated rather than fixed, because each is a property of the
+ecosystem rather than a defect in the command.
+
+- **pip has no lockfile**, so a "resolved version" comes from `pip show` against
+  whatever interpreter is on PATH. That is weaker than npm's `node_modules` and
+  pub's `pubspec.lock`, and it is why the workspace-wide editable install
+  (`npm run python:install`) has to have run for `mnci sync` to resolve rather
+  than fall back to the highest declared specifier. The fallback is reported —
+  the finding says `highest` instead of `resolved` — so it is never silent.
+- **A pub dependency expressed as a nested map** (`git:`, `path:`, `hosted:`) is
+  read and reported but never rewritten. Editing one means understanding which
+  key inside the map is the version, and that varies per source.
+- **`requirements-dev.txt` entries are deliberately unpinned.** `mnci up` reports
+  them as outdated but writing a pin would reverse a design decision recorded in
+  `add/python.ts` ("No lock file — plain pip has none"). Decide that explicitly
+  before changing it.
+- **`mnci up` has no e2e coverage**, on purpose: it makes one registry query per
+  package, so an e2e assertion would be a network-dependent, minutes-long step in
+  a suite that already takes ~30. `mnci sync --check`/`mnci sync` ARE covered —
+  they are offline — and the unit suite drives `up` with a stubbed registry. If
+  the e2e ever gains it, gate it the way Go and Flutter are gated, so an offline
+  agent reports SKIPPED rather than failing.
+
+**Verify:** run `mnci sync --check` and `mnci up --check` from this repo's root.
+Both should complete; `sync --check` should report only genuine drift (peer
+ranges, workspace projects and aliased installs are all excluded by design — see
+`mnci-details.md` invariants 17–19).
 
 ### 27. TypeScript 7 — deferred, not refused — P2
 
