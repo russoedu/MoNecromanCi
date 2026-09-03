@@ -5,6 +5,8 @@ jest.mock('commander', () => {
     key: string
     flags: string
     takesValue: boolean
+    /** True for a `--no-x` flag, whose key is `x` and whose value is false. */
+    negated: boolean
   }
 
   class FakeCommand {
@@ -54,11 +56,18 @@ jest.mock('commander', () => {
 
     option (flags: string): this {
       const longFlagName = /--([\w-]+)/.exec(flags)?.[1] ?? ''
-      const key = longFlagName.replaceAll(/-([a-z])/g, (_match, letter: string) =>
-        letter.toUpperCase()
+      // commander inverts a `--no-x` flag: the option key is `x` and passing
+      // the flag sets it to FALSE. Verified against the real library — without
+      // this, `--no-install` would arrive as `{ noInstall: true }`, which is a
+      // shape `runUp` never checks for, so the assertion would pass against a
+      // fake that models something commander does not do.
+      const negated = longFlagName.startsWith('no-')
+      const key = (negated ? longFlagName.slice(3) : longFlagName).replaceAll(
+        /-([a-z])/g,
+        (_match, letter: string) => letter.toUpperCase()
       )
       const isTakesValue = /[<[]/.test(flags.split(',').pop() ?? flags)
-      this.optionDefinitions.push({ key, flags, takesValue: isTakesValue })
+      this.optionDefinitions.push({ key, flags, takesValue: isTakesValue, negated })
       return this
     }
 
@@ -85,7 +94,9 @@ jest.mock('commander', () => {
         if (token.startsWith('-')) {
           const definition = subcommand.optionDefinitions.find(entry => entry.flags.includes(token))
           if (definition) {
-            options[definition.key] = definition.takesValue ? rest[++index] : true
+            options[definition.key] = definition.takesValue
+              ? rest[++index]
+              : !definition.negated
           }
         } else {
           positionals.push(token)
@@ -116,6 +127,10 @@ jest.mock('./commands/add', () => ({ runAdd: jest.fn(), PROJECT_KINDS: [] }))
 jest.mock('./commands/new', () => ({ runNew: jest.fn() }))
 jest.mock('./commands/upgrade', () => ({ runUpgrade: jest.fn() }))
 jest.mock('./commands/interactive', () => ({ runInteractive: jest.fn() }))
+jest.mock('./commands/sync', () => ({ runSync: jest.fn() }))
+// `up` imports @inquirer/prompts, which ships ESM only — without this mock the
+// real module is loaded through cli.ts and jest fails on `export` in a .js file.
+jest.mock('./commands/up', () => ({ runUp: jest.fn() }))
 jest.mock('./util/versionChecker', () => ({
   checkForUpdate: jest.fn(),
   readCliVersion: jest.fn(() => '1.0.0')
@@ -125,12 +140,16 @@ import { buildProgram, main } from './cli'
 import { runAdd } from './commands/add'
 import { runInteractive } from './commands/interactive'
 import { runNew } from './commands/new'
+import { runSync } from './commands/sync'
+import { runUp } from './commands/up'
 import { runUpgrade } from './commands/upgrade'
 import { checkForUpdate } from './util/versionChecker'
 
 const mockRunAdd = jest.mocked(runAdd)
 const mockRunNew = jest.mocked(runNew)
 const mockRunUpgrade = jest.mocked(runUpgrade)
+const mockRunSync = jest.mocked(runSync)
+const mockRunUp = jest.mocked(runUp)
 const mockRunInteractive = jest.mocked(runInteractive)
 const mockCheckForUpdate = jest.mocked(checkForUpdate)
 
@@ -253,6 +272,42 @@ describe('buildProgram', () => {
     expect(mockRunUpgrade).toHaveBeenCalledWith(
       '/somewhere/demo',
       expect.objectContaining({ agent: 'windows-latest' })
+    )
+  })
+
+  it('routes `sync --check` to runSync, against the current working directory', async () => {
+    jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'sync', '--check'])
+    expect(mockRunSync).toHaveBeenCalledWith(
+      '/somewhere/demo',
+      expect.objectContaining({ check: true })
+    )
+  })
+
+  it("routes `sync`'s --ecosystem flag to runSync", async () => {
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'sync', '--ecosystem', 'pip'])
+    expect(mockRunSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ ecosystem: 'pip' })
+    )
+  })
+
+  it('routes `up` with its flags to runUp', async () => {
+    jest.spyOn(process, 'cwd').mockReturnValue('/somewhere/demo')
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'up', '--yes'])
+    expect(mockRunUp).toHaveBeenCalledWith(
+      '/somewhere/demo',
+      expect.objectContaining({ yes: true })
+    )
+  })
+
+  it('gives runUp install: false for --no-install, which commander inverts', async () => {
+    // The one flag whose parsed value is the opposite of its name; `runUp`
+    // compares against `false` explicitly because of it.
+    await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'up', '--no-install'])
+    expect(mockRunUp).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ install: false })
     )
   })
 

@@ -1045,6 +1045,100 @@ section('js stack', [], () => {
   )
 
   /* ---------------------------------------------------------------------------
+   * mnci sync — converging a dependency range declared at two versions.
+   *
+   * `ms` is already declared twice by this point: as a real dependency of
+   * packages/sdk and as a root devDependency (installed above). Planting an
+   * older range at the root creates genuine drift with no extra install, and
+   * the run has to end with `npm run lint` still green — that green run IS the
+   * assertion, because it proves `mnci sync` and `@nx/dependency-checks` agree
+   * on one answer rather than overwriting each other's.
+   * ------------------------------------------------------------------------- */
+
+  console.log('\n▸ mnci sync (converging a drifted dependency range)')
+
+  const rootManifestPath = path.join(workspace, 'package.json')
+  const rootManifestBefore = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
+  rootManifestBefore.devDependencies.ms = '^2.0.0'
+  writeFileSync(rootManifestPath, `${JSON.stringify(rootManifestBefore, undefined, 2)}\n`)
+
+  const syncCheckDrifted = tryRunCapture(`node ${CLI} sync --check`, workspace)
+  enforce(
+    'mnci sync --check reports a range declared at two versions, and exits non-zero',
+    !syncCheckDrifted.ok && syncCheckDrifted.output.includes('ms'),
+    syncCheckDrifted.output
+  )
+  enforce(
+    'mnci sync --check writes nothing',
+    JSON.parse(readFileSync(rootManifestPath, 'utf8')).devDependencies.ms === '^2.0.0',
+    'the root manifest changed during a --check run'
+  )
+
+  enforce('mnci sync succeeds', tryRun(`node ${CLI} sync`, workspace), 'see log above')
+
+  const rootManifestAfter = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
+  const sdkManifestAfterSync = JSON.parse(readFileSync(sdkManifestPath, 'utf8'))
+  enforce(
+    'mnci sync converges the drifted range on the INSTALLED version',
+    rootManifestAfter.devDependencies.ms === `^${msVersion}` &&
+      sdkManifestAfterSync.dependencies.ms === `^${msVersion}`,
+    `root ${rootManifestAfter.devDependencies.ms}, sdk ${sdkManifestAfterSync.dependencies.ms}, installed ${msVersion}`
+  )
+
+  const syncCheckConverged = tryRunCapture(`node ${CLI} sync --check`, workspace)
+  enforce(
+    'mnci sync --check is clean once converged',
+    syncCheckConverged.ok,
+    syncCheckConverged.output
+  )
+
+  // The whole point of resolving against what is INSTALLED: the lint rule that
+  // caught the original axios bug must still pass over what sync just wrote.
+  enforce(
+    'npm run lint (which runs @nx/dependency-checks) still passes after mnci sync',
+    tryRun('npm run lint', workspace),
+    'see log above'
+  )
+
+  /* ---------------------------------------------------------------------------
+   * mnci doctor — the root/project dependency policy, from the other direction.
+   *
+   * `@nx/dependency-checks` fails the project whose import went undeclared;
+   * this fails the root that took it. Reproduces the real finding: hoisting a
+   * runtime dependency to a private, never-published root manifest reaches no
+   * consumer AND makes rollup inline a private copy into whoever imports it.
+   * ------------------------------------------------------------------------- */
+
+  console.log('\n▸ mnci doctor (root runtime dependency)')
+
+  const doctorClean = tryRunCapture(`node ${CLI} doctor`, workspace)
+  enforce(
+    'mnci doctor passes on a freshly generated workspace',
+    doctorClean.ok,
+    doctorClean.output
+  )
+
+  const manifestWithRootDependency = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
+  manifestWithRootDependency.dependencies = { ms: `^${msVersion}` }
+  writeFileSync(
+    rootManifestPath,
+    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`
+  )
+
+  const doctorHoisted = tryRunCapture(`node ${CLI} doctor`, workspace)
+  enforce(
+    'mnci doctor fails on a runtime dependency hoisted to the root manifest',
+    !doctorHoisted.ok && doctorHoisted.output.includes('runtime dependencies'),
+    doctorHoisted.output
+  )
+
+  delete manifestWithRootDependency.dependencies
+  writeFileSync(
+    rootManifestPath,
+    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`
+  )
+
+  /* ---------------------------------------------------------------------------
    * Packing: each app zips into dist/drop/<type>-<name>.zip — the CI 'drop', and
    * the exact string CI turns into the per-app build tag.
    * ------------------------------------------------------------------------- */

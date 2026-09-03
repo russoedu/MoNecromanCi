@@ -143,6 +143,40 @@ describe('collectFindings', () => {
     expect(findingFor(collectFindings(workspaceRoot), 'resolved eslint')).toBeUndefined()
   })
 
+  it('passes when the root manifest declares no runtime dependency', () => {
+    seedHealthyWorkspace()
+
+    expect(findingFor(collectFindings(workspaceRoot), 'no runtime dependencies')?.ok).toBe(true)
+  })
+
+  it('catches a runtime dependency hoisted to the root manifest', () => {
+    // The axios failure, in miniature. The root is private and never published,
+    // and @nx/rollup externalises only what a project's OWN manifest declares —
+    // so hoisting a dependency here does not share it, it makes rollup inline a
+    // private copy into the published bundle.
+    seedHealthyWorkspace()
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ dependencies: { axios: '^1.9.0' }, devDependencies: {} })
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'no runtime dependencies')
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('axios')
+    // A finding the user cannot act on is noise — the remedy has to name it.
+    expect(finding?.remedy).toContain('axios')
+  })
+
+  it('says nothing about devDependencies at the root, which is what the root is for', () => {
+    seedHealthyWorkspace()
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ devDependencies: { eslint: '^10.8.1', jest: '^30.0.0' } })
+    )
+
+    expect(findingFor(collectFindings(workspaceRoot), 'no runtime dependencies')?.ok).toBe(true)
+  })
+
   it('catches an .npmrc that cannot authenticate a public-npm publish', () => {
     seedHealthyWorkspace()
     writeFileSync(join(workspaceRoot, '.npmrc'), '; nothing here\n')

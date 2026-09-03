@@ -35,8 +35,32 @@ module.exports = withNx(
     additionalEntryPoints: ['./src/testing.ts', './src/eslint-plugin.ts'],
     outputPath: './dist',
     tsConfig: './tsconfig.lib.json',
-    compiler: 'swc',
-    format: ['cjs']
+    format: ['cjs'],
+    // Was `compiler: 'swc'`. @nx/rollup runs swc via a plugin that calls
+    // transform() WITHOUT sourceMaps, so swc returns no map, the rollup chain
+    // breaks, and the bundle's map comes out structurally valid and
+    // semantically empty - `sources: []`, every mapping segment blank. That is
+    // indistinguishable from a working build right up until a breakpoint
+    // refuses to bind. Measured here: swc gave 0 sources, babel gives 9, all
+    // resolving, with sourcesContent. Revert once @nx/rollup passes sourceMaps
+    // through - the upstream fix is one option in its plugins/swc.js.
+    compiler: 'babel',
+    // Without this rollup emits no .js.map at all, so a breakpoint in a .ts
+    // file can never bind. Never published - see `files` in package.json.
+    sourceMap: true
   },
-  {}
+  {
+    output: {
+      // rollup hands this an OS-native path with one parent segment too many:
+      // for a map at dist/index.cjs.js.map whose source is src/index.ts it
+      // passes a path resolving to <packages>/src/index.ts, which does not
+      // exist. Both halves are repaired - the separator, because a sourcemap
+      // `sources` entry is URL-style so a backslash is wrong on every platform
+      // (the same bug class as the declaration stub below), and the depth, by
+      // collapsing the leading parent-segment run to exactly one. A collapse
+      // rather than a fixed prefix, so it cannot go stale at another depth.
+      sourcemapPathTransform: relativeSourcePath =>
+        relativeSourcePath.replaceAll(String.fromCodePoint(92), '/').replace(/^(\.\.\/)+/, '../')
+    }
+  }
 )

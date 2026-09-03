@@ -1,6 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { runFormatter } from '../nx'
+import { repairRollupSourceMaps } from './add/shared'
 import {
   applyOverlay,
   readMnciConfig,
@@ -238,6 +239,20 @@ export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): voi
 
   logger.step('Re-applying the MoNecromanCI overlay')
   applyOverlay(workspaceRoot, resolved, logger.detail)
+
+  // A per-project sweep, unlike everything above it. A rollup config is written
+  // once at `add` time, so a workspace generated before source maps were wired
+  // in stays undebuggable forever otherwise — a breakpoint in a .ts file simply
+  // never binds, and nothing says why. Idempotent, so a repeat upgrade is a
+  // no-op, and it reports what it touched because this is the one step that
+  // edits a file inside a project rather than an mnci-owned root file.
+  const repaired = repairRollupSourceMaps(workspaceRoot)
+  if (repaired.length > 0) {
+    logger.step('Enabling source maps in rollup configs (breakpoints in .ts files)')
+    for (const path of repaired) {
+      logger.detail(`updated ${path}`)
+    }
+  }
 
   // `new` and every `add` end this way; `upgrade` did not, so it left the
   // `nx.json` it had just rewritten mis-formatted — which now fails the

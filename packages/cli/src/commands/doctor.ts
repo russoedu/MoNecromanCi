@@ -2,6 +2,7 @@ import { globSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../nx'
 import { ESLINT_VERSION, RETIRED_FORMATTER_FILES, type RegistryConfig } from '../overlay'
+import { hasRollupSourceMaps } from './add/shared'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 
@@ -479,6 +480,102 @@ function checkSync (workspaceRoot: string): Finding {
 }
 
 /**
+ * Checks that no runtime dependency is declared in the root manifest.
+ *
+ * @remarks
+ * The root/project policy, and the one check that enforces it: **shared
+ * development and tool packages belong at the root, runtime dependencies belong
+ * to the package that imports them.**
+ *
+ * Two independent reasons, and the second is the one that bites. The root
+ * manifest is `private` and never published, so a runtime dependency declared
+ * there reaches no consumer of any package — an installed `@scope/lib` simply
+ * fails to resolve it. And `@nx/rollup` externalises exactly what a project's
+ * OWN manifest declares, so hoisting a dependency to the root does not make it
+ * shared, it makes rollup **inline a private copy of it** into the bundle.
+ * Measured on a real generated workspace: moving `axios` out of one package's
+ * manifest took its published bundle from 14.5 KB to 832 KB, silently.
+ *
+ * `@nx/dependency-checks` catches the second half from the other direction — it
+ * fails the project whose import is now undeclared — so this check and that
+ * lint rule are complementary rather than redundant: the rule names the project
+ * that lost the dependency, this names the root that took it.
+ *
+ * `devDependencies` are deliberately not checked. Sharing the toolchain is the
+ * whole point of the root manifest, and npm's `overrides` only work there.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The finding, or `undefined` when there is no root manifest to read.
+ * @throws Never - an unreadable manifest is treated as nothing to check.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkNoRootRuntimeDependencies (workspaceRoot: string): Finding | undefined {
+  const manifestPath = join(workspaceRoot, 'package.json')
+  if (!fileExists(manifestPath)) {
+    return undefined
+  }
+  let declared: string[]
+  try {
+    declared = Object.keys(
+      readJson<{ dependencies?: Record<string, string> }>(manifestPath).dependencies ?? {}
+    )
+  } catch {
+    return undefined
+  }
+
+  return {
+    check: 'no runtime dependencies in the root manifest',
+    ok: declared.length === 0,
+    detail: `the root package.json declares ${declared.join(', ')} — the root is private and never published, and @nx/rollup externalises only what a project's own manifest declares, so a package importing one of these ships an inlined private copy instead`,
+    remedy: `move ${declared.join(', ')} into the dependencies of each package that imports it (devDependencies at the root are fine — that is what the root is for)`
+  }
+}
+
+/**
+ * Checks that every rollup-built project can actually be debugged.
+ *
+ * @remarks
+ * The invariant: a publishable library's `rollup.config.cjs` must switch
+ * `sourceMap` on. Without it the build emits no `.js.map`, so VS Code cannot
+ * map the running JavaScript back to the TypeScript and **every breakpoint in
+ * a `.ts` file stays grey and unbound** — with no error, anywhere, to say why.
+ * Found exactly that way: from the outside it looks like a broken debugger
+ * rather than a build that omitted one flag.
+ *
+ * A config written before mnci wired this in will never fix itself, because a
+ * rollup config is written once at `add` time — hence a check plus the
+ * `mnci upgrade` sweep that repairs it.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns One finding per rollup config missing the flag.
+ * @throws Never - an unreadable config is skipped.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkRollupSourceMaps (workspaceRoot: string): Finding[] {
+  const configs = globSync(['packages/*/rollup.config.cjs', 'libs/*/rollup.config.cjs'], {
+    cwd: workspaceRoot
+  }).map(config => toPosix(config))
+
+  return configs.flatMap(relativePath => {
+    let config: string
+    try {
+      config = readFileSync(join(workspaceRoot, relativePath), 'utf8')
+    } catch {
+      return []
+    }
+    return [
+      {
+        check: `source maps enabled in ${relativePath}`,
+        ok: hasRollupSourceMaps(config),
+        detail:
+          'rollup emits no .js.map without it, so a breakpoint in a .ts file can never bind',
+        remedy: 'run `mnci upgrade`, which adds it to every rollup config'
+      }
+    ]
+  })
+}
+
+/**
  * Collects every doctor finding for a workspace.
  *
  * @remarks
@@ -513,6 +610,8 @@ export function collectFindings (workspaceRoot: string): Finding[] {
     checkEslintPlugin(nxJson),
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
+    checkNoRootRuntimeDependencies(workspaceRoot),
+    ...checkRollupSourceMaps(workspaceRoot),
     ...checkVersionActions(workspaceRoot),
     ...checkTargetFilesExist(workspaceRoot),
     checkSync(workspaceRoot)

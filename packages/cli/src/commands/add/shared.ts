@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, globSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { dependabotConfig, reactExpressPeerOverride } from '../../overlay'
@@ -192,12 +192,188 @@ const ACTUAL_TYPES_PATH = './dist/src/index.d.ts'
  */
 const DECLARATION_MAP_EXCLUSION = '!**/*.d.ts.map'
 
+/**
+ * Keeps JavaScript source maps out of the published tarball.
+ *
+ * @remarks
+ * The counterweight to building them unconditionally. A `.js.map` carries the
+ * whole of `sourcesContent` - every line of the package's TypeScript - so
+ * publishing them would multiply the tarball for a benefit only this
+ * workspace's own debugger collects. Same reasoning as
+ * {@link DECLARATION_MAP_EXCLUSION}.
+ */
+const SOURCE_MAP_EXCLUSION = '!**/*.js.map'
+
 const ROLLUP_CONFIG_PLACEHOLDER = [
   '  {',
   '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
   '    // e.g.',
   '    // output: { sourcemap: true },',
   '  }'
+].join('\n')
+
+/**
+ * The compiler `@nx/js:lib --bundler=rollup` hardcodes, and what mnci swaps it for.
+ *
+ * @remarks
+ * **Without this swap the source maps are emitted but empty, so none of the
+ * rest of this works.** `@nx/rollup`'s own configuration generator defaults
+ * `compiler` to `babel`; `@nx/js:lib` passes `compiler: 'swc'` explicitly and
+ * unconditionally, so every publishable library mnci generates is built with
+ * swc. And `@nx/rollup`'s swc plugin calls swc's `transform()` **without**
+ * `sourceMaps: true`, so it returns no map at all. A rollup transform hook that
+ * returns no map breaks the chain: the output map comes out structurally valid
+ * and semantically empty - `sources: []`, every mapping segment blank - which
+ * is indistinguishable from a working build until a breakpoint refuses to bind.
+ *
+ * Measured on a real package in this repo: swc gave `sources: []`; the same
+ * package on babel gave 9 sources, all resolving, with `sourcesContent`.
+ *
+ * Swapping the compiler is the fix rather than shipping a plugin that re-runs
+ * swc with maps on, because two transform hooks would both compile the same
+ * source and the second would see the first's output. Revert this the moment
+ * `@nx/rollup` passes `sourceMaps` through - the upstream fix is one option in
+ * `plugins/swc.js`.
+ */
+const GENERATED_COMPILER = "    compiler: 'swc',"
+
+/** The same line, on the compiler that actually emits usable source maps. */
+const SOURCE_MAP_CAPABLE_COMPILER = [
+  '    // Swapped from swc by MoNecromanCI. @nx/rollup runs swc without',
+  "    // sourceMaps, so it returns no map and the bundle's map comes out empty -",
+  '    // valid-looking, and useless for debugging. See ROADMAP.',
+  "    compiler: 'babel',"
+].join('\n')
+
+/**
+ * The end of `withNx`'s FIRST argument, with source maps switched on.
+ *
+ * @remarks
+ * `sourceMap` has to be set here and nowhere else. The obvious spot is
+ * `output: { sourcemap: true }` in the second argument - the generator's own
+ * placeholder comment even suggests it - and it silently does nothing:
+ * `withNx` spreads the caller's `output` and *then* assigns
+ * `sourcemap: options.sourceMap`, so its own (undefined) value always wins.
+ *
+ * Unconditional rather than gated behind a dev flag. Maps are what make a
+ * breakpoint in a `.ts` file bind, so a build without them is undebuggable, and
+ * every way of gating it costs something a generated workspace should not pay:
+ * an env var is not portable across npm scripts without a fourth runtime
+ * dependency, and a second build target is one more thing to remember at
+ * exactly the moment you are already debugging. The maps are always built and
+ * never *published* instead - {@link repairPublishableManifest} keeps them out
+ * of `files`, the same trade this project already made for `.d.ts.map`.
+ */
+const ROLLUP_ARG_ONE_BOUNDARY = ['  },', '  {', ''].join('\n')
+
+/** The same boundary, with the source-map flag appended to argument one. */
+const ROLLUP_ARG_ONE_WITH_SOURCE_MAPS = [
+  '    // Added by MoNecromanCI: without this rollup emits no .js.map at all, so',
+  '    // a breakpoint in a .ts file can never bind. Not published - see `files`.',
+  '    sourceMap: true',
+  '  },',
+  '  {',
+  ''
+].join('\n')
+
+/**
+ * Whether a rollup config already carries the source-map wiring.
+ *
+ * @remarks
+ * The idempotence guard for both entry points, and what `mnci doctor` asks so
+ * its finding and `mnci upgrade`'s edit can never disagree about what "already
+ * fixed" means.
+ *
+ * @param config - The config file's text.
+ * @returns `true` when source maps are already switched on.
+ * @throws Never - performs a substring test.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function hasRollupSourceMaps (config: string): boolean {
+  return config.includes('sourceMap: true')
+}
+
+/**
+ * Switches source maps on in a rollup config, whatever shape it is in.
+ *
+ * @remarks
+ * Deliberately not anchored on the generator's placeholder comment. That
+ * comment survives only until mnci replaces it at `add` time, so a placeholder
+ * anchor would work for a brand-new project and silently no-op for every
+ * existing one - which is the whole population `mnci upgrade` exists to reach.
+ * The `},` / `{` boundary between `withNx`'s two arguments is present in both
+ * shapes, so it anchors both.
+ *
+ * Idempotent: a config that already has the flag is returned untouched, so
+ * running `mnci upgrade` twice changes nothing the second time.
+ *
+ * @param config - The config file's text.
+ * @returns The config with source maps enabled, or unchanged when already so.
+ * @throws Never - an unrecognised config is returned unchanged.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withRollupSourceMaps (config: string): string {
+  if (hasRollupSourceMaps(config) || !config.includes(ROLLUP_ARG_ONE_BOUNDARY)) {
+    return config
+  }
+  const withCompiler = config.replace(GENERATED_COMPILER, () => SOURCE_MAP_CAPABLE_COMPILER)
+  const withFlag = withCompiler.replace(
+    ROLLUP_ARG_ONE_BOUNDARY,
+    () => ROLLUP_ARG_ONE_WITH_SOURCE_MAPS
+  )
+  return withFlag.includes('sourcemapPathTransform')
+    ? withFlag
+    : withFlag.replace(
+        ROLLUP_ARG_ONE_WITH_SOURCE_MAPS,
+        () => `${ROLLUP_ARG_ONE_WITH_SOURCE_MAPS}${SOURCEMAP_PATH_TRANSFORM}`
+      )
+}
+
+/**
+ * Sweeps every publishable project's rollup config, enabling source maps.
+ *
+ * @remarks
+ * Called by `mnci upgrade`, so a workspace generated before this shipped stops
+ * being undebuggable without anyone editing a config by hand. Scoped to
+ * `packages/*` and `libs/*` because those are the only places mnci puts a
+ * rollup-built project.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The workspace-relative paths that changed.
+ * @throws Propagates any `fs` write error.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function repairRollupSourceMaps (workspaceRoot: string): string[] {
+  const changed: string[] = []
+  const configs = globSync(['packages/*/rollup.config.cjs', 'libs/*/rollup.config.cjs'], {
+    cwd: workspaceRoot
+  })
+
+  for (const relativePath of configs) {
+    const configPath = join(workspaceRoot, relativePath)
+    const before = readFileSync(configPath, 'utf8')
+    const after = withRollupSourceMaps(before)
+    if (after !== before) {
+      writeFileEnsured(configPath, after)
+      changed.push(relativePath.replaceAll('\\', '/'))
+    }
+  }
+  return changed
+}
+
+/** The `output` block that repairs rollup's wrong sourcemap source paths. */
+const SOURCEMAP_PATH_TRANSFORM = [
+  '    // Added by MoNecromanCI. rollup hands sourcemapPathTransform an OS-NATIVE',
+  '    // path with one parent segment too many, so `sources` resolve to nothing',
+  '    // and no breakpoint can bind. Separators are normalised too: a sources',
+  '    // entry is URL-style, so a backslash is wrong on every platform.',
+  '    output: {',
+  '      sourcemapPathTransform: relativeSourcePath =>',
+  '        relativeSourcePath',
+  "          .replaceAll(String.fromCodePoint(92), '/')",
+  "          .replace(/^([.][.][/])+/, '../')",
+  '    },',
+  ''
 ].join('\n')
 
 /** The same slot, carrying a plugin that repairs the declaration stub. */
@@ -275,10 +451,13 @@ export function repairDeclarationSpecifiers (projectRoot: string): void {
   if (!config.includes(ROLLUP_CONFIG_PLACEHOLDER)) {
     return
   }
-  writeFileEnsured(
-    configPath,
-    config.split(ROLLUP_CONFIG_PLACEHOLDER).join(ROLLUP_CONFIG_WITH_DTS_FIX)
-  )
+  // Declaration stub FIRST, source maps second, and the order is load-bearing:
+  // `withRollupSourceMaps` anchors on the `},` / `{` boundary between withNx's
+  // two arguments and rewrites the `{` line, which is the same line the
+  // placeholder starts with. Run the other way round it silently matches
+  // nothing and the dts plugin is never written.
+  const withDtsFix = config.split(ROLLUP_CONFIG_PLACEHOLDER).join(ROLLUP_CONFIG_WITH_DTS_FIX)
+  writeFileEnsured(configPath, withRollupSourceMaps(withDtsFix))
 }
 
 /**
@@ -405,8 +584,10 @@ export function repairPublishableManifest (manifestPath: string): void {
   if (typeof dot === 'object' && dot.types === WRONG_TYPES_PATH) {
     dot.types = ACTUAL_TYPES_PATH
   }
-  if (manifest.files && !manifest.files.includes(DECLARATION_MAP_EXCLUSION)) {
-    manifest.files.push(DECLARATION_MAP_EXCLUSION)
+  for (const exclusion of [DECLARATION_MAP_EXCLUSION, SOURCE_MAP_EXCLUSION]) {
+    if (manifest.files && !manifest.files.includes(exclusion)) {
+      manifest.files.push(exclusion)
+    }
   }
   writeFileEnsured(manifestPath, toJson(manifest))
 }

@@ -3,6 +3,8 @@ import { PROJECT_KINDS, runAdd, type AddOptions, type ProjectKind } from './comm
 import { runDoctor } from './commands/doctor'
 import { runInteractive } from './commands/interactive'
 import { runNew, type NewOptions } from './commands/new'
+import { runSync, type SyncOptions } from './commands/sync'
+import { runUp, type UpOptions } from './commands/up'
 import { runUpgrade, type UpgradeOptions } from './commands/upgrade'
 import { logger } from './util/logger'
 import { checkForUpdate, readCliVersion } from './util/versionChecker'
@@ -11,10 +13,18 @@ import { checkForUpdate, readCliVersion } from './util/versionChecker'
  * Builds the commander program for the CLI.
  *
  * @remarks
- * Four commands: `new`, `add`, `upgrade` (re-applies the overlay to an existing
- * workspace) and `doctor` (read-only invariant check). Everything a generated
- * repo needs day-to-day (build/test/lint/release) is plain Nx, so the CLI
- * deliberately has no wrapper commands for those.
+ * Six commands: `new`, `add`, `upgrade` (re-applies the overlay to an existing
+ * workspace), `doctor` (read-only invariant check), `sync` (converge dependency
+ * ranges and TypeScript project references) and `up` (report and apply
+ * available upgrades). Everything else a generated repo needs day-to-day
+ * (build/test/lint/release) is plain Nx, so the CLI deliberately has no wrapper
+ * commands for those.
+ *
+ * `sync` and `up` exist because Nx covers neither: `nx sync` runs the
+ * workspace's sync generators, and the only one registered is
+ * `@nx/js:typescript-sync` — TypeScript project references, no opinion at all
+ * about dependency versions. And npm has no `catalog:`, so one version per
+ * workspace is a convention nothing enforces.
  *
  * @param cliVersion - The current CLI version (from package.json).
  * @returns The configured commander program.
@@ -79,6 +89,30 @@ export function buildProgram (cliVersion: string): Command {
     )
     .action(() => {
       runDoctor(process.cwd())
+    })
+
+  program
+    .command('sync')
+    .description(
+      "Make every project agree: converge external dependency ranges declared at more than one version, then run 'nx sync' for TypeScript project references. Go is a no-op — one root go.mod means one version of every module"
+    )
+    .option('--check', 'report drift and exit non-zero without writing anything')
+    .option('--ecosystem <name>', 'restrict to one ecosystem: npm | pip | pub | go')
+    .action((options: SyncOptions) => {
+      runSync(process.cwd(), options)
+    })
+
+  program
+    .command('up')
+    .description(
+      'Show every dependency with a newer published release — grouped patch/minor/major/non-semver, with the projects declaring each one — and interactively update the ones you pick'
+    )
+    .option('--check', 'report only; never prompt and never write (the default when piped)')
+    .option('-y, --yes', 'select every available update without prompting')
+    .option('--ecosystem <name>', 'restrict to one ecosystem: npm | pip | pub | go')
+    .option('--no-install', 'update the manifests but skip the reinstall step')
+    .action(async (options: UpOptions) => {
+      await runUp(process.cwd(), options)
     })
 
   program
