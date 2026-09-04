@@ -27,7 +27,8 @@
   "files": [
     "dist",
     "!**/*.tsbuildinfo",
-    "!**/*.d.ts.map"
+    "!**/*.d.ts.map",
+    "!**/*.js.map"
   ],
   "publishConfig": {
     "access": "public"

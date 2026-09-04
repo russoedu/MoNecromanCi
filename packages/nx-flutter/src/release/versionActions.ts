@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { posix } from 'node:path'
 import type { ProjectGraph, Tree } from '@nx/devkit'
 import type * as NxRelease from 'nx/release'
 import { readPubspecVersion, writePubspecVersion } from '../internal/pubspec'
@@ -40,7 +40,18 @@ export default class DartVersionActions extends VersionActions {
   async readCurrentVersionFromSourceManifest (
     tree: Tree
   ): Promise<{ currentVersion: string; manifestPath: string } | null> {
-    const manifestPath = join(this.projectGraphNode.data.root, 'pubspec.yaml')
+    // `posix.join`, never plain `join`. An Nx `Tree` path is always
+    // workspace-relative and forward-slashed on EVERY platform, while `join`
+    // emits `packages\shared\...` on Windows. That is not cosmetic: the value
+    // is returned to `nx release`, which carries it into changelog and manifest
+    // bookkeeping, and it is interpolated into the error below. Same class as
+    // the `toPosix` bug written up in the CLI's `doctor.ts`.
+    //
+    // `posix.join` rather than devkit's `joinPathFragments` because that one is
+    // a VALUE import from `@nx/devkit`, which pulls Nx's whole plugin runtime
+    // into a module that only ever needed a string — enough to break a spec
+    // that mocks `node:child_process`, and dead weight on the release path.
+    const manifestPath = posix.join(this.projectGraphNode.data.root, 'pubspec.yaml')
     const contents = tree.read(manifestPath, 'utf8')
     if (contents === null) {
       return null
@@ -112,7 +123,7 @@ export default class DartVersionActions extends VersionActions {
    * @typeParam None - this method has no generic type parameters.
    */
   async updateProjectVersion (tree: Tree, newVersion: string): Promise<string[]> {
-    const manifestPath = join(this.projectGraphNode.data.root, 'pubspec.yaml')
+    const manifestPath = posix.join(this.projectGraphNode.data.root, 'pubspec.yaml')
     const contents = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(manifestPath, writePubspecVersion(contents, newVersion))
     return [`Updated ${manifestPath} to version ${newVersion}`]

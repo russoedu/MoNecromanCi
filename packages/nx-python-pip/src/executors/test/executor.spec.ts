@@ -1,5 +1,7 @@
 import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
+import { pythonCommand } from '../../internal/pythonCommand'
 import testExecutor from './executor'
 
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))
@@ -30,12 +32,12 @@ describe('testExecutor', () => {
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenNthCalledWith(
       1,
-      'python3',
+      pythonCommand(),
       ['-m', 'pip', 'install', '--quiet', '-e', '.'],
-      { cwd: '/workspace/apps/svc', stdio: 'inherit' }
+      { cwd: join('/workspace', 'apps/svc'), stdio: 'inherit' }
     )
-    expect(mockSpawnSync).toHaveBeenNthCalledWith(2, 'python3', ['-m', 'pytest'], {
-      cwd: '/workspace/apps/svc',
+    expect(mockSpawnSync).toHaveBeenNthCalledWith(2, pythonCommand(), ['-m', 'pytest'], {
+      cwd: join('/workspace', 'apps/svc'),
       stdio: 'inherit'
     })
   })
@@ -46,8 +48,8 @@ describe('testExecutor', () => {
     await testExecutor({ installEditable: false }, context())
 
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
-    expect(mockSpawnSync).toHaveBeenCalledWith('python3', ['-m', 'pytest'], {
-      cwd: '/workspace/apps/svc',
+    expect(mockSpawnSync).toHaveBeenCalledWith(pythonCommand(), ['-m', 'pytest'], {
+      cwd: join('/workspace', 'apps/svc'),
       stdio: 'inherit'
     })
   })

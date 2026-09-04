@@ -5,10 +5,11 @@
 // the behaviours under test.
 jest.mock('../nx', () => ({ runFormatter: jest.fn() }))
 
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runFormatter } from '../nx'
+import { repairRollupSourceMaps } from './add/shared'
 import { applyOverlay, DEFAULT_STACK, type OverlayOptions } from '../overlay'
 import { runUpgrade } from './upgrade'
 
@@ -290,5 +291,62 @@ describe('runUpgrade', () => {
     // `new` and every `add` already did this; upgrade did not, leaving the
     // workspace failing its own CI formatting gate right after an upgrade.
     expect(mockRunFormatter).toHaveBeenCalledWith(workspaceRoot)
+  })
+})
+
+describe('rollup source maps', () => {
+  it('retrofits a config mnci already processed, which the add-time path cannot', () => {
+    // The population that matters: a rollup config is written once at `add`
+    // time, so a workspace generated before this shipped stays undebuggable
+    // forever otherwise. The add-time repair anchors on the generator's
+    // placeholder comment, which is long gone by then — hence a second anchor.
+    const projectRoot = join(workspaceRoot, 'packages/sdk')
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx');",
+        '',
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        "    compiler: 'swc',",
+        "    format: ['esm']",
+        '  },',
+        '  {',
+        '    // Added by MoNecromanCI. Something mnci already wrote here.',
+        '    plugins: []',
+        '  }',
+        ');'
+      ].join('\n')
+    )
+
+    const changed = repairRollupSourceMaps(workspaceRoot)
+
+    expect(changed).toEqual(['packages/sdk/rollup.config.cjs'])
+    const config = readFileSync(join(projectRoot, 'rollup.config.cjs'), 'utf8')
+    expect(config).toContain('sourceMap: true')
+    expect(config).toContain('sourcemapPathTransform')
+    // The compiler swap matters most: on swc the map comes out EMPTY.
+    expect(config).toContain("compiler: 'babel'")
+    // What was already there survives.
+    expect(config).toContain('Something mnci already wrote here')
+  })
+
+  it('is idempotent, so a repeat upgrade changes nothing', () => {
+    const projectRoot = join(workspaceRoot, 'packages/sdk')
+    mkdirSync(projectRoot, { recursive: true })
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      ['module.exports = withNx(', '  {', '    sourceMap: true', '  },', '  {', '  }', ');', ''].join(
+        '\n'
+      )
+    )
+
+    expect(repairRollupSourceMaps(workspaceRoot)).toEqual([])
+  })
+
+  it('leaves a workspace with no rollup projects alone', () => {
+    expect(repairRollupSourceMaps(workspaceRoot)).toEqual([])
   })
 })

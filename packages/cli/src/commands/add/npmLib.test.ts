@@ -188,6 +188,68 @@ describe('runAdd npm-lib', () => {
     expect(config).toContain('String.fromCodePoint(92, 92)')
   })
 
+  it('switches source maps on, without which a .ts breakpoint can never bind', async () => {
+    // @nx/rollup leaves `sourceMap` undefined, so the build emits no .js.map at
+    // all and VS Code greys out every breakpoint. It has to be set in withNx's
+    // FIRST argument: the obvious `output: { sourcemap: true }` in the second is
+    // silently overridden, because withNx spreads the caller's `output` and then
+    // assigns `sourcemap: options.sourceMap` after it.
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const config = readFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), 'utf8')
+    const argumentOne = config.slice(0, config.indexOf('mnci-normalise-declaration-specifiers'))
+    expect(argumentOne).toContain('sourceMap: true')
+  })
+
+  it('swaps the compiler off swc, without which the maps come out EMPTY', async () => {
+    // The half that is easy to miss. @nx/js:lib hardcodes `compiler: 'swc'`, and
+    // @nx/rollup's swc plugin calls transform() without sourceMaps - so it
+    // returns no map, the chain breaks, and the bundle's map is structurally
+    // valid but semantically empty (`sources: []`). Measured on a real package
+    // here: swc gave 0 sources, babel gave 9, all resolving.
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const config = readFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), 'utf8')
+    expect(config).toContain("compiler: 'babel'")
+    expect(config).not.toContain("compiler: 'swc'")
+  })
+
+  it('repairs the sourcemap source paths, which rollup emits wrong twice over', async () => {
+    // rollup hands sourcemapPathTransform an OS-native path with one parent
+    // segment too many, so `sources` point at a directory above the project and
+    // resolve to nothing. Both are fixed: separators (a sources entry is
+    // URL-style, so a backslash is wrong on every platform) and depth.
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const config = readFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), 'utf8')
+    expect(config).toContain('sourcemapPathTransform')
+    // A collapse, not a fixed prefix, so it cannot go stale at another depth.
+    expect(config).toContain("replace(/^([.][.][/])+/, '../')")
+  })
+
+  it('keeps the source maps out of the published tarball', async () => {
+    // The counterweight to building them unconditionally: a .js.map carries the
+    // whole of sourcesContent, so publishing them would multiply the tarball for
+    // a benefit only this workspace's own debugger collects.
+    seedGeneratedManifest()
+
+    await runAdd('npm-lib', 'sdk', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as { files: string[] }
+    expect(manifest.files).toContain('!**/*.js.map')
+    // The declaration-map exclusion and the generator's own entries survive.
+    expect(manifest.files).toContain('!**/*.d.ts.map')
+    expect(manifest.files).toContain('dist')
+  })
+
   it('leaves a rollup config it does not recognise alone', async () => {
     // Guarded on the exact placeholder the generators write, so an upstream change
     // to their template makes this a no-op rather than corrupting the config.

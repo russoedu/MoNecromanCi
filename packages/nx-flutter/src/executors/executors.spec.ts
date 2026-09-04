@@ -1,13 +1,21 @@
-jest.mock('node:child_process', () => ({ spawnSync: jest.fn(() => ({ status: 0 })) }))
+// `cross-spawn`, NOT `node:child_process`. Every executor here goes through
+// `runFlutter`, which switched to cross-spawn when it turned out `spawnSync`
+// refuses to execute `flutter.bat` at all on Windows (the CVE-2024-27980 fix).
+// This mock was left pointing at the old module, so it stopped intercepting
+// anything: the specs were spawning the REAL flutter binary into a directory
+// that does not exist, and failed on every machine — passing nowhere, testing
+// nothing. A mock that no longer matches its subject is the quietest way for a
+// suite to stop being a gate.
+jest.mock('cross-spawn', () => ({ __esModule: true, default: { sync: jest.fn() } }))
 
-import { spawnSync } from 'node:child_process'
 import { isAbsolute, join } from 'node:path'
 import type { ExecutorContext } from '@nx/devkit'
+import spawn from 'cross-spawn'
 import buildExecutor from './build/executor'
 import lintExecutor from './lint/executor'
 import testExecutor from './test/executor'
 
-const mockSpawnSync = jest.mocked(spawnSync)
+const mockSpawnSync = jest.mocked(spawn.sync)
 
 /** A context shaped like the one Nx passes a target invocation. */
 function contextFor (root: string, projectRoot: string): ExecutorContext {
@@ -28,8 +36,15 @@ function spawnArguments (): { command: string; argv: string[]; cwd: string } {
   return { command, argv, cwd: options.cwd }
 }
 
+/** A completed `flutter` run, as cross-spawn reports one. */
+function completed (status: number): never {
+  // `runFlutter` reads `stdout`/`stderr` and `error` off the result, so a bare
+  // `{ status }` would make it log `undefined` and mis-report the reason.
+  return { status, stdout: '', stderr: '', error: undefined } as never
+}
+
 beforeEach(() => {
-  mockSpawnSync.mockReturnValue({ status: 0 } as never)
+  mockSpawnSync.mockReturnValue(completed(0))
 })
 
 describe('lint executor', () => {
@@ -42,11 +57,14 @@ describe('lint executor', () => {
     // --fatal-infos is redundant against the current default but pinned so the
     // gate cannot silently weaken if that default ever changes.
     expect(argv).toEqual(['analyze', '--fatal-infos'])
-    expect(cwd).toBe('/ws/apps/web')
+    // Built with join(), like every other path expectation here: this cwd is a
+    // REAL filesystem path handed to spawn, so it is correctly back-slashed on
+    // Windows. Asserting the POSIX spelling would be asserting a platform.
+    expect(cwd).toBe(join('/ws', 'apps/web'))
   })
 
   it('reports failure when the analyser exits non-zero', async () => {
-    mockSpawnSync.mockReturnValue({ status: 1 } as never)
+    mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(lintExecutor({}, contextFor('/ws', 'apps/web'))).resolves.toEqual({
       success: false
@@ -62,11 +80,11 @@ describe('test executor', () => {
     const { command, argv, cwd } = spawnArguments()
     expect(command).toBe('flutter')
     expect(argv).toEqual(['test'])
-    expect(cwd).toBe('/ws/libs/core')
+    expect(cwd).toBe(join('/ws', 'libs/core'))
   })
 
   it('reports failure when the test run exits non-zero', async () => {
-    mockSpawnSync.mockReturnValue({ status: 1 } as never)
+    mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(testExecutor({}, contextFor('/ws', 'libs/core'))).resolves.toEqual({
       success: false
@@ -116,7 +134,7 @@ describe('build executor', () => {
   })
 
   it('reports failure when the build exits non-zero', async () => {
-    mockSpawnSync.mockReturnValue({ status: 1 } as never)
+    mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(
       buildExecutor({ outputPath: 'dist/apps/web' }, contextFor('/ws', 'apps/web'))

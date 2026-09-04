@@ -24,7 +24,7 @@ first-party (or established community) Nx equivalent:
 | Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay   |
 | doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest               |
 
-## Commands (deliberately just four)
+## Commands (deliberately just six)
 
 ```sh
 mnci new my-repo            # create a monorepo (prompts scope + registry)
@@ -63,7 +63,177 @@ mnci upgrade                  # re-apply the latest overlay (see below)
 mnci upgrade --agent windows-latest   # ...with an explicit override
 
 mnci doctor                   # check this workspace's invariants (read-only)
+
+mnci sync                     # converge dependency ranges + nx sync (TS project refs)
+mnci sync --check             # ...report and exit non-zero, writing nothing
+
+mnci up                       # what has a newer release, grouped; pick what to update
+mnci up --check               # ...report only (the default when output is piped)
 ```
+
+## Where a dependency belongs: root vs project
+
+One rule, and it is the same in every language mnci supports:
+
+> **Shared development and tool packages live at the root. Runtime dependencies
+> belong to the package that imports them.**
+
+|          | Runtime deps declared in                                             | What the root file holds                                              |
+| -------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| npm      | each project's `package.json`                                        | `package.json` — scripts, devDependencies, `overrides` (root-only by npm's rules) |
+| pip      | each project's `pyproject.toml` (a function app: its `requirements.txt`) | `requirements-dev.txt` — the shared toolchain, nothing else            |
+| pub      | each member's `pubspec.yaml`                                         | `pubspec.yaml` — the member list and an SDK floor, **no** dependency blocks |
+| go       | *(nothing per-project)*                                              | `go.mod` — the whole module's requirements                            |
+
+**Go is the stated exception.** Its single-root-module layout means there are no
+per-project manifests to own anything, so every Go dependency is a root
+dependency by construction. That is deliberate — the multi-module `go.work`
+alternative was rejected because one stale `use` entry makes `go list -m -json`
+fail, which breaks the entire Nx project graph, not just the Go projects.
+
+### Why hoisting a runtime dependency to the root is a bug, not a tidy-up
+
+It looks like centralisation and it is not. Two independent reasons:
+
+1. **The root manifest is `private` and never published.** A runtime dependency
+   declared there reaches no consumer of any package; an installed `@scope/lib`
+   simply fails to resolve it.
+2. **`@nx/rollup` externalises exactly what a project's OWN manifest declares.**
+   Pull a dependency out of `packages/thing/package.json` and rollup stops
+   treating it as external — it **inlines a private copy into the bundle**.
+   Measured on a real generated workspace: moving `axios` out of one package's
+   manifest took its published bundle from 14.5 KB to 832 KB, silently.
+
+Two things catch this, from opposite directions. `@nx/dependency-checks` (in the
+root ESLint config, so it runs as part of `lint`) fails the project whose import
+is now undeclared, and `mnci doctor` fails the root that took it.
+
+## Debugging: breakpoints in the TypeScript, not the built JavaScript
+
+A publishable library is bundled by `@nx/rollup`, so what runs is `dist/*.js`.
+A breakpoint in the `.ts` binds only if the build emitted a source map that
+points back at real files. Three separate things had to be fixed for that to be
+true, and a generated workspace now gets all three:
+
+| | The default | What mnci writes |
+| --- | --- | --- |
+| `sourceMap` | unset, so **no `.js.map` at all** | `true`, in `withNx`'s first argument |
+| `compiler` | `'swc'`, hardcoded by `@nx/js:lib` | `'babel'` — see below |
+| `sources` paths | OS-native, one parent segment too many | repaired by `sourcemapPathTransform` |
+
+Each one alone leaves breakpoints grey, and none of them reports an error.
+
+**`sourceMap` has to go in the first argument.** The obvious spot is
+`output: { sourcemap: true }` in the second — the generator's own placeholder
+comment even suggests it — and it silently does nothing: `withNx` spreads your
+`output` and *then* assigns `sourcemap: options.sourceMap`, so its own undefined
+value always wins.
+
+**The compiler swap is not a preference.** `@nx/rollup`'s swc plugin calls
+swc's `transform()` without `sourceMaps`, so swc returns no map, the rollup
+chain breaks, and the map comes out valid-looking and **empty** — `sources: []`.
+Measured on a real package: swc gave 0 sources, babel gave 9. Revert the swap
+once Nx passes `sourceMaps` through; ROADMAP 7d has the one-line upstream fix.
+
+**The paths are wrong twice over.** rollup hands `sourcemapPathTransform` a
+path like `..\..\src\index.ts` for a map in `dist/` — one parent segment too
+many, so it resolves above the project to a file that does not exist, and
+back-slashed, which is invalid in a sourcemap `sources` entry on every platform
+(a `sources` entry is URL-style — the same bug class as the declaration stub).
+Both are repaired, by collapsing the parent-segment run rather than stripping a
+fixed prefix, so it cannot go stale at another nesting depth.
+
+**Maps are built always and published never.** `!**/*.js.map` joins `files`, so
+`npm run <lib>:build` is debuggable while the tarball stays lean — the same
+trade already made for `.d.ts.map`. There is deliberately no dev-build flag: a
+build you have to remember to run differently is one you will not have run at
+the moment you need it.
+
+`mnci doctor` reports any rollup config missing this, and `mnci upgrade` sweeps
+`packages/*` and `libs/*` to add it — a rollup config is written once at `add`
+time, so a workspace generated earlier would never fix itself otherwise. The
+sweep is idempotent.
+
+## `mnci sync`: making every project agree
+
+`nx sync` runs the workspace's **sync generators**, and the only one a generated
+workspace registers is `@nx/js:typescript-sync` — it reconciles TypeScript project
+references and has no opinion whatsoever about dependency versions. And npm has no
+`catalog:`, pnpm's one-version-per-workspace mechanism, so keeping two projects on
+the same range is a convention nothing enforces.
+
+`mnci sync` is both halves:
+
+1. Every external package declared at more than one version converges on one spec.
+2. `nx sync` then reconciles the TypeScript project references.
+
+The winning spec is the one matching what is actually **resolved** —
+`node_modules` for npm, `pubspec.lock` for pub, the interpreter for pip. That is
+the same source `@nx/dependency-checks` pins a drifted range to when it
+auto-fixes, so the command and the lint rule converge on one answer instead of
+overwriting each other. With nothing installed, the highest declared range wins
+instead, and the report says which rule was applied.
+
+It keeps the range operator the majority of sites already use, so a workspace
+that pins exactly stays pinned.
+
+**Three things it deliberately never touches:**
+
+- **Peer ranges.** `>=21.0.0` on `@nx/devkit` is a *compatibility declaration*,
+  not a version choice — narrowing it to the 23.x you happen to resolve drops two
+  majors of consumers. The first run of this command against mnci's own repo
+  reported six findings, five of which were exactly that mistake.
+- **The workspace's own projects.** An internal `@scope/lib` is symlinked and
+  versioned by `nx release`; its loose range is what lets both the link and the
+  tag satisfy it.
+- **A spec whose shape it cannot safely edit** — a `git:`/`path:`/URL target, a
+  `workspace:` protocol, an `npm:pkg@range` alias, a pub `git:` map. Those are
+  reported as a warning and left alone.
+
+**Go reports "nothing to sync" rather than a silent pass**, because one root
+`go.mod` means one version of every module — there is nothing that *could*
+disagree.
+
+`--check` reports and exits non-zero without writing anything, so it works as a CI
+step. `--ecosystem npm|pip|pub|go` narrows the run.
+
+## `mnci up`: what has a newer release, and who is using it
+
+Modelled on `npm-check -u` — the same four sections in the same order, the same
+interactive multiselect — with one addition that `npm-check` cannot give you in a
+monorepo: **every project declaring the package**.
+
+```
+Minor Update  New backwards-compatible features.
+  @nx/devkit                 devDep/peerDep   23.1.1  ›  23.2.0  (root), packages/nx-python-pip, packages/nx-flutter
+  @typescript-eslint/parser  dep/devDep        8.68.0  ›  8.69.0  packages/eslint-config, packages/az-durable
+```
+
+That column is the point. It is what tells you an upgrade touches three projects
+before you pick it, and picking one rewrites **every** declaration of it — which
+is what stops `mnci up` from creating the drift `mnci sync` then has to repair.
+
+Latest versions come from each ecosystem's own tooling, never a hand-rolled HTTP
+call: `npm view` (so a scoped Azure Artifacts feed and its `.npmrc` credentials
+just work), `pip index versions`, one `go list -m -u -json all`, one
+`flutter pub outdated --json`. An ecosystem whose toolchain is absent is reported
+as a loud `SKIPPED`, never quietly dropped.
+
+The same three exclusions as `mnci sync` apply, plus two more that only matter
+here: an **indirect Go module** (`go mod tidy` owns those) and an **aliased
+install**, where the manifest key names a different package than the one on disk.
+The alias case is not hypothetical — mnci's own root manifest pins the dual
+TypeScript compiler as `typescript: npm:@typescript/typescript6@^6.0.2`, and the
+first run of this command offered "typescript 6.0.2 › 7.0.2", which is real
+TypeScript's version, about a package the workspace does not have.
+
+A selected Go module is upgraded with `go get <module>@<version>`, never by
+editing `go.mod` — that file is the toolchain's to write.
+
+Flags: `--check` (report only; also the automatic behaviour when stdout is not a
+TTY, so a piped or CI run reports instead of hanging on a prompt), `-y/--yes`
+(take everything), `--ecosystem`, and `--no-install` (edit the manifests but skip
+the reinstall).
 
 ## `mnci doctor`: checking the invariants actually hold
 
@@ -83,6 +253,8 @@ ever needed is noise that trains people to ignore the output.
 | `.npmrc` matches the recorded registry                  | The two registry kinds get different files; an Azure workspace also needs its scope routed                                                          |
 | `versionActions` on publishable Dart/Python packages    | Its absence aborts `nx release` for the **whole** workspace, not just that project                                                                  |
 | `nx sync:check`                                         | A stale TypeScript project reference that was never committed                                                                                       |
+| No runtime dependency in the root manifest              | A dependency hoisted to the root, which reaches no consumer (the root is private) and makes `@nx/rollup` inline a private copy into the package that imports it — 14.5 KB to 832 KB on a real measurement. See "Where a dependency belongs" above |
+| Source maps enabled in every rollup config              | A build that emits no `.js.map`, so every breakpoint in a `.ts` file stays grey and unbound with nothing reporting why. A rollup config is written once at `add` time, so an older workspace never fixes itself — `mnci upgrade` sweeps them |
 | No retired formatter is still configured                | A leftover `.prettierrc*`, `.oxfmtrc.json` or `oxlint.config.ts`, or a `prettier`/`oxlint`/`oxfmt` devDependency, runs from no command line — which is what makes it dangerous, since an editor extension still resolves it and reformats on save, undoing Standard after every gate has passed |
 
 Everything else is plain Nx, surfaced as a small curated set of root scripts —
