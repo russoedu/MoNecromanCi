@@ -894,3 +894,123 @@ export function registerProjectCommands (
     })
   )
 }
+
+/** Where a generated project's own manifest can live, in resolution order. */
+const PROJECT_MANIFEST_ROOTS = ['apps', 'packages', 'libs'] as const
+
+/**
+ * Reads the root manifest's runtime dependencies.
+ *
+ * @remarks
+ * Snapshotted before a generator runs so {@link relocateRootRuntimeDependencies}
+ * can attribute what it added.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The `dependencies` block, or an empty object when unreadable.
+ * @throws Never - an unreadable manifest reads as empty.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function rootRuntimeDependencies (workspaceRoot: string): Record<string, string> {
+  try {
+    return (
+      readJson<{ dependencies?: Record<string, string> }>(join(workspaceRoot, 'package.json'))
+        .dependencies ?? {}
+    )
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Moves runtime dependencies a generator hoisted to the root into the project.
+ *
+ * @remarks
+ * **The root/project policy, applied rather than only checked.** `mnci doctor`
+ * gained a `no runtime dependencies in the root manifest` check, and a freshly
+ * generated workspace failed it: `@nx/react:application` puts `react` and
+ * `react-dom` in the ROOT manifest, `--framework=express` puts `express` there,
+ * and `add node-function-app` installs `@azure/functions` the same way. So mnci
+ * generated workspaces its own doctor rejected — the "a gate that fails on day
+ * one" shape this repo has hit before.
+ *
+ * The reason the policy matters is `@nx/rollup`, which externalises exactly what
+ * a project's OWN manifest declares: a dependency left at the root is not shared,
+ * it is **inlined as a private copy** into that project's published bundle. The
+ * root is also `private` and never published, so a consumer of `@scope/lib` can
+ * never resolve it.
+ *
+ * **Attribution is by diff, not by guessing what a project imports.** Whatever
+ * appeared in the root's `dependencies` while this generator ran belongs to the
+ * project it just generated — accurate by construction, and it needs no import
+ * analysis and no per-kind list to keep in sync as kinds are added.
+ *
+ * A value the project already declares **wins**: `add node-function-app` stamps
+ * `@azure/functions` into the app manifest at the exact installed version, which
+ * is more precise than the root's range.
+ *
+ * The lockfile is refreshed, because moving a dependency between manifests
+ * leaves it stale. Measured: npm 10.9.7 runs `npm ci` against the stale lock
+ * without complaint, which is leniency rather than correctness — the lock still
+ * recorded the dependency against the root — and this repo has been bitten by
+ * npm 10/11 divergence three times. A failure here warns rather than throws: the
+ * project is already generated, and the remedy is one `npm install`.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param projectName - The project just generated.
+ * @param before - The root `dependencies` snapshot taken before the generator ran.
+ * @returns Nothing.
+ * @throws Never - an unreadable or absent project manifest leaves the root alone.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function relocateRootRuntimeDependencies (
+  workspaceRoot: string,
+  projectName: string,
+  before: Record<string, string>
+): void {
+  const after = rootRuntimeDependencies(workspaceRoot)
+  const added = Object.keys(after).filter(name => !Object.hasOwn(before, name))
+  if (added.length === 0) {
+    return
+  }
+
+  const manifestPath = PROJECT_MANIFEST_ROOTS.map(root =>
+    join(workspaceRoot, root, projectName, 'package.json')
+  ).find(candidate => fileExists(candidate))
+  if (manifestPath === undefined) {
+    // Nothing to move them INTO — a Python, Go or Dart project has no npm
+    // manifest. Leaving the root untouched is the honest outcome: dropping the
+    // declaration would break resolution for whatever does need it.
+    return
+  }
+
+  const manifest = readJson<Record<string, unknown>>(manifestPath)
+  const owned = (manifest.dependencies as Record<string, string> | undefined) ?? {}
+  // `owned` is spread LAST so a value the project already declares wins, and
+  // that ordering is the only mechanism enforcing it — filtering `moved` as
+  // well would be a second, redundant guard that makes neither testable.
+  const moved = Object.fromEntries(added.map(name => [name, after[name]]))
+  writeFileEnsured(manifestPath, toJson({ ...manifest, dependencies: { ...moved, ...owned } }))
+
+  const remaining = Object.fromEntries(
+    Object.entries(after).filter(([name]) => !added.includes(name))
+  )
+  const rootManifest = readJson<Record<string, unknown>>(join(workspaceRoot, 'package.json'))
+  const { dependencies: _dropped, ...rest } = rootManifest
+  writeFileEnsured(
+    join(workspaceRoot, 'package.json'),
+    toJson(Object.keys(remaining).length > 0 ? { ...rest, dependencies: remaining } : rest)
+  )
+  logger.step(`Moved ${added.join(', ')} into ${projectName}'s own manifest`)
+
+  if (
+    runShell(
+      'npm',
+      ['install', '--package-lock-only', '--no-audit', '--no-fund'],
+      workspaceRoot
+    ) !== 0
+  ) {
+    logger.warn(
+      `Could not refresh package-lock.json after moving ${added.join(', ')}. Run 'npm install'.`
+    )
+  }
+}

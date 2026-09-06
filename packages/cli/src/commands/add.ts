@@ -22,7 +22,9 @@ import { syncProjectReferences } from './sync'
 import {
   markPrivate,
   registerProjectCommands,
+  relocateRootRuntimeDependencies,
   removeGeneratedEslintConfig,
+  rootRuntimeDependencies,
   type AddOptions,
   type WorkspaceStack
 } from './add/shared'
@@ -204,6 +206,12 @@ export async function runAdd (
   // check, which only fires on the prompted path.
   assertValidProjectName(resolvedName, 'Project name')
 
+  // Snapshotted before any generator runs, so whatever appears in the root's
+  // runtime dependencies afterwards can be attributed to this project and moved
+  // into its own manifest. See relocateRootRuntimeDependencies for why the root
+  // is the wrong place for one.
+  const rootDependenciesBefore = rootRuntimeDependencies(workspaceRoot)
+
   switch (resolvedKind) {
     case 'react-app': {
       addReactApp(workspaceRoot, resolvedName, stack)
@@ -316,6 +324,8 @@ export async function runAdd (
       )
     }
   }
+
+  relocateRootRuntimeDependencies(workspaceRoot, resolvedName, rootDependenciesBefore)
 
   syncProjectReferences(workspaceRoot)
 

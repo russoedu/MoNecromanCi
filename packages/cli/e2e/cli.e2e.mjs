@@ -1147,6 +1147,32 @@ section('js stack', [], () => {
     doctorClean.output
   )
 
+  // The positive half, and the one a green doctor alone does not give: the
+  // dependencies must have MOVED, not merely stopped being declared. Nx's
+  // generators put react/react-dom and express in the ROOT manifest; `mnci add`
+  // relocates each into the project it generated, because @nx/rollup
+  // externalises only what a project's own manifest declares — a dependency
+  // left at the root is inlined as a private copy instead of shared.
+  const projectDependencies = relative =>
+    JSON.parse(readFileSync(path.join(workspace, relative, 'package.json'), 'utf8'))
+      .dependencies ?? {}
+  enforce(
+    'add relocated express into the node app that uses it, not the root',
+    Object.hasOwn(projectDependencies('apps/svc-express'), 'express'),
+    JSON.stringify(projectDependencies('apps/svc-express'))
+  )
+  enforce(
+    'add relocated react and react-dom into the react app',
+    ['react', 'react-dom'].every(name => Object.hasOwn(projectDependencies('apps/web'), name)),
+    JSON.stringify(projectDependencies('apps/web'))
+  )
+  const rootDeclared = JSON.parse(readFileSync(rootManifestPath, 'utf8')).dependencies ?? {}
+  enforce(
+    'the root manifest declares no runtime dependency at all',
+    Object.keys(rootDeclared).length === 0,
+    JSON.stringify(rootDeclared)
+  )
+
   const manifestWithRootDependency = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
   manifestWithRootDependency.dependencies = { ms: `^${msVersion}` }
   writeFileSync(

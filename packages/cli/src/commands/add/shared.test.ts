@@ -1,7 +1,21 @@
+jest.mock('../../nx', () => ({
+  runNx: jest.fn(),
+  runFormatter: jest.fn(),
+  runShell: jest.fn(() => 0)
+}))
+
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { registerProjectCommands, removeGeneratedEslintConfig } from './shared'
+import { runShell } from '../../nx'
+import {
+  registerProjectCommands,
+  relocateRootRuntimeDependencies,
+  removeGeneratedEslintConfig,
+  rootRuntimeDependencies
+} from './shared'
+
+const mockRunShell = jest.mocked(runShell)
 
 let workspaceRoot: string
 
@@ -26,6 +40,7 @@ function tasks (): Record<string, unknown>[] {
 beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-shared-'))
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
+  mockRunShell.mockImplementation(() => 0)
 })
 
 afterEach(() => {
@@ -190,5 +205,134 @@ describe('removeGeneratedEslintConfig', () => {
     removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
 
     expect(existsSync(join(workspaceRoot, 'eslint.config.mjs'))).toBe(true)
+  })
+})
+
+/** Writes a root manifest with the given runtime dependencies. */
+function writeRoot (dependencies: Record<string, string> | undefined): void {
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', private: true, ...(dependencies && { dependencies }) })
+  )
+}
+
+/** Creates a project manifest under the given root directory. */
+function writeProject (
+  root: string,
+  name: string,
+  manifest: Record<string, unknown> = {}
+): string {
+  mkdirSync(join(workspaceRoot, root, name), { recursive: true })
+  const path = join(workspaceRoot, root, name, 'package.json')
+  writeFileSync(path, JSON.stringify({ name: `@demo/${name}`, ...manifest }))
+  return path
+}
+
+/** Reads a manifest's dependencies back. */
+function deps (path: string): Record<string, string> | undefined {
+  return (
+    JSON.parse(readFileSync(path, 'utf8')) as { dependencies?: Record<string, string> }
+  ).dependencies
+}
+
+describe('relocateRootRuntimeDependencies', () => {
+  it('moves what the generator added into the project, leaving the root with none', () => {
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ react: '^19.0.0', 'react-dom': '^19.0.0' })
+    const project = writeProject('apps', 'web')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'web', before)
+
+    expect(deps(project)).toEqual({ react: '^19.0.0', 'react-dom': '^19.0.0' })
+    // The doctor check this exists to satisfy reads `dependencies` and requires
+    // it empty, so the key is dropped rather than left as {}.
+    expect(deps(join(workspaceRoot, 'package.json'))).toBeUndefined()
+  })
+
+  it('leaves dependencies that were already there before the generator ran', () => {
+    writeRoot({ ms: '^2.1.3' })
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3', express: '^5.0.0' })
+    const project = writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(deps(project)).toEqual({ express: '^5.0.0' })
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+  })
+
+  it("keeps the project's own version when it already declares the package", () => {
+    // `add node-function-app` stamps the exact installed version into the app
+    // manifest; the root's range is looser, so the root must not win.
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ '@azure/functions': '^4.0.0' })
+    const project = writeProject('apps', 'api', {
+      dependencies: { '@azure/functions': '^4.16.2' }
+    })
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'api', before)
+
+    expect(deps(project)).toEqual({ '@azure/functions': '^4.16.2' })
+    expect(deps(join(workspaceRoot, 'package.json'))).toBeUndefined()
+  })
+
+  it('finds the project under packages/ and libs/ too', () => {
+    for (const [root, name] of [['packages', 'sdk'], ['libs', 'utils']] as const) {
+      const before = rootRuntimeDependencies(workspaceRoot)
+      writeRoot({ ms: '^2.1.3' })
+      const project = writeProject(root, name)
+      relocateRootRuntimeDependencies(workspaceRoot, name, before)
+      expect(deps(project)).toEqual({ ms: '^2.1.3' })
+    }
+  })
+
+  it('leaves the root alone when the project has no npm manifest', () => {
+    // A Python, Go or Dart project has nothing to move them into. Dropping the
+    // declaration would break resolution for whatever does need it.
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    mkdirSync(join(workspaceRoot, 'apps/pysvc'), { recursive: true })
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'pysvc', before)
+
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+  })
+
+  it('refreshes the lockfile, because moving a dependency leaves it stale', () => {
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(mockRunShell).toHaveBeenCalledWith(
+      'npm',
+      ['install', '--package-lock-only', '--no-audit', '--no-fund'],
+      workspaceRoot
+    )
+  })
+
+  it('does nothing at all when the generator added no runtime dependency', () => {
+    writeRoot({ ms: '^2.1.3' })
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+    expect(mockRunShell).not.toHaveBeenCalled()
+  })
+
+  it('warns rather than throwing when the lockfile refresh fails', () => {
+    mockRunShell.mockImplementation(() => 1)
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    const project = writeProject('apps', 'svc')
+
+    expect(() => {
+      relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+    }).not.toThrow()
+    // The move still stands — the project is already generated by this point.
+    expect(deps(project)).toEqual({ ms: '^2.1.3' })
   })
 })
