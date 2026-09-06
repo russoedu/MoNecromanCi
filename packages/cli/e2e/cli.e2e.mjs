@@ -808,12 +808,41 @@ section('js stack', [], () => {
     /* leaves dependabotParsed null → the check below fails with the parse error surfaced above */
   }
   enforce(
-    '.github/dependabot.yml is valid YAML with npm, github-actions and glob-scoped pip + pub ecosystems',
+    '.github/dependabot.yml carries npm + github-actions, and NOT pip/pub on a workspace with neither',
     Boolean(dependabotParsed) &&
       dependabotParsed.updates?.map(update => update['package-ecosystem']).join(',') ===
-        'npm,github-actions,pip,pub' &&
-      Array.isArray(dependabotParsed.updates?.[2]?.directories) &&
-      Array.isArray(dependabotParsed.updates?.[3]?.directories)
+        'npm,github-actions'
+  )
+
+  // The other half, and the one that matters: the pip block must APPEAR once a
+  // Python project exists. Emitting it unconditionally is what made Dependabot
+  // fail weekly in every workspace that had no Python — an ecosystem entry whose
+  // directories match no manifest is a hard failure, not a no-op. A bare
+  // pyproject.toml is enough, because detection reads the manifests on disk;
+  // adding a real python project here would cost a plugin install for no extra
+  // coverage of THIS behaviour.
+  mkdirSync(path.join(workspaceGithub, 'python-packages/pylib'), { recursive: true })
+  writeFileSync(
+    path.join(workspaceGithub, 'python-packages/pylib/pyproject.toml'),
+    '[project]\nname = "pylib"\nversion = "0.1.0"\n'
+  )
+  run(`node ${CLI} upgrade`, workspaceGithub)
+  let dependabotAfter = null
+  try {
+    dependabotAfter = yaml.load(
+      readFileSync(path.join(workspaceGithub, '.github/dependabot.yml'), 'utf8')
+    )
+  } catch {
+    /* leaves dependabotAfter null → the check below fails with the parse error above */
+  }
+  const ecosystemsAfter = dependabotAfter?.updates?.map(update => update['package-ecosystem'])
+  enforce(
+    'mnci upgrade back-fills the pip block once a Python project exists — and still no pub',
+    Array.isArray(ecosystemsAfter) &&
+      ecosystemsAfter.join(',') === 'npm,github-actions,pip' &&
+      Array.isArray(dependabotAfter.updates[2].directories) &&
+      dependabotAfter.updates[2].directories.join(',') ===
+        '/apps/*,/python-packages/*,/libs/*'
   )
 
   /* ---------------------------------------------------------------------------
@@ -1116,6 +1145,32 @@ section('js stack', [], () => {
     'mnci doctor passes on a freshly generated workspace',
     doctorClean.ok,
     doctorClean.output
+  )
+
+  // The positive half, and the one a green doctor alone does not give: the
+  // dependencies must have MOVED, not merely stopped being declared. Nx's
+  // generators put react/react-dom and express in the ROOT manifest; `mnci add`
+  // relocates each into the project it generated, because @nx/rollup
+  // externalises only what a project's own manifest declares — a dependency
+  // left at the root is inlined as a private copy instead of shared.
+  const projectDependencies = relative =>
+    JSON.parse(readFileSync(path.join(workspace, relative, 'package.json'), 'utf8'))
+      .dependencies ?? {}
+  enforce(
+    'add relocated express into the node app that uses it, not the root',
+    Object.hasOwn(projectDependencies('apps/svc-express'), 'express'),
+    JSON.stringify(projectDependencies('apps/svc-express'))
+  )
+  enforce(
+    'add relocated react and react-dom into the react app',
+    ['react', 'react-dom'].every(name => Object.hasOwn(projectDependencies('apps/web'), name)),
+    JSON.stringify(projectDependencies('apps/web'))
+  )
+  const rootDeclared = JSON.parse(readFileSync(rootManifestPath, 'utf8')).dependencies ?? {}
+  enforce(
+    'the root manifest declares no runtime dependency at all',
+    Object.keys(rootDeclared).length === 0,
+    JSON.stringify(rootDeclared)
   )
 
   const manifestWithRootDependency = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
