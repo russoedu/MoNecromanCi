@@ -1946,8 +1946,23 @@ const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');c
  * @remarks
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  * Skips cleanly when the workspace has no apps yet.
+ *
+ * **Detects a project the way Nx itself does — `apps/*\/project.json`, OR an
+ * `apps/*\/package.json` carrying an `nx` key — not `project.json` alone.**
+ * `@nx/node:application` and `@nx/react:application` write no `project.json`
+ * at all: their targets are inferred, and `add/*.ts`'s `addNxTargets` layers
+ * the `package` target on through the manifest's own `nx.targets` field (see
+ * its doc comment) specifically to avoid the project-name clash a second
+ * `project.json` would risk in a TS-solution workspace. A `project.json`-only
+ * check therefore never sees a `node-app` or `react-app` project at all: the
+ * step silently logs "No apps to pack - skipping", `dist/drop` stays empty,
+ * and every step downstream (`PublishBuildArtifacts`, the per-app build tag)
+ * has nothing to work with — a green run with no artifact. Go, Python and
+ * Flutter apps all get a real generator-written `project.json`, so they were
+ * never affected; only the manifest-inference kinds were invisible to this
+ * check.
  */
-const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});if(fs.globSync(\'apps/*/project.json\').length===0){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
+const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});if(!hasProjectJson&&!hasInlineNx){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
  * Builds the portable `node -e` one-liner that versions, tags and publishes

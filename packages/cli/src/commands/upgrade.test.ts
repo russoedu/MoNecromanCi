@@ -281,6 +281,47 @@ describe('runUpgrade', () => {
     expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
   })
 
+  it('preserves tasks, launch and settings when the .code-workspace carries a comment', () => {
+    // readCodeWorkspace used to throw on the first comment character, and
+    // every caller treated that throw as "nothing to preserve" — so a single
+    // `//` line in a hand-edited .code-workspace made `mnci upgrade` discard
+    // every registered task, every user launch config and every custom
+    // setting, not just fail to read them.
+    seedWorkspace()
+    applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
+    const path = join(workspaceRoot, 'demo.code-workspace')
+    const file = JSON.parse(readFileSync(path, 'utf8')) as {
+      settings: Record<string, unknown>
+      launch:   { version: string; configurations: Record<string, unknown>[] }
+      tasks:    { version: string; tasks: Record<string, unknown>[] }
+    }
+    file.settings['cSpell.words'] = ['monecromanci', 'rollup']
+    file.launch.configurations.push({
+      type:    'node',
+      request: 'launch',
+      name:    'debug my thing',
+      program: '${workspaceFolder:demo}/apps/web/dist/main.js',
+    })
+    file.tasks.tasks = [{ label: 'web: qa', type: 'npm', script: 'web:qa' }]
+    const withComment = [
+      '{',
+      '  // hand-added: keeps cSpell quiet about our own project vocabulary',
+      JSON.stringify(file, undefined, 2).slice(1),
+    ].join('\n')
+    writeFileSync(path, withComment)
+
+    runUpgrade(workspaceRoot, {})
+
+    const after = JSON.parse(readFileSync(path, 'utf8')) as {
+      settings: Record<string, unknown>
+      launch:   { configurations: { name: string }[] }
+      tasks:    { tasks: { label: string }[] }
+    }
+    expect(after.settings['cSpell.words']).toEqual(['monecromanci', 'rollup'])
+    expect(after.launch.configurations.map(c => c.name)).toContain('debug my thing')
+    expect(after.tasks.tasks.map(t => t.label)).toEqual(['web: qa'])
+  })
+
   it('formats the workspace afterwards, so the nx.json it rewrote passes lint', () => {
     seedWorkspace()
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)

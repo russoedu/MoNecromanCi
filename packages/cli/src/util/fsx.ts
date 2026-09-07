@@ -19,23 +19,117 @@ export function readJson<T> (path: string): T {
 }
 
 /**
- * Reads a `.code-workspace` file, tolerating the trailing commas VS Code allows.
+ * Strips `//` and `/* *\/` comments from a JSONC document, leaving every
+ * string literal untouched.
+ *
+ * @remarks
+ * A single-pass tokenizer rather than a regex, because a regex cannot tell a
+ * `//` inside a string (a URL in a settings value, say) from a real comment
+ * without tracking string state — and getting that wrong corrupts the value
+ * instead of merely failing to strip a comment. String state itself has to
+ * track escape sequences (`\"` does not end the string, `\\` does not escape
+ * the character after it) or an escaped backslash immediately before a
+ * closing quote is misread as escaping the quote.
+ *
+ * Comments are dropped rather than replaced with whitespace: the result is
+ * only ever fed to `JSON.parse`, never written back verbatim, so preserving
+ * line numbers or layout has no reader to matter to.
+ *
+ * @param text - The JSONC document's raw text.
+ * @returns The same text with every comment removed.
+ * @throws Never - performs a pure character scan.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function stripJsonComments (text: string): string {
+  let result = ''
+  let inString = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false
+        result += char
+      }
+      continue
+    }
+
+    const next = text[i + 1]
+
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false
+        i++
+      }
+      continue
+    }
+    if (inString) {
+      result += char
+      if (char === '\\') {
+        result += next
+        i++
+        continue
+      }
+      if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      result += char
+      continue
+    }
+    if (char === '/' && next === '/') {
+      inLineComment = true
+      i++
+      continue
+    }
+    if (char === '/' && next === '*') {
+      inBlockComment = true
+      i++
+      continue
+    }
+    result += char
+  }
+
+  return result
+}
+
+/**
+ * Reads a `.code-workspace` file, tolerating the JSONC dialect VS Code writes:
+ * comments and trailing commas.
  *
  * @remarks
  * `.code-workspace` is VS Code's own JSONC dialect, not strict JSON — VS Code
- * itself writes trailing commas into it, and so does anything that formats the
- * file as JSONC. `JSON.parse` rejects those outright, so reading this file
- * strictly means mnci breaks on a workspace the user's own editor last touched.
- * Tolerating the dialect the file is actually written in is the only correct
- * read here.
+ * itself writes trailing commas into it, and a hand-maintained file routinely
+ * carries `//`/`/* *\/` comments explaining a setting, since VS Code's own
+ * editor accepts them there. `JSON.parse` rejects both outright, so reading
+ * this file strictly means mnci breaks on exactly the workspace file a real
+ * user has actually touched.
+ *
+ * Comments used to be left unstripped, on the reasoning that "mnci never
+ * writes one, and a file with hand-added comments predates this handling
+ * regardless" — true, and beside the point: predating this function's
+ * handling does not stop a workspace from HAVING one. A single comment
+ * anywhere in the file made `JSON.parse` throw, which every caller treats as
+ * "nothing to preserve" and merges against `{}` — silently discarding
+ * `folders`, `settings`, `extensions` and `launch` wholesale, and every task
+ * `registerProjectCommands` had ever registered, the first time `mnci add` or
+ * `mnci upgrade` touched a workspace whose `.code-workspace` had a comment in
+ * it. Reproduced on a file with a single `// eslint settings` comment line.
+ *
+ * Comments are stripped before the trailing-comma pass, deliberately: a line
+ * comment on its own line right before a closing brace leaves a trailing
+ * comma behind once removed, which the second pass still needs to catch.
  *
  * Shared by the two layers that both have to read this file: `applyOverlay`
  * (which must preserve the `tasks` array when it rewrites the rest) and
  * `registerProjectCommands` (which appends to it). One implementation, because
  * two would drift on exactly the dialect quirk that motivated it.
- *
- * Comments are not stripped: mnci never writes one, and a file with hand-added
- * comments predates this handling regardless.
  *
  * @param path - Absolute path to the `.code-workspace` file.
  * @returns The parsed value, or `undefined` when the file is missing or
@@ -45,7 +139,9 @@ export function readJson<T> (path: string): T {
  */
 export function readCodeWorkspace<T> (path: string): T | undefined {
   try {
-    return JSON.parse(readFileSync(path, 'utf8').replaceAll(/,(\s*[}\]])/g, '$1')) as T
+    const withoutComments = stripJsonComments(readFileSync(path, 'utf8'))
+
+    return JSON.parse(withoutComments.replaceAll(/,(\s*[}\]])/g, '$1')) as T
   } catch {
     return undefined
   }

@@ -6,10 +6,12 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { githubActionsYaml } from '../../overlay'
 import { runAdd, type ProjectKind } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
@@ -346,4 +348,78 @@ describe('root-only ESLint config', () => {
       }
     },
   )
+})
+
+// Skipped on Windows for the same reason overlay.test.ts's other guard-execution
+// suites are: a PATH stub for `npx` needs a `.cmd` shim under cmd.exe, and this
+// platform's job here is the e2e, not these unit-level guard executions.
+const describeOnPosix = process.platform === 'win32' ? describe.skip : describe
+
+describeOnPosix("the generated pipeline's pack-apps guard, run against a real add", () => {
+  // The reported bug: `mnci add node-app` writes no `apps/*/project.json` at all
+  // (targets are inference-only, attached via the manifest's `nx` field — see
+  // addNxTargets), while the pipeline's pack step used to detect an app by
+  // globbing `apps/*/project.json` alone. So the step always logged "No apps to
+  // pack - skipping" for a workspace whose only app was a node-app or react-app —
+  // a green run with an empty dist/drop, silently.
+  it('is detected by the pack guard even though node-app writes no project.json', async () => {
+    // The generator is mocked, so pre-create the manifest it would have
+    // written — addNxTargets then attaches the real `package` target to it,
+    // exactly as a real `mnci add node-app` does.
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'apps/svc/package.json'),
+      JSON.stringify({ name: '@demo/svc', version: '0.0.1', private: true, nx: { targets: {} } }),
+    )
+
+    await runAdd('node-app', 'svc', {})
+
+    // The premise of the bug: no project.json anywhere under apps/.
+    expect(existsSync(join(workspaceRoot, 'apps/svc/project.json'))).toBe(false)
+
+    const pipeline = githubActionsYaml('ubuntu-latest')
+    const guard = (pipeline.match(/node -e "[^"]*"/g) ?? []).find(candidate =>
+      candidate.includes('No apps to pack'),
+    )
+    expect(guard).toBeTruthy()
+
+    // A stub `npx` on PATH records whether the guard ever tried to pack.
+    const log = join(workspaceRoot, 'nx-command.log')
+    mkdirSync(join(workspaceRoot, 'stub-bin'))
+    writeFileSync(
+      join(workspaceRoot, 'stub-bin/npx'),
+      `#!/bin/sh\necho "$@" > "${log}"\nexit 0\n`,
+      { mode: 0o755 },
+    )
+
+    const result = spawnSync(guard ?? '', {
+      cwd:      workspaceRoot,
+      shell:    true,
+      encoding: 'utf8',
+      env:      {
+        ...process.env,
+        PATH: `${join(workspaceRoot, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`,
+      },
+    })
+
+    expect(result.stdout).not.toContain('No apps to pack')
+    expect(existsSync(log)).toBe(true)
+    expect(readFileSync(log, 'utf8').trim()).toBe('nx run-many -t package')
+  })
+
+  it('still skips cleanly on a workspace with no apps at all', () => {
+    const pipeline = githubActionsYaml('ubuntu-latest')
+    const guard = (pipeline.match(/node -e "[^"]*"/g) ?? []).find(candidate =>
+      candidate.includes('No apps to pack'),
+    )
+
+    const result = spawnSync(guard ?? '', {
+      cwd:      workspaceRoot,
+      shell:    true,
+      encoding: 'utf8',
+    })
+
+    expect(result.stdout).toContain('No apps to pack')
+    expect(result.status).toBe(0)
+  })
 })
