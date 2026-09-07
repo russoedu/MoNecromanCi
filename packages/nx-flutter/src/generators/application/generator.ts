@@ -22,15 +22,16 @@ import type { AppGeneratorSchema } from './schema.d'
  */
 export default async function appGenerator (
   tree: Tree,
-  options: AppGeneratorSchema
+  options: AppGeneratorSchema,
 ): Promise<GeneratorCallback> {
   const task = generateFlutterProject(tree, {
-    name: options.name,
-    directory: options.directory ?? `apps/${options.name}`,
+    name:        options.name,
+    directory:   options.directory ?? `apps/${options.name}`,
     projectType: 'application',
-    tag: 'type:flutter-app',
-    buildable: true
+    tag:         'type:flutter-app',
+    buildable:   true,
   })
   await formatFiles(tree)
+
   return task
 }

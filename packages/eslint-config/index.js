@@ -1,6 +1,7 @@
 import base from './configs/base.js'
 import css from './configs/css.js'
 import dependencyChecks from './configs/dependencyChecks.js'
+import houseStyle from './configs/houseStyle.js'
 import html from './configs/html.js'
 import importGraph from './configs/importGraph.js'
 import jest from './configs/jest.js'
@@ -17,6 +18,7 @@ import yaml from './configs/yaml.js'
 export { default as base } from './configs/base.js'
 export { default as css } from './configs/css.js'
 export { default as dependencyChecks } from './configs/dependencyChecks.js'
+export { default as houseStyle } from './configs/houseStyle.js'
 export { default as html } from './configs/html.js'
 export { default as importGraph } from './configs/importGraph.js'
 export { default as jest } from './configs/jest.js'
@@ -54,7 +56,7 @@ export const ignores = [
   // golangci-lint, flutter analyze) wired as that project's `lint` target.
   '**/.venv',
   '**/__pycache__',
-  '**/.dart_tool'
+  '**/.dart_tool',
 ]
 
 /**
@@ -78,6 +80,7 @@ export const ignores = [
  */
 export default function mnci (options = {}) {
   const { workspaceRoot } = options
+
   return [
     { name: 'mnci/ignores', ignores },
     ...base,
@@ -94,11 +97,15 @@ export default function mnci (options = {}) {
     ...html,
     ...jest,
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
-    // Formatting is Prettier's job — this must stay last.
     // LAST, and nothing may follow that disables it: this block IS the
     // formatting opinion now. `eslint-config-prettier` used to sit here to
     // switch every stylistic rule off for a formatter to own; with no
     // formatter, composing it would silently disable all 62 Standard rules.
-    ...standard
+    ...standard,
+    // After `standard`, and only ever after it: these are the deliberate
+    // departures from Standard, so they have to win. Composed as their own
+    // named block rather than edited into the port above, which stays a
+    // faithful extraction from neostandard.
+    ...houseStyle,
   ]
 }

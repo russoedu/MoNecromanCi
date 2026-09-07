@@ -51,19 +51,19 @@ export const ROOT_LABEL = '(root)'
  */
 export interface DependencySite {
   /** The package name, as the manifest spells it. */
-  name: string
+  name:         string
   /** Which ecosystem's manifest this came from. */
-  ecosystem: Ecosystem
+  ecosystem:    Ecosystem
   /** Workspace-relative project directory, or {@link ROOT_LABEL}. */
-  project: string
+  project:      string
   /** Absolute path to the manifest declaring it. */
   manifestPath: string
   /** Short section label for display: `dep`, `devDep`, `peerDep`, … */
-  section: string
+  section:      string
   /** The declared spec, verbatim. */
-  spec: string
+  spec:         string
   /** Whether {@link rewriteSpec} can safely edit this entry. */
-  rewritable: boolean
+  rewritable:   boolean
 }
 
 /**
@@ -86,7 +86,7 @@ const MANIFEST_GLOBS: Record<Ecosystem, string[]> = {
   pip: ['apps/*/pyproject.toml', 'python-packages/*/pyproject.toml', 'libs/*/pyproject.toml'],
   pub: ['apps/*/pubspec.yaml', 'packages/*/pubspec.yaml', 'libs/*/pubspec.yaml'],
   // Single root module by design — there are no per-project Go manifests.
-  go: []
+  go:  [],
 }
 
 /**
@@ -104,10 +104,10 @@ export const PEER_SECTION = 'peerDep'
 
 /** npm manifest blocks, mapped to the short label shown in a report. */
 const NPM_SECTIONS: Record<string, string> = {
-  dependencies: 'dep',
-  devDependencies: 'devDep',
-  peerDependencies: 'peerDep',
-  optionalDependencies: 'optionalDep'
+  dependencies:         'dep',
+  devDependencies:      'devDep',
+  peerDependencies:     'peerDep',
+  optionalDependencies: 'optionalDep',
 }
 
 /**
@@ -140,6 +140,7 @@ export function toPosix (path: string): string {
 function projectOf (manifestRelativePath: string): string {
   const posix = toPosix(manifestRelativePath)
   const lastSlash = posix.lastIndexOf('/')
+
   return lastSlash === -1 ? ROOT_LABEL : posix.slice(0, lastSlash)
 }
 
@@ -166,8 +167,9 @@ export function hasEcosystem (workspaceRoot: string, ecosystem: Ecosystem): bool
   const rootMarker: Record<Exclude<Ecosystem, 'go'>, string> = {
     npm: 'package.json',
     pip: 'requirements-dev.txt',
-    pub: 'pubspec.yaml'
+    pub: 'pubspec.yaml',
   }
+
   // Either marker counts. A root file alone is the usual case, but a workspace
   // mid-migration can have projects before it has the root file — reporting
   // nothing there would be the silent-skip failure this whole feature avoids.
@@ -211,6 +213,7 @@ function collectNpm (workspaceRoot: string): DependencySite[] {
       // for the whole report to fail.
     }
   }
+
   return sites
 }
 
@@ -232,7 +235,7 @@ function collectNpm (workspaceRoot: string): DependencySite[] {
 function npmManifestSites (
   manifest: Record<string, unknown>,
   relativePath: string,
-  manifestPath: string
+  manifestPath: string,
 ): DependencySite[] {
   const sites: DependencySite[] = []
   const project = projectOf(relativePath)
@@ -242,7 +245,7 @@ function npmManifestSites (
     for (const [name, spec] of Object.entries(declared)) {
       sites.push({
         name,
-        ecosystem: 'npm',
+        ecosystem:  'npm',
         project,
         manifestPath,
         section,
@@ -251,10 +254,11 @@ function npmManifestSites (
         // `https:` target, a `workspace:` protocol or npm's `npm:pkg@range`
         // alias is a shape this cannot safely edit; a peer range is a shape it
         // could edit and must not (see PEER_SECTION).
-        rewritable: section !== PEER_SECTION && /^[\^~>=<]*\d/.test(spec.trim())
+        rewritable: section !== PEER_SECTION && /^[\^~>=<]*\d/.test(spec.trim()),
       })
     }
   }
+
   return sites
 }
 
@@ -274,7 +278,7 @@ function npmManifestSites (
  * @typeParam None - this function has no generic type parameters.
  */
 export function parseRequirement (
-  requirement: string
+  requirement: string,
 ): { name: string, spec: string, rewritable: boolean } | undefined {
   const comment = requirement.indexOf('#')
   const text = (comment === -1 ? requirement : requirement.slice(0, comment)).trim()
@@ -289,11 +293,12 @@ export function parseRequirement (
     return undefined
   }
   const spec = text.slice(name.length).trim()
+
   return {
     name,
     spec,
     // Extras, environment markers and compound ranges are reportable only.
-    rewritable: !spec.startsWith('[') && !spec.includes(';') && !spec.includes(',')
+    rewritable: !spec.startsWith('[') && !spec.includes(';') && !spec.includes(','),
   }
 }
 
@@ -321,13 +326,13 @@ function collectPip (workspaceRoot: string): DependencySite[] {
       return
     }
     sites.push({
-      name: parsed.name,
-      ecosystem: 'pip',
-      project: projectOf(relativePath),
+      name:         parsed.name,
+      ecosystem:    'pip',
+      project:      projectOf(relativePath),
       manifestPath: join(workspaceRoot, relativePath),
       section,
-      spec: parsed.spec,
-      rewritable: parsed.rewritable && parsed.spec !== ''
+      spec:         parsed.spec,
+      rewritable:   parsed.rewritable && parsed.spec !== '',
     })
   }
 
@@ -347,7 +352,7 @@ function collectPip (workspaceRoot: string): DependencySite[] {
 
   const requirementsPaths = [
     'requirements-dev.txt',
-    ...globSync('apps/*/requirements.txt', { cwd: workspaceRoot })
+    ...globSync('apps/*/requirements.txt', { cwd: workspaceRoot }),
   ]
   for (const relativePath of requirementsPaths) {
     if (!fileExists(join(workspaceRoot, relativePath))) {
@@ -443,13 +448,13 @@ function collectPub (workspaceRoot: string): DependencySite[] {
     for (const block of ['dependencies', 'dev_dependencies'] as const) {
       for (const entry of pubspecBlockEntries(content, block)) {
         sites.push({
-          name: entry.name,
-          ecosystem: 'pub',
-          project: projectOf(relativePath),
+          name:         entry.name,
+          ecosystem:    'pub',
+          project:      projectOf(relativePath),
           manifestPath: join(workspaceRoot, relativePath),
-          section: block === 'dependencies' ? 'dep' : 'devDep',
-          spec: entry.spec,
-          rewritable: entry.spec !== ''
+          section:      block === 'dependencies' ? 'dep' : 'devDep',
+          spec:         entry.spec,
+          rewritable:   entry.spec !== '',
         })
       }
     }
@@ -480,7 +485,7 @@ function collectPub (workspaceRoot: string): DependencySite[] {
  */
 export function pubspecBlockEntries (
   content: string,
-  block: string
+  block: string,
 ): Array<{ name: string, spec: string }> {
   const lines = content.split(/\r?\n/)
   const start = lines.findIndex(line => line.trimEnd() === `${block}:`)
@@ -566,16 +571,17 @@ function collectGo (workspaceRoot: string): DependencySite[] {
   }
 
   const sites: DependencySite[] = Array.from(content.matchAll(
-    /^\s*(?:require\s+)?([\w.~-]+(?:\/[\w.~-]+)+)\s+(v\S+)(\s*\/\/\s*indirect)?/gm
+    /^\s*(?:require\s+)?([\w.~-]+(?:\/[\w.~-]+)+)\s+(v\S+)(\s*\/\/\s*indirect)?/gm,
   ), match => ({
-    name: match[1],
-    ecosystem: 'go',
-    project: ROOT_LABEL,
+    name:       match[1],
+    ecosystem:  'go',
+    project:    ROOT_LABEL,
     manifestPath,
-    section: match[3] ? 'indirect' : 'module',
-    spec: match[2],
-    rewritable: false
+    section:    match[3] ? 'indirect' : 'module',
+    spec:       match[2],
+    rewritable: false,
   }))
+
   return sites
 }
 
@@ -595,13 +601,13 @@ function collectGo (workspaceRoot: string): DependencySite[] {
  */
 export function collectInventory (
   workspaceRoot: string,
-  ecosystems: readonly Ecosystem[] = ECOSYSTEMS
+  ecosystems: readonly Ecosystem[] = ECOSYSTEMS,
 ): Inventory {
   const readers: Record<Ecosystem, (root: string) => DependencySite[]> = {
     npm: collectNpm,
     pip: collectPip,
     pub: collectPub,
-    go: collectGo
+    go:  collectGo,
   }
 
   const inventory: Inventory = new Map()
@@ -619,6 +625,7 @@ export function collectInventory (
       }
     }
   }
+
   return inventory
 }
 
@@ -655,6 +662,7 @@ export function rewriteSpec (site: DependencySite, spec: string): boolean {
     }
     manifest[block][name] = spec
     writeFileEnsured(site.manifestPath, toJson(manifest))
+
     return true
   }
 
@@ -667,6 +675,7 @@ export function rewriteSpec (site: DependencySite, spec: string): boolean {
     return false
   }
   writeFileEnsured(site.manifestPath, after)
+
   return true
 }
 
@@ -688,9 +697,10 @@ export function rewriteSpec (site: DependencySite, spec: string): boolean {
  */
 export function replacePipSpec (content: string, name: string, spec: string): string {
   const escaped = escapeForRegex(name)
+
   return content.replaceAll(
     new RegExp(String.raw`(^|["'\s])(${escaped})\s*(?:[<>=!~^][^"'\n,]*)?(?=["'\n]|$)`, 'gm'),
-    (match, lead: string, matched: string) => `${lead}${matched}${spec}`
+    (match, lead: string, matched: string) => `${lead}${matched}${spec}`,
   )
 }
 
@@ -712,7 +722,7 @@ export function replacePipSpec (content: string, name: string, spec: string): st
 export function replacePubSpec (content: string, name: string, spec: string): string {
   return content.replaceAll(
     new RegExp(String.raw`^(\s+${escapeForRegex(name)}:[^\S\n]*)\S[^\n]*$`, 'gm'),
-    (match, lead: string) => `${lead}${spec}`
+    (match, lead: string) => `${lead}${spec}`,
   )
 }
 
@@ -749,8 +759,9 @@ function escapeForRegex (value: string): string {
  */
 export function isWorkspaceProject (workspaceRoot: string, name: string): boolean {
   const short = name.includes('/') ? name.split('/').at(-1) : name
+
   return ['apps', 'libs', 'packages'].some(directory =>
-    fileExists(join(workspaceRoot, directory, short ?? name, 'package.json'))
+    fileExists(join(workspaceRoot, directory, short ?? name, 'package.json')),
   )
 }
 
@@ -778,8 +789,9 @@ export function isWorkspaceProject (workspaceRoot: string, name: string): boolea
 export function isAliasedInstall (workspaceRoot: string, name: string): boolean {
   try {
     const installed = readJson<{ name?: string }>(
-      join(workspaceRoot, 'node_modules', name, 'package.json')
+      join(workspaceRoot, 'node_modules', name, 'package.json'),
     )
+
     return installed.name !== undefined && installed.name !== name
   } catch {
     return false
@@ -810,12 +822,12 @@ export function isAliasedInstall (workspaceRoot: string, name: string): boolean 
 export function resolvedVersion (
   workspaceRoot: string,
   ecosystem: Ecosystem,
-  name: string
+  name: string,
 ): string | undefined {
   if (ecosystem === 'npm') {
     try {
       return readJson<{ version?: string }>(
-        join(workspaceRoot, 'node_modules', name, 'package.json')
+        join(workspaceRoot, 'node_modules', name, 'package.json'),
       ).version
     } catch {
       return undefined
@@ -830,8 +842,9 @@ export function resolvedVersion (
     try {
       const match = new RegExp(
         String.raw`^\s{2}${escapeForRegex(name)}:[^]*?^\s+version:\s*["']?([^"'\s]+)`,
-        'm'
+        'm',
       ).exec(readFileSync(lockPath, 'utf8'))
+
       return match?.[1]
     } catch {
       return undefined
@@ -844,6 +857,7 @@ export function resolvedVersion (
     if (result.status !== 0) {
       return undefined
     }
+
     return /^Version:\s*(\S+)/m.exec(result.stdout)?.[1]
   }
 

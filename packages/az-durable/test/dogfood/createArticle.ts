@@ -23,20 +23,20 @@ import {
   eventTask,
   resultOf,
   setStatus,
-  timerTask
+  timerTask,
 } from '../../src/index'
 
 /** The draft an editor submits. */
 export interface ArticleDraft {
-  readonly title: string
-  readonly body: string
+  readonly title:    string
+  readonly body:     string
   readonly authorId: string
-  readonly tags?: readonly string[]
+  readonly tags?:    readonly string[]
 }
 
 /** What the store returns once the article exists. */
 export interface StoredArticle {
-  readonly id: string
+  readonly id:   string
   readonly etag: string
 }
 
@@ -51,8 +51,9 @@ const validateDraft = defineActivity(
     if (input.title.length === 0) {
       throw new Error('empty title')
     }
+
     return { ok: true }
-  }
+  },
 )
 
 const moderate = defineActivity(
@@ -60,12 +61,12 @@ const moderate = defineActivity(
   async (input: ArticleDraft): Promise<Moderation> =>
     await (input.body.includes('spam')
       ? { verdict: 'rejected' as const, reasons: ['spam'] }
-      : { verdict: 'approved' as const })
+      : { verdict: 'approved' as const }),
 )
 
 const renderHtml = defineActivity(
   'RenderHtml',
-  (input: ArticleDraft): string => `<h1>${input.title}</h1>`
+  (input: ArticleDraft): string => `<h1>${input.title}</h1>`,
 )
 
 const buildSlug = defineActivity('BuildSlug', (input: string): string => input.toLowerCase())
@@ -76,9 +77,9 @@ const store = defineActivity(
   'StoreArticle',
   async (input: {
     draft: ArticleDraft
-    html: string
-    slug: string
-  }): Promise<StoredArticle> => await { id: `a-${input.slug}`, etag: 'W/"1"' }
+    html:  string
+    slug:  string
+  }): Promise<StoredArticle> => await { id: `a-${input.slug}`, etag: 'W/"1"' },
 )
 
 const unpublish = defineActivity('Unpublish', (input: { id: string }): void => {
@@ -89,7 +90,7 @@ const notify = defineActivity(
   'NotifyAuthor',
   (input: { authorId: string; articleId: string | undefined }): void => {
     void input
-  }
+  },
 )
 
 /** The index rebuild, extracted so the workflow delegates to a sub-orchestration. */
@@ -97,17 +98,18 @@ export const reindexArticle = defineOrchestration(
   'ReindexArticle',
   function * (context, input: { articleId: string; body: string }) {
     const words = yield * callActivity(context, countWords, input.body)
+
     return { articleId: input.articleId, words }
-  }
+  },
 )
 
 const approved = defineEvent<{ approvedBy: string }>('ArticleApproved')
 
 const statuses = defineStatuses({
-  validating: 'validating',
+  validating:       'validating',
   awaitingApproval: 'awaiting-approval',
-  publishing: 'publishing',
-  rolledBack: 'rolled-back'
+  publishing:       'publishing',
+  rolledBack:       'rolled-back',
 })
 
 /** One day, in milliseconds — the approval window. */
@@ -131,7 +133,7 @@ export const createArticle = defineOrchestration(
     // scheduled concurrently and destructured positionally.
     const [html, slug] = yield * all(context, [
       activityTask(context, renderHtml, input),
-      activityTask(context, buildSlug, input.title)
+      activityTask(context, buildSlug, input.title),
     ])
 
     setStatus(context, statuses, 'awaitingApproval')
@@ -157,28 +159,30 @@ export const createArticle = defineOrchestration(
       context,
       store,
       { draft: input, html, slug },
-      new RetryOptions(1000, 3)
+      new RetryOptions(1000, 3),
     )
 
     try {
       const index = yield * callSubOrchestration(context, reindexArticle, {
         articleId: stored.id,
-        body: input.body
+        body:      input.body,
       })
       yield * callActivity(context, notify, {
-        authorId: input.authorId,
-        articleId: stored.id
+        authorId:  input.authorId,
+        articleId: stored.id,
       })
+
       return {
         published: true as const,
-        id: stored.id,
-        words: index.words,
-        approvedBy
+        id:        stored.id,
+        words:     index.words,
+        approvedBy,
       }
     } catch {
       setStatus(context, statuses, 'rolledBack')
       yield * callActivity(context, unpublish, { id: stored.id })
+
       return { published: false as const, reasons: ['indexing failed'] }
     }
-  }
+  },
 )

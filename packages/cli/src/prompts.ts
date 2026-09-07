@@ -17,9 +17,10 @@ import type { CiProvider, RegistryConfig, StackConfig } from './overlay'
 export async function promptText (message: string, fallback?: string): Promise<string> {
   const value = await input({
     message,
-    default: fallback,
-    validate: (value: string) => value.trim().length > 0 || 'A value is required'
+    default:  fallback,
+    validate: (value: string) => value.trim().length > 0 || 'A value is required',
   })
+
   return value.trim()
 }
 
@@ -41,8 +42,8 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
     message: 'Package registry for publishable libraries',
     choices: [
       { name: 'Azure Artifacts', value: 'azure-artifacts' },
-      { name: 'Public npm', value: 'npm' }
-    ]
+      { name: 'Public npm', value: 'npm' },
+    ],
   })
 
   if (kind === 'npm') {
@@ -51,9 +52,9 @@ export async function promptRegistry (fallbackOrganization?: string): Promise<Re
 
   return {
     kind,
-    organization: await promptText('Azure DevOps organization', fallbackOrganization),
-    project: await promptText('Azure DevOps project'),
-    artifactsFeed: await promptText('Artifacts feed name')
+    organization:  await promptText('Azure DevOps organization', fallbackOrganization),
+    project:       await promptText('Azure DevOps project'),
+    artifactsFeed: await promptText('Artifacts feed name'),
   }
 }
 
@@ -77,8 +78,8 @@ export async function promptCi (): Promise<CiProvider> {
     choices: [
       { name: 'Azure Pipelines', value: 'azure' },
       { name: 'GitHub Actions', value: 'github' },
-      { name: 'Both', value: 'both' }
-    ]
+      { name: 'Both', value: 'both' },
+    ],
   })
 }
 
@@ -98,7 +99,7 @@ export async function promptCi (): Promise<CiProvider> {
 export async function promptNxCloud (): Promise<boolean> {
   return await confirm({
     message: 'Connect this workspace to Nx Cloud (remote caching + CI insights)?',
-    default: false
+    default: false,
   })
 }
 
@@ -130,8 +131,9 @@ export async function promptStack (): Promise<StackConfig> {
     message: 'Unit-test runner',
     choices: [
       { name: 'Jest', value: 'jest' },
-      { name: 'Vitest', value: 'vitest' }
-    ]
+      { name: 'Vitest', value: 'vitest' },
+    ],
   })
+
   return { testRunner }
 }

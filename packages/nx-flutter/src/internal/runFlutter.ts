@@ -11,7 +11,7 @@ import spawn from 'cross-spawn'
  */
 export interface FlutterResult {
   /** Whether the command exited 0. */
-  ok: boolean
+  ok:     boolean
   /** stdout and stderr, merged and trimmed. */
   output: string
   /** A one-line explanation suitable for appending to an error message. */
@@ -61,9 +61,9 @@ export function runFlutter (arguments_: string[], cwd: string): FlutterResult {
 
   if (result.error) {
     return {
-      ok: false,
+      ok:     false,
       output,
-      reason: `could not start the Flutter CLI (${result.error.message}). Is the Flutter SDK on your PATH? https://docs.flutter.dev/get-started/install`
+      reason: `could not start the Flutter CLI (${result.error.message}). Is the Flutter SDK on your PATH? https://docs.flutter.dev/get-started/install`,
     }
   }
 
@@ -73,6 +73,6 @@ export function runFlutter (arguments_: string[], cwd: string): FlutterResult {
     reason:
       result.status === 0
         ? ''
-        : `exited with code ${result.status ?? 'unknown'}.\nflutter said:\n${output || '(no output)'}`
+        : `exited with code ${result.status ?? 'unknown'}.\nflutter said:\n${output || '(no output)'}`,
   }
 }

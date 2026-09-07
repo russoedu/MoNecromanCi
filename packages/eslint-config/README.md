@@ -84,6 +84,7 @@ as a comment, so it is readable without opening node_modules.
 | `mnci/tests`                             | `*.spec`/`*.test` relaxations — `eslint-plugin-jest`, plus Vitest's `vi`/`vitest` globals      |
 | `mnci/nx-dependency-checks`              | `@nx/eslint-plugin` on publishable packages' manifests — only when `workspaceRoot` is passed   |
 | `mnci/standard`                          | JavaScript Standard Style as ~60 `@stylistic` rules — **this is the formatter.** See below     |
+| `mnci/house-style`                       | The deliberate departures from Standard: trailing commas, aligned object values, `consistent-as-needed` quote-props, a blank line before `return`, two statements per line. Composed after `mnci/standard`, so it wins |
 
 `configs/named.js` fills a name in for the blocks upstream presets ship
 anonymously, keeping any name upstream does provide. A test resolves the real
@@ -255,6 +256,33 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 `workspaceRoot` is optional. Passing it enables the `@nx/dependency-checks`
 block for `packages/*` and `libs/*`, which needs to scan for `private: true`
 manifests. Omit it in a workspace with no publishable npm packages.
+
+### Where this differs from Standard
+
+`mnci/standard` is a faithful port of `neostandard`. Five deliberate departures
+live in `mnci/house-style`, composed after it so they win:
+
+| Rule | Standard | Here |
+| --- | --- | --- |
+| `comma-dangle` | `never` | `always-multiline` |
+| `key-spacing` | no alignment | aligned on `value` |
+| `quote-props` | `as-needed` | `consistent-as-needed` |
+| `max-statements-per-line` | 1 (@stylistic default) | 2 |
+| blank line before `return` | not enforced | required |
+
+Two of those interact, and it is the thing to know before touching either.
+**Aligning object values needs `key-spacing`'s `align` *and* an exception in
+`no-multi-spaces`** — alignment is more than one space, which `no-multi-spaces`
+otherwise rejects. Move one without the other and the config contradicts itself:
+one rule reports what the other requires, and no `--fix` can satisfy both.
+`mnci/house-style` also re-lists @stylistic's own default exceptions
+(`Property`, `ImportAttribute`), because supplying `exceptions` **replaces** the
+default object rather than merging into it.
+
+The blank line before `return` is `padding-line-between-statements`, not
+`newline-before-return`. The latter is the rule most people reach for and is a
+trap: deprecated since ESLint 4, with `availableUntil: "11.0.0"` in its own
+metadata. The two were compared on the same fixtures and report identically.
 
 There is no second file to add. Formatting comes from the `mnci/standard` block
 inside this same config.

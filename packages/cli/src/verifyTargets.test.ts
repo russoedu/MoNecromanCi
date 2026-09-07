@@ -47,21 +47,21 @@ const ABSENT_BY_DESIGN: Record<string, Record<string, string>> = {
     // manifest is deliberate — its scripts are the aggregators (`nx run-many`),
     // so inferring targets from them would recurse.
     typecheck: 'the root has no sources of its own; each package typechecks itself',
-    test: 'the root has no sources of its own; each package tests itself',
-    build: 'the root has no sources of its own; each package builds itself'
+    test:      'the root has no sources of its own; each package tests itself',
+    build:     'the root has no sources of its own; each package builds itself',
   },
   '@mnci/eslint-config': {
     // Plain ESM a consumer loads directly, so there is nothing to compile —
     // and a build step would risk the published config drifting from source.
-    build: 'published as source — a build step could let dist/ drift from it'
+    build: 'published as source — a build step could let dist/ drift from it',
   },
   '@mnci/oxlint-config': {
     // Same reasoning as @mnci/eslint-config: plain ESM that oxlint loads
     // directly. It has `lint`, `typecheck` and `test` targets like every other
     // project — this guard caught its absence of `build` the moment the package
     // was added, which is what the exemption table is for.
-    build: 'published as source — a build step could let dist/ drift from it'
-  }
+    build: 'published as source — a build step could let dist/ drift from it',
+  },
   // No project is exempt from `typecheck`, deliberately. `tsconfig.base.json`
   // sets `isolatedModules: true`, which puts ts-jest in transpile-only mode, so
   // jest reports no type errors at all (verified: a `const x: number = 'y'` in a
@@ -76,9 +76,9 @@ const NO_OP = /^(?:echo|:|true|exit\s+0)\b/
 type NxTarget = {
   executor?: string
   options?: {
-    command?: string
+    command?:  string
     commands?: (string | { command?: string })[]
-    script?: string
+    script?:   string
   }
 }
 
@@ -96,15 +96,16 @@ function projectGraph (): Record<string, NxNode> {
   const file = join(dir, 'graph.json')
   try {
     const result = spawnSync(`npx nx graph --file "${file}"`, {
-      cwd: WORKSPACE_ROOT,
+      cwd:      WORKSPACE_ROOT,
       encoding: 'utf8',
-      shell: true
+      shell:    true,
     })
     if (result.status !== 0 || !existsSync(file)) {
       throw new Error(
-        `nx graph failed (status ${String(result.status)}):\n${result.stdout ?? ''}\n${result.stderr ?? ''}`
+        `nx graph failed (status ${String(result.status)}):\n${result.stdout ?? ''}\n${result.stderr ?? ''}`,
       )
     }
+
     return JSON.parse(readFileSync(file, 'utf8')).graph.nodes
   } finally {
     rmSync(dir, { recursive: true, force: true })
@@ -123,6 +124,7 @@ function scriptCommand (projectRoot: string, script: string): string | undefined
   if (!existsSync(manifest)) return undefined
   const scripts = JSON.parse(readFileSync(manifest, 'utf8')).scripts as
     Record<string, string> | undefined
+
   return scripts?.[script]
 }
 
@@ -171,7 +173,7 @@ function followNpmRun (command: string, projectRoot: string, roots: Map<string, 
 function resolveCommands (
   target: NxTarget,
   projectRoot: string,
-  roots: Map<string, string>
+  roots: Map<string, string>,
 ): string[] {
   const { executor, options } = target
   if (executor === 'nx:run-script') {
@@ -180,18 +182,21 @@ function resolveCommands (
     if (command === undefined) {
       throw new Error(`nx:run-script points at a missing script "${script}"`)
     }
+
     return [followNpmRun(command, projectRoot, roots)]
   }
   if (executor === 'nx:run-commands') {
     const raw = [
       ...(options?.command === undefined ? [] : [options.command]),
       ...(options?.commands ?? []).map(entry =>
-        typeof entry === 'string' ? entry : (entry.command ?? '')
-      )
+        typeof entry === 'string' ? entry : (entry.command ?? ''),
+      ),
     ]
     if (raw.length === 0) throw new Error('nx:run-commands with no command')
+
     return raw.map(command => followNpmRun(command, projectRoot, roots))
   }
+
   return [`<executor ${executor ?? 'unset'}>`]
 }
 
@@ -214,6 +219,7 @@ const verifyTargets = (() => {
   if (!match) {
     throw new Error(`could not read a "-t <targets>" list out of the affected script: ${script}`)
   }
+
   return match[1].split(',')
 })()
 
@@ -239,10 +245,11 @@ describe('every verify target in this workspace runs a real command', () => {
         if (exemption === undefined) {
           throw new Error(
             `${project} has no "${targetName}" target and no recorded reason for that. ` +
-              'Either give it one, or add an ABSENT_BY_DESIGN entry saying why it needs none.'
+              'Either give it one, or add an ABSENT_BY_DESIGN entry saying why it needs none.',
           )
         }
         expect(exemption).not.toBe('')
+
         return
       }
 

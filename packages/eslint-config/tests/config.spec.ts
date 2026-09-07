@@ -42,14 +42,29 @@ const FIXTURES: Record<string, string> = {
   // double-quoted string, a semicolon, and a real indentation error. The old
   // fixture was a single line, so it could not exercise `indent` at all while
   // the assertion's comment claimed it did.
-  'formatting.ts': 'export function f () {\n      const a =        "x";\n  return a\n}\n',
-  'dupe.json': '{"a": 1, "a": 2}\n',
+  // The multi-space moved off the `const` deliberately: aligning a
+  // VariableDeclarator is now ALLOWED by `mnci/house-style`, so the old fixture
+  // stopped exercising `no-multi-spaces` at all while still claiming to.
+  // `return    a` is not an excepted node, so it still reports.
+  'formatting.ts': 'export function f () {\n      const a =        "x";\n  return    a\n}\n',
+  // mnci/house-style: each rule below departs from Standard, so each is pinned.
+  // `aligned.ts` must lint CLEAN — it is the style being adopted, trailing
+  // comma included; `unaligned.ts` must report.
+  'aligned.ts':
+    'export const o = {\n  name:        1,\n  description: 2,\n}\n',
+  'unaligned.ts':
+    'export const o = {\n  name: 1,\n  description: 2\n}\n',
+  'quoteProps.ts':
+    "export const o = {\n  'needs-quotes': 1,\n  bare:           2,\n}\n",
+  'dense.ts':
+    'export function f (n: number): number {\n  const a = n; const b = a; const c = b\n\n  return c\n}\n',
+  'dupe.json':  '{"a": 1, "a": 2}\n',
   'dupe.json5': '{a: 1, a: 2}\n',
-  'ci.yaml': 'a: 1\na: 2\n',
-  'fine.yaml': 'a:\n  b: 1\n',
-  'style.css': 'a { }\n',
-  'page.html': '<html><body><img src="x.png"></body></html>\n',
-  'doc.md': '[link]()\n',
+  'ci.yaml':    'a: 1\na: 2\n',
+  'fine.yaml':  'a:\n  b: 1\n',
+  'style.css':  'a { }\n',
+  'page.html':  '<html><body><img src="x.png"></body></html>\n',
+  'doc.md':     '[link]()\n',
   'thing.spec.ts':
     "describe('x', () => {\n  it('y', () => {\n    const v: any = 1\n    expect(v).toBe(1)\n  })\n})\n",
   'focused.spec.ts':
@@ -57,7 +72,7 @@ const FIXTURES: Record<string, string> = {
   'packages/thing/package.json': '{ "name": "thing", "version": "1.0.0" }\n',
   // The exact shape `@nx/react:library --bundler=rollup` emits into the rollup
   // config it writes for every react-lib.
-  'rollup.fixture.ts': 'export const options = { limit: 10000 }\n',
+  'rollup.fixture.ts':           'export const options = { limit: 10000 }\n',
 
   // A generated project's real layout, which is what the type-aware rules are
   // scoped to: `packages/<name>/src/**` with a tsconfig covering it. Without a
@@ -90,7 +105,7 @@ const FIXTURES: Record<string, string> = {
   // JSX attributes use SINGLE quotes: Standard's `jsx-quotes` is `prefer-single`,
   // and these fixtures must be style-clean now that ESLint owns formatting. They
   // were written when Prettier did, so ESLint had no opinion on them at all.
-  'a11y.tsx': "export const Bad = (): JSX.Element => <img src='x.png' />\n",
+  'a11y.tsx':    "export const Bad = (): JSX.Element => <img src='x.png' />\n",
   'a11y-ok.tsx': "export const Good = (): JSX.Element => <img src='x.png' alt='a cat' />\n",
   // React correctness, now from @eslint-react rather than eslint-plugin-react.
   // A list rendered without a key is the canonical example, and it is a real
@@ -105,7 +120,7 @@ const FIXTURES: Record<string, string> = {
   // TypeScript and VS Code both read comments in these, so forbidding them is
   // wrong — and they match `**/*.json` too, which is what made it happen.
   'tsconfig.probe.json': '{\n  // a comment TypeScript accepts\n  "compilerOptions": {}\n}\n',
-  'strict.json': '{\n  "a": 1\n}\n',
+  'strict.json':         '{\n  "a": 1\n}\n',
 
   // Regex correctness. An unused capturing group is the cheap finding; the reason
   // this plugin is here is `no-super-linear-backtracking`, which catches a regex
@@ -133,7 +148,7 @@ const FIXTURES: Record<string, string> = {
   'packages/demo/src/cycleA.ts':
     "import { fromB } from './cycleB.js'\n\nexport function fromA (): number {\n  return fromB() + 1\n}\n",
   'packages/demo/src/cycleB.ts':
-    "import { fromA } from './cycleA.js'\n\nexport function fromB (): number {\n  return fromA() - 1\n}\n"
+    "import { fromA } from './cycleA.js'\n\nexport function fromB (): number {\n  return fromA() - 1\n}\n",
 }
 
 let workspace: string
@@ -148,7 +163,7 @@ function writeConfig (directory: string, options = ''): void {
     // Windows path as an import specifier (ERR_UNSUPPORTED_ESM_URL_SCHEME,
     // "Received protocol 'c:'"), which eslint surfaced from 10.9.1 onward.
     // The bare path was always wrong here; it just used to be tolerated.
-    `import mnci from ${JSON.stringify(entry)}\nexport default mnci(${options})\n`
+    `import mnci from ${JSON.stringify(entry)}\nexport default mnci(${options})\n`,
   )
 }
 
@@ -158,10 +173,10 @@ function lintAll (directory: string): Record<string, string[]> {
     eslintBin,
     ['.', '--format', 'json', '--no-error-on-unmatched-pattern'],
     {
-      cwd: directory,
+      cwd:      directory,
       encoding: 'utf8',
-      shell: process.platform === 'win32'
-    }
+      shell:    process.platform === 'win32',
+    },
   )
   const stdout = result.stdout?.trim()
   if (!stdout?.startsWith('[')) {
@@ -176,6 +191,7 @@ function lintAll (directory: string): Record<string, string[]> {
     const relative = file.filePath.slice(directory.length + 1).replaceAll('\\', '/')
     byFile[relative] = file.messages.map(message => message.ruleId ?? 'FATAL')
   }
+
   return byFile
 }
 
@@ -199,14 +215,15 @@ function rulesFor (filename: string): string[] {
  */
 function printConfig (directory: string, filename: string): { rules: Record<string, unknown[]> } {
   const result = spawnSync(eslintBin, ['--print-config', filename], {
-    cwd: directory,
+    cwd:      directory,
     encoding: 'utf8',
-    shell: process.platform === 'win32'
+    shell:    process.platform === 'win32',
   })
   const stdout = result.stdout?.trim()
   if (!stdout?.startsWith('{')) {
     throw new Error(`eslint --print-config produced no JSON.\nstderr: ${result.stderr}`)
   }
+
   return JSON.parse(stdout) as { rules: Record<string, unknown[]> }
 }
 
@@ -286,6 +303,42 @@ describe('@mnci/eslint-config', () => {
     expect(stylistic).toContain('@stylistic/no-multi-spaces')
   })
 
+  describe('mnci/house-style — the deliberate departures from Standard', () => {
+    it('accepts aligned object values, and requires them', () => {
+      // Two rules have to agree for this to work: key-spacing's `align` demands
+      // the extra spaces and no-multi-spaces' `Property` exception permits
+      // them. Either alone makes the config self-contradictory — one rule
+      // reporting what the other requires, with no --fix able to satisfy both.
+      expect(rulesFor('aligned.ts')).toEqual([])
+      expect(rulesFor('unaligned.ts')).toContain('@stylistic/key-spacing')
+    })
+
+    it('allows a trailing comma on a multiline literal, which Standard forbids', () => {
+      // aligned.ts ends its last property with a comma and lints clean above,
+      // so this asserts the absence rather than adding a second fixture.
+      expect(rulesFor('aligned.ts')).not.toContain('@stylistic/comma-dangle')
+    })
+
+    it('quotes every key once any key needs quoting', () => {
+      // consistent-as-needed, not as-needed: the mixed form — one quoted key
+      // beside five bare ones — is what reads as an accident.
+      expect(rulesFor('quoteProps.ts')).toContain('@stylistic/quote-props')
+    })
+
+    it('allows two statements on a line but not three', () => {
+      expect(rulesFor('dense.ts')).toContain('@stylistic/max-statements-per-line')
+    })
+
+    it('requires a blank line before return, via the rule that is not deprecated', () => {
+      // `newline-before-return` is the obvious choice and a trap: deprecated
+      // since ESLint 4, with `availableUntil: "11.0.0"` in its own metadata.
+      // padding-line-between-statements reports identically on the same
+      // fixtures — including a lone `return`, which neither flags.
+      expect(rulesFor('formatting.ts')).toContain('@stylistic/padding-line-between-statements')
+      expect(rulesFor('dense.ts')).not.toContain('@stylistic/padding-line-between-statements')
+    })
+  })
+
   it('lints JSON and JSON5', () => {
     expect(rulesFor('dupe.json')).toContain('jsonc/no-dupe-keys')
     expect(rulesFor('dupe.json5')).toContain('jsonc/no-dupe-keys')
@@ -324,7 +377,7 @@ describe('@mnci/eslint-config', () => {
     // type-checks cleanly, so `tsc` and every non-type-aware rule stay silent,
     // and it only surfaces as a lost error at runtime.
     expect(rulesFor('packages/demo/src/floating.ts')).toContain(
-      '@typescript-eslint/no-floating-promises'
+      '@typescript-eslint/no-floating-promises',
     )
   })
 
@@ -337,7 +390,7 @@ describe('@mnci/eslint-config', () => {
     // below. Without this, switching `checksVoidReturn` off wholesale would look
     // identical to switching off only `attributes`.
     expect(rulesFor('packages/demo/src/misused.ts')).toContain(
-      '@typescript-eslint/no-misused-promises'
+      '@typescript-eslint/no-misused-promises',
     )
   })
 
@@ -502,12 +555,12 @@ describe('@mnci/eslint-config', () => {
       mkdirSync(join(scoped, 'packages/thing'), { recursive: true })
       writeFileSync(
         join(scoped, 'packages/thing/package.json'),
-        '{ "name": "thing", "version": "1.0.0" }\n'
+        '{ "name": "thing", "version": "1.0.0" }\n',
       )
       const printed = spawnSync(eslintBin, ['--print-config', 'packages/thing/package.json'], {
-        cwd: scoped,
+        cwd:      scoped,
         encoding: 'utf8',
-        shell: process.platform === 'win32'
+        shell:    process.platform === 'win32',
       })
 
       expect(printed.stdout).toContain('@nx/dependency-checks')

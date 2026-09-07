@@ -8,15 +8,15 @@ import type { Tree } from '@nx/devkit'
 // class exposing just what PythonVersionActions extends/uses.
 jest.mock('nx/release', () => ({
   VersionActions: class {
-    releaseGroup: unknown
-    projectGraphNode: unknown
+    releaseGroup:          unknown
+    projectGraphNode:      unknown
     finalConfigForProject: unknown
     constructor (releaseGroup: unknown, projectGraphNode: unknown, finalConfigForProject: unknown) {
       this.releaseGroup = releaseGroup
       this.projectGraphNode = projectGraphNode
       this.finalConfigForProject = finalConfigForProject
     }
-  }
+  },
 }))
 jest.mock('node:child_process', () => ({ execFileSync: jest.fn() }))
 
@@ -27,10 +27,10 @@ const mockExecFileSync = jest.mocked(execFileSync)
 /** A minimal in-memory stand-in for Nx's Tree, just what these tests touch. */
 function fakeTree (files: Record<string, string>) {
   return {
-    read: (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
+    read:  (path: string) => (Object.hasOwn(files, path) ? files[path] : null),
     write: (path: string, content: string) => {
       files[path] = content
-    }
+    },
   } as unknown as Tree
 }
 
@@ -49,12 +49,12 @@ describe('PythonVersionActions', () => {
     it('reads the version from pyproject.toml', async () => {
       const files = {
         'python-packages/pyshared/pyproject.toml':
-          '[project]\nname = "pyshared"\nversion = "1.2.3"\n'
+          '[project]\nname = "pyshared"\nversion = "1.2.3"\n',
       }
       const result = await instance().readCurrentVersionFromSourceManifest(fakeTree(files))
       expect(result).toEqual({
         currentVersion: '1.2.3',
-        manifestPath: 'python-packages/pyshared/pyproject.toml'
+        manifestPath:   'python-packages/pyshared/pyproject.toml',
       })
     })
 
@@ -65,7 +65,7 @@ describe('PythonVersionActions', () => {
     it('throws when the manifest has no version line', async () => {
       const files = { 'python-packages/pyshared/pyproject.toml': '[project]\nname = "pyshared"\n' }
       await expect(
-        instance().readCurrentVersionFromSourceManifest(fakeTree(files))
+        instance().readCurrentVersionFromSourceManifest(fakeTree(files)),
       ).rejects.toThrow('Could not find a "version = ..." line')
     })
   })
@@ -74,7 +74,7 @@ describe('PythonVersionActions', () => {
     it('writes the new version into pyproject.toml, preserving the rest', async () => {
       const files = {
         'python-packages/pyshared/pyproject.toml':
-          '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n'
+          '[project]\nname = "pyshared"\nversion = "1.0.0"\ndescription = ""\n',
       }
       const tree = fakeTree(files)
       const messages = await instance().updateProjectVersion(tree, '1.1.0')
@@ -112,12 +112,12 @@ describe('PythonVersionActions', () => {
       const dependency = await instance().readCurrentVersionOfDependency(
         fakeTree({}),
         {} as never,
-        'pycore'
+        'pycore',
       )
       expect(dependency).toEqual({ currentVersion: null, dependencyCollection: null })
 
       const updates = await instance().updateProjectDependencies(fakeTree({}), {} as never, {
-        pycore: '1.0.0'
+        pycore: '1.0.0',
       })
       expect(updates).toEqual([])
     })

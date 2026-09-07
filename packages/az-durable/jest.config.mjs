@@ -24,9 +24,9 @@ const base = createConfig('az-durable')
  */
 export default {
   ...base,
-  roots: [...base.roots, '<rootDir>/test'],
+  roots:            [...base.roots, '<rootDir>/test'],
   moduleNameMapper: {
     ...base.moduleNameMapper,
-    '^(\\.{1,2}/.*)\\.js$': '$1'
-  }
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
 }

@@ -19,7 +19,7 @@
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface Node {
-  type: string
+  type:          string
   [key: string]: unknown
 }
 
@@ -48,9 +48,9 @@ export interface RuleContext {
  */
 export interface Rule {
   meta: {
-    type: 'problem' | 'suggestion'
-    docs: { description: string }
-    schema: []
+    type:     'problem' | 'suggestion'
+    docs:     { description: string }
+    schema:   []
     messages: Record<string, string>
   }
   create: (context: RuleContext) => Record<string, (node: Node) => void>
@@ -86,8 +86,10 @@ export function isOrchestrationRegistration (node: Node): boolean {
   // alias for the namespace still matches.
   if (callee.type === 'MemberExpression') {
     const property = callee.property as Node | undefined
+
     return property?.type === 'Identifier' && property.name === 'orchestration'
   }
+
   return false
 }
 
@@ -119,5 +121,6 @@ export function calleeName (node: Node | undefined): string | undefined {
       return property.name as string
     }
   }
+
   return undefined
 }

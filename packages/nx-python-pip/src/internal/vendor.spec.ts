@@ -26,7 +26,7 @@ describe('addPackagesToWheelTarget', () => {
   it('de-duplicates when a module is already present', () => {
     const pyproject = 'packages = ["pyshared", "pycore"]\n'
     expect(addPackagesToWheelTarget(pyproject, ['pycore'])).toContain(
-      'packages = ["pyshared", "pycore"]'
+      'packages = ["pyshared", "pycore"]',
     )
   })
 

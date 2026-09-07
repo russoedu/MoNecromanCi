@@ -17,13 +17,13 @@ export interface RetryPolicy {
   /** The first retry interval, in milliseconds. Must be greater than 0. */
   readonly firstRetryIntervalInMilliseconds: number
   /** How many attempts to make in total, the first included. */
-  readonly maxNumberOfAttempts: number
+  readonly maxNumberOfAttempts:              number
   /** Multiplier applied to the interval after each attempt. Defaults to the SDK's. */
-  readonly backoffCoefficient?: number
+  readonly backoffCoefficient?:              number
   /** Ceiling on the interval between attempts, in milliseconds. */
-  readonly maxRetryIntervalInMilliseconds?: number
+  readonly maxRetryIntervalInMilliseconds?:  number
   /** Overall deadline for the retries, in milliseconds. */
-  readonly retryTimeoutInMilliseconds?: number
+  readonly retryTimeoutInMilliseconds?:      number
 }
 
 /**
@@ -46,7 +46,7 @@ export interface RetryPolicy {
 export function retryPolicy (policy: RetryPolicy): RetryOptions {
   const options = new RetryOptions(
     policy.firstRetryIntervalInMilliseconds,
-    policy.maxNumberOfAttempts
+    policy.maxNumberOfAttempts,
   )
   if (policy.backoffCoefficient !== undefined) {
     options.backoffCoefficient = policy.backoffCoefficient
@@ -57,5 +57,6 @@ export function retryPolicy (policy: RetryPolicy): RetryOptions {
   if (policy.retryTimeoutInMilliseconds !== undefined) {
     options.retryTimeoutInMilliseconds = policy.retryTimeoutInMilliseconds
   }
+
   return options
 }

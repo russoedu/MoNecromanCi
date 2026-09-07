@@ -26,7 +26,7 @@ import type { TestExecutorSchema } from './schema.d'
  */
 export default async function testExecutor (
   _options: TestExecutorSchema,
-  context: ExecutorContext
+  context: ExecutorContext,
 ): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
   const result = runFlutter(['test'], cwd)

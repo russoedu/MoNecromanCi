@@ -29,14 +29,14 @@ const declarations = path.join(root, 'dist/src/index.d.ts')
 
 if (!existsSync(declarations)) {
   throw new Error(
-    `No build output at ${declarations}. Run the build before this check — it verifies the artifact, not the source.`
+    `No build output at ${declarations}. Run the build before this check — it verifies the artifact, not the source.`,
   )
 }
 
 const tsc = path.join(root, '../../node_modules/.bin/tsc')
 const result = spawnSync(tsc, ['--noEmit', '-p', project], {
   encoding: 'utf8',
-  shell: process.platform === 'win32'
+  shell:    process.platform === 'win32',
 })
 const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
 
@@ -45,7 +45,7 @@ if (result.status !== 0) {
   // Thrown rather than process.exit: the non-zero status is what CI reads, and
   // an uncaught throw adds a stack naming this file.
   throw new Error(
-    'The built package does not typecheck for a consumer. TS2834 here means a relative specifier in the emitted declarations is missing its .js extension — see the docstring above.'
+    'The built package does not typecheck for a consumer. TS2834 here means a relative specifier in the emitted declarations is missing its .js extension — see the docstring above.',
   )
 }
 

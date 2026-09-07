@@ -20,36 +20,36 @@ import {
   retryPolicy,
   setStatus,
   sleepFor,
-  subOrchestrationTask
+  subOrchestrationTask,
 } from '../../src/index'
 
 /** A row the sweep considers deleting. */
 export interface StaleItem {
-  readonly id: string
-  readonly path: string
+  readonly id:      string
+  readonly path:    string
   readonly ageDays: number
 }
 
 const listStale = defineActivity(
   'ListStaleItems',
   (input: { olderThanDays: number }): StaleItem[] => [
-    { id: '1', path: '/a', ageDays: input.olderThanDays + 1 }
-  ]
+    { id: '1', path: '/a', ageDays: input.olderThanDays + 1 },
+  ],
 )
 
 const deleteItem = defineActivity(
   'DeleteItem',
   (input: { id: string }): { deleted: boolean; bytes: number } => ({
     deleted: true,
-    bytes: input.id.length
-  })
+    bytes:   input.id.length,
+  }),
 )
 
 /** Returns `null` when the item was already gone — a nullable result to filter. */
 const archiveItem = defineActivity(
   'ArchiveItem',
   (input: { id: string }): { archiveUrl: string } | null =>
-    input.id === 'missing' ? null : { archiveUrl: `https://archive/${input.id}` }
+    input.id === 'missing' ? null : { archiveUrl: `https://archive/${input.id}` },
 )
 
 /** A `void` activity: nothing to destructure, and it must still typecheck. */
@@ -58,9 +58,9 @@ const emitAudit = defineActivity('EmitAudit', (input: { batch: number; count: nu
 })
 
 const statuses = defineStatuses({
-  listing: 'listing',
+  listing:  'listing',
   sweeping: 'sweeping',
-  done: 'done'
+  done:     'done',
 })
 
 /** How many items one child orchestration handles. */
@@ -78,11 +78,12 @@ export const cleanupBatch = defineOrchestration(
     // ARRAY of tasks, not a tuple. `all` must still carry the element type.
     const deletions = yield * all(
       context,
-      input.items.map(item => activityTask(context, deleteItem, { id: item.id }))
+      input.items.map(item => activityTask(context, deleteItem, { id: item.id })),
     )
     const bytes = deletions.reduce((sum, d) => sum + d.bytes, 0)
+
     return { deleted: deletions.length, bytes }
-  }
+  },
 )
 
 /** Reconstruction of `cleanup`. */
@@ -92,14 +93,14 @@ export const cleanup = defineOrchestration(
     setStatus(context, statuses, 'listing')
     const stale = yield * callActivity(context, listStale, input, retryPolicy({
       firstRetryIntervalInMilliseconds: 1000,
-      maxNumberOfAttempts: 3,
-      backoffCoefficient: 2
+      maxNumberOfAttempts:              3,
+      backoffCoefficient:               2,
     }))
 
     // Nullable activity results, filtered before use.
     const archives = yield * all(
       context,
-      stale.map(item => activityTask(context, archiveItem, { id: item.id }))
+      stale.map(item => activityTask(context, archiveItem, { id: item.id })),
     )
     const archived = archives.filter((a): a is { archiveUrl: string } => a !== null)
 
@@ -115,7 +116,7 @@ export const cleanup = defineOrchestration(
       batchNumber += 1
       // Fan-out over SUB-orchestrations, again at runtime width.
       const results = yield * all(context, [
-        subOrchestrationTask(context, cleanupBatch, { items: batch })
+        subOrchestrationTask(context, cleanupBatch, { items: batch }),
       ])
       totalBytes += results[0].bytes
       yield * callActivity(context, emitAudit, { batch: batchNumber, count: batch.length })
@@ -130,10 +131,12 @@ export const cleanup = defineOrchestration(
       // larger than one generation must restart rather than keep going. The
       // input is checked against this orchestration's own type.
       self.continueAsNew({ olderThanDays: input.olderThanDays })
+
       return { swept: stale.length, archived: archived.length, bytes: totalBytes }
     }
+
     return { swept: stale.length, archived: archived.length, bytes: totalBytes }
-  }
+  },
 )
 
 void callSubOrchestration

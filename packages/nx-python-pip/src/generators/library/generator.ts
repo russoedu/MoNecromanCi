@@ -23,13 +23,13 @@ import type { LibraryGeneratorSchema } from './schema.d'
  */
 export default async function libraryGenerator (
   tree: Tree,
-  options: LibraryGeneratorSchema
+  options: LibraryGeneratorSchema,
 ): Promise<void> {
   generateBuildableProject(tree, {
-    name: options.name,
-    directory: options.directory ?? `libs/${options.name}`,
+    name:        options.name,
+    directory:   options.directory ?? `libs/${options.name}`,
     projectType: 'library',
-    publishable: true
+    publishable: true,
   })
   await formatFiles(tree)
 }

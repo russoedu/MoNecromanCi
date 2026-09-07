@@ -29,7 +29,7 @@ import type { LintExecutorSchema } from './schema.d'
  */
 export default async function lintExecutor (
   _options: LintExecutorSchema,
-  context: ExecutorContext
+  context: ExecutorContext,
 ): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
   const result = runFlutter(['analyze', '--fatal-infos'], cwd)

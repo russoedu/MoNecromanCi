@@ -14,7 +14,7 @@ import type { TypedOrchestration, TypedTask } from './types.js'
  */
 export interface OrchestrationSelf<TInput> {
   /** The orchestration's own registered name. */
-  readonly name: string
+  readonly name:          string
   /**
    * Restarts this orchestration with fresh input, discarding its history.
    *
@@ -82,9 +82,9 @@ export function defineOrchestration<TInput, TOutput> (
   handler: (
     context: OrchestrationContext,
     input: TInput,
-    self: OrchestrationSelf<TInput>
+    self: OrchestrationSelf<TInput>,
   ) => Generator<Task, TOutput, unknown>,
-  options?: DefineOrchestrationOptions<TInput>
+  options?: DefineOrchestrationOptions<TInput>,
 ): TypedOrchestration<TInput, TOutput> {
   claimName('orchestration', name)
   const parse = options?.parse
@@ -92,17 +92,19 @@ export function defineOrchestration<TInput, TOutput> (
     name,
     continueAsNew: (next: TInput) => {
       context.df.continueAsNew(next)
-    }
+    },
   })
   const registered = df.app.orchestration(name, function * (context: OrchestrationContext) {
     const raw: unknown = context.df.getInput()
     const input = parse === undefined ? (raw as TInput) : parse(raw)
+
     return yield * handler(context, input, bind(context))
   })
+
   return {
     name,
     registered,
-    handler: (context, input) => handler(context, input, bind(context))
+    handler: (context, input) => handler(context, input, bind(context)),
   }
 }
 
@@ -125,9 +127,10 @@ export function * callSubOrchestration<TInput, TOutput> (
   context: OrchestrationContext,
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
-  options?: { instanceId?: string; retry?: RetryOptions }
+  options?: { instanceId?: string; retry?: RetryOptions },
 ): Generator<Task, TOutput, unknown> {
   const result = yield subOrchestrationTask(context, orchestration, input, options).task
+
   return result as TOutput
 }
 
@@ -153,7 +156,7 @@ export function subOrchestrationTask<TInput, TOutput> (
   context: OrchestrationContext,
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
-  options?: { instanceId?: string; retry?: RetryOptions }
+  options?: { instanceId?: string; retry?: RetryOptions },
 ): TypedTask<TOutput> {
   const retry = options?.retry
   const task =
@@ -163,7 +166,8 @@ export function subOrchestrationTask<TInput, TOutput> (
           orchestration.name,
           retry,
           input,
-          options?.instanceId
+          options?.instanceId,
         )
+
   return { task }
 }

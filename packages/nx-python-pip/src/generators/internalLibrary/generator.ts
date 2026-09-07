@@ -3,7 +3,7 @@ import {
   pythonModuleDirectory,
   pythonPyprojectToml,
   pythonSampleModule,
-  pythonSampleTest
+  pythonSampleTest,
 } from '../../internal/pythonProject'
 import type { InternalLibraryGeneratorSchema } from './schema.d'
 
@@ -25,7 +25,7 @@ import type { InternalLibraryGeneratorSchema } from './schema.d'
  */
 export default async function internalLibraryGenerator (
   tree: Tree,
-  options: InternalLibraryGeneratorSchema
+  options: InternalLibraryGeneratorSchema,
 ): Promise<void> {
   const root = options.directory ?? `libs/${options.name}`
   const moduleDirectory = pythonModuleDirectory(options.name)
@@ -33,11 +33,11 @@ export default async function internalLibraryGenerator (
   addProjectConfiguration(tree, options.name, {
     root,
     projectType: 'library',
-    sourceRoot: root,
-    targets: {
+    sourceRoot:  root,
+    targets:     {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
-      test: { executor: '@mnci/nx-python-pip:test', options: {} }
-    }
+      test: { executor: '@mnci/nx-python-pip:test', options: {} },
+    },
   })
 
   tree.write(`${root}/pyproject.toml`, pythonPyprojectToml(options.name, moduleDirectory))

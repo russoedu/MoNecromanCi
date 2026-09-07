@@ -7,10 +7,10 @@ import type { Rule } from './shared.js'
 
 const tester = new RuleTester({
   languageOptions: {
-    parser: tsParser,
+    parser:      tsParser,
     ecmaVersion: 2022,
-    sourceType: 'module'
-  }
+    sourceType:  'module',
+  },
 })
 
 /** ESLint's RuleTester types are looser than this package's local Rule shape. */
@@ -33,36 +33,36 @@ tester.run('no-nondeterministic-orchestrator', asRule(noNondeterministicOrchestr
     { code: 'defineActivity("a", () => { return process.env.KEY })' },
     // `new Date(x)` with an argument does not read the clock.
     { code: 'defineOrchestration("o", function* (c) { const d = new Date(input.when) })' },
-    { code: 'defineOrchestration("o", function* (c) { const d = now(c) })' }
+    { code: 'defineOrchestration("o", function* (c) { const d = now(c) })' },
   ],
   invalid: [
     {
-      code: 'defineOrchestration("o", function* (c) { const d = new Date() })',
-      errors: [{ messageId: 'newDate' }]
+      code:   'defineOrchestration("o", function* (c) { const d = new Date() })',
+      errors: [{ messageId: 'newDate' }],
     },
     {
-      code: 'defineOrchestration("o", function* (c) { const t = Date.now() })',
-      errors: [{ messageId: 'forbidden' }]
+      code:   'defineOrchestration("o", function* (c) { const t = Date.now() })',
+      errors: [{ messageId: 'forbidden' }],
     },
     {
-      code: 'defineOrchestration("o", function* (c) { const r = Math.random() })',
-      errors: [{ messageId: 'forbidden' }]
+      code:   'defineOrchestration("o", function* (c) { const r = Math.random() })',
+      errors: [{ messageId: 'forbidden' }],
     },
     {
-      code: 'defineOrchestration("o", function* (c) { const k = process.env.KEY })',
-      errors: [{ messageId: 'processEnv' }]
+      code:   'defineOrchestration("o", function* (c) { const k = process.env.KEY })',
+      errors: [{ messageId: 'processEnv' }],
     },
     {
-      code: 'defineOrchestration("o", function* (c) { const r = fetch(url) })',
-      errors: [{ messageId: 'forbidden' }]
+      code:   'defineOrchestration("o", function* (c) { const r = fetch(url) })',
+      errors: [{ messageId: 'forbidden' }],
     },
     {
       // The raw SDK registration path must be covered too.
-      code: 'df.app.orchestration("o", function* (c) { const d = new Date() })',
-      errors: [{ messageId: 'newDate' }]
-    }
-  ]
-}
+      code:   'df.app.orchestration("o", function* (c) { const d = new Date() })',
+      errors: [{ messageId: 'newDate' }],
+    },
+  ],
+},
 )
 
 tester.run('require-yield-star', asRule(requireYieldStar), {
@@ -70,19 +70,19 @@ tester.run('require-yield-star', asRule(requireYieldStar), {
     { code: 'function* o(c) { const r = yield* callActivity(c, a, 1) }' },
     // A bare yield of a real Task is correct — this rule must not flag it.
     { code: 'function* o(c) { const r = yield c.df.callActivity("a", 1) }' },
-    { code: 'function* o(c) { const r = yield someTask }' }
+    { code: 'function* o(c) { const r = yield someTask }' },
   ],
   invalid: [
     {
-      code: 'function* o(c) { const r = yield callActivity(c, a, 1) }',
-      errors: [{ messageId: 'useYieldStar' }]
+      code:   'function* o(c) { const r = yield callActivity(c, a, 1) }',
+      errors: [{ messageId: 'useYieldStar' }],
     },
     {
-      code: 'function* o(c) { const r = yield all(c, [t]) }',
-      errors: [{ messageId: 'useYieldStar' }]
-    }
-  ]
-}
+      code:   'function* o(c) { const r = yield all(c, [t]) }',
+      errors: [{ messageId: 'useYieldStar' }],
+    },
+  ],
+},
 )
 
 tester.run('no-untyped-activity-handler', asRule(noUntypedActivityHandler), {
@@ -90,21 +90,21 @@ tester.run('no-untyped-activity-handler', asRule(noUntypedActivityHandler), {
     // Inference left alone — the supported way to write a handler.
     { code: 'const h = (input: { id: string }) => ({ n: input.id.length })' },
     { code: 'const wrap = <I, O>(h: (i: I) => O) => h' },
-    { code: 'const x: SomethingElse = y' }
+    { code: 'const x: SomethingElse = y' },
   ],
   invalid: [
     {
-      code: 'const h: ActivityHandler = (i, c) => i',
-      errors: [{ messageId: 'erased' }]
+      code:   'const h: ActivityHandler = (i, c) => i',
+      errors: [{ messageId: 'erased' }],
     },
     {
-      code: 'const h: FunctionHandler = (i, c) => i',
-      errors: [{ messageId: 'erased' }]
+      code:   'const h: FunctionHandler = (i, c) => i',
+      errors: [{ messageId: 'erased' }],
     },
     {
-      code: 'const h: OrchestrationHandler = function* (c) {}',
-      errors: [{ messageId: 'erased' }]
-    }
-  ]
-}
+      code:   'const h: OrchestrationHandler = function* (c) {}',
+      errors: [{ messageId: 'erased' }],
+    },
+  ],
+},
 )

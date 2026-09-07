@@ -20,9 +20,9 @@ import type { AppGeneratorSchema } from './schema.d'
  */
 export default async function appGenerator (tree: Tree, options: AppGeneratorSchema): Promise<void> {
   generateBuildableProject(tree, {
-    name: options.name,
-    directory: options.directory ?? `apps/${options.name}`,
-    projectType: 'application'
+    name:        options.name,
+    directory:   options.directory ?? `apps/${options.name}`,
+    projectType: 'application',
   })
   await formatFiles(tree)
 }

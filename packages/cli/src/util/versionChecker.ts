@@ -75,8 +75,8 @@ export function checkForUpdate (currentVersion: string): void {
 function reportIfOutdated (currentVersion: string): void {
   const result = spawn.sync('npm', ['view', PACKAGE_NAME, 'version'], {
     encoding: 'utf8',
-    timeout: REGISTRY_TIMEOUT_MS,
-    stdio: ['ignore', 'pipe', 'ignore']
+    timeout:  REGISTRY_TIMEOUT_MS,
+    stdio:    ['ignore', 'pipe', 'ignore'],
   })
   if (result.error || result.status !== 0) {
     return
@@ -123,6 +123,7 @@ function isNewerVersion (candidate: string, current: string): boolean {
       return candidatePart > currentParts[index]
     }
   }
+
   return false
 }
 
@@ -136,6 +137,7 @@ function isNewerVersion (candidate: string, current: string): boolean {
  */
 function releaseTriple (version: string): [number, number, number] | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
+
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
 }
 
@@ -156,6 +158,7 @@ export function readCliVersion (packageDirectory: string): string {
   try {
     const manifestPath = join(packageDirectory, '..', 'package.json')
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: string }
+
     return manifest.version ?? '0.0.0'
   } catch {
     return '0.0.0'

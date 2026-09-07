@@ -20,12 +20,13 @@ const README = readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
  */
 function importedFrom (entryPoint: string): string[] {
   const pattern = new RegExp(String.raw`import \{([^}]*)\} from '${entryPoint}'`, 'g')
+
   return README.matchAll(pattern)
     .flatMap(match =>
       (match[1] ?? '')
         .split(',')
         .map(name => name.trim())
-        .filter(name => name.length > 0)
+        .filter(name => name.length > 0),
     )
     .toArray()
 }
@@ -56,7 +57,7 @@ describe('README', () => {
 
   it('names every entry point the manifest declares', () => {
     const manifest = JSON.parse(
-      readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
+      readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'),
     ) as { exports: Record<string, unknown> }
     const subpaths = Object.keys(manifest.exports)
       .filter(key => key !== '.' && key !== './package.json')

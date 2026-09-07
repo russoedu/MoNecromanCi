@@ -5,7 +5,7 @@ import {
   LAUNCH_CONFIG_PREFIX,
   LAUNCH_CONFIGURATIONS,
   RETIRED_FORMATTER_FILES,
-  VSCODE_RECOMMENDED_EXTENSIONS
+  VSCODE_RECOMMENDED_EXTENSIONS,
 } from './overlay'
 
 /**
@@ -32,9 +32,9 @@ const WORKSPACE_ROOT = join(__dirname, '..', '..', '..')
  * @typeParam None - this function has no generic type parameters.
  */
 function rootManifest (): {
-  dependencies?: Record<string, string>
+  dependencies?:    Record<string, string>
   devDependencies?: Record<string, string>
-  scripts?: Record<string, string>
+  scripts?:         Record<string, string>
 } {
   return JSON.parse(readFileSync(join(WORKSPACE_ROOT, 'package.json'), 'utf8')) as ReturnType<
     typeof rootManifest
@@ -50,7 +50,7 @@ const RETIRED_FORMATTER_PACKAGES = [
   'eslint-config-prettier',
   'oxlint',
   'oxfmt',
-  '@mnci/oxlint-config'
+  '@mnci/oxlint-config',
 ]
 
 describe('mnci holds itself to the invariants it enforces elsewhere', () => {
@@ -69,7 +69,7 @@ describe('mnci holds itself to the invariants it enforces elsewhere', () => {
 
   it('carries the launch configs it generates, so Run and Debug is not empty here either', () => {
     const workspace = JSON.parse(
-      readFileSync(join(WORKSPACE_ROOT, 'MoNecromanCi.code-workspace'), 'utf8')
+      readFileSync(join(WORKSPACE_ROOT, 'MoNecromanCi.code-workspace'), 'utf8'),
     ) as { launch?: { configurations: { name: string }[] } }
 
     const names = (workspace.launch?.configurations ?? []).map((entry) => entry.name)
@@ -96,7 +96,7 @@ describe('mnci holds itself to the invariants it enforces elsewhere', () => {
   it('declares no retired formatter in its own root manifest', () => {
     const { dependencies = {}, devDependencies = {} } = rootManifest()
     const declared = RETIRED_FORMATTER_PACKAGES.filter(
-      name => dependencies[name] !== undefined || devDependencies[name] !== undefined
+      name => dependencies[name] !== undefined || devDependencies[name] !== undefined,
     )
 
     // A declaration is enough on its own to do harm — the binary need never be
@@ -108,7 +108,7 @@ describe('mnci holds itself to the invariants it enforces elsewhere', () => {
 
   it('keeps no retired formatter config file on disk', () => {
     const present = RETIRED_FORMATTER_FILES.filter(file =>
-      existsSync(join(WORKSPACE_ROOT, file))
+      existsSync(join(WORKSPACE_ROOT, file)),
     )
 
     // `applyOverlay` deletes each of these from a generated workspace. This repo

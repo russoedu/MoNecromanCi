@@ -35,7 +35,7 @@ export function defineStatuses<const T extends Record<string, string>> (statuses
 export function setStatus<T extends Record<string, string>> (
   context: OrchestrationContext,
   statuses: T,
-  key: keyof T
+  key: keyof T,
 ): void {
   context.df.setCustomStatus(statuses[key])
 }

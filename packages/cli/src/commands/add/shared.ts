@@ -35,11 +35,11 @@ export type NodeFramework = 'express' | 'fastify' | 'koa' | 'nest' | 'none'
  */
 export interface AddOptions {
   /** npm scope for a publishable lib's import path (defaults to `@<workspace name>`). */
-  scope?: string
+  scope?:     string
   /** `node-app` only: the HTTP framework `@nx/node:application` scaffolds (defaults to `none`, a bare Node app). */
   framework?: NodeFramework
   /** `python-vendor` only: the internal Python library (under `libs/`) to vendor into `name`. */
-  lib?: string
+  lib?:       string
 }
 
 /**
@@ -69,10 +69,11 @@ export interface WorkspaceStack {
  */
 export function hasPlugin (workspaceRoot: string, packageName: string): boolean {
   const manifest = readJson<{
-    dependencies?: Record<string, string>
+    dependencies?:    Record<string, string>
     devDependencies?: Record<string, string>
   }>(join(workspaceRoot, 'package.json'))
   const installed = { ...manifest.dependencies, ...manifest.devDependencies }
+
   return Object.hasOwn(installed, packageName)
 }
 
@@ -209,7 +210,7 @@ const ROLLUP_CONFIG_PLACEHOLDER = [
   '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
   '    // e.g.',
   '    // output: { sourcemap: true },',
-  '  }'
+  '  }',
 ].join('\n')
 
 /**
@@ -242,7 +243,7 @@ const SOURCE_MAP_CAPABLE_COMPILER = [
   '    // Swapped from swc by MoNecromanCI. @nx/rollup runs swc without',
   "    // sourceMaps, so it returns no map and the bundle's map comes out empty -",
   '    // valid-looking, and useless for debugging. See ROADMAP.',
-  "    compiler: 'babel',"
+  "    compiler: 'babel',",
 ].join('\n')
 
 /**
@@ -273,7 +274,7 @@ const ROLLUP_ARG_ONE_WITH_SOURCE_MAPS = [
   '    sourceMap: true',
   '  },',
   '  {',
-  ''
+  '',
 ].join('\n')
 
 /**
@@ -319,13 +320,14 @@ export function withRollupSourceMaps (config: string): string {
   const withCompiler = config.replace(GENERATED_COMPILER, () => SOURCE_MAP_CAPABLE_COMPILER)
   const withFlag = withCompiler.replace(
     ROLLUP_ARG_ONE_BOUNDARY,
-    () => ROLLUP_ARG_ONE_WITH_SOURCE_MAPS
+    () => ROLLUP_ARG_ONE_WITH_SOURCE_MAPS,
   )
+
   return withFlag.includes('sourcemapPathTransform')
     ? withFlag
     : withFlag.replace(
         ROLLUP_ARG_ONE_WITH_SOURCE_MAPS,
-        () => `${ROLLUP_ARG_ONE_WITH_SOURCE_MAPS}${SOURCEMAP_PATH_TRANSFORM}`
+        () => `${ROLLUP_ARG_ONE_WITH_SOURCE_MAPS}${SOURCEMAP_PATH_TRANSFORM}`,
       )
 }
 
@@ -346,7 +348,7 @@ export function withRollupSourceMaps (config: string): string {
 export function repairRollupSourceMaps (workspaceRoot: string): string[] {
   const changed: string[] = []
   const configs = globSync(['packages/*/rollup.config.cjs', 'libs/*/rollup.config.cjs'], {
-    cwd: workspaceRoot
+    cwd: workspaceRoot,
   })
 
   for (const relativePath of configs) {
@@ -358,6 +360,7 @@ export function repairRollupSourceMaps (workspaceRoot: string): string[] {
       changed.push(relativePath.replaceAll('\\', '/'))
     }
   }
+
   return changed
 }
 
@@ -373,7 +376,7 @@ const SOURCEMAP_PATH_TRANSFORM = [
   "          .replaceAll(String.fromCodePoint(92), '/')",
   "          .replace(/^([.][.][/])+/, '../')",
   '    },',
-  ''
+  '',
 ].join('\n')
 
 /** The same slot, carrying a plugin that repairs the declaration stub. */
@@ -414,7 +417,7 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '        }',
   '      }',
   '    ]',
-  '  }'
+  '  }',
 ].join('\n')
 
 /**
@@ -483,7 +486,7 @@ export function repairDeclarationSpecifiers (projectRoot: string): void {
 export function writeProjectReadme (
   projectRoot: string,
   projectName: string,
-  testRunner: WorkspaceStack['testRunner']
+  testRunner: WorkspaceStack['testRunner'],
 ): void {
   const runner = testRunner === 'vitest' ? '[Vitest](https://vitest.dev)' : '[Jest](https://jestjs.io)'
   writeFileEnsured(
@@ -500,8 +503,8 @@ export function writeProjectReadme (
       '## Running unit tests',
       '',
       `Run \`nx test ${projectName}\` to execute the unit tests via ${runner}.`,
-      ''
-    ].join('\n')
+      '',
+    ].join('\n'),
   )
 }
 
@@ -527,7 +530,7 @@ export function removeStaleGitkeeps (workspaceRoot: string): void {
     const directory = join(workspaceRoot, scaffold)
     try {
       const holdsAProject = readdirSync(directory, { withFileTypes: true }).some((entry) =>
-        entry.isDirectory()
+        entry.isDirectory(),
       )
       if (holdsAProject) {
         rmSync(join(directory, '.gitkeep'), { force: true })
@@ -572,8 +575,8 @@ export function removeStaleGitkeeps (workspaceRoot: string): void {
  */
 export function repairPublishableManifest (manifestPath: string): void {
   const manifest = readJson<{
-    types?: string
-    files?: string[]
+    types?:   string
+    files?:   string[]
     exports?: Record<string, string | { types?: string }>
   }>(manifestPath)
 
@@ -615,7 +618,7 @@ export function ensureAdmZip (workspaceRoot: string): void {
     runShell(
       'npm',
       ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     ) !== 0
   ) {
     throw new Error('npm install of adm-zip failed')
@@ -638,6 +641,7 @@ export function ensureAdmZip (workspaceRoot: string): void {
 export function defaultScope (workspaceRoot: string): string {
   const { name } = readJson<{ name: string }>(join(workspaceRoot, 'package.json'))
   const base = (name.startsWith('@') ? name.slice(1) : name).split('/', 1)[0]
+
   return `@${base}`
 }
 
@@ -667,7 +671,7 @@ export function addNxTargets (manifestPath: string, newTargets: Record<string, u
   const targets = (nx.targets as Record<string, unknown> | undefined) ?? {}
   writeFileEnsured(
     manifestPath,
-    toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } })
+    toJson({ ...manifest, nx: { ...nx, targets: { ...targets, ...newTargets } } }),
   )
 }
 
@@ -684,7 +688,7 @@ const ESLINT_CONFIG_FILENAMES = [
   'eslint.config.cjs',
   'eslint.config.ts',
   'eslint.config.mts',
-  'eslint.config.cts'
+  'eslint.config.cts',
 ] as const
 
 /**
@@ -737,7 +741,7 @@ export function removeGeneratedEslintConfig (workspaceRoot: string, projectRoot:
  */
 export interface ProjectCommands {
   /** Whether this kind has a `build` Nx target — adds `<name>:build` when true. */
-  build: boolean
+  build:  boolean
   /**
    * The exact command for `<name>:start` (e.g. `nx run <name>:serve`,
    * `nx run <name>:start`) — omitted entirely when the kind has no local
@@ -763,6 +767,7 @@ export interface ProjectCommands {
 function findCodeWorkspaceFile (workspaceRoot: string): string | undefined {
   try {
     const entry = readdirSync(workspaceRoot).find(file => file.endsWith('.code-workspace'))
+
     return entry ? join(workspaceRoot, entry) : undefined
   } catch {
     return undefined
@@ -787,6 +792,7 @@ function findCodeWorkspaceFile (workspaceRoot: string): string | undefined {
 function projectTask (name: string, kind: 'build' | 'qa' | 'start'): Record<string, unknown> {
   const script = `${name}:${kind}`
   const base = { label: `${name}: ${kind}`, type: 'npm', script, problemMatcher: [] }
+
   return kind === 'start' ? { ...base, isBackground: true } : { ...base, group: kind }
 }
 
@@ -820,13 +826,13 @@ function projectTask (name: string, kind: 'build' | 'qa' | 'start'): Record<stri
 export function registerProjectCommands (
   workspaceRoot: string,
   name: string,
-  commands: ProjectCommands
+  commands: ProjectCommands,
 ): void {
   // Every `add` kind ends here, which makes this the one place the scaffold
   // `.gitkeep` files can be swept without wiring 30 call sites.
   removeStaleGitkeeps(workspaceRoot)
   const scripts: Record<string, string> = {
-    [`${name}:qa`]: `nx run ${name}:lint && nx run ${name}:test`
+    [`${name}:qa`]: `nx run ${name}:lint && nx run ${name}:test`,
   }
   if (commands.build) {
     scripts[`${name}:build`] = `nx run ${name}:build`
@@ -855,15 +861,15 @@ export function registerProjectCommands (
   // conditional and why an unconditional form is worse than the bug.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
-    ...reactExpressPeerOverride(manifest)
+    ...reactExpressPeerOverride(manifest),
   }
   writeFileEnsured(
     manifestPath,
     toJson({
       ...manifest,
       scripts: { ...existingScripts, ...scripts },
-      ...((Object.keys(overrides).length > 0) && { overrides })
-    })
+      ...((Object.keys(overrides).length > 0) && { overrides }),
+    }),
   )
 
   const codeWorkspacePath = findCodeWorkspaceFile(workspaceRoot)
@@ -876,12 +882,12 @@ export function registerProjectCommands (
     }>(codeWorkspacePath) ?? {}
   const label = (task: Record<string, unknown>): string => (task.label as string | undefined) ?? ''
   const existingTasks = (workspaceFile.tasks?.tasks ?? []).filter(
-    task => !label(task).startsWith(`${name}: `)
+    task => !label(task).startsWith(`${name}: `),
   )
   const newTasks = [
     projectTask(name, 'qa'),
     ...(commands.build ? [projectTask(name, 'build')] : []),
-    ...(commands.start ? [projectTask(name, 'start')] : [])
+    ...(commands.start ? [projectTask(name, 'start')] : []),
   ]
   writeFileEnsured(
     codeWorkspacePath,
@@ -889,9 +895,9 @@ export function registerProjectCommands (
       ...workspaceFile,
       tasks: {
         version: workspaceFile.tasks?.version ?? '2.0.0',
-        tasks: [...existingTasks, ...newTasks]
-      }
-    })
+        tasks:   [...existingTasks, ...newTasks],
+      },
+    }),
   )
 }
 
@@ -965,7 +971,7 @@ export function rootRuntimeDependencies (workspaceRoot: string): Record<string, 
 export function relocateRootRuntimeDependencies (
   workspaceRoot: string,
   projectName: string,
-  before: Record<string, string>
+  before: Record<string, string>,
 ): void {
   const after = rootRuntimeDependencies(workspaceRoot)
   const added = Object.keys(after).filter(name => !Object.hasOwn(before, name))
@@ -974,7 +980,7 @@ export function relocateRootRuntimeDependencies (
   }
 
   const manifestPath = PROJECT_MANIFEST_ROOTS.map(root =>
-    join(workspaceRoot, root, projectName, 'package.json')
+    join(workspaceRoot, root, projectName, 'package.json'),
   ).find(candidate => fileExists(candidate))
   if (manifestPath === undefined) {
     // Nothing to move them INTO — a Python, Go or Dart project has no npm
@@ -992,13 +998,13 @@ export function relocateRootRuntimeDependencies (
   writeFileEnsured(manifestPath, toJson({ ...manifest, dependencies: { ...moved, ...owned } }))
 
   const remaining = Object.fromEntries(
-    Object.entries(after).filter(([name]) => !added.includes(name))
+    Object.entries(after).filter(([name]) => !added.includes(name)),
   )
   const rootManifest = readJson<Record<string, unknown>>(join(workspaceRoot, 'package.json'))
   const { dependencies: _dropped, ...rest } = rootManifest
   writeFileEnsured(
     join(workspaceRoot, 'package.json'),
-    toJson(Object.keys(remaining).length > 0 ? { ...rest, dependencies: remaining } : rest)
+    toJson(Object.keys(remaining).length > 0 ? { ...rest, dependencies: remaining } : rest),
   )
   logger.step(`Moved ${added.join(', ')} into ${projectName}'s own manifest`)
 
@@ -1006,11 +1012,11 @@ export function relocateRootRuntimeDependencies (
     runShell(
       'npm',
       ['install', '--package-lock-only', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     ) !== 0
   ) {
     logger.warn(
-      `Could not refresh package-lock.json after moving ${added.join(', ')}. Run 'npm install'.`
+      `Could not refresh package-lock.json after moving ${added.join(', ')}. Run 'npm install'.`,
     )
   }
 }

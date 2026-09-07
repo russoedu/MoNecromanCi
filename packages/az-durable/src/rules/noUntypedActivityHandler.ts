@@ -17,6 +17,7 @@ function referencedName (annotation: Node | undefined): string | undefined {
     return undefined
   }
   const typeName = typeAnnotation.typeName as Node | undefined
+
   return typeName?.type === 'Identifier' ? (typeName.name as string) : undefined
 }
 
@@ -46,9 +47,9 @@ function referencedName (annotation: Node | undefined): string | undefined {
  */
 export const noUntypedActivityHandler: Rule = {
   meta: {
-    type: 'problem',
-    docs: { description: 'Disallow handler annotations that erase inferred types.' },
-    schema: [],
+    type:     'problem',
+    docs:     { description: 'Disallow handler annotations that erase inferred types.' },
+    schema:   [],
     messages: {
       erased:
         "Annotating with '{{name}}' erases the handler's real signature — it is an alias for " +
@@ -56,8 +57,8 @@ export const noUntypedActivityHandler: Rule = {
         'Drop the annotation and let defineActivity infer it.',
       erasedWrapper:
         "A wrapper typed '{{name}}' collapses every handler it wraps to `any`. " +
-        'Make it generic: <I, O>(h: (i: I, c: InvocationContext) => O) => (i: I, c: InvocationContext): O.'
-    }
+        'Make it generic: <I, O>(h: (i: I, c: InvocationContext) => O) => (i: I, c: InvocationContext): O.',
+    },
   },
   create (context) {
     return {
@@ -75,9 +76,9 @@ export const noUntypedActivityHandler: Rule = {
         context.report({
           node,
           messageId: isParameter ? 'erasedWrapper' : 'erased',
-          data: { name }
+          data:      { name },
         })
-      }
+      },
     }
-  }
+  },
 }

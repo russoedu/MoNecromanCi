@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -27,7 +27,7 @@ function seedProjectJson (relativeDirectory: string, name: string): void {
   mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
   writeFileSync(
     join(workspaceRoot, relativeDirectory, 'project.json'),
-    JSON.stringify({ name, projectType: 'application', targets: { build: {} } })
+    JSON.stringify({ name, projectType: 'application', targets: { build: {} } }),
   )
 }
 
@@ -36,7 +36,7 @@ function readProjectJson (relativeDirectory: string): {
   targets: Record<string, { executor?: string; options?: Record<string, unknown> }>
 } {
   return JSON.parse(
-    readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8')
+    readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8'),
   ) as never
 }
 
@@ -54,7 +54,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -68,7 +68,7 @@ describe('runAdd flutter', () => {
     mockRunShell.mockImplementation(command => (command === 'flutter' ? 1 : 0))
 
     await expect(runAdd('flutter-app', 'web', {})).rejects.toThrow(
-      /Flutter not found.*docs\.flutter\.dev/s
+      /Flutter not found.*docs\.flutter\.dev/s,
     )
     // Nothing should have been generated once the toolchain probe failed.
     expect(mockRunNx).not.toHaveBeenCalled()
@@ -83,11 +83,11 @@ describe('runAdd flutter', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', '@mnci/nx-flutter', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
     expect(mockRunNx).toHaveBeenCalledWith(
       ['g', '@mnci/nx-flutter:application', 'web', '--no-interactive'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
@@ -106,9 +106,9 @@ describe('runAdd flutter', () => {
 
     const project = readProjectJson('apps/web')
     expect(project.targets.start).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:   'nx:run-commands',
       continuous: true,
-      options: { command: 'flutter run -d chrome', cwd: 'apps/web' }
+      options:    { command: 'flutter run -d chrome', cwd: 'apps/web' },
     })
     // build survives from the seeded fixture — this call only adds 'start'.
     expect(project.targets.build).toBeDefined()
@@ -143,7 +143,7 @@ describe('runAdd flutter', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith(
       ['g', '@mnci/nx-flutter:library', 'shared', '--no-interactive'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
@@ -152,14 +152,14 @@ describe('runAdd flutter', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith(
       ['g', '@mnci/nx-flutter:internal-library', 'core', '--no-interactive'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
   it('skips the plugin install when it is already a devDependency', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: '@demo/source', devDependencies: { '@mnci/nx-flutter': '^0.1.0' } })
+      JSON.stringify({ name: '@demo/source', devDependencies: { '@mnci/nx-flutter': '^0.1.0' } }),
     )
 
     await runAdd('flutter-lib', 'shared', {})
@@ -177,7 +177,7 @@ describe('runAdd flutter', () => {
       expect(mockRunShell).toHaveBeenCalledWith(
         'npm',
         ['install', '--save-dev', '/tmp/nx-flutter.tgz', '--no-audit', '--no-fund'],
-        workspaceRoot
+        workspaceRoot,
       )
     } finally {
       delete process.env.MNCI_NX_FLUTTER_SPEC
@@ -186,11 +186,11 @@ describe('runAdd flutter', () => {
 
   it('fails loudly when the plugin install itself fails', async () => {
     mockRunShell.mockImplementation((command, arguments_) =>
-      command === 'npm' && arguments_.includes('@mnci/nx-flutter') ? 1 : 0
+      command === 'npm' && arguments_.includes('@mnci/nx-flutter') ? 1 : 0,
     )
 
     await expect(runAdd('flutter-lib', 'shared', {})).rejects.toThrow(
-      'npm install of @mnci/nx-flutter failed'
+      'npm install of @mnci/nx-flutter failed',
     )
   })
 })

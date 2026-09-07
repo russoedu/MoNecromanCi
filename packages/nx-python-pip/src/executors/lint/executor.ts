@@ -22,9 +22,10 @@ import type { LintExecutorSchema } from './schema.d'
  */
 export default async function lintExecutor (
   _options: LintExecutorSchema,
-  context: ExecutorContext
+  context: ExecutorContext,
 ): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
   const result = spawnSync(pythonCommand(), ['-m', 'ruff', 'check', '.'], { cwd, stdio: 'inherit' })
+
   return { success: result.status === 0 }
 }

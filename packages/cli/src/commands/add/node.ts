@@ -9,7 +9,7 @@ import {
   registerProjectCommands,
   removeGeneratedEslintConfig,
   type NodeFramework,
-  type WorkspaceStack
+  type WorkspaceStack,
 } from './shared'
 
 /**
@@ -65,7 +65,7 @@ function runNodeApp (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack,
-  framework: NodeFramework
+  framework: NodeFramework,
 ): void {
   ensurePlugin(workspaceRoot, '@nx/node')
   runNx(
@@ -78,9 +78,9 @@ function runNodeApp (
       '--linter=none',
       '--e2eTestRunner=none',
       `--framework=${framework}`,
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
 }
 
@@ -103,11 +103,12 @@ function runNodeApp (
 function nodeAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/node-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
+
   return {
-    executor: 'nx:run-commands',
+    executor:  'nx:run-commands',
     dependsOn: ['build'],
-    outputs: [`{workspaceRoot}/${zip}`],
-    options: { command }
+    outputs:   [`{workspaceRoot}/${zip}`],
+    options:   { command },
   }
 }
 
@@ -133,12 +134,12 @@ export function addNodeApp (
   workspaceRoot: string,
   name: string,
   stack: WorkspaceStack,
-  framework: NodeFramework = 'none'
+  framework: NodeFramework = 'none',
 ): void {
   runNodeApp(workspaceRoot, name, stack, framework)
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
-    package: nodeAppPackageTarget(name)
+    package: nodeAppPackageTarget(name),
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
@@ -302,16 +303,16 @@ function repairNodeFunctionAppManifest (nodeFunctionAppRoot: string, workspaceRo
   const manifestPath = join(nodeFunctionAppRoot, 'package.json')
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const azureFunctionsVersion = readJson<{ version: string }>(
-    join(workspaceRoot, 'node_modules/@azure/functions/package.json')
+    join(workspaceRoot, 'node_modules/@azure/functions/package.json'),
   ).version
   const dependencies = (manifest.dependencies as Record<string, string> | undefined) ?? {}
   writeFileEnsured(
     manifestPath,
     toJson({
       ...manifest,
-      main: 'dist/main.js',
-      dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` }
-    })
+      main:         'dist/main.js',
+      dependencies: { ...dependencies, '@azure/functions': `^${azureFunctionsVersion}` },
+    }),
   )
 }
 
@@ -339,11 +340,12 @@ function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/node-function-app-${name}.zip`
   const root = `apps/${name}`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('${root}/dist','dist');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/package.json');z.writeZip('${zip}')"`
+
   return {
-    executor: 'nx:run-commands',
+    executor:  'nx:run-commands',
     dependsOn: ['build'],
-    outputs: [`{workspaceRoot}/${zip}`],
-    options: { command }
+    outputs:   [`{workspaceRoot}/${zip}`],
+    options:   { command },
   }
 }
 
@@ -366,10 +368,10 @@ function nodeFunctionAppPackageTarget (name: string): Record<string, unknown> {
  */
 function nodeFunctionAppStartTarget (name: string): Record<string, unknown> {
   return {
-    executor: 'nx:run-commands',
-    dependsOn: ['build'],
+    executor:   'nx:run-commands',
+    dependsOn:  ['build'],
     continuous: true,
-    options: { command: 'func start', cwd: `apps/${name}` }
+    options:    { command: 'func start', cwd: `apps/${name}` },
   }
 }
 
@@ -399,7 +401,7 @@ function nodeFunctionAppStartTarget (name: string): Record<string, unknown> {
 export function addNodeFunctionApp (
   workspaceRoot: string,
   name: string,
-  stack: WorkspaceStack
+  stack: WorkspaceStack,
 ): void {
   runNodeApp(workspaceRoot, name, stack, 'none')
   ensureAzureFunctionsPackage(workspaceRoot)
@@ -408,18 +410,18 @@ export function addNodeFunctionApp (
   writeFileEnsured(join(nodeFunctionAppRoot, 'src/functions/hello.ts'), NODE_FUNCTION_APP_HELLO)
   writeFileEnsured(
     join(nodeFunctionAppRoot, 'src/functions/greeting.ts'),
-    NODE_FUNCTION_APP_GREETING
+    NODE_FUNCTION_APP_GREETING,
   )
   writeFileEnsured(
     join(nodeFunctionAppRoot, 'src/functions/greeting.spec.ts'),
-    NODE_FUNCTION_APP_GREETING_SPEC
+    NODE_FUNCTION_APP_GREETING_SPEC,
   )
   writeFileEnsured(join(nodeFunctionAppRoot, 'host.json'), NODE_FUNCTION_APP_HOST_JSON)
   repairNodeFunctionAppManifest(nodeFunctionAppRoot, workspaceRoot)
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(nodeFunctionAppRoot, 'package.json'), {
     package: nodeFunctionAppPackageTarget(name),
-    start: nodeFunctionAppStartTarget(name)
+    start:   nodeFunctionAppStartTarget(name),
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })

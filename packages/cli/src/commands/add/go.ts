@@ -43,7 +43,7 @@ function ensureGo (workspaceRoot: string): void {
 function warnIfNoGolangciLint (workspaceRoot: string): void {
   if (runShell('golangci-lint', ['--version'], workspaceRoot) !== 0) {
     logger.warn(
-      'golangci-lint not found — the generated lint target needs it. Install: https://golangci-lint.run/welcome/install/'
+      'golangci-lint not found — the generated lint target needs it. Install: https://golangci-lint.run/welcome/install/',
     )
   }
 }
@@ -148,6 +148,7 @@ function goModulePath (workspaceRoot: string): string | undefined {
   try {
     // go.mod is not JSON, so it is read directly rather than via readJson.
     const contents = readFileSync(join(workspaceRoot, 'go.mod'), 'utf8')
+
     return /^module\s+(\S+)/m.exec(contents)?.[1]
   } catch {
     return undefined
@@ -214,9 +215,9 @@ function goTestTarget (): Record<string, unknown> {
  */
 function goLintTarget (): Record<string, unknown> {
   return {
-    executor: '@nx-go/nx-go:lint',
+    executor:    '@nx-go/nx-go:lint',
     parallelism: false,
-    options: { linter: 'golangci-lint', args: ['run'] }
+    options:     { linter: 'golangci-lint', args: ['run'] },
   }
 }
 
@@ -243,8 +244,8 @@ function goLintTarget (): Record<string, unknown> {
 function goBuildTarget (name: string): Record<string, unknown> {
   return {
     executor: '@nx-go/nx-go:build',
-    outputs: [`{workspaceRoot}/dist/apps/${name}`],
-    options: { outputPath: `../../dist/apps/${name}/${name}` }
+    outputs:  [`{workspaceRoot}/dist/apps/${name}`],
+    options:  { outputPath: `../../dist/apps/${name}/${name}` },
   }
 }
 
@@ -270,11 +271,12 @@ function goBuildTarget (name: string): Record<string, unknown> {
 function goPackageTarget (tag: string, name: string): Record<string, unknown> {
   const zip = `dist/drop/${tag}-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
+
   return {
-    executor: 'nx:run-commands',
+    executor:  'nx:run-commands',
     dependsOn: ['build'],
-    outputs: [`{workspaceRoot}/${zip}`],
-    options: { command }
+    outputs:   [`{workspaceRoot}/${zip}`],
+    options:   { command },
   }
 }
 
@@ -294,9 +296,9 @@ function goPackageTarget (tag: string, name: string): Record<string, unknown> {
  */
 function goStartTarget (name: string): Record<string, unknown> {
   return {
-    executor: 'nx:run-commands',
+    executor:   'nx:run-commands',
     continuous: true,
-    options: { command: 'go run .', cwd: `apps/${name}` }
+    options:    { command: 'go run .', cwd: `apps/${name}` },
   }
 }
 
@@ -333,16 +335,16 @@ export function addGoApp (workspaceRoot: string, name: string): void {
       `apps/${name}`,
       `--name=${name}`,
       '--tags=type:go-app',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
-    build: goBuildTarget(name),
-    test: goTestTarget(),
-    lint: goLintTarget(),
+    build:   goBuildTarget(name),
+    test:    goTestTarget(),
+    lint:    goLintTarget(),
     package: goPackageTarget('go-app', name),
-    start: goStartTarget(name)
+    start:   goStartTarget(name),
   })
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
@@ -382,15 +384,15 @@ export function addGoFunctionApp (workspaceRoot: string, name: string): void {
       `apps/${name}`,
       `--name=${name}`,
       '--tags=type:go-function-app',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
-    build: goBuildTarget(name),
-    test: goTestTarget(),
-    lint: goLintTarget(),
-    package: goPackageTarget('go-function-app', name)
+    build:   goBuildTarget(name),
+    test:    goTestTarget(),
+    lint:    goLintTarget(),
+    package: goPackageTarget('go-function-app', name),
   })
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
@@ -425,13 +427,13 @@ export function addGoLib (workspaceRoot: string, name: string): void {
       `packages/${name}`,
       `--name=${name}`,
       '--tags=type:go-lib',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   addProjectJsonTargets(join(workspaceRoot, 'packages', name, 'project.json'), {
     test: goTestTarget(),
-    lint: goLintTarget()
+    lint: goLintTarget(),
   })
   registerProjectCommands(workspaceRoot, name, { build: false })
 
@@ -466,13 +468,13 @@ export function addGoInternalLib (workspaceRoot: string, name: string): void {
       `libs/${name}`,
       `--name=${name}`,
       '--tags=type:go-internal-lib',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   addProjectJsonTargets(join(workspaceRoot, 'libs', name, 'project.json'), {
     test: goTestTarget(),
-    lint: goLintTarget()
+    lint: goLintTarget(),
   })
   registerProjectCommands(workspaceRoot, name, { build: false })
 

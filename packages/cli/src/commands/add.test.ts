@@ -1,7 +1,7 @@
 jest.mock('../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -32,7 +32,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -68,7 +68,7 @@ describe('runAdd', () => {
   it('keeps a successful add green even when nx sync fails (the project is already generated)', async () => {
     // Last call in the flow is nx sync; make only it fail.
     mockRunShell.mockImplementation((command: string, arguments_: string[]) =>
-      command === 'npx' && arguments_[0] === 'nx' && arguments_[1] === 'sync' ? 1 : 0
+      command === 'npx' && arguments_[0] === 'nx' && arguments_[1] === 'sync' ? 1 : 0,
     )
 
     await expect(runAdd('react-app', 'web', {})).resolves.toBeUndefined()
@@ -89,7 +89,7 @@ describe('runAdd', () => {
     mkdirSync(join(workspaceRoot, 'libs/utils'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'libs/utils/package.json'),
-      JSON.stringify({ name: '@demo/utils' })
+      JSON.stringify({ name: '@demo/utils' }),
     )
 
     await runAdd('internal-lib', 'utils', {})
@@ -102,12 +102,12 @@ describe('runAdd', () => {
         '--bundler=tsc',
         '--unitTestRunner=jest',
         '--linter=none',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'libs/utils/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'libs/utils/package.json'), 'utf8'),
     ) as { private: boolean }
     expect(manifest.private).toBe(true)
   })
@@ -128,14 +128,14 @@ describe('runAdd', () => {
     // Argument#choices() in cli.ts); this proves runAdd's own switch has no
     // silent fallthrough for any other caller that bypasses that layer.
     await expect(runAdd('bogus-kind' as ProjectKind, 'thing', {})).rejects.toThrow(
-      "Unknown project kind 'bogus-kind'"
+      "Unknown project kind 'bogus-kind'",
     )
     expect(mockRunNx).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid project name before any install or generator call', async () => {
     await expect(runAdd('react-app', 'Not Valid!', {})).rejects.toThrow(
-      "Project name 'Not Valid!' is invalid"
+      "Project name 'Not Valid!' is invalid",
     )
 
     expect(mockRunNx).not.toHaveBeenCalled()
@@ -166,12 +166,12 @@ describe('root-only ESLint config', () => {
       mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
       writeFileSync(
         join(workspaceRoot, projectRoot, 'package.json'),
-        JSON.stringify({ name: `@demo/${name}` })
+        JSON.stringify({ name: `@demo/${name}` }),
       )
       for (const extension of EXTENSIONS) {
         writeFileSync(
           join(workspaceRoot, projectRoot, `eslint.config.${extension}`),
-          'export default []'
+          'export default []',
         )
       }
 
@@ -179,9 +179,9 @@ describe('root-only ESLint config', () => {
 
       for (const extension of EXTENSIONS) {
         expect(existsSync(join(workspaceRoot, projectRoot, `eslint.config.${extension}`))).toBe(
-          false
+          false,
         )
       }
-    }
+    },
   )
 })

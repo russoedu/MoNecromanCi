@@ -38,7 +38,7 @@ export default class DartVersionActions extends VersionActions {
    * @typeParam None - this method has no generic type parameters.
    */
   async readCurrentVersionFromSourceManifest (
-    tree: Tree
+    tree: Tree,
   ): Promise<{ currentVersion: string; manifestPath: string } | null> {
     // `posix.join`, never plain `join`. An Nx `Tree` path is always
     // workspace-relative and forward-slashed on EVERY platform, while `join`
@@ -60,6 +60,7 @@ export default class DartVersionActions extends VersionActions {
     if (!currentVersion) {
       throw new Error(`Could not find a top-level "version:" key in ${manifestPath}`)
     }
+
     return { currentVersion, manifestPath }
   }
 
@@ -81,11 +82,11 @@ export default class DartVersionActions extends VersionActions {
    */
   async readCurrentVersionFromRegistry (
     _tree: Tree,
-    _currentVersionResolverMetadata: Record<string, unknown> | undefined
+    _currentVersionResolverMetadata: Record<string, unknown> | undefined,
   ): Promise<{ currentVersion: string | null; logText: string } | null> {
     return {
       currentVersion: null,
-      logText: 'Dart packages are released by git tag, not a registry'
+      logText:        'Dart packages are released by git tag, not a registry',
     }
   }
 
@@ -107,7 +108,7 @@ export default class DartVersionActions extends VersionActions {
   async readCurrentVersionOfDependency (
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependencyProjectName: string
+    _dependencyProjectName: string,
   ): Promise<{ currentVersion: string | null; dependencyCollection: string | null }> {
     return { currentVersion: null, dependencyCollection: null }
   }
@@ -126,6 +127,7 @@ export default class DartVersionActions extends VersionActions {
     const manifestPath = posix.join(this.projectGraphNode.data.root, 'pubspec.yaml')
     const contents = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(manifestPath, writePubspecVersion(contents, newVersion))
+
     return [`Updated ${manifestPath} to version ${newVersion}`]
   }
 
@@ -148,7 +150,7 @@ export default class DartVersionActions extends VersionActions {
   async updateProjectDependencies (
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependenciesToUpdate: Record<string, string>
+    _dependenciesToUpdate: Record<string, string>,
   ): Promise<string[]> {
     return []
   }

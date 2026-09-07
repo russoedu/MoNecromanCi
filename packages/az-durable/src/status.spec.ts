@@ -12,8 +12,8 @@ describe('custom status', () => {
       df: {
         setCustomStatus: (value: unknown) => {
           seen.push(value)
-        }
-      }
+        },
+      },
     } as unknown as OrchestrationContext
 
     setStatus(context, statuses, 'running')

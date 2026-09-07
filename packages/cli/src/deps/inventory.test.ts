@@ -17,7 +17,7 @@ import {
   replacePubSpec,
   resolvedVersion,
   rewriteSpec,
-  type DependencySite
+  type DependencySite,
 } from './inventory'
 
 const mockRunCapture = jest.mocked(runCapture)
@@ -35,6 +35,7 @@ function write (relativePath: string, content: string): string {
   const path = join(workspaceRoot, relativePath)
   mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, content)
+
   return path
 }
 
@@ -50,6 +51,7 @@ function siteIn (sites: DependencySite[] | undefined, project: string): Dependen
   if (!site) {
     throw new Error(`no declaration in ${project}`)
   }
+
   return site
 }
 
@@ -75,7 +77,7 @@ describe('npm', () => {
     const projects = inventory.get('axios')?.map(site => site.project)
     expect(projects?.toSorted((left, right) => left.localeCompare(right))).toEqual([
       'libs/core',
-      'packages/auth'
+      'packages/auth',
     ])
   })
 
@@ -95,10 +97,10 @@ describe('npm', () => {
         devDependencies: {
           // The exact shape mnci's own root manifest uses for the dual compiler.
           typescript: 'npm:@typescript/typescript6@^6.0.2',
-          local: 'file:../thing',
-          eslint: '^10.8.1'
-        }
-      })
+          local:      'file:../thing',
+          eslint:     '^10.8.1',
+        },
+      }),
     )
 
     const inventory = collectInventory(workspaceRoot, ['npm'])
@@ -114,7 +116,7 @@ describe('npm', () => {
     // two majors of consumers. Found by running `mnci sync --check` here.
     write(
       'packages/plugin/package.json',
-      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } })
+      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } }),
     )
 
     const site = siteIn(collectInventory(workspaceRoot, ['npm']).get('@nx/devkit'), 'packages/plugin')
@@ -136,7 +138,7 @@ describe('pip', () => {
   it('reads pyproject dependencies, requirements-dev and an app requirements file', () => {
     write(
       'python-packages/shared/pyproject.toml',
-      '[project]\nname = "shared"\ndependencies = ["requests>=2.31.0"]\n'
+      '[project]\nname = "shared"\ndependencies = ["requests>=2.31.0"]\n',
     )
     write('requirements-dev.txt', 'build\nruff\n')
     write('apps/fn/requirements.txt', 'azure-functions\nrequests==2.30.0\n')
@@ -159,7 +161,7 @@ describe('pip', () => {
       '',
       '[tool.something]',
       'dependencies = ["never-a-runtime-dep"]',
-      ''
+      '',
     ].join('\n')
 
     expect(pyprojectDependencies(content)).toEqual(['requests>=2.31.0'])
@@ -174,9 +176,9 @@ describe('pip', () => {
 describe('parseRequirement', () => {
   it('splits a name from its version spec', () => {
     expect(parseRequirement('requests>=2.31.0')).toEqual({
-      name: 'requests',
-      spec: '>=2.31.0',
-      rewritable: true
+      name:       'requests',
+      spec:       '>=2.31.0',
+      rewritable: true,
     })
   })
 
@@ -209,8 +211,8 @@ describe('pub', () => {
     write(
       'apps/ui/pubspec.yaml',
       ['name: ui', 'dependencies:', '  http: ^1.2.0', '  flutter:', '    sdk: flutter', ''].join(
-        '\n'
-      )
+        '\n',
+      ),
     )
 
     const inventory = collectInventory(workspaceRoot, ['pub'])
@@ -227,14 +229,14 @@ describe('pub', () => {
       '  other:',
       '    git:',
       '      url: https://example.test/a.git',
-      ''
+      '',
     ].join('\n')
 
     const entries = pubspecBlockEntries(content, 'dependencies')
     expect(entries).toEqual([
       { name: 'http', spec: '^1.2.0' },
       { name: 'flutter', spec: '' },
-      { name: 'other', spec: '' }
+      { name: 'other', spec: '' },
     ])
   })
 
@@ -243,7 +245,7 @@ describe('pub', () => {
     // injection silently did nothing for months.
     const content = 'dependencies:\r\n  http: ^1.2.0\r\n'
     expect(pubspecBlockEntries(content, 'dependencies')).toEqual([
-      { name: 'http', spec: '^1.2.0' }
+      { name: 'http', spec: '^1.2.0' },
     ])
   })
 })
@@ -261,8 +263,8 @@ describe('go', () => {
         '\tgithub.com/spf13/cobra v1.8.0',
         '\tgithub.com/inconshreveable/mousetrap v1.1.0 // indirect',
         ')',
-        ''
-      ].join('\n')
+        '',
+      ].join('\n'),
     )
 
     const inventory = collectInventory(workspaceRoot, ['go'])
@@ -298,14 +300,14 @@ describe('rewriteSpec', () => {
   it('rewrites an npm manifest entry and leaves its siblings alone', () => {
     const path = write(
       'packages/auth/package.json',
-      JSON.stringify({ name: 'auth', dependencies: { axios: '^1.7.2', zod: '^3.0.0' } }, undefined, 2)
+      JSON.stringify({ name: 'auth', dependencies: { axios: '^1.7.2', zod: '^3.0.0' } }, undefined, 2),
     )
     const site = siteIn(collectInventory(workspaceRoot, ['npm']).get('axios'), 'packages/auth')
 
     expect(rewriteSpec(site, '^1.9.0')).toBe(true)
 
     const manifest = JSON.parse(readFileSync(path, 'utf8')) as {
-      name: string
+      name:         string
       dependencies: Record<string, string>
     }
     expect(manifest.dependencies).toEqual({ axios: '^1.9.0', zod: '^3.0.0' })
@@ -329,8 +331,8 @@ describe('rewriteSpec', () => {
         '[project]',
         'name = "shared"',
         'dependencies = ["requests>=2.31.0"]  # pinned deliberately',
-        ''
-      ].join('\n')
+        '',
+      ].join('\n'),
     )
     const site = siteIn(collectInventory(workspaceRoot, ['pip']).get('requests'), 'libs/shared')
 
@@ -346,8 +348,8 @@ describe('rewriteSpec', () => {
     const path = write(
       'apps/ui/pubspec.yaml',
       ['name: ui', '', 'dependencies:', '  http: ^1.2.0', '  flutter:', '    sdk: flutter', ''].join(
-        '\n'
-      )
+        '\n',
+      ),
     )
     const site = siteIn(collectInventory(workspaceRoot, ['pub']).get('http'), 'apps/ui')
 
@@ -396,8 +398,8 @@ describe('resolvedVersion', () => {
         '    version: "1.2.2"',
         '  meta:',
         '    version: "1.16.0"',
-        ''
-      ].join('\n')
+        '',
+      ].join('\n'),
     )
     expect(resolvedVersion(workspaceRoot, 'pub', 'http')).toBe('1.2.2')
     expect(resolvedVersion(workspaceRoot, 'pub', 'meta')).toBe('1.16.0')

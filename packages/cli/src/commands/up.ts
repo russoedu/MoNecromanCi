@@ -9,7 +9,7 @@ import {
   resolvedVersion,
   rewriteSpec,
   type DependencySite,
-  type Ecosystem
+  type Ecosystem,
 } from '../deps/inventory'
 import { latestVersions } from '../deps/registry'
 import {
@@ -20,7 +20,7 @@ import {
   isNewer,
   rangeOperator,
   specVersion,
-  type UpdateKind
+  type UpdateKind,
 } from '../deps/semver'
 import { runFormatter, runShell } from '../nx'
 import { fileExists, readJson } from '../util/fsx'
@@ -39,13 +39,13 @@ import { resolveEcosystems, syncProjectReferences } from './sync'
  */
 export interface UpOptions {
   /** Report only; never prompt and never write. */
-  check?: boolean
+  check?:     boolean
   /** Select every available update without prompting. */
-  yes?: boolean
+  yes?:       boolean
   /** Restrict the run to one ecosystem. */
   ecosystem?: string
   /** Commander sets this to `false` for `--no-install`. */
-  install?: boolean
+  install?:   boolean
 }
 
 /**
@@ -61,17 +61,17 @@ export interface UpOptions {
  */
 export interface Outdated {
   /** The package name. */
-  name: string
+  name:      string
   /** Which ecosystem it belongs to. */
   ecosystem: Ecosystem
   /** The version currently in use. */
-  current: string
+  current:   string
   /** The newest published version. */
-  latest: string
+  latest:    string
   /** Which `npm-check` section this upgrade belongs in. */
-  kind: UpdateKind
+  kind:      UpdateKind
   /** Every place it is declared — the column `npm-check` does not have. */
-  sites: DependencySite[]
+  sites:     DependencySite[]
 }
 
 /**
@@ -91,7 +91,7 @@ export interface Outdated {
  */
 function currentVersion (
   workspaceRoot: string,
-  sites: readonly DependencySite[]
+  sites: readonly DependencySite[],
 ): string | undefined {
   const installed = resolvedVersion(workspaceRoot, sites[0].ecosystem, sites[0].name)
   if (installed) {
@@ -105,6 +105,7 @@ function currentVersion (
     return bare(sites[0].spec)
   }
   const highest = highestSpec(sites.map(site => site.spec))
+
   return highest ? specVersion(highest) : undefined
 }
 
@@ -134,7 +135,7 @@ function currentVersion (
  */
 export async function collectOutdated (
   workspaceRoot: string,
-  ecosystems: readonly Ecosystem[]
+  ecosystems: readonly Ecosystem[],
 ): Promise<Outdated[]> {
   const present = ecosystems.filter(ecosystem => hasEcosystem(workspaceRoot, ecosystem))
   const inventory = collectInventory(workspaceRoot, present)
@@ -142,12 +143,12 @@ export async function collectOutdated (
   const outdated: Outdated[] = []
   for (const ecosystem of present) {
     const forEcosystem = [...inventory].filter(([name, sites]) =>
-      offerable(workspaceRoot, ecosystem, name, sites)
+      offerable(workspaceRoot, ecosystem, name, sites),
     )
     const latest = await latestVersions(
       ecosystem,
       forEcosystem.map(([name]) => name),
-      workspaceRoot
+      workspaceRoot,
     )
     outdated.push(...upgradable(workspaceRoot, ecosystem, forEcosystem, latest))
   }
@@ -155,7 +156,7 @@ export async function collectOutdated (
   return outdated.toSorted(
     (left, right) =>
       UPDATE_KINDS.indexOf(left.kind) - UPDATE_KINDS.indexOf(right.kind) ||
-      left.name.localeCompare(right.name)
+      left.name.localeCompare(right.name),
   )
 }
 
@@ -187,7 +188,7 @@ function offerable (
   workspaceRoot: string,
   ecosystem: Ecosystem,
   name: string,
-  sites: readonly DependencySite[]
+  sites: readonly DependencySite[],
 ): boolean {
   if (sites[0].ecosystem !== ecosystem || sites[0].section === 'indirect') {
     return false
@@ -198,6 +199,7 @@ function offerable (
   if (ecosystem !== 'npm') {
     return true
   }
+
   return !isWorkspaceProject(workspaceRoot, name) && !isAliasedInstall(workspaceRoot, name)
 }
 
@@ -239,7 +241,7 @@ function upgradable (
   workspaceRoot: string,
   ecosystem: Ecosystem,
   declared: ReadonlyArray<[string, DependencySite[]]>,
-  latest: ReadonlyMap<string, string>
+  latest: ReadonlyMap<string, string>,
 ): Outdated[] {
   const outdated: Outdated[] = []
 
@@ -254,10 +256,11 @@ function upgradable (
       ecosystem,
       current,
       latest: newest,
-      kind: classify(bare(current), bare(newest)),
-      sites
+      kind:   classify(bare(current), bare(newest)),
+      sites,
     })
   }
+
   return outdated
 }
 
@@ -277,11 +280,12 @@ function upgradable (
 function row (entry: Outdated, widths: { name: number, section: number, current: number }): string {
   const sections = [...new Set(entry.sites.map(site => site.section))].join('/')
   const projects = [...new Set(entry.sites.map(site => site.project))].join(', ')
+
   return [
     entry.name.padEnd(widths.name),
     sections.padEnd(widths.section),
     `${entry.current.padStart(widths.current)}  ›  ${entry.latest}`,
-    projects
+    projects,
   ].join('  ')
 }
 
@@ -294,16 +298,16 @@ function row (entry: Outdated, widths: { name: number, section: number, current:
  * @typeParam None - this function has no generic type parameters.
  */
 function columnWidths (entries: readonly Outdated[]): {
-  name: number
+  name:    number
   section: number
   current: number
 } {
   return {
-    name: widthOf(entries.map(entry => entry.name)),
+    name:    widthOf(entries.map(entry => entry.name)),
     section: widthOf(
-      entries.map(entry => [...new Set(entry.sites.map(site => site.section))].join('/'))
+      entries.map(entry => [...new Set(entry.sites.map(site => site.section))].join('/')),
     ),
-    current: widthOf(entries.map(entry => entry.current))
+    current: widthOf(entries.map(entry => entry.current)),
   }
 }
 
@@ -372,9 +376,9 @@ async function promptForUpdates (outdated: readonly Outdated[]): Promise<Outdate
   }
 
   return await checkbox({
-    message: 'Choose which packages to update.',
+    message:  'Choose which packages to update.',
     choices,
-    pageSize: 20
+    pageSize: 20,
   })
 }
 
@@ -408,6 +412,7 @@ function applyUpdate (entry: Outdated): string[] {
       changed.push(site.manifestPath)
     }
   }
+
   return changed
 }
 
@@ -434,7 +439,7 @@ function reinstall (workspaceRoot: string, ecosystems: ReadonlySet<Ecosystem>): 
     ['npm', 'npm', ['install']],
     ['pip', 'npm', ['run', 'python:install']],
     ['pub', 'flutter', ['pub', 'get']],
-    ['go', 'go', ['mod', 'tidy']]
+    ['go', 'go', ['mod', 'tidy']],
   ]
 
   for (const [ecosystem, command, arguments_] of commands) {
@@ -443,14 +448,14 @@ function reinstall (workspaceRoot: string, ecosystems: ReadonlySet<Ecosystem>): 
     }
     if (ecosystem === 'pip' && !hasPythonInstallScript(workspaceRoot)) {
       logger.warn(
-        "This workspace has no 'python:install' script — run 'mnci upgrade' to add it, then reinstall by hand."
+        "This workspace has no 'python:install' script — run 'mnci upgrade' to add it, then reinstall by hand.",
       )
       continue
     }
     logger.step(`Reinstalling ${ecosystem} dependencies (${command} ${arguments_.join(' ')})`)
     if (runShell(command, arguments_, workspaceRoot) !== 0) {
       logger.warn(
-        `${command} ${arguments_.join(' ')} failed — the manifests were updated, so re-run it once the cause is fixed.`
+        `${command} ${arguments_.join(' ')} failed — the manifests were updated, so re-run it once the cause is fixed.`,
       )
     }
   }
@@ -467,8 +472,9 @@ function reinstall (workspaceRoot: string, ecosystems: ReadonlySet<Ecosystem>): 
 function hasPythonInstallScript (workspaceRoot: string): boolean {
   try {
     const manifest = readJson<{ scripts?: Record<string, string> }>(
-      join(workspaceRoot, 'package.json')
+      join(workspaceRoot, 'package.json'),
     )
+
     return manifest.scripts?.['python:install'] !== undefined
   } catch {
     return false
@@ -530,6 +536,7 @@ export async function runUp (workspaceRoot: string, options: UpOptions): Promise
 
   if (outdated.length === 0) {
     logger.success('Every dependency is on its latest published version.')
+
     return
   }
 
@@ -538,12 +545,14 @@ export async function runUp (workspaceRoot: string, options: UpOptions): Promise
     reportOutdated(outdated)
     logger.info('')
     logger.info(`${outdated.length} package(s) have a newer release. Run 'mnci up' to update them.`)
+
     return
   }
 
   const selected = options.yes ? [...outdated] : await promptForUpdates(outdated)
   if (selected.length === 0) {
     logger.info('Nothing selected; no manifest was changed.')
+
     return
   }
 
@@ -569,6 +578,6 @@ export async function runUp (workspaceRoot: string, options: UpOptions): Promise
   }
 
   logger.success(
-    `Updated ${selected.length} package(s). Review the changes with \`git diff\` before committing.`
+    `Updated ${selected.length} package(s). Review the changes with \`git diff\` before committing.`,
   )
 }

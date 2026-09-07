@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -29,14 +29,14 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
   // The generator is mocked, so pre-create the manifest it would have written
   // (every test here adds a lib named 'sdk') — addNpmLib patches it in place.
   mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
   writeFileSync(
     join(workspaceRoot, 'packages/sdk/package.json'),
-    JSON.stringify({ name: '@demo/sdk' })
+    JSON.stringify({ name: '@demo/sdk' }),
   )
 })
 
@@ -62,7 +62,7 @@ const GENERATED_ROLLUP_CONFIG = [
   '    // e.g.',
   '    // output: { sourcemap: true },',
   '  }',
-  ');'
+  ');',
 ].join('\n')
 
 // What @nx/js:lib --bundler=rollup actually writes into the manifest.
@@ -70,20 +70,20 @@ const seedGeneratedManifest = (): void => {
   writeFileSync(
     join(workspaceRoot, 'packages/sdk/package.json'),
     JSON.stringify({
-      name: '@demo/sdk',
-      main: './dist/index.esm.js',
-      module: './dist/index.esm.js',
-      types: './dist/index.esm.d.ts',
-      files: ['dist', '!**/*.tsbuildinfo'],
+      name:    '@demo/sdk',
+      main:    './dist/index.esm.js',
+      module:  './dist/index.esm.js',
+      types:   './dist/index.esm.d.ts',
+      files:   ['dist', '!**/*.tsbuildinfo'],
       exports: {
         './package.json': './package.json',
-        '.': {
-          types: './dist/index.esm.d.ts',
-          import: './dist/index.esm.js',
-          default: './dist/index.esm.js'
-        }
-      }
-    })
+        '.':              {
+          types:   './dist/index.esm.d.ts',
+          import:  './dist/index.esm.js',
+          default: './dist/index.esm.js',
+        },
+      },
+    }),
   )
 }
 
@@ -101,9 +101,9 @@ describe('runAdd npm-lib', () => {
         '--bundler=rollup',
         '--unitTestRunner=jest',
         '--linter=none',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
@@ -111,7 +111,7 @@ describe('runAdd npm-lib', () => {
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { publishConfig: { access: string } }
     expect(manifest.publishConfig).toEqual({ access: 'public' })
   })
@@ -127,7 +127,7 @@ describe('runAdd npm-lib', () => {
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { types: string; exports: Record<string, { types?: string }> }
     expect(manifest.types).toBe('./dist/src/index.d.ts')
     expect(manifest.exports['.'].types).toBe('./dist/src/index.d.ts')
@@ -139,7 +139,7 @@ describe('runAdd npm-lib', () => {
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { main: string; module: string }
     expect(manifest.main).toBe('./dist/index.esm.js')
     expect(manifest.module).toBe('./dist/index.esm.js')
@@ -155,7 +155,7 @@ describe('runAdd npm-lib', () => {
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { files: string[] }
     expect(manifest.files).toContain('!**/*.d.ts.map')
     // The generator entries survive.
@@ -170,14 +170,14 @@ describe('runAdd npm-lib', () => {
     // stub comes out as "./src/index" with the plugin in place.
     writeFileSync(
       join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
-      GENERATED_ROLLUP_CONFIG
+      GENERATED_ROLLUP_CONFIG,
     )
 
     await runAdd('npm-lib', 'sdk', {})
 
     const config = readFileSync(
       join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
-      'utf8'
+      'utf8',
     )
     expect(config).toContain('mnci-normalise-declaration-specifiers')
     // The placeholder it replaced is gone, and the rest of the config survives.
@@ -242,7 +242,7 @@ describe('runAdd npm-lib', () => {
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { files: string[] }
     expect(manifest.files).toContain('!**/*.js.map')
     // The declaration-map exclusion and the generator's own entries survive.
@@ -264,13 +264,13 @@ describe('runAdd npm-lib', () => {
   it('leaves an already-correct types path untouched, so an upstream fix is not undone', async () => {
     writeFileSync(
       join(workspaceRoot, 'packages/sdk/package.json'),
-      JSON.stringify({ name: '@demo/sdk', types: './dist/src/index.d.ts', files: ['dist'] })
+      JSON.stringify({ name: '@demo/sdk', types: './dist/src/index.d.ts', files: ['dist'] }),
     )
 
     await runAdd('npm-lib', 'sdk', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
     ) as { types: string }
     expect(manifest.types).toBe('./dist/src/index.d.ts')
   })
@@ -282,14 +282,14 @@ describe('runAdd npm-lib', () => {
     // more ambiguous of two working forms.)
     writeFileSync(
       join(workspaceRoot, 'packages/sdk/README.md'),
-      '# sdk\n\nThis library was generated with [Nx](https://nx.dev).\n'
+      '# sdk\n\nThis library was generated with [Nx](https://nx.dev).\n',
     )
 
     await runAdd('npm-lib', 'sdk', {})
 
     const readme = readFileSync(
       join(workspaceRoot, 'packages/sdk/README.md'),
-      'utf8'
+      'utf8',
     )
     expect(readme).toContain('MoNecromanCI')
     expect(readme).not.toContain('generated with [Nx]')
@@ -302,7 +302,7 @@ describe('runAdd npm-lib', () => {
 
     const readme = readFileSync(
       join(workspaceRoot, 'packages/sdk/README.md'),
-      'utf8'
+      'utf8',
     )
     expect(readme).toContain('Jest')
   })
@@ -360,7 +360,7 @@ describe('runAdd npm-lib', () => {
 
     expect(mockPromptText).not.toHaveBeenCalledWith(
       'npm scope for the published package',
-      expect.anything()
+      expect.anything(),
     )
     expect(mockRunNx.mock.calls[0][0]).toContain('--importPath=@demo/sdk')
   })

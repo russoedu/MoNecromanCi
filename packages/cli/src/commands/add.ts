@@ -14,7 +14,7 @@ import {
   addPythonFunctionApp,
   addPythonInternalLib,
   addPythonLib,
-  addPythonVendor
+  addPythonVendor,
 } from './add/python'
 import { addReactApp } from './add/reactApp'
 import { addReactInternalLib, addReactLib } from './add/reactLib'
@@ -26,7 +26,7 @@ import {
   removeGeneratedEslintConfig,
   rootRuntimeDependencies,
   type AddOptions,
-  type WorkspaceStack
+  type WorkspaceStack,
 } from './add/shared'
 
 export type { AddOptions } from './add/shared'
@@ -153,7 +153,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'go-internal-lib',
   'flutter-app',
   'flutter-lib',
-  'flutter-internal-lib'
+  'flutter-internal-lib',
 ]
 
 /**
@@ -178,7 +178,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
 export async function runAdd (
   kind: ProjectKind | undefined,
   name: string | undefined,
-  options: AddOptions
+  options: AddOptions,
 ): Promise<void> {
   const workspaceRoot = process.cwd()
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
@@ -197,7 +197,7 @@ export async function runAdd (
     kind ??
     (await select<ProjectKind>({
       message: 'What kind of project?',
-      choices: PROJECT_KINDS.map(value => ({ name: value, value }))
+      choices: PROJECT_KINDS.map(value => ({ name: value, value })),
     }))
   const resolvedName = name ?? (await promptText('Project name'))
   // Fails fast, before any install or generator call: the name becomes a
@@ -249,9 +249,9 @@ export async function runAdd (
           '--bundler=tsc',
           `--unitTestRunner=${stack.testRunner}`,
           '--linter=none',
-          '--no-interactive'
+          '--no-interactive',
         ],
-        workspaceRoot
+        workspaceRoot,
       )
       markPrivate(join(workspaceRoot, 'libs', resolvedName, 'package.json'))
       removeGeneratedEslintConfig(workspaceRoot, `libs/${resolvedName}`)
@@ -309,6 +309,7 @@ export async function runAdd (
       // this kind, so it returns early with its own message instead.
       syncProjectReferences(workspaceRoot)
       runFormatter(workspaceRoot)
+
       return
     }
     default: {
@@ -320,7 +321,7 @@ export async function runAdd (
       // caller of runAdd (e.g. a future programmatic use).
       const exhaustive: never = resolvedKind
       throw new Error(
-        `Unknown project kind '${exhaustive as string}'. Expected one of: ${PROJECT_KINDS.join(', ')}.`
+        `Unknown project kind '${exhaustive as string}'. Expected one of: ${PROJECT_KINDS.join(', ')}.`,
       )
     }
   }
@@ -360,10 +361,11 @@ export async function runAdd (
  */
 function readWorkspaceStack (workspaceRoot: string): WorkspaceStack {
   const nxJson = readJson<{ mnci?: { stack?: { testRunner?: string; linter?: string } } }>(
-    join(workspaceRoot, 'nx.json')
+    join(workspaceRoot, 'nx.json'),
   )
   const stack = nxJson.mnci?.stack
+
   return {
-    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest'
+    testRunner: stack?.testRunner === 'vitest' ? 'vitest' : 'jest',
   }
 }
