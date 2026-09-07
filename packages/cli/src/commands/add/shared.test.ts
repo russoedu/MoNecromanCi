@@ -160,6 +160,116 @@ describe('registerProjectCommands', () => {
     ) as { tasks: { version: string } }
     expect(workspaceFile.tasks.version).toBe('2.0.0')
   })
+
+  it('touches nothing outside its own tasks entries — a full-workspace regression test', () => {
+    // Reproduces the reported bug: a hand-maintained .code-workspace carrying
+    // all five top-level keys, non-empty tasks/launch, AND a comment — the
+    // realistic shape of a file VS Code itself has been used to edit, and the
+    // exact ingredient (one comment) that used to make readCodeWorkspace
+    // throw, discard everything via `?? {}`, and leave only `tasks` behind.
+    const before = {
+      folders:  [{ path: '.', name: 'demo' }],
+      settings: {
+        'eslint.validate':         ['javascript', 'typescript'],
+        'editor.formatOnSave':     true,
+        'editor.defaultFormatter': 'dbaeumer.vscode-eslint',
+        'cSpell.words':            ['monecromanci', 'rollup', 'esbuild'],
+      },
+      extensions: {
+        recommendations: [
+          'dbaeumer.vscode-eslint',
+          'nrwl.angular-console',
+          'firsttris.vscode-jest-runner',
+        ],
+      },
+      tasks: {
+        version: '2.0.0',
+        tasks:   [
+          { label: 'lib: qa', type: 'npm', script: 'lib:qa', problemMatcher: [], group: 'qa' },
+          {
+            label:          'lib: build',
+            type:           'npm',
+            script:         'lib:build',
+            problemMatcher: [],
+            group:          'build',
+          },
+        ],
+      },
+      launch: {
+        version:        '0.2.0',
+        configurations: [
+          { type: 'node-terminal', request: 'launch', name: 'mnci: build', command: 'npm run build' },
+          {
+            type:    'node',
+            request: 'launch',
+            name:    'debug my thing',
+            program: '${workspaceFolder:demo}/apps/lib/dist/main.js',
+          },
+        ],
+      },
+    }
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      [
+        '{',
+        '  // eslint.validate lists every language ESLint now formats',
+        `  "settings": ${JSON.stringify(before.settings)},`,
+        `  "folders": ${JSON.stringify(before.folders)},`,
+        `  "extensions": ${JSON.stringify(before.extensions)},`,
+        `  "tasks": ${JSON.stringify(before.tasks)},`,
+        `  "launch": ${JSON.stringify(before.launch)}`,
+        '}',
+      ].join('\n'),
+    )
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    const after = JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      folders:    unknown
+      settings:   unknown
+      extensions: unknown
+      launch:     unknown
+      tasks:      { version: string; tasks: { label: string }[] }
+    }
+    // Untouched byte-for-byte (through a parse/re-stringify round trip):
+    // `add` owns none of these keys.
+    expect(after.folders).toEqual(before.folders)
+    expect(after.settings).toEqual(before.settings)
+    expect(after.extensions).toEqual(before.extensions)
+    expect(after.launch).toEqual(before.launch)
+    // The one key `add` does own: the existing project's tasks survive, and
+    // the new project's are appended, not substituted for them.
+    expect(after.tasks.tasks.map(t => t.label)).toEqual([
+      'lib: qa',
+      'lib: build',
+      'web: qa',
+      'web: build',
+      'web: start',
+    ])
+  })
+
+  it('replaces only its own entries on a second add for the same project, matching by label', () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      [
+        '{',
+        '  // hand-added note',
+        '  "folders": [{ "path": ".", "name": "demo" }],',
+        '  "tasks": { "version": "2.0.0", "tasks": [] }',
+        '}',
+      ].join('\n'),
+    )
+    registerProjectCommands(workspaceRoot, 'web', { build: false })
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    const after = JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      folders: unknown
+      tasks:   { tasks: { label: string }[] }
+    }
+    expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
+    expect(after.tasks.tasks.map(t => t.label)).toEqual(['web: qa', 'web: build', 'web: start'])
+  })
 })
 
 describe('removeGeneratedEslintConfig', () => {
