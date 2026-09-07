@@ -2,7 +2,7 @@ import { globSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../nx'
 import { ESLINT_VERSION, RETIRED_FORMATTER_FILES, type RegistryConfig } from '../overlay'
-import { hasRollupSourceMaps } from './add/shared'
+import { canRepairRollupConfig, hasRollupSourceMaps, resolveRollupConfigText } from './add/shared'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 
@@ -555,6 +555,26 @@ function checkNoRootRuntimeDependencies (workspaceRoot: string): Finding | undef
  * rollup config is written once at `add` time — hence a check plus the
  * `mnci upgrade` sweep that repairs it.
  *
+ * Reads through {@link resolveRollupConfigText} rather than the project's own
+ * file text alone, for two reasons found in the same real workspace.
+ * `@mnci/eslint-config`'s `@stylistic/key-spacing` (aligned on value) is
+ * entitled to rewrite `sourceMap: true,` to `sourceMap:             true,` to
+ * line up with the object's longest key — `eslint --fix` is part of the
+ * documented pre-commit routine, so a lint-clean config was failing this
+ * check on formatting alone. And a workspace that hoists the shared
+ * `withNx(...)` call into one root file and leaves each project as
+ * `module.exports = require('../../rollup.base.cjs')()` has no
+ * `sourceMap: true` text of its own — the flag lives one file away, so
+ * reading only the project's file failed every project even when every one
+ * genuinely had it on.
+ *
+ * The remedy is conditional on {@link canRepairRollupConfig} rather than
+ * always naming `mnci upgrade`: that command edits the `},` / `{` boundary
+ * between `withNx`'s two arguments, which a one-line delegation to a shared
+ * base does not have. Recommending it there would send the user in a circle —
+ * run the fix, watch it no-op, doctor reports the same failure again — so a
+ * config in that shape gets told to edit the shared base by hand instead.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @returns One finding per rollup config missing the flag.
  * @throws Never - an unreadable config is skipped.
@@ -566,9 +586,10 @@ function checkRollupSourceMaps (workspaceRoot: string): Finding[] {
   }).map(config => toPosix(config))
 
   return configs.flatMap(relativePath => {
+    const configPath = join(workspaceRoot, relativePath)
     let config: string
     try {
-      config = readFileSync(join(workspaceRoot, relativePath), 'utf8')
+      config = readFileSync(configPath, 'utf8')
     } catch {
       return []
     }
@@ -576,10 +597,12 @@ function checkRollupSourceMaps (workspaceRoot: string): Finding[] {
     return [
       {
         check: `source maps enabled in ${relativePath}`,
-        ok:    hasRollupSourceMaps(config),
+        ok:    hasRollupSourceMaps(resolveRollupConfigText(configPath)),
         detail:
           'rollup emits no .js.map without it, so a breakpoint in a .ts file can never bind',
-        remedy: 'run `mnci upgrade`, which adds it to every rollup config',
+        remedy: canRepairRollupConfig(config)
+          ? 'run `mnci upgrade`, which adds it to every rollup config'
+          : "this config delegates via require() to a shared base mnci does not own — add `sourceMap: true` to withNx's first argument there by hand; `mnci upgrade` cannot repair a config in this shape",
       },
     ]
   })
