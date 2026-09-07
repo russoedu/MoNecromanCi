@@ -1,5 +1,5 @@
 import { existsSync, globSync, readdirSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { dependabotConfig, reactExpressPeerOverride } from '../../overlay'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
@@ -285,13 +285,45 @@ const ROLLUP_ARG_ONE_WITH_SOURCE_MAPS = [
  * its finding and `mnci upgrade`'s edit can never disagree about what "already
  * fixed" means.
  *
+ * A literal `config.includes('sourceMap: true')` broke on both halves of that
+ * contract at once: `@mnci/eslint-config`'s `@stylistic/key-spacing` (aligned
+ * on value) is entitled to rewrite `sourceMap: true,` to
+ * `sourceMap:             true,` to line up with whatever the object's
+ * longest key is, and `eslint --fix` runs on every mnci-generated file. Tested
+ * with a regex rather than a plain substring so any amount of horizontal
+ * whitespace around the colon - however a formatter chooses to lay it out -
+ * still reads as "already on".
+ *
  * @param config - The config file's text.
  * @returns `true` when source maps are already switched on.
- * @throws Never - performs a substring test.
+ * @throws Never - performs a regex test.
  * @typeParam None - this function has no generic type parameters.
  */
 export function hasRollupSourceMaps (config: string): boolean {
-  return config.includes('sourceMap: true')
+  return /sourceMap\s*:\s*true\b/.test(config)
+}
+
+/**
+ * Whether `withRollupSourceMaps` can repair this config.
+ *
+ * @remarks
+ * The write-time twin of {@link hasRollupSourceMaps}'s idempotence test:
+ * `withRollupSourceMaps` anchors its edit on the `},` / `{` boundary between
+ * `withNx`'s two arguments, so a config that never has that boundary in its
+ * OWN text cannot be repaired no matter how many times `mnci upgrade` runs -
+ * most commonly a one-line delegation to a shared base file, e.g.
+ * `module.exports = require('../../rollup.base.cjs')()`, which mnci does not
+ * own and has nothing to anchor on. `mnci doctor` uses this to decide whether
+ * recommending `mnci upgrade` would actually fix anything, rather than
+ * pointing the user at a command that silently no-ops.
+ *
+ * @param config - The config file's own text (not resolved through `require()`).
+ * @returns `true` when `withRollupSourceMaps` has a boundary to anchor on.
+ * @throws Never - performs a substring test.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function canRepairRollupConfig (config: string): boolean {
+  return config.includes(ROLLUP_ARG_ONE_BOUNDARY)
 }
 
 /**
@@ -306,7 +338,11 @@ export function hasRollupSourceMaps (config: string): boolean {
  * shapes, so it anchors both.
  *
  * Idempotent: a config that already has the flag is returned untouched, so
- * running `mnci upgrade` twice changes nothing the second time.
+ * running `mnci upgrade` twice changes nothing the second time. That guard is
+ * {@link hasRollupSourceMaps} rather than a second literal, deliberately -
+ * two independent "is it already on" checks are two things that can disagree,
+ * and disagreeing here means inserting a second `sourceMap: true` into a
+ * config `eslint --fix` had only reformatted, not left off.
  *
  * @param config - The config file's text.
  * @returns The config with source maps enabled, or unchanged when already so.
@@ -314,7 +350,7 @@ export function hasRollupSourceMaps (config: string): boolean {
  * @typeParam None - this function has no generic type parameters.
  */
 export function withRollupSourceMaps (config: string): string {
-  if (hasRollupSourceMaps(config) || !config.includes(ROLLUP_ARG_ONE_BOUNDARY)) {
+  if (hasRollupSourceMaps(config) || !canRepairRollupConfig(config)) {
     return config
   }
   const withCompiler = config.replace(GENERATED_COMPILER, () => SOURCE_MAP_CAPABLE_COMPILER)
@@ -362,6 +398,86 @@ export function repairRollupSourceMaps (workspaceRoot: string): string[] {
   }
 
   return changed
+}
+
+/**
+ * Resolves a relative `require()` specifier to a real file.
+ *
+ * @remarks
+ * Tries the specifier as given first, then the extensions a `.cjs` rollup
+ * config (or a shared base it delegates to) is realistically written with -
+ * `require()` itself resolves the same way, this just needs to agree with it
+ * without actually loading the module.
+ *
+ * @param fromDir - The directory the `require()` call is made from.
+ * @param specifier - The relative specifier passed to `require()`.
+ * @returns The resolved absolute path, or `undefined` when none of the
+ *   candidates exist.
+ * @throws Never - only checks the filesystem.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function resolveRequireTarget (fromDir: string, specifier: string): string | undefined {
+  const base = join(fromDir, specifier)
+
+  return [base, `${base}.cjs`, `${base}.js`].find(candidate => fileExists(candidate))
+}
+
+/**
+ * Reads a rollup config's text, following local `require()` delegation so a
+ * config hoisted into a shared base file is read as if it were inlined.
+ *
+ * @remarks
+ * A workspace that pulls the `withNx(...)` call out into one root
+ * `rollup.base.cjs` and leaves each project as
+ * `module.exports = require('../../rollup.base.cjs')()` has no
+ * `sourceMap: true` text of its own to find - {@link hasRollupSourceMaps}
+ * reading only the project's own file would report every such project as
+ * missing source maps even when every one genuinely has them, because the
+ * flag lives one file away. Text-based rather than an actual `require()` of
+ * the config, deliberately: `mnci doctor` is read-only, and evaluating a
+ * user's build config as code to answer a yes/no question is a far larger
+ * blast radius than reading more of its text.
+ *
+ * Only RELATIVE requires (`./…`, `../…`) are followed - an npm package's
+ * installed source (e.g. `@nx/rollup/with-nx`) is never something this needs
+ * to read, and grepping into node_modules would be both slow and pointless.
+ * Each file is read at most once, so a require cycle terminates rather than
+ * recursing forever.
+ *
+ * @param configPath - Absolute path to the rollup config being inspected.
+ * @param visited - File paths already read, to stop a require cycle. Callers
+ *   should omit this; it is populated by recursive calls.
+ * @returns The config's own text, followed by the text of every local file it
+ *   `require()`s, transitively.
+ * @throws Never - an unreadable file or unresolvable require target is skipped.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function resolveRollupConfigText (
+  configPath: string,
+  visited: Set<string> = new Set(),
+): string {
+  if (visited.has(configPath)) {
+    return ''
+  }
+  visited.add(configPath)
+
+  let text: string
+  try {
+    text = readFileSync(configPath, 'utf8')
+  } catch {
+    return ''
+  }
+
+  const specifiers = Array.from(
+    text.matchAll(/require\((['"])(\.[^'"]*)\1\)/g),
+    match => match[2],
+  )
+  const requiredText = specifiers
+    .map(specifier => resolveRequireTarget(dirname(configPath), specifier))
+    .filter((target): target is string => target !== undefined)
+    .map(target => resolveRollupConfigText(target, visited))
+
+  return [text, ...requiredText].join('\n')
 }
 
 /** The `output` block that repairs rollup's wrong sourcemap source paths. */

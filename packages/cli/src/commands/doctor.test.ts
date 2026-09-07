@@ -332,6 +332,123 @@ describe('collectFindings', () => {
   })
 })
 
+describe('the rollup source-map check', () => {
+  it('passes a config @stylistic/key-spacing (aligned on value) has reformatted', () => {
+    // The reported bug, reproduced exactly: an object whose longest key is
+    // additionalEntryPoints gets every value column-aligned, so
+    // `sourceMap: true,` becomes `sourceMap:             true,`. Source maps
+    // are still genuinely on; only the check used to be a literal string
+    // match that could not see it.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx');",
+        '',
+        'module.exports = withNx(',
+        '  {',
+        "    main:                  './src/index.ts',",
+        '    additionalEntryPoints: [],',
+        "    outputPath:            './dist',",
+        "    tsConfig:              './tsconfig.lib.json',",
+        "    compiler:              'babel',",
+        '    format:                ["esm"],',
+        '    sourceMap:             true',
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '  }',
+        ');',
+      ].join('\n'),
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'source maps enabled')
+
+    expect(finding?.ok).toBe(true)
+  })
+
+  it('passes a config that delegates via require() to a shared base with source maps on', () => {
+    // The other shape from the report: a workspace that hoists withNx() into
+    // one root rollup.base.cjs and leaves each project as a one-line
+    // delegation. A text-only check of the project's own file finds nothing,
+    // because the flag lives one file away.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'rollup.base.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx');",
+        '',
+        'module.exports = () => withNx(',
+        '  {',
+        "    compiler: 'babel',",
+        '    sourceMap: true',
+        '  },',
+        '  {}',
+        ');',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      "module.exports = require('../../rollup.base.cjs')()\n",
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'source maps enabled')
+
+    expect(finding?.ok).toBe(true)
+  })
+
+  it('fails a delegating config genuinely missing the flag, without recommending `mnci upgrade`', () => {
+    // mnci upgrade edits the `},` / `{` boundary between withNx's two
+    // arguments, which a one-line require() delegation does not have — it
+    // cannot repair this shape, so the remedy must not send the user to a
+    // command that silently no-ops and leaves the same failure behind.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'rollup.base.cjs'),
+      "module.exports = () => ({ compiler: 'babel' })\n",
+    )
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      "module.exports = require('../../rollup.base.cjs')()\n",
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'source maps enabled')
+
+    expect(finding?.ok).toBe(false)
+    // Not the "run mnci upgrade" remedy — that command cannot touch this shape.
+    expect(finding?.remedy).not.toContain('run `mnci upgrade`')
+    expect(finding?.remedy).toContain('require()')
+  })
+
+  it('fails a genuinely un-fixed config and recommends `mnci upgrade`, which can actually repair it', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx');",
+        '',
+        'module.exports = withNx(',
+        '  {',
+        "    compiler: 'swc',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '  }',
+        ');',
+      ].join('\n'),
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'source maps enabled')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.remedy).toContain('mnci upgrade')
+  })
+})
+
 describe('the retired-formatter check', () => {
   it('passes on a workspace that has only ESLint', () => {
     writeWorkspace()
