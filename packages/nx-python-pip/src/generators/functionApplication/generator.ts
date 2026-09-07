@@ -4,7 +4,7 @@ import {
   PYTHON_FUNCTION_APP_REQUIREMENTS,
   PYTHON_FUNCTION_APP_GREETING,
   pythonFunctionAppGreetingTest,
-  pythonFunctionAppMain
+  pythonFunctionAppMain,
 } from '../../internal/azureFunctionApp'
 import { pythonModuleDirectory } from '../../internal/pythonProject'
 import type { FunctionAppGeneratorSchema } from './schema.d'
@@ -28,7 +28,7 @@ import type { FunctionAppGeneratorSchema } from './schema.d'
  */
 export default async function functionAppGenerator (
   tree: Tree,
-  options: FunctionAppGeneratorSchema
+  options: FunctionAppGeneratorSchema,
 ): Promise<void> {
   const root = options.directory ?? `apps/${options.name}`
   const moduleDirectory = pythonModuleDirectory(options.name)
@@ -36,11 +36,11 @@ export default async function functionAppGenerator (
   addProjectConfiguration(tree, options.name, {
     root,
     projectType: 'application',
-    sourceRoot: root,
-    targets: {
+    sourceRoot:  root,
+    targets:     {
       lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
-      test: { executor: '@mnci/nx-python-pip:test', options: { installEditable: false } }
-    }
+      test: { executor: '@mnci/nx-python-pip:test', options: { installEditable: false } },
+    },
   })
 
   tree.write(`${root}/function_app.py`, pythonFunctionAppMain(moduleDirectory))

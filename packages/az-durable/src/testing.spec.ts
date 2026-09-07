@@ -15,13 +15,13 @@ function buildWorkflow () {
   resetRegistryForTests()
   const validate = defineActivity(
     'validate',
-    (input: { title: string }): { ok: boolean } => ({ ok: input.title.length > 0 })
+    (input: { title: string }): { ok: boolean } => ({ ok: input.title.length > 0 }),
   )
   const store = defineActivity('store', (input: { title: string }): { id: string } => ({
-    id: `id-${input.title}`
+    id: `id-${input.title}`,
   }))
   const finalise = defineActivity('finalise', (input: { id: string }): { url: string } => ({
-    url: `https://example.test/${input.id}`
+    url: `https://example.test/${input.id}`,
   }))
 
   const articleWorkflow = defineOrchestration(
@@ -33,15 +33,18 @@ function buildWorkflow () {
         // The short-circuit branch: storage is still finalised, which is
         // exactly the behaviour that was awkward to test before.
         setStatus(context, STATUSES, 'done')
+
         return { url: null as string | null }
       }
       setStatus(context, STATUSES, 'storing')
       const stored = yield * callActivity(context, store, { title: input.title })
       const done = yield * callActivity(context, finalise, { id: stored.id })
       setStatus(context, STATUSES, 'done')
+
       return { url: done.url }
-    }
+    },
   )
+
   return { articleWorkflow }
 }
 
@@ -51,9 +54,9 @@ describe('runWorkflow', () => {
     const run = runWorkflow(articleWorkflow, { title: 'hello' }, {
       activities: {
         validate: () => ({ ok: true }),
-        store: () => ({ id: 'id-hello' }),
-        finalise: () => ({ url: 'https://example.test/id-hello' })
-      }
+        store:    () => ({ id: 'id-hello' }),
+        finalise: () => ({ url: 'https://example.test/id-hello' }),
+      },
     })
 
     expect(run.result).toEqual({ url: 'https://example.test/id-hello' })
@@ -67,7 +70,7 @@ describe('runWorkflow', () => {
   it('takes the short-circuit branch and still finalises status', () => {
     const { articleWorkflow } = buildWorkflow()
     const run = runWorkflow(articleWorkflow, { title: '' }, {
-      activities: { validate: () => ({ ok: false }) }
+      activities: { validate: () => ({ ok: false }) },
     })
 
     expect(run.result).toEqual({ url: null })
@@ -84,9 +87,9 @@ describe('runWorkflow', () => {
       runWorkflow(articleWorkflow, { title: 'x' }, {
         activities: {
           validate: () => ({ ok: true }),
-          store: () => new Error('storage unavailable')
-        }
-      })
+          store:    () => new Error('storage unavailable'),
+        },
+      }),
     ).toThrow('storage unavailable')
   })
 
@@ -103,12 +106,13 @@ describe('runWorkflow', () => {
       const deadline = timerTask(context, 1000)
       const winner = yield * any(context, [waiter, deadline])
       seen.push([winner === deadline, deadline.isCompleted()])
+
       return { timedOut: winner === deadline }
     })
 
     const run = runWorkflow(workflow, null, {
       activities: { signal: () => ({ ok: true }) },
-      raceWinner: names => names.find(n => n === '__timer') ?? names[0]
+      raceWinner: names => names.find(n => n === '__timer') ?? names[0],
     })
     expect(run.result).toEqual({ timedOut: true })
     expect(seen).toEqual([[true, true]])
@@ -126,18 +130,20 @@ describe('runWorkflow', () => {
     const workflow = defineOrchestration('compensating', function * (context, input: { id: string }) {
       try {
         yield * callActivity(context, risky, input)
+
         return { recovered: false }
       } catch {
         yield * callActivity(context, compensate, input)
+
         return { recovered: true }
       }
     })
 
     const run = runWorkflow(workflow, { id: 'x' }, {
       activities: {
-        risky: () => new Error('boom'),
-        compensate: () => 'x'
-      }
+        risky:      () => new Error('boom'),
+        compensate: () => 'x',
+      },
     })
     expect(run.result).toEqual({ recovered: true })
     expect(run.calls.map(c => c.name)).toEqual(['risky', 'compensate'])
@@ -146,7 +152,7 @@ describe('runWorkflow', () => {
   it('names the activity when a stub is missing', () => {
     const { articleWorkflow } = buildWorkflow()
     expect(() =>
-      runWorkflow(articleWorkflow, { title: 'x' }, { activities: { validate: () => ({ ok: true }) } })
+      runWorkflow(articleWorkflow, { title: 'x' }, { activities: { validate: () => ({ ok: true }) } }),
     ).toThrow(/No stub registered for 'store'/)
   })
 
@@ -155,11 +161,12 @@ describe('runWorkflow', () => {
     const stamp = defineOrchestration('stamped', function * (context, _input: void) {
       const at = context.df.currentUtcDateTime
       yield * []
+
       return at.toISOString()
     })
     const run = runWorkflow(stamp, undefined, {
       activities: {},
-      now: new Date('2020-01-01T00:00:00.000Z')
+      now:        new Date('2020-01-01T00:00:00.000Z'),
     })
     expect(run.result).toBe('2020-01-01T00:00:00.000Z')
   })

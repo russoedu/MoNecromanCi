@@ -89,7 +89,7 @@ export const DEFAULT_STACK: StackConfig = { testRunner: 'jest' }
  */
 export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
   '@typescript/native': 'npm:typescript@^7.0.2',
-  typescript: 'npm:@typescript/typescript6@^6.0.2'
+  'typescript':         'npm:@typescript/typescript6@^6.0.2',
 }
 
 /**
@@ -107,6 +107,7 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/npm/registry/`
   }
+
   return undefined
 }
 
@@ -180,6 +181,7 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   // npm matches credentials by URL prefix and walks only UP the path, so an entry
   // on '/npm/registry/' is never found for a request to '/npm/'. Both are keyed.
   const feedShortKey = feedKey.replace('npm/registry/', 'npm/')
+
   return `; Publish + resolution routing for this workspace's own scope.
 ;
 ; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
@@ -316,13 +318,14 @@ ${feedShortKey}:email=npm-requires-this-and-never-uses-it
  */
 export function releaseConfig (ci: CiProvider): Record<string, unknown> {
   const githubReleases = ci === 'github'
+
   return {
     projectsRelationship: 'independent',
-    projects: ['packages/*', 'python-packages/*', '!tag:type:go-lib'],
-    releaseTag: { pattern: '{projectName}@{version}' },
-    git: { commit: false, tag: true, push: githubReleases },
-    version: {
-      conventionalCommits: true,
+    projects:             ['packages/*', 'python-packages/*', '!tag:type:go-lib'],
+    releaseTag:           { pattern: '{projectName}@{version}' },
+    git:                  { commit: false, tag: true, push: githubReleases },
+    version:              {
+      conventionalCommits:            true,
       fallbackCurrentVersionResolver: 'disk',
       // Build only what is being released. Without this, @nx/js:lib's generator
       // defaults the pre-version command to building EVERY project, so a broken
@@ -330,14 +333,14 @@ export function releaseConfig (ci: CiProvider): Record<string, unknown> {
       // Set here at `new` time it wins: the generator only fills this in when
       // absent (it spreads the existing release.version over its default). Both
       // globs are listed; `nx run-many` no-ops cleanly when one matches nothing.
-      preVersionCommand: 'npx nx run-many -t build --projects=packages/*,python-packages/*'
+      preVersionCommand:              'npx nx run-many -t build --projects=packages/*,python-packages/*',
     },
     changelog: githubReleases
       ? {
           workspaceChangelog: false,
-          projectChangelogs: { createRelease: 'github', file: false }
+          projectChangelogs:  { createRelease: 'github', file: false },
         }
-      : { workspaceChangelog: false }
+      : { workspaceChangelog: false },
   } as const
 }
 
@@ -384,8 +387,8 @@ export const SYNC_CONFIG = { applyChanges: true } as const
  * zero projects, which it previously did only by accident.
  */
 export const ESLINT_PLUGIN_CONFIG = {
-  plugin: '@nx/eslint/plugin',
-  options: { targetName: 'lint' }
+  plugin:  '@nx/eslint/plugin',
+  options: { targetName: 'lint' },
 } as const
 
 /**
@@ -420,6 +423,7 @@ function pluginName (entry: unknown): string | undefined {
 export function withEslintPlugin (nxJson: Record<string, unknown>): Record<string, unknown> {
   const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
   const registered = plugins.some(entry => pluginName(entry) === ESLINT_PLUGIN_CONFIG.plugin)
+
   return registered
     ? { ...nxJson, plugins }
     : { ...nxJson, plugins: [...plugins, ESLINT_PLUGIN_CONFIG] }
@@ -452,7 +456,7 @@ export function withEslintPlugin (nxJson: Record<string, unknown>): Record<strin
 export const SHARED_GLOBAL_INPUTS = [
   '{workspaceRoot}/eslint.config.mjs',
   '{workspaceRoot}/tsconfig.base.json',
-  '{workspaceRoot}/package.json'
+  '{workspaceRoot}/package.json',
 ] as const
 
 /**
@@ -476,9 +480,10 @@ export function withSharedGlobals (nxJson: Record<string, unknown>): Record<stri
   const namedInputs = (nxJson.namedInputs as Record<string, unknown> | undefined) ?? {}
   const existing = (namedInputs.sharedGlobals as unknown[] | undefined) ?? []
   const missing = SHARED_GLOBAL_INPUTS.filter(entry => !existing.includes(entry))
+
   return {
     ...nxJson,
-    namedInputs: { ...namedInputs, sharedGlobals: [...existing, ...missing] }
+    namedInputs: { ...namedInputs, sharedGlobals: [...existing, ...missing] },
   }
 }
 
@@ -500,7 +505,7 @@ export function withSharedGlobals (nxJson: Record<string, unknown>): Record<stri
  */
 export function withReleaseConfig (
   nxJson: Record<string, unknown>,
-  ci: CiProvider
+  ci: CiProvider,
 ): Record<string, unknown> {
   return { ...nxJson, defaultBase: 'main', release: releaseConfig(ci) }
 }
@@ -609,11 +614,11 @@ export const ESLINT_VERSION = '^10.8.0'
  */
 export function devcontainerJson (workspaceName: string): string {
   return `${toJson({
-    name: workspaceName,
-    image: `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
+    name:     workspaceName,
+    image:    `mcr.microsoft.com/devcontainers/typescript-node:${NODE_VERSION}-bookworm`,
     features: {
       'ghcr.io/devcontainers/features/python:1': { version: '3.12' },
-      'ghcr.io/devcontainers/features/go:1': { version: 'latest' }
+      'ghcr.io/devcontainers/features/go:1':     { version: 'latest' },
     },
     // `npm ci` first: every guard after it runs through the workspace's own
     // scripts and Nx, which do not exist until the install completes.
@@ -625,13 +630,13 @@ export function devcontainerJson (workspaceName: string): string {
       'npm ci',
       'npm run python:install',
       GOLANGCI_LINT_INSTALL_GUARD,
-      FLUTTER_SDK_INSTALL_GUARD
+      FLUTTER_SDK_INSTALL_GUARD,
     ].join(' && '),
     // The same recommendations the `.code-workspace` file carries, so opening
     // the folder in a container suggests the identical toolset.
     customizations: {
-      vscode: { extensions: VSCODE_RECOMMENDED_EXTENSIONS }
-    }
+      vscode: { extensions: VSCODE_RECOMMENDED_EXTENSIONS },
+    },
   })}\n`
 }
 
@@ -658,8 +663,8 @@ export function devcontainerJson (workspaceName: string): string {
  */
 export const ROOT_LINT_TARGET = {
   executor: 'nx:run-commands',
-  cache: true,
-  options: {
+  cache:    true,
+  options:  {
     command: [
       // `--cache` is the one ESLint speed option that actually pays here:
       // measured best-of-3 on this repo, an unchanged re-run drops from 9,546ms
@@ -672,10 +677,10 @@ export const ROOT_LINT_TARGET = {
       '--ignore-pattern "libs/**"',
       '--ignore-pattern "packages/**"',
       '--ignore-pattern "python-packages/**"',
-      '--ignore-pattern package-lock.json'
+      '--ignore-pattern package-lock.json',
     ].join(' '),
-    cwd: '.'
-  }
+    cwd: '.',
+  },
 } as const
 
 /**
@@ -721,12 +726,13 @@ export const ROOT_LINT_TARGET = {
  * @typeParam None - this function has no generic type parameters.
  */
 export function reactExpressPeerOverride (
-  manifest: Record<string, unknown>
+  manifest: Record<string, unknown>,
 ): Record<string, unknown> {
   const declared = {
     ...(manifest.dependencies as Record<string, string> | undefined),
-    ...(manifest.devDependencies as Record<string, string> | undefined)
+    ...(manifest.devDependencies as Record<string, string> | undefined),
   }
+
   return declared.express === undefined ? {} : { '@nx/react': { express: '$express' } }
 }
 
@@ -782,16 +788,16 @@ export const ESLINT_PEER_OVERRIDES = {
   // both — and forcing those to v5 breaks them. So the blast radius is one
   // dependency edge per named parent, and a test asserts there is no top-level
   // entry.
-  nx: { 'brace-expansion': '^5.0.9' },
-  '@nx/js': { 'brace-expansion': '^5.0.9' },
-  '@nx/eslint': { 'brace-expansion': '^5.0.9' },
-  '@nx/eslint-plugin': { 'brace-expansion': '^5.0.9' },
-  '@nx/workspace': { 'brace-expansion': '^5.0.9' },
+  'nx':                     { 'brace-expansion': '^5.0.9' },
+  '@nx/js':                 { 'brace-expansion': '^5.0.9' },
+  '@nx/eslint':             { 'brace-expansion': '^5.0.9' },
+  '@nx/eslint-plugin':      { 'brace-expansion': '^5.0.9' },
+  '@nx/workspace':          { 'brace-expansion': '^5.0.9' },
   // `postcss` → `nanoid` reaches a generated workspace through `@nx/rollup`,
   // which every publishable `npm-lib` gets. GHSA-2v37-7h3g-55p8 is high, fixed in
   // 3.3.18, and the fix is a patch — so unlike the entry above this one is not
   // even a trade, just a version nobody had bumped yet.
-  postcss: { nanoid: '^3.3.18' }
+  'postcss':                { nanoid: '^3.3.18' },
 } as const
 
 /**
@@ -831,7 +837,7 @@ export const ESLINT_PEER_OVERRIDES = {
  * generated workspace is the check, and it is the only one that means anything.
  */
 export const SECURITY_OVERRIDES = {
-  'brace-expansion@4.0.0 - 5.0.8': '^5.0.9'
+  'brace-expansion@4.0.0 - 5.0.8': '^5.0.9',
 } as const
 
 /**
@@ -868,10 +874,10 @@ export const SECURITY_OVERRIDES = {
  */
 export function eslintToolchainDependencies (nxVersion: string): Record<string, string> {
   return {
-    eslint: ESLINT_VERSION,
-    '@nx/eslint': nxVersion,
-    '@nx/eslint-plugin': nxVersion,
-    '@mnci/eslint-config': eslintConfigSpec()
+    'eslint':              ESLINT_VERSION,
+    '@nx/eslint':          nxVersion,
+    '@nx/eslint-plugin':   nxVersion,
+    '@mnci/eslint-config': eslintConfigSpec(),
   }
 }
 
@@ -898,7 +904,7 @@ export const RETIRED_FORMATTER_FILES = [
   '.prettierrc.mjs',
   '.prettierignore',
   'oxlint.config.ts',
-  '.oxfmtrc.json'
+  '.oxfmtrc.json',
 ] as const
 
 /**
@@ -920,15 +926,16 @@ export const RETIRED_FORMATTER_FILES = [
  * @throws Never - pure object construction.
  */
 export function withoutRetiredFormatterDependencies (
-  devDeps: Record<string, string>
+  devDeps: Record<string, string>,
 ): Record<string, string> {
   const retired = new Set([
     'prettier',
     'eslint-config-prettier',
     'oxlint',
     'oxfmt',
-    '@mnci/oxlint-config'
+    '@mnci/oxlint-config',
   ])
+
   return Object.fromEntries(Object.entries(devDeps).filter(([name]) => !retired.has(name)))
 }
 
@@ -986,8 +993,13 @@ export const ESLINT_BLOCK_INVENTORY = `// WHAT IS IN HERE. Each line is one conf
 //                                 (Vitest's globals too; the two stacks share them)
 //   mnci/nx-dependency-checks     @nx/eslint-plugin, on publishable packages' manifests
 //   mnci/standard                 JavaScript Standard Style as ESLint rules — the
-//                                 whole formatting opinion. Composed LAST, on
-//                                 purpose: nothing may follow that disables it.
+//                                 whole formatting opinion, a faithful port of
+//                                 neostandard
+//   mnci/house-style              the deliberate departures from Standard:
+//                                 trailing commas, aligned object values,
+//                                 consistent-as-needed quote-props, a blank line
+//                                 before return. Composed LAST, on purpose:
+//                                 nothing may follow that disables it.
 //
 // To list them as ESLint actually resolves them:  npx eslint --inspect-config
 `
@@ -1069,7 +1081,7 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 export const VSCODE_RECOMMENDED_EXTENSIONS = [
   'dbaeumer.vscode-eslint',
   'nrwl.angular-console',
-  'firsttris.vscode-jest-runner'
+  'firsttris.vscode-jest-runner',
 ] as const
 
 /**
@@ -1117,7 +1129,7 @@ export const FORMATTED_LANGUAGES = [
   //
   // Impossible under the Prettier stack, which is why it is only here now:
   // `npx prettier` on a `.toml` exits with "No parser could be inferred".
-  'toml'
+  'toml',
 ] as const
 
 /**
@@ -1143,12 +1155,12 @@ export function vscodeSettings (): Record<string, unknown> {
   const eslintLanguages = [...FORMATTED_LANGUAGES]
 
   return {
-    'eslint.validate': eslintLanguages,
+    'eslint.validate':          eslintLanguages,
     'editor.codeActionsOnSave': {
-      'source.fixAll.eslint': 'explicit'
+      'source.fixAll.eslint': 'explicit',
     },
     'editor.defaultFormatter': formatter,
-    'editor.formatOnSave': true,
+    'editor.formatOnSave':     true,
     // Every language spelled out, and the global default above is NOT enough on
     // its own — which is the bug this fixes rather than a belt-and-braces habit.
     //
@@ -1166,9 +1178,9 @@ export function vscodeSettings (): Record<string, unknown> {
     ...Object.fromEntries(
       FORMATTED_LANGUAGES.map(language => [
         `[${language}]`,
-        { 'editor.defaultFormatter': formatter }
-      ])
-    )
+        { 'editor.defaultFormatter': formatter },
+      ]),
+    ),
   }
 }
 
@@ -1223,17 +1235,17 @@ export const LAUNCH_CONFIGURATIONS = ['build', 'test', 'lint', 'typecheck'] as c
  */
 export function launchConfigurations (workspaceName: string): Record<string, unknown>[] {
   return LAUNCH_CONFIGURATIONS.map((script, index) => ({
-    type: 'node-terminal',
-    request: 'launch',
-    name: `${LAUNCH_CONFIG_PREFIX}${script}`,
-    command: `npm run ${script}`,
+    type:         'node-terminal',
+    request:      'launch',
+    name:         `${LAUNCH_CONFIG_PREFIX}${script}`,
+    command:      `npm run ${script}`,
     // Scoped by folder name rather than a bare ${workspaceFolder}: that variable is
     // ambiguous once a second folder is added to the workspace, and VS Code then
     // refuses to resolve it.
-    cwd: `\${workspaceFolder:${workspaceName}}`,
+    cwd:          `\${workspaceFolder:${workspaceName}}`,
     // One shared group keeps the four together in the dropdown; a per-entry group
     // would make four groups of one. `order` holds them in verify order.
-    presentation: { group: 'mnci', order: index + 1 }
+    presentation: { group: 'mnci', order: index + 1 },
   }))
 }
 
@@ -1277,14 +1289,14 @@ export function vscodeWorkspace (
   workspaceName: string,
   existingTasks?: { version?: string; tasks?: Record<string, unknown>[] },
   existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] },
-  existingSettings?: Record<string, unknown>
+  existingSettings?: Record<string, unknown>,
 ): string {
   // Additive, like nx.json's sharedGlobals: mnci replaces only the configurations it
   // owns (named `mnci: *`) and carries every other one through, so a hand-written
   // debug config survives `mnci upgrade`. Tasks are carried through wholesale
   // instead, because `mnci add` — not the overlay — is what writes them.
   const userConfigurations = (existingLaunch?.configurations ?? []).filter(
-    (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX)
+    (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX),
   )
   // Settings are MERGED, with mnci winning on the keys it owns. Replacing them
   // wholesale destroyed every setting a workspace had added for itself — measured on
@@ -1293,22 +1305,23 @@ export function vscodeWorkspace (
   // keys it actually sets, so its opinion still lands on every upgrade while
   // anything it has no opinion about survives.
   const settings = { ...existingSettings, ...vscodeSettings() }
+
   return JSON.stringify(
     {
-      folders: [{ path: '.', name: workspaceName }],
+      folders:    [{ path: '.', name: workspaceName }],
       settings,
       extensions: { recommendations: VSCODE_RECOMMENDED_EXTENSIONS },
-      tasks: {
+      tasks:      {
         version: existingTasks?.version ?? '2.0.0',
-        tasks: existingTasks?.tasks ?? []
+        tasks:   existingTasks?.tasks ?? [],
       },
       launch: {
-        version: existingLaunch?.version ?? '0.2.0',
-        configurations: [...launchConfigurations(workspaceName), ...userConfigurations]
-      }
+        version:        existingLaunch?.version ?? '0.2.0',
+        configurations: [...launchConfigurations(workspaceName), ...userConfigurations],
+      },
     },
     null,
-    2
+    2,
   )
 }
 
@@ -1330,14 +1343,14 @@ export function vscodeWorkspace (
  * TypeScript had already flagged, because CI never ran this.
  */
 export const ROOT_SCRIPTS = {
-  build: 'nx run-many -t build',
-  lint: 'nx run-many -t lint',
-  test: 'nx run-many -t test',
-  typecheck: 'nx run-many -t typecheck',
-  affected: 'nx affected -t lint,typecheck,test,build',
-  graph: 'nx graph',
+  'build':           'nx run-many -t build',
+  'lint':            'nx run-many -t lint',
+  'test':            'nx run-many -t test',
+  'typecheck':       'nx run-many -t typecheck',
+  'affected':        'nx affected -t lint,typecheck,test,build',
+  'graph':           'nx graph',
   'release:preview': 'nx release --dry-run',
-  prepare: 'husky'
+  'prepare':         'husky',
 } as const
 
 /**
@@ -1367,8 +1380,8 @@ export function rootScripts (): Record<string, string> {
     // `format:check`: `lint` already reports formatting as ordinary errors.
     // Carrying a second script that ran the same tool twice would just make a
     // CI run slower for no extra coverage.
-    format: 'eslint . --fix --cache',
-    'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`
+    'format':         'eslint . --fix --cache',
+    'python:install': `${PYTHON_INSTALL_GUARD} && ${PYTHON_WORKSPACE_INSTALL_GUARD}`,
   }
 }
 
@@ -1399,13 +1412,14 @@ export function generatorDefaults (stack: StackConfig): Record<string, unknown> 
     // scaffold a per-project config mnci deletes anyway — and drag in
     // `eslint-plugin-import@2.31.0`, which peer-caps at ESLint 9 and breaks the
     // install outright on this workspace's ESLint 10.
-    linter: 'none',
-    unitTestRunner: stack.testRunner
+    linter:         'none',
+    unitTestRunner: stack.testRunner,
   }
+
   return {
     '@nx/react:application': shared,
-    '@nx/react:library': shared,
-    '@nx/js:library': shared
+    '@nx/react:library':     shared,
+    '@nx/js:library':        shared,
   }
 }
 
@@ -1437,12 +1451,12 @@ export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
     // see `resolveWorkspaceName` in `commands/upgrade.ts`, which still needs a
     // fallback chain for workspaces generated before this field existed.
     workspaceName: options.workspaceName,
-    scope: options.scope,
-    registry: options.registry,
-    agent: options.agent,
+    scope:         options.scope,
+    registry:      options.registry,
+    agent:         options.agent,
     variableGroup: options.variableGroup,
-    ci: options.ci,
-    stack: { testRunner: options.stack.testRunner }
+    ci:            options.ci,
+    stack:         { testRunner: options.stack.testRunner },
   }
 }
 
@@ -1467,6 +1481,7 @@ export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
  */
 export function readMnciConfig (workspaceRoot: string): Partial<OverlayOptions> {
   const nxJson = readJson<Record<string, unknown>>(join(workspaceRoot, 'nx.json'))
+
   return (nxJson.mnci as Partial<OverlayOptions> | undefined) ?? {}
 }
 
@@ -1490,6 +1505,7 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
   if (registry.kind === 'azure-artifacts') {
     return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/pypi/upload/`
   }
+
   return undefined
 }
 
@@ -1993,7 +2009,7 @@ function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
  */
 function npmAuthEnvVariable (
   registryKind: RegistryConfig['kind'],
-  variableReference: (name: string) => string
+  variableReference: (name: string) => string,
 ): [string, string] {
   return registryKind === 'npm'
     ? ['NODE_AUTH_TOKEN', variableReference('NPM_TOKEN')]
@@ -2081,7 +2097,7 @@ export function azurePipelinesYaml (
   agent: string,
   variableGroup: string,
   pythonPublishUrl?: string,
-  registryKind: RegistryConfig['kind'] = 'azure-artifacts'
+  registryKind: RegistryConfig['kind'] = 'azure-artifacts',
 ): string {
   // ENUMERATED CI reasons, never "not a pull request" — the Azure half of the
   // fix #22 made for GitHub, and the more exposed of the two.
@@ -2107,6 +2123,7 @@ export function azurePipelinesYaml (
   // `in(variables['Agent.JobStatus'], ...)`, so it is valid in a step condition.
   const onMain = 'and(succeeded(), in(variables[\'Build.Reason\'], \'IndividualCI\', \'BatchedCI\'), eq(variables[\'Build.SourceBranchName\'], \'main\'))'
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, name => `$(${name})`)
+
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
 # Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
@@ -2382,7 +2399,7 @@ export function githubActionsYaml (
   agent: string,
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
-  ci: CiProvider = 'github'
+  ci: CiProvider = 'github',
 ): string {
   // `== 'push'`, not `!= 'pull_request'`. Identical today — the generated workflow
   // has exactly two triggers, `push` and `pull_request` — but the negative form
@@ -2398,12 +2415,13 @@ export function githubActionsYaml (
   const onMain = 'github.event_name == \'push\' && github.ref_name == \'main\''
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(
     registryKind,
-    name => `\${{ secrets.${name} }}`
+    name => `\${{ secrets.${name} }}`,
   )
   // Matches releaseConfig(ci)'s own condition exactly — GitHub Release
   // creation (and therefore Nx's own tag push) is only ever on when GitHub
   // Actions is the *only* configured provider; see releaseConfig's remarks.
   const githubReleases = ci === 'github'
+
   return `name: CI
 
 # Generated by MoNecromanCI. Deliberately thin: Nx builds, 'nx release'
@@ -2613,7 +2631,7 @@ const PUB_PROJECT_GLOBS = ['apps', 'packages', 'libs'] as const
 /** Manifest filenames that mark a directory as belonging to each ecosystem. */
 const ECOSYSTEM_MANIFESTS = {
   pip: ['pyproject.toml', 'requirements.txt'],
-  pub: ['pubspec.yaml']
+  pub: ['pubspec.yaml'],
 } as const
 
 /**
@@ -2633,17 +2651,18 @@ const ECOSYSTEM_MANIFESTS = {
 function hasEcosystemProject (
   workspaceRoot: string,
   roots: readonly string[],
-  manifests: readonly string[]
+  manifests: readonly string[],
 ): boolean {
   return roots.some(root => {
     const base = join(workspaceRoot, root)
     if (!existsSync(base)) {
       return false
     }
+
     return readdirSync(base, { withFileTypes: true }).some(
       entry =>
         entry.isDirectory() &&
-        manifests.some(manifest => existsSync(join(base, entry.name, manifest)))
+        manifests.some(manifest => existsSync(join(base, entry.name, manifest))),
     )
   })
 }
@@ -2732,6 +2751,7 @@ updates:
   if (hasEcosystemProject(workspaceRoot, PUB_PROJECT_GLOBS, ECOSYSTEM_MANIFESTS.pub)) {
     config += dependabotBlock('pub', PUB_PROJECT_GLOBS)
   }
+
   return config
 }
 
@@ -2747,17 +2767,17 @@ export interface OverlayOptions {
   /** The monorepo workspace name. */
   workspaceName: string
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope: string
+  scope:         string
   /** Where publishable packages are released to. */
-  registry: RegistryConfig
+  registry:      RegistryConfig
   /** The CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
-  agent: string
+  agent:         string
   /** The Library variable group holding the base64 npm `PAT` (e.g. `Build`). */
   variableGroup: string
   /** Which CI provider(s) to write a pipeline file for. */
-  ci: CiProvider
+  ci:            CiProvider
   /** The stack (TS major, linter, test runner) chosen at `new`. */
-  stack: StackConfig
+  stack:         StackConfig
 }
 
 /**
@@ -2854,7 +2874,7 @@ export function removeIfPresent (path: string): void {
  */
 export function removeProjectEslintConfigs (workspaceRoot: string): void {
   const matches = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
-    cwd: workspaceRoot
+    cwd: workspaceRoot,
   })
   for (const match of matches) {
     rmSync(join(workspaceRoot, match), { force: true })
@@ -2886,7 +2906,7 @@ export function removeProjectEslintConfigs (workspaceRoot: string): void {
 export function applyOverlay (
   workspaceRoot: string,
   options: OverlayOptions,
-  onProgress: (message: string) => void = () => {}
+  onProgress: (message: string) => void = () => {},
 ): void {
   // Patch nx.json with the release opinion, the stack generator defaults, the
   // shared global inputs (so `nx affected` on a PR is not blind to the root
@@ -2899,7 +2919,7 @@ export function applyOverlay (
   const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
   const generators = {
     ...(nxJson.generators as Record<string, unknown> | undefined),
-    ...generatorDefaults(options.stack)
+    ...generatorDefaults(options.stack),
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
@@ -2919,14 +2939,14 @@ export function applyOverlay (
   const manifest = readJson<Record<string, unknown>>(manifestPath)
   const scripts = {
     ...(manifest.scripts as Record<string, string> | undefined),
-    ...rootScripts()
+    ...rootScripts(),
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
   const devDeps = withoutRetiredFormatterDependencies({
     ...existingDevDeps,
     ...TS_COMPILER_DEPENDENCIES,
     // The preset pins `nx` itself; the ESLint plugins must match it exactly.
-    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest')
+    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
   })
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
@@ -2937,7 +2957,7 @@ export function applyOverlay (
     // is no express yet, so this is a no-op; `mnci add node-app --framework
     // express` is what puts express in the root manifest, and syncs the override
     // itself. This line is what carries it across an `mnci upgrade`.
-    ...reactExpressPeerOverride(manifest)
+    ...reactExpressPeerOverride(manifest),
   }
   // The root project's own Nx config. Merged the same way, so a workspace that
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
@@ -2946,21 +2966,21 @@ export function applyOverlay (
   const nx = {
     ...existingNx,
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
-    targets: {
+    targets:         {
       ...(existingNx?.targets as Record<string, unknown> | undefined),
-      lint: ROOT_LINT_TARGET
-    }
+      lint: ROOT_LINT_TARGET,
+    },
   }
   writeFileEnsured(
     manifestPath,
     toJson({
       ...manifest,
-      name: `${options.scope}/source`,
+      name:            `${options.scope}/source`,
       scripts,
       devDependencies: devDeps,
       overrides,
-      nx
-    })
+      nx,
+    }),
   )
 
   onProgress(
@@ -2968,7 +2988,7 @@ export function applyOverlay (
       options.registry.kind === 'azure-artifacts'
         ? 'Azure Artifacts feed routing and credentials'
         : 'public npm registry auth'
-    }`
+    }`,
   )
   writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
   onProgress('commitlint.config.mjs and .husky/commit-msg — conventional commit enforcement')
@@ -2995,7 +3015,7 @@ export function applyOverlay (
   onProgress('.devcontainer/devcontainer.json — a local toolchain matching CI')
   writeFileEnsured(
     join(workspaceRoot, '.devcontainer/devcontainer.json'),
-    devcontainerJson(options.workspaceName)
+    devcontainerJson(options.workspaceName),
   )
   removeNxScaffolding(workspaceRoot)
   // VS Code workspace file with folder structure, extensions, and settings. The
@@ -3003,12 +3023,12 @@ export function applyOverlay (
   // written by `mnci add`, not overlay-owned, so regenerating it wholesale would
   // wipe every registered build/qa/start task on `mnci upgrade`.
   onProgress(
-    `${options.workspaceName}.code-workspace — settings, extensions, launch configs`
+    `${options.workspaceName}.code-workspace — settings, extensions, launch configs`,
   )
   const codeWorkspacePath = join(workspaceRoot, `${options.workspaceName}.code-workspace`)
   const existing = readCodeWorkspace<{
-    tasks?: { version?: string; tasks?: Record<string, unknown>[] }
-    launch?: { version?: string; configurations?: Record<string, unknown>[] }
+    tasks?:    { version?: string; tasks?: Record<string, unknown>[] }
+    launch?:   { version?: string; configurations?: Record<string, unknown>[] }
     settings?: Record<string, unknown>
   }>(codeWorkspacePath)
   writeFileEnsured(
@@ -3017,8 +3037,8 @@ export function applyOverlay (
       options.workspaceName,
       existing?.tasks,
       existing?.launch,
-      existing?.settings
-    )
+      existing?.settings,
+    ),
   )
   // Repairs mnci's own past bug rather than tidying: `mnci upgrade` used to pass
   // no `workspaceName` at all, so this write landed on the literal filename
@@ -3036,14 +3056,14 @@ export function applyOverlay (
     onProgress('azure-pipelines.yml — build, verify, pack and release')
     writeFileEnsured(
       join(workspaceRoot, 'azure-pipelines.yml'),
-      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind)
+      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind),
     )
   }
   if (options.ci === 'github' || options.ci === 'both') {
     onProgress('.github/workflows/ci.yml and dependabot.yml')
     writeFileEnsured(
       join(workspaceRoot, '.github/workflows/ci.yml'),
-      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci)
+      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci),
     )
     writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), dependabotConfig(workspaceRoot))
   }

@@ -33,7 +33,7 @@ export function now (context: OrchestrationContext): Date {
  */
 export function * sleepUntil (
   context: OrchestrationContext,
-  when: Date
+  when: Date,
 ): Generator<Task, void, unknown> {
   yield context.df.createTimer(when)
 }
@@ -57,7 +57,7 @@ export function * sleepUntil (
  */
 export function * sleepFor (
   context: OrchestrationContext,
-  ms: number
+  ms: number,
 ): Generator<Task, void, unknown> {
   yield * sleepUntil(context, new Date(now(context).getTime() + ms))
 }
@@ -79,12 +79,13 @@ export function * sleepFor (
  */
 export function timerTaskUntil (context: OrchestrationContext, when: Date): TypedTimerTask {
   const task = context.df.createTimer(when)
+
   return {
     task,
     cancel: () => {
       task.cancel()
     },
-    isCompleted: () => task.isCompleted
+    isCompleted: () => task.isCompleted,
   }
 }
 

@@ -19,8 +19,8 @@ function seedHealthyWorkspace (): void {
     join(workspaceRoot, 'nx.json'),
     JSON.stringify({
       plugins: [{ plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }],
-      mnci: { registry: { kind: 'npm' }, scope: '@demo' }
-    })
+      mnci:    { registry: { kind: 'npm' }, scope: '@demo' },
+    }),
   )
   writeFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'export default []')
   // No formatter config: ESLint is the formatter, and every Prettier/oxfmt file
@@ -28,7 +28,7 @@ function seedHealthyWorkspace (): void {
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ devDependencies: {} }))
   writeFileSync(
     join(workspaceRoot, '.npmrc'),
-    '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n'
+    '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n',
   )
 }
 
@@ -100,7 +100,7 @@ describe('collectFindings', () => {
     seedHealthyWorkspace()
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
-      JSON.stringify({ plugins: ['@nx/eslint/plugin'] })
+      JSON.stringify({ plugins: ['@nx/eslint/plugin'] }),
     )
 
     expect(findingFor(collectFindings(workspaceRoot), '@nx/eslint/plugin')?.ok).toBe(true)
@@ -111,7 +111,7 @@ describe('collectFindings', () => {
     mkdirSync(join(workspaceRoot, 'node_modules/eslint'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'node_modules/eslint/package.json'),
-      JSON.stringify({ name: 'eslint', version: '9.39.5' })
+      JSON.stringify({ name: 'eslint', version: '9.39.5' }),
     )
 
     const finding = findingFor(collectFindings(workspaceRoot), 'resolved eslint')
@@ -129,7 +129,7 @@ describe('collectFindings', () => {
     mkdirSync(join(workspaceRoot, 'node_modules/eslint'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'node_modules/eslint/package.json'),
-      JSON.stringify({ name: 'eslint', version: '10.8.0' })
+      JSON.stringify({ name: 'eslint', version: '10.8.0' }),
     )
 
     expect(findingFor(collectFindings(workspaceRoot), 'resolved eslint')?.ok).toBe(true)
@@ -157,7 +157,7 @@ describe('collectFindings', () => {
     seedHealthyWorkspace()
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ dependencies: { axios: '^1.9.0' }, devDependencies: {} })
+      JSON.stringify({ dependencies: { axios: '^1.9.0' }, devDependencies: {} }),
     )
 
     const finding = findingFor(collectFindings(workspaceRoot), 'no runtime dependencies')
@@ -171,7 +171,7 @@ describe('collectFindings', () => {
     seedHealthyWorkspace()
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ devDependencies: { eslint: '^10.8.1', jest: '^30.0.0' } })
+      JSON.stringify({ devDependencies: { eslint: '^10.8.1', jest: '^30.0.0' } }),
     )
 
     expect(findingFor(collectFindings(workspaceRoot), 'no runtime dependencies')?.ok).toBe(true)
@@ -190,16 +190,16 @@ describe('collectFindings', () => {
       join(workspaceRoot, 'nx.json'),
       JSON.stringify({
         plugins: ['@nx/eslint/plugin'],
-        mnci: {
-          scope: '@demo',
+        mnci:    {
+          scope:    '@demo',
           registry: {
-            kind: 'azure-artifacts',
-            organization: 'org',
-            project: 'proj',
-            artifactsFeed: 'feed'
-          }
-        }
-      })
+            kind:          'azure-artifacts',
+            organization:  'org',
+            project:       'proj',
+            artifactsFeed: 'feed',
+          },
+        },
+      }),
     )
     // A public-npm .npmrc in an Azure workspace: a scoped package would publish
     // to npmjs.org instead of the feed.
@@ -230,8 +230,8 @@ describe('collectFindings', () => {
     writeFileSync(
       join(workspaceRoot, 'packages/shared/project.json'),
       JSON.stringify({
-        release: { version: { versionActions: '@mnci/nx-flutter/release/version-actions' } }
-      })
+        release: { version: { versionActions: '@mnci/nx-flutter/release/version-actions' } },
+      }),
     )
 
     expect(findingFor(collectFindings(workspaceRoot), 'packages/shared')?.ok).toBe(true)
@@ -243,8 +243,8 @@ describe('collectFindings', () => {
     writeFileSync(
       join(workspaceRoot, 'apps/api/project.json'),
       JSON.stringify({
-        targets: { build: { options: { main: 'apps/api/src/index.ts' } } }
-      })
+        targets: { build: { options: { main: 'apps/api/src/index.ts' } } },
+      }),
     )
 
     const finding = findingFor(collectFindings(workspaceRoot), 'build.main')
@@ -264,14 +264,14 @@ describe('collectFindings', () => {
     // does not, and the two disagree about what the entry point even is.
     writeFileSync(
       join(workspaceRoot, 'apps/api/project.json'),
-      JSON.stringify({ targets: { build: { options: { main: 'apps/api/src/index.ts' } } } })
+      JSON.stringify({ targets: { build: { options: { main: 'apps/api/src/index.ts' } } } }),
     )
     writeFileSync(
       join(workspaceRoot, 'apps/api/package.json'),
       JSON.stringify({
         name: '@demo/api',
-        nx: { targets: { build: { options: { main: 'apps/api/src/main.ts' } } } }
-      })
+        nx:   { targets: { build: { options: { main: 'apps/api/src/main.ts' } } } },
+      }),
     )
 
     const findings = collectFindings(workspaceRoot).filter(f => f.check.includes('build.main'))
@@ -290,10 +290,10 @@ describe('collectFindings', () => {
       JSON.stringify({
         targets: {
           build: {
-            options: { main: 'libs/models/src/index.ts', tsConfig: 'libs/models/tsconfig.lib.json' }
-          }
-        }
-      })
+            options: { main: 'libs/models/src/index.ts', tsConfig: 'libs/models/tsconfig.lib.json' },
+          },
+        },
+      }),
     )
 
     expect(findingFor(collectFindings(workspaceRoot), 'build.tsConfig')?.ok).toBe(false)
@@ -310,15 +310,15 @@ describe('collectFindings', () => {
         targets: {
           build: {
             options: {
-              main: 'apps/api/src/main.ts',
-              tsConfig: 'apps/api/tsconfig.json',
+              main:        'apps/api/src/main.ts',
+              tsConfig:    'apps/api/tsconfig.json',
               // Resolved by Nx at run time; testing it literally would report a
               // file that is never meant to exist under this name.
-              packageJson: '{projectRoot}/package.json'
-            }
-          }
-        }
-      })
+              packageJson: '{projectRoot}/package.json',
+            },
+          },
+        },
+      }),
     )
 
     expect(collectFindings(workspaceRoot).filter(f => f.check.includes('apps/api'))).toEqual([])
@@ -337,7 +337,7 @@ describe('the retired-formatter check', () => {
     writeWorkspace()
 
     const finding = collectFindings(workspaceRoot).find(f =>
-      f.check.includes('only linter and formatter')
+      f.check.includes('only linter and formatter'),
     )
 
     expect(finding?.ok).toBe(true)

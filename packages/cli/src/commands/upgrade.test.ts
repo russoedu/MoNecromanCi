@@ -18,12 +18,12 @@ const mockRunFormatter = jest.mocked(runFormatter)
 /** The overlay options a seeded fixture workspace was generated with. */
 const FIXTURE_OPTIONS: OverlayOptions = {
   workspaceName: 'demo',
-  scope: '@demo',
-  registry: { kind: 'npm' },
-  agent: 'ubuntu-latest',
+  scope:         '@demo',
+  registry:      { kind: 'npm' },
+  agent:         'ubuntu-latest',
   variableGroup: 'Build',
-  ci: 'github',
-  stack: DEFAULT_STACK
+  ci:            'github',
+  stack:         DEFAULT_STACK,
 }
 
 let workspaceRoot: string
@@ -33,7 +33,7 @@ function seedWorkspace (): void {
   writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ $schema: 's', namedInputs: {} }))
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } })
+    JSON.stringify({ name: '@org/source', private: true, devDependencies: { nx: '23.0.0' } }),
   )
 }
 
@@ -130,7 +130,7 @@ describe('runUpgrade', () => {
     runUpgrade(workspaceRoot, { ci: 'both' })
 
     expect(readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8')).toContain(
-      'vmImage: ubuntu-latest'
+      'vmImage: ubuntu-latest',
     )
   })
 
@@ -138,10 +138,10 @@ describe('runUpgrade', () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
       JSON.stringify({
-        $schema: 's',
+        $schema:     's',
         namedInputs: {},
-        mnci: { stack: { testRunner: 'jest' } }
-      })
+        mnci:        { stack: { testRunner: 'jest' } },
+      }),
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@org/source' }))
 
@@ -152,14 +152,14 @@ describe('runUpgrade', () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
       JSON.stringify({
-        $schema: 's',
+        $schema:     's',
         namedInputs: {},
-        mnci: {
-          scope: '@demo',
+        mnci:        {
+          scope:    '@demo',
           registry: { kind: 'npm' },
-          stack: { testRunner: 'jest' }
-        }
-      })
+          stack:    { testRunner: 'jest' },
+        },
+      }),
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
 
@@ -171,7 +171,7 @@ describe('runUpgrade', () => {
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
 
     expect(() => runUpgrade(workspaceRoot, { registry: 'azure-artifacts' })).toThrow(
-      'Azure Artifacts registry needs --organization, --project and --artifacts-feed'
+      'Azure Artifacts registry needs --organization, --project and --artifacts-feed',
     )
   })
 
@@ -180,20 +180,20 @@ describe('runUpgrade', () => {
     applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
 
     runUpgrade(workspaceRoot, {
-      registry: 'azure-artifacts',
-      organization: 'org',
-      project: 'proj',
-      artifactsFeed: 'feed'
+      registry:      'azure-artifacts',
+      organization:  'org',
+      project:       'proj',
+      artifactsFeed: 'feed',
     })
 
     const nxJson = JSON.parse(readFileSync(join(workspaceRoot, 'nx.json'), 'utf8')) as {
       mnci: { registry: unknown }
     }
     expect(nxJson.mnci.registry).toEqual({
-      kind: 'azure-artifacts',
-      organization: 'org',
-      project: 'proj',
-      artifactsFeed: 'feed'
+      kind:          'azure-artifacts',
+      organization:  'org',
+      project:       'proj',
+      artifactsFeed: 'feed',
     })
   })
 
@@ -230,16 +230,16 @@ describe('runUpgrade', () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
       JSON.stringify({
-        $schema: 's',
+        $schema:     's',
         namedInputs: {},
-        mnci: {
-          scope: '@demo',
+        mnci:        {
+          scope:    '@demo',
           registry: { kind: 'npm' },
-          agent: 'ubuntu-latest',
-          ci: 'github',
-          stack: { testRunner: 'jest' }
-        }
-      })
+          agent:    'ubuntu-latest',
+          ci:       'github',
+          stack:    { testRunner: 'jest' },
+        },
+      }),
     )
     writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
     writeFileSync(join(workspaceRoot, 'legacy-name.code-workspace'), '{}')
@@ -262,7 +262,7 @@ describe('runUpgrade', () => {
     }
     file.tasks.tasks = [
       { label: 'web: qa', type: 'npm', script: 'web:qa' },
-      { label: 'web: build', type: 'npm', script: 'web:build' }
+      { label: 'web: build', type: 'npm', script: 'web:build' },
     ]
     writeFileSync(path, JSON.stringify(file, undefined, 2))
 
@@ -273,7 +273,7 @@ describe('runUpgrade', () => {
     // Fixing the filename destroyed all five tasks in a real three-project
     // workspace before this preservation was added.
     const after = JSON.parse(readFileSync(path, 'utf8')) as {
-      tasks: { tasks: { label: string }[] }
+      tasks:   { tasks: { label: string }[] }
       folders: { name: string }[]
     }
     expect(after.tasks.tasks.map(t => t.label)).toEqual(['web: qa', 'web: build'])
@@ -317,8 +317,8 @@ describe('rollup source maps', () => {
         '    // Added by MoNecromanCI. Something mnci already wrote here.',
         '    plugins: []',
         '  }',
-        ');'
-      ].join('\n')
+        ');',
+      ].join('\n'),
     )
 
     const changed = repairRollupSourceMaps(workspaceRoot)
@@ -339,8 +339,8 @@ describe('rollup source maps', () => {
     writeFileSync(
       join(projectRoot, 'rollup.config.cjs'),
       ['module.exports = withNx(', '  {', '    sourceMap: true', '  },', '  {', '  }', ');', ''].join(
-        '\n'
-      )
+        '\n',
+      ),
     )
 
     expect(repairRollupSourceMaps(workspaceRoot)).toEqual([])

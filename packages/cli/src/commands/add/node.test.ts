@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -25,12 +25,12 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
   mkdirSync(join(workspaceRoot, 'node_modules/@azure/functions'), { recursive: true })
   writeFileSync(
     join(workspaceRoot, 'node_modules/@azure/functions/package.json'),
-    JSON.stringify({ version: '4.16.2' })
+    JSON.stringify({ version: '4.16.2' }),
   )
 })
 
@@ -55,16 +55,16 @@ describe('runAdd node-app', () => {
         '--linter=none',
         '--e2eTestRunner=none',
         '--framework=none',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
   it('skips the plugin install when it is already a devDependency', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: 'demo', devDependencies: { '@nx/node': '^23.0.0' } })
+      JSON.stringify({ name: 'demo', devDependencies: { '@nx/node': '^23.0.0' } }),
     )
 
     await runAdd('node-app', 'svc', {})
@@ -79,11 +79,11 @@ describe('runAdd node-app', () => {
     writeFileSync(
       join(workspaceRoot, 'apps/svc/package.json'),
       JSON.stringify({
-        name: '@demo/svc',
+        name:    '@demo/svc',
         version: '0.0.1',
         private: true,
-        nx: { targets: { build: {} } }
-      })
+        nx:      { targets: { build: {} } },
+      }),
     )
 
     await runAdd('node-app', 'svc', {})
@@ -92,36 +92,36 @@ describe('runAdd node-app', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // node-app is inference-only (no project.json): the package target is
     // attached via the manifest's `nx` field, preserving the generator's own
     // (build/test/serve/...) targets.
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'apps/svc/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/svc/package.json'), 'utf8'),
     ) as {
       nx: {
         targets: Record<
           string,
           {
-            executor: string
+            executor:   string
             dependsOn?: string[]
-            outputs: string[]
-            options: { command: string }
+            outputs:    string[]
+            options:    { command: string }
           }
         >
       }
     }
     expect(manifest.nx.targets.build).toEqual({})
     expect(manifest.nx.targets.package).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:  'nx:run-commands',
       dependsOn: ['build'],
-      outputs: ['{workspaceRoot}/dist/drop/node-app-svc.zip']
+      outputs:   ['{workspaceRoot}/dist/drop/node-app-svc.zip'],
     })
     expect(manifest.nx.targets.package.options.command).toContain('addLocalFolder(\'apps/svc/dist\')')
     expect(manifest.nx.targets.package.options.command).toContain(
-      'writeZip(\'dist/drop/node-app-svc.zip\')'
+      'writeZip(\'dist/drop/node-app-svc.zip\')',
     )
 
     // The root package.json gets discoverable local-dev scripts, routed
@@ -137,12 +137,12 @@ describe('runAdd node-app', () => {
   it('passes the vitest runner from nx.json to the node generator', async () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
-      JSON.stringify({ mnci: { stack: { testRunner: 'vitest' } } })
+      JSON.stringify({ mnci: { stack: { testRunner: 'vitest' } } }),
     )
     mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/svc/package.json'),
-      JSON.stringify({ name: '@demo/svc' })
+      JSON.stringify({ name: '@demo/svc' }),
     )
 
     await runAdd('node-app', 'svc', {})
@@ -157,21 +157,21 @@ describe('runAdd node-app', () => {
       mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
       writeFileSync(
         join(workspaceRoot, 'apps/svc/package.json'),
-        JSON.stringify({ name: '@demo/svc' })
+        JSON.stringify({ name: '@demo/svc' }),
       )
 
       await runAdd('node-app', 'svc', { framework })
 
       const generatorCall = mockRunNx.mock.calls.find(call => call[0][1] === '@nx/node:application')
       expect(generatorCall?.[0]).toContain(`--framework=${framework}`)
-    }
+    },
   )
 
   it('defaults to --framework=none when no framework flag is passed', async () => {
     mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/svc/package.json'),
-      JSON.stringify({ name: '@demo/svc' })
+      JSON.stringify({ name: '@demo/svc' }),
     )
 
     await runAdd('node-app', 'svc', {})
@@ -187,12 +187,12 @@ describe('runAdd node-function-app', () => {
     writeFileSync(
       join(workspaceRoot, 'apps/api/package.json'),
       JSON.stringify({
-        name: '@demo/api',
-        version: '0.0.1',
-        private: true,
-        nx: { targets: { build: {} } },
-        dependencies: {}
-      })
+        name:         '@demo/api',
+        version:      '0.0.1',
+        private:      true,
+        nx:           { targets: { build: {} } },
+        dependencies: {},
+      }),
     )
 
     await runAdd('node-function-app', 'api', {})
@@ -207,9 +207,9 @@ describe('runAdd node-function-app', () => {
         '--linter=none',
         '--e2eTestRunner=none',
         '--framework=none',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // @azure/functions is installed for real (unlike the removed plugin, a
@@ -217,25 +217,25 @@ describe('runAdd node-function-app', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '@azure/functions', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // The v4 programming model: an HTTP trigger importing a tested helper,
     // wired into the esbuild entry so it's reachable (and thus bundled).
     expect(readFileSync(join(workspaceRoot, 'apps/api/src/main.ts'), 'utf8')).toContain(
-      'import \'./functions/hello\''
+      'import \'./functions/hello\'',
     )
     const hello = readFileSync(join(workspaceRoot, 'apps/api/src/functions/hello.ts'), 'utf8')
     expect(hello).toContain('from \'@azure/functions\'')
     expect(hello).toContain('app.http(\'hello\'')
     expect(
-      readFileSync(join(workspaceRoot, 'apps/api/src/functions/greeting.ts'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/api/src/functions/greeting.ts'), 'utf8'),
     ).toContain('export function buildGreeting')
     expect(
-      readFileSync(join(workspaceRoot, 'apps/api/src/functions/greeting.spec.ts'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/api/src/functions/greeting.spec.ts'), 'utf8'),
     ).toContain('buildGreeting')
     expect(readFileSync(join(workspaceRoot, 'apps/api/host.json'), 'utf8')).toContain(
-      'extensionBundle'
+      'extensionBundle',
     )
 
     // The manifest is repaired for the Azure deploy: `main` points at the
@@ -244,11 +244,11 @@ describe('runAdd node-function-app', () => {
     // the real dependency is declared (for Oryx's deploy-time npm install) —
     // the generator's own `nx` targets survive.
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'apps/api/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/api/package.json'), 'utf8'),
     ) as {
-      main: string
+      main:         string
       dependencies: Record<string, string>
-      nx: { targets: Record<string, unknown> }
+      nx:           { targets: Record<string, unknown> }
     }
     expect(manifest.main).toBe('dist/main.js')
     expect(manifest.dependencies['@azure/functions']).toBe('^4.16.2')
@@ -259,9 +259,9 @@ describe('runAdd node-function-app', () => {
     // unzipped layout matches the source layout exactly. No node_modules
     // bundled (Oryx installs at deploy).
     expect(manifest.nx.targets.package).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:  'nx:run-commands',
       dependsOn: ['build'],
-      outputs: ['{workspaceRoot}/dist/drop/node-function-app-api.zip']
+      outputs:   ['{workspaceRoot}/dist/drop/node-function-app-api.zip'],
     })
     const packageCommand = (manifest.nx.targets.package as { options: { command: string } }).options
       .command
@@ -272,10 +272,10 @@ describe('runAdd node-function-app', () => {
 
     // A local `func start`, wired through Nx so it depends on `build` first.
     expect(manifest.nx.targets.start).toMatchObject({
-      executor: 'nx:run-commands',
-      dependsOn: ['build'],
+      executor:   'nx:run-commands',
+      dependsOn:  ['build'],
       continuous: true,
-      options: { command: 'func start', cwd: 'apps/api' }
+      options:    { command: 'func start', cwd: 'apps/api' },
     })
 
     // The root package.json gets the discoverable <name>:build/:qa/:start scripts.
@@ -290,12 +290,12 @@ describe('runAdd node-function-app', () => {
   it('skips the @azure/functions install when it is already a dependency', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: 'demo', dependencies: { '@azure/functions': '^4.0.0' } })
+      JSON.stringify({ name: 'demo', dependencies: { '@azure/functions': '^4.0.0' } }),
     )
     mkdirSync(join(workspaceRoot, 'apps/api'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/api/package.json'),
-      JSON.stringify({ name: '@demo/api', dependencies: {} })
+      JSON.stringify({ name: '@demo/api', dependencies: {} }),
     )
 
     await runAdd('node-function-app', 'api', {})
@@ -303,7 +303,7 @@ describe('runAdd node-function-app', () => {
     expect(mockRunShell).not.toHaveBeenCalledWith(
       'npm',
       ['install', '@azure/functions', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 })
@@ -314,7 +314,7 @@ describe('root-only ESLint config', () => {
 
   it.each([
     ['node-app', 'svc', 'apps/svc'],
-    ['node-function-app', 'fn', 'apps/fn']
+    ['node-function-app', 'fn', 'apps/fn'],
   ])(
     'leaves no per-project eslint config behind after adding a %s',
     async (kind, name, projectRoot) => {
@@ -328,12 +328,12 @@ describe('root-only ESLint config', () => {
       mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
       writeFileSync(
         join(workspaceRoot, projectRoot, 'package.json'),
-        JSON.stringify({ name: `@demo/${name}` })
+        JSON.stringify({ name: `@demo/${name}` }),
       )
       for (const extension of EXTENSIONS) {
         writeFileSync(
           join(workspaceRoot, projectRoot, `eslint.config.${extension}`),
-          'export default []'
+          'export default []',
         )
       }
 
@@ -341,9 +341,9 @@ describe('root-only ESLint config', () => {
 
       for (const extension of EXTENSIONS) {
         expect(existsSync(join(workspaceRoot, projectRoot, `eslint.config.${extension}`))).toBe(
-          false
+          false,
         )
       }
-    }
+    },
   )
 })

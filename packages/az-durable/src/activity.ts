@@ -31,12 +31,13 @@ import type { TypedActivity, TypedTask } from './types.js'
  */
 export function defineActivity<TInput, TOutput> (
   name: string,
-  handler: (input: TInput, context: InvocationContext) => TOutput | Promise<TOutput>
+  handler: (input: TInput, context: InvocationContext) => TOutput | Promise<TOutput>,
 ): TypedActivity<TInput, Awaited<TOutput>> {
   claimName('activity', name)
   const registered = df.app.activity(name, {
-    handler: handler as (input: unknown, context: InvocationContext) => unknown
+    handler: handler as (input: unknown, context: InvocationContext) => unknown,
   })
+
   return { name, registered }
 }
 
@@ -79,12 +80,13 @@ export function activityTask<TInput, TOutput> (
   context: OrchestrationContext,
   activity: TypedActivity<TInput, TOutput>,
   input: TInput,
-  retry?: RetryOptions
+  retry?: RetryOptions,
 ): TypedTask<TOutput> {
   const task =
     retry === undefined
       ? context.df.callActivity(activity.name, input)
       : context.df.callActivityWithRetry(activity.name, retry, input)
+
   return { task }
 }
 
@@ -117,9 +119,10 @@ export function * callActivity<TInput, TOutput> (
   context: OrchestrationContext,
   activity: TypedActivity<TInput, TOutput>,
   input: TInput,
-  retry?: RetryOptions
+  retry?: RetryOptions,
 ): Generator<Task, TOutput, unknown> {
   const result = yield activityTask(context, activity, input, retry).task
+
   // The one cast in the package. The SDK resumes the generator with the
   // activity's result typed `any`; `TOutput` is the claim `defineActivity`
   // captured from the handler's real signature.

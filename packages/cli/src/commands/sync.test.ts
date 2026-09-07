@@ -1,9 +1,9 @@
 // Both shell-outs are mocked: `nx sync` and the formatter pass. The suite
 // asserts the drift findings and the manifests on disk, never a subprocess.
 jest.mock('../nx', () => ({
-  runShell: jest.fn(() => 0),
+  runShell:     jest.fn(() => 0),
   runFormatter: jest.fn(),
-  runCapture: jest.fn(() => ({ status: 1, stdout: '' }))
+  runCapture:   jest.fn(() => ({ status: 1, stdout: '' })),
 }))
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -28,6 +28,7 @@ function write (relativePath: string, content: string): string {
   const path = join(workspaceRoot, relativePath)
   mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, content)
+
   return path
 }
 
@@ -129,7 +130,7 @@ describe('collectDrift', () => {
     write('packages/a/package.json', JSON.stringify({ dependencies: { thing: '^1.0.0' } }))
     write(
       'packages/b/package.json',
-      JSON.stringify({ dependencies: { thing: 'git+https://example.test/a.git' } })
+      JSON.stringify({ dependencies: { thing: 'git+https://example.test/a.git' } }),
     )
 
     const drift = collectDrift(workspaceRoot, ['npm'])
@@ -158,11 +159,11 @@ describe('collectDrift', () => {
     write('package.json', JSON.stringify({ devDependencies: { '@nx/devkit': '23.1.1' } }))
     write(
       'packages/a/package.json',
-      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } })
+      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } }),
     )
     write(
       'packages/b/package.json',
-      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=22.0.0' } })
+      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=22.0.0' } }),
     )
 
     expect(collectDrift(workspaceRoot, ['npm'])).toHaveLength(0)
@@ -180,7 +181,7 @@ describe('collectDrift', () => {
     expect(drift).toHaveLength(1)
     expect(drift[0].target).toBe('^2.0.0')
     expect([...drift[0].fixable, ...drift[0].blocked].map(site => site.project)).toEqual([
-      '(root)'
+      '(root)',
     ])
   })
 
@@ -197,7 +198,7 @@ describe('collectDrift', () => {
     write('nx.json', JSON.stringify({}))
     write(
       'go.mod',
-      'module github.com/demo/repo\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n)\n'
+      'module github.com/demo/repo\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n)\n',
     )
 
     expect(collectDrift(workspaceRoot, ['go'])).toHaveLength(0)

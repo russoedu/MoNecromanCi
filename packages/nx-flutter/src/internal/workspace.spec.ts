@@ -5,7 +5,7 @@ import {
   ensureWorkspaceRoot,
   memberAnalysisOptions,
   ROOT_ANALYSIS_OPTIONS,
-  ROOT_PUBSPEC
+  ROOT_PUBSPEC,
 } from './workspace'
 
 let tree: Tree
@@ -25,7 +25,7 @@ describe('ensureWorkspaceRoot', () => {
     expect(pubspec).toContain('sdk: ^3.6.0')
     expect(pubspec).toContain('workspace:')
     expect(tree.read(ROOT_ANALYSIS_OPTIONS, 'utf8')).toContain(
-      'include: package:flutter_lints/flutter.yaml'
+      'include: package:flutter_lints/flutter.yaml',
     )
   })
 
@@ -43,6 +43,7 @@ describe('ensureWorkspaceRoot', () => {
 /** The `workspace:` entries currently listed in the root pubspec. */
 function members (): string[] {
   const contents = tree.read(ROOT_PUBSPEC, 'utf8') ?? ''
+
   return contents
     .split('\n')
     .filter(line => /^\s+-\s/.test(line))

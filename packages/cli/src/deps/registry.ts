@@ -50,7 +50,7 @@ export type LatestVersions = Map<string, string>
  */
 export async function latestNpmVersions (
   names: readonly string[],
-  cwd: string
+  cwd: string,
 ): Promise<LatestVersions> {
   const results = await pool(names, LOOKUP_CONCURRENCY, async name => {
     const result = await runCaptureAsync('npm', ['view', name, 'version', '--json'], cwd)
@@ -62,6 +62,7 @@ export async function latestNpmVersions (
       // the spec matched several versions; the last is the newest.
       const parsed: unknown = JSON.parse(result.stdout)
       const version = Array.isArray(parsed) ? (parsed.at(-1) as unknown) : parsed
+
       return typeof version === 'string' ? ([name, version] as const) : undefined
     } catch {
       return
@@ -92,7 +93,7 @@ export async function latestNpmVersions (
  */
 export async function latestPipVersions (
   names: readonly string[],
-  cwd: string
+  cwd: string,
 ): Promise<LatestVersions> {
   const python = process.platform === 'win32' ? 'python' : 'python3'
   const results = await pool(names, LOOKUP_CONCURRENCY, async name => {
@@ -102,6 +103,7 @@ export async function latestPipVersions (
     }
     // First line is `<name> (<latest>)`; the second lists every version.
     const match = /\(([^)]+)\)/.exec(result.stdout)
+
     return match ? ([name, match[1]] as const) : undefined
   })
 
@@ -143,6 +145,7 @@ export async function latestGoVersions (cwd: string): Promise<LatestVersions> {
       // A partial chunk at the tail of the stream is not an error worth raising.
     }
   }
+
   return latest
 }
 
@@ -179,6 +182,7 @@ export async function latestPubVersions (cwd: string): Promise<LatestVersions> {
         latest.set(entry.package, entry.latest.version)
       }
     }
+
     return latest
   } catch {
     return new Map()
@@ -203,7 +207,7 @@ export async function latestPubVersions (cwd: string): Promise<LatestVersions> {
 export async function latestVersions (
   ecosystem: Ecosystem,
   names: readonly string[],
-  cwd: string
+  cwd: string,
 ): Promise<LatestVersions> {
   switch (ecosystem) {
     case 'npm': {

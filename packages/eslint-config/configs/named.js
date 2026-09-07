@@ -26,6 +26,6 @@
 export function named (prefix, blocks) {
   return blocks.map((block, index) => ({
     ...block,
-    name: block.name ?? (blocks.length === 1 ? prefix : `${prefix}/${index}`)
+    name: block.name ?? (blocks.length === 1 ? prefix : `${prefix}/${index}`),
   }))
 }

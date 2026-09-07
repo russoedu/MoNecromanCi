@@ -27,7 +27,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  writeFileSync
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
@@ -69,7 +69,7 @@ function run (command, cwd) {
   execSync(command, {
     cwd,
     stdio: 'inherit',
-    env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' }
+    env:   { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' },
   })
 }
 
@@ -77,6 +77,7 @@ function run (command, cwd) {
 function tryRun (command, cwd) {
   try {
     run(command, cwd)
+
     return true
   } catch {
     return false
@@ -90,14 +91,16 @@ function tryRunCapture (command, cwd) {
     const output = execSync(command, {
       cwd,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' }
+      stdio:    ['ignore', 'pipe', 'pipe'],
+      env:      { ...process.env, NX_DAEMON: 'false', HUSKY: '0', CI: 'true' },
     })
     console.log(output)
+
     return { ok: true, output }
   } catch (error) {
     const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
     console.log(output)
+
     return { ok: false, output }
   }
 }
@@ -151,6 +154,7 @@ function section (label, needs, body) {
   if (blockedBy) {
     failedSections.add(label)
     skip(`the entire ${label} section`, `its prerequisite section "${blockedBy}" failed`)
+
     return
   }
   console.log(`\n▶ section: ${label}`)
@@ -225,7 +229,7 @@ function replaceInFile (file, pattern, replacement) {
     throw new Error(
       `replaceInFile: ${pattern} did not match ${file}. ` +
         'A silent no-op here would break a later assertion for an unrelated-looking reason. ' +
-        `First 400 chars:\n${before.slice(0, 400)}`
+        `First 400 chars:\n${before.slice(0, 400)}`,
     )
   }
   writeFileSync(file, after)
@@ -245,6 +249,7 @@ function findFiles (directory, predicate, base = directory) {
       found.push(path.relative(base, full).replaceAll('\\', '/'))
     }
   }
+
   return found
 }
 
@@ -266,12 +271,12 @@ function enforceWorkspaceShape (root, stage) {
   dropSandboxInjected(root)
 
   const eslintConfigs = findFiles(root, name =>
-    /^eslint\.config\.(?:js|mjs|cjs|ts|mts|cts)$/.test(name)
+    /^eslint\.config\.(?:js|mjs|cjs|ts|mts|cts)$/.test(name),
   )
   enforce(
     `${stage}: exactly one eslint config, at the root`,
     eslintConfigs.length === 1 && eslintConfigs[0] === 'eslint.config.mjs',
-    `found: ${JSON.stringify(eslintConfigs)}`
+    `found: ${JSON.stringify(eslintConfigs)}`,
   )
 
   // Every formatter config mnci has ever written must be ABSENT. They are inert
@@ -281,16 +286,16 @@ function enforceWorkspaceShape (root, stage) {
   // reformats on save, quietly undoing Standard while `lint` stays green
   // because the damage lands after the check ran.
   const retiredFormatterConfigs = findFiles(root, name =>
-    /^(?:\.prettierrc(?:\..+)?|\.prettierignore|\.oxfmtrc\.json|oxlint\.config\.ts)$/.test(name)
+    /^(?:\.prettierrc(?:\..+)?|\.prettierignore|\.oxfmtrc\.json|oxlint\.config\.ts)$/.test(name),
   )
   enforce(
     `${stage}: no retired formatter config survives`,
     retiredFormatterConfigs.length === 0,
-    `found: ${JSON.stringify(retiredFormatterConfigs)}`
+    `found: ${JSON.stringify(retiredFormatterConfigs)}`,
   )
   enforce(
     `${stage}: exactly one eslint.config.mjs, which is the whole opinion`,
-    existsSync(path.join(root, 'eslint.config.mjs'))
+    existsSync(path.join(root, 'eslint.config.mjs')),
   )
 
   // The .code-workspace file covers everything Nx's .vscode/ did. @nx/node
@@ -305,19 +310,19 @@ function enforceWorkspaceShape (root, stage) {
   // installing its own hazard.
   for (const [label, file] of [
     ['code-workspace', findFiles(root, name => name.endsWith('.code-workspace'))[0]],
-    ['devcontainer', '.devcontainer/devcontainer.json']
+    ['devcontainer', '.devcontainer/devcontainer.json'],
   ]) {
     if (!file) continue
     const contents = readFileSync(path.join(root, file), 'utf8')
     for (const extension of ['esbenp.prettier-vscode', 'oxc.oxc-vscode']) {
       enforce(
         `${stage}: ${label} does not recommend ${extension}`,
-        !contents.includes(extension)
+        !contents.includes(extension),
       )
     }
     enforce(
       `${stage}: ${label} recommends the ESLint extension`,
-      contents.includes('dbaeumer.vscode-eslint')
+      contents.includes('dbaeumer.vscode-eslint'),
     )
   }
 
@@ -333,7 +338,7 @@ function enforceWorkspaceShape (root, stage) {
   // `npm run format:check` on a missing script exits non-zero.
   enforce(
     `${stage}: lint is already green — no manual format needed`,
-    tryRun('npm run lint', root)
+    tryRun('npm run lint', root),
   )
 }
 
@@ -341,6 +346,7 @@ function enforceWorkspaceShape (root, stage) {
 function hasFlutter () {
   try {
     execSync('flutter --version', { stdio: 'ignore' })
+
     return true
   } catch {
     return false
@@ -351,6 +357,7 @@ function hasFlutter () {
 function hasGo () {
   try {
     execSync('go version', { stdio: 'ignore' })
+
     return true
   } catch {
     return false
@@ -371,6 +378,7 @@ function hasGo () {
 function hasGolangciLint () {
   try {
     execSync('golangci-lint --version', { stdio: 'ignore' })
+
     return true
   } catch {
     return false
@@ -405,11 +413,11 @@ mkdirSync(eslintConfigPackDirectory, { recursive: true })
 // No build step — this package ships plain ESM, so `npm pack` is the whole job.
 const eslintConfigPackOutput = execSync(
   `npm pack --silent --pack-destination "${eslintConfigPackDirectory}"`,
-  { cwd: eslintConfigDirectory, encoding: 'utf8' }
+  { cwd: eslintConfigDirectory, encoding: 'utf8' },
 ).trim()
 process.env.MNCI_ESLINT_CONFIG_SPEC = path.join(
   eslintConfigPackDirectory,
-  eslintConfigPackOutput.split('\n').at(-1)
+  eslintConfigPackOutput.split('\n').at(-1),
 )
 
 section('js stack', [], () => {
@@ -426,7 +434,7 @@ section('js stack', [], () => {
   const release = nxJson.release ?? {}
   enforce(
     'release: conventional commits + independent versioning',
-    release.version?.conventionalCommits === true && release.projectsRelationship === 'independent'
+    release.version?.conventionalCommits === true && release.projectsRelationship === 'independent',
   )
   // Top-level release.git (not version.git) — required by the combined `nx
   // release` command this workspace's CI and release:preview actually run
@@ -435,11 +443,11 @@ section('js stack', [], () => {
   // true here), so the generated pipeline pushes tags itself as its own step.
   enforce(
     'release: tag-only git (top-level git: commit false, tag true, push false)',
-    release.git?.commit === false && release.git?.tag === true && release.git?.push === false
+    release.git?.commit === false && release.git?.tag === true && release.git?.push === false,
   )
   enforce(
     'release scoped to the publishable dirs (npm + python), with go-lib excluded',
-    JSON.stringify(release.projects) === '["packages/*","python-packages/*","!tag:type:go-lib"]'
+    JSON.stringify(release.projects) === '["packages/*","python-packages/*","!tag:type:go-lib"]',
   )
 
   enforceWorkspaceShape(workspace, 'after new')
@@ -453,13 +461,13 @@ section('js stack', [], () => {
   enforce(
     'mnci registers @nx/eslint/plugin in nx.json',
     (nxJson.plugins ?? []).some(
-      entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin'
-    )
+      entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin',
+    ),
   )
 
   enforce(
     'root eslint config delegates to @mnci/eslint-config',
-    readFileSync(path.join(workspace, 'eslint.config.mjs'), 'utf8').includes('@mnci/eslint-config')
+    readFileSync(path.join(workspace, 'eslint.config.mjs'), 'utf8').includes('@mnci/eslint-config'),
   )
 
   // Root-level files used to be linted by NOTHING: every other `lint` target
@@ -474,13 +482,13 @@ section('js stack', [], () => {
     Boolean(rootManifestNx.targets?.lint) &&
       Array.isArray(rootManifestNx.includedScripts) &&
       rootManifestNx.includedScripts.length === 0,
-    JSON.stringify(rootManifestNx)
+    JSON.stringify(rootManifestNx),
   )
   const rootLintClean = tryRunCapture('npx nx run @demo/source:lint --skip-nx-cache', workspace)
   enforce(
     'root lint is green out of the box — nothing in a fresh workspace fails it',
     rootLintClean.ok,
-    rootLintClean.output
+    rootLintClean.output,
   )
   const rootOwnedFile = path.join(workspace, 'commitlint.config.mjs')
   const rootOwnedBefore = readFileSync(rootOwnedFile, 'utf8')
@@ -490,7 +498,7 @@ section('js stack', [], () => {
   enforce(
     'root lint actually gates: a planted `var` in a root file fails it',
     !rootLintPlanted.ok && rootLintPlanted.output.includes('no-var'),
-    rootLintPlanted.output
+    rootLintPlanted.output,
   )
 
   // The options moved into @mnci/eslint-config/prettier, so there is no JSON left
@@ -511,7 +519,7 @@ section('js stack', [], () => {
   enforce(
     'eslint --fix applies Standard for real (single quotes, no semicolons, no trailing comma)',
     formatted.includes("a: 'x'") && !formatted.includes('"x"') && !formatted.includes('b: 2,'),
-    JSON.stringify(formatted)
+    JSON.stringify(formatted),
   )
   // The rule no formatter could ever satisfy, and the headline of the whole
   // collapse onto one tool: Prettier and oxfmt both rewrite `function f (a)`
@@ -520,7 +528,7 @@ section('js stack', [], () => {
   enforce(
     'eslint --fix adds the Standard space before function parens',
     formatted.includes('function f ('),
-    JSON.stringify(formatted)
+    JSON.stringify(formatted),
   )
   rmSync(standardProbe, { force: true })
 
@@ -534,16 +542,16 @@ section('js stack', [], () => {
     for (const retired of ['prettier', 'eslint-config-prettier', 'oxlint', 'oxfmt']) {
       enforce(
         `no retired formatter declared: ${retired}`,
-        manifest.devDependencies?.[retired] === undefined
+        manifest.devDependencies?.[retired] === undefined,
       )
     }
     const codeWorkspace = JSON.parse(
-      readFileSync(path.join(workspace, 'demo.code-workspace'), 'utf8')
+      readFileSync(path.join(workspace, 'demo.code-workspace'), 'utf8'),
     )
     enforce(
       'format-on-save pinned for .ts — the reported bug was a missing [typescript]',
       codeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] ===
-        'dbaeumer.vscode-eslint'
+        'dbaeumer.vscode-eslint',
     )
     // TOML is pinned now, unconditionally. It used to be impossible under the
     // Prettier stack — `npx prettier` on a `.toml` exits with "No parser could
@@ -551,7 +559,7 @@ section('js stack', [], () => {
     // parses it here.
     enforce(
       '[toml] is pinned to ESLint, which Prettier could never parse',
-      codeWorkspace.settings?.['[toml]']?.['editor.defaultFormatter'] === 'dbaeumer.vscode-eslint'
+      codeWorkspace.settings?.['[toml]']?.['editor.defaultFormatter'] === 'dbaeumer.vscode-eslint',
     )
   }
   // is the auth-only variant: the npmjs.org token line and NOTHING else. No
@@ -568,11 +576,11 @@ section('js stack', [], () => {
       .filter(line => line !== '' && !line.startsWith(';') && !line.startsWith('#'))
     enforce(
       '.npmrc authenticates npmjs.org, so a publish can actually succeed',
-      npmrcDirectives.includes('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}')
+      npmrcDirectives.includes('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}'),
     )
     enforce(
       '.npmrc routes nothing for public npm — no scope line claiming protection it cannot give',
-      npmrcDirectives.every(line => !line.includes(':registry='))
+      npmrcDirectives.every(line => !line.includes(':registry=')),
     )
   }
   enforce('commitlint config written', existsSync(path.join(workspace, 'commitlint.config.mjs')))
@@ -588,7 +596,7 @@ section('js stack', [], () => {
   const rootDevelopmentDependencies = rootManifest.devDependencies ?? {}
   enforce(
     'husky + commitlint installed as devDependencies',
-    Boolean(rootDevelopmentDependencies.husky && rootDevelopmentDependencies['@commitlint/cli'])
+    Boolean(rootDevelopmentDependencies.husky && rootDevelopmentDependencies['@commitlint/cli']),
   )
   // `affected` carries `typecheck` since #92 (roadmap #18). This assertion was not
   // updated then, so the e2e has been red ever since and nobody saw it — it only runs
@@ -601,10 +609,10 @@ section('js stack', [], () => {
       rootManifest.scripts?.affected === 'nx affected -t lint,typecheck,test,build' &&
       rootManifest.scripts?.prepare === 'husky',
     JSON.stringify({
-      build: rootManifest.scripts?.build,
+      build:    rootManifest.scripts?.build,
       affected: rootManifest.scripts?.affected,
-      prepare: rootManifest.scripts?.prepare
-    })
+      prepare:  rootManifest.scripts?.prepare,
+    }),
   )
   // Real-execution proof, on a workspace with zero Python projects, that
   // `python:install` no-ops cleanly rather than erroring on a missing
@@ -615,24 +623,24 @@ section('js stack', [], () => {
     'python:install no-ops cleanly on a workspace with no Python projects yet',
     pythonInstallSkipRun.ok &&
       pythonInstallSkipRun.output.includes('No Python projects - skipping.'),
-    pythonInstallSkipRun.output
+    pythonInstallSkipRun.output,
   )
 
   const pipelineYaml = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
   enforce(
     'pipeline is cross-platform: no multi-line shell blocks, no bash-isms',
-    !pipelineYaml.includes('script: |') && !pipelineYaml.includes('shopt')
+    !pipelineYaml.includes('script: |') && !pipelineYaml.includes('shopt'),
   )
   enforce(
     'pipeline stamps the CLI agent and variable group',
-    pipelineYaml.includes('vmImage: ubuntu-latest') && pipelineYaml.includes('- group: Build')
+    pipelineYaml.includes('vmImage: ubuntu-latest') && pipelineYaml.includes('- group: Build'),
   )
   enforce(
     'pipeline packs apps to a drop and tags per app (type-name)',
     pipelineYaml.includes('nx run-many -t package') &&
       pipelineYaml.includes('ArtifactName: drop') &&
       pipelineYaml.includes('##vso[build.addbuildtag]') &&
-      pipelineYaml.includes('path.basename(f,\'.zip\')')
+      pipelineYaml.includes('path.basename(f,\'.zip\')'),
   )
   // This workspace was generated with --registry npm, so auth is NODE_AUTH_TOKEN
   // sourced from an NPM_TOKEN variable, not PAT — the azurePipelinesYaml/
@@ -641,7 +649,7 @@ section('js stack', [], () => {
   enforce(
     'pipeline authenticates npm via the NODE_AUTH_TOKEN env (NPM_TOKEN variable), not npmAuthenticate',
     pipelineYaml.includes('NODE_AUTH_TOKEN: $(NPM_TOKEN)') &&
-      !pipelineYaml.includes('npmAuthenticate')
+      !pipelineYaml.includes('npmAuthenticate'),
   )
   let pipelineParsed = null
   try {
@@ -654,7 +662,7 @@ section('js stack', [], () => {
     Boolean(pipelineParsed) &&
       Array.isArray(pipelineParsed.steps) &&
       Boolean(pipelineParsed.pool) &&
-      Array.isArray(pipelineParsed.variables)
+      Array.isArray(pipelineParsed.variables),
   )
 
   // Runs the EXACT script text extracted from the generated pipeline (not a
@@ -672,12 +680,12 @@ section('js stack', [], () => {
   // this ever fails, read the log rather than the assertion — it means what mnci
   // generates ships a fixable vulnerability, which is worth knowing.
   const npmAuditStep = pipelineParsed?.steps?.find(
-    step => step.displayName === 'npm audit (fails on an actionable advisory)'
+    step => step.displayName === 'npm audit (fails on an actionable advisory)',
   )
   enforce(
     "pipeline's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStep) && tryRun(npmAuditStep.script, workspace),
-    'see log above'
+    'see log above',
   )
 
   // Dual TypeScript compiler: `tsc` runs TS7 (native), while the importable API
@@ -691,7 +699,7 @@ section('js stack', [], () => {
     const tscBin = path.join(
       'node_modules',
       '.bin',
-      process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
+      process.platform === 'win32' ? 'tsc.cmd' : 'tsc',
     )
     tscVersion = execSync(`${tscBin} --version`, { cwd: workspace, encoding: 'utf8' })
   } catch {
@@ -699,11 +707,11 @@ section('js stack', [], () => {
   }
   enforce('dual compiler: `tsc` runs TypeScript 7 (native)', tscVersion.includes('Version 7'))
   const tsApiManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'node_modules/typescript/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'node_modules/typescript/package.json'), 'utf8'),
   )
   enforce(
     'dual compiler: the importable TypeScript API stays TS6 (Nx graph/Vite/eslint)',
-    String(tsApiManifest.version).startsWith('6')
+    String(tsApiManifest.version).startsWith('6'),
   )
 
   /* ---------------------------------------------------------------------------
@@ -723,7 +731,7 @@ section('js stack', [], () => {
   console.log(`\n▸ mnci new demo-github --ci both --nx-cloud (in ${temporary})`)
   run(
     `node ${CLI} new demo-github --yes --registry npm --scope @demo --ci both --nx-cloud`,
-    temporary
+    temporary,
   )
 
   // Informational only (not `enforce`d): whether create-nx-workspace's own
@@ -732,15 +740,15 @@ section('js stack', [], () => {
   // enforce is that the right `--nxCloud` value was passed and the run never
   // hung (both proven by reaching this line at all).
   const workspaceGithubNxJson = JSON.parse(
-    readFileSync(path.join(workspaceGithub, 'nx.json'), 'utf8')
+    readFileSync(path.join(workspaceGithub, 'nx.json'), 'utf8'),
   )
   console.log(
-    `  (info) nxCloudId after --nx-cloud: ${workspaceGithubNxJson.nxCloudId ?? '<not set — Nx Cloud registration did not land locally>'}`
+    `  (info) nxCloudId after --nx-cloud: ${workspaceGithubNxJson.nxCloudId ?? '<not set — Nx Cloud registration did not land locally>'}`,
   )
 
   enforce(
     'azure-pipelines.yml still written when --ci both',
-    existsSync(path.join(workspaceGithub, 'azure-pipelines.yml'))
+    existsSync(path.join(workspaceGithub, 'azure-pipelines.yml')),
   )
   const workflowPath = path.join(workspaceGithub, '.github/workflows/ci.yml')
   enforce('.github/workflows/ci.yml written when --ci both', existsSync(workflowPath))
@@ -748,7 +756,7 @@ section('js stack', [], () => {
   const workflowYaml = readFileSync(workflowPath, 'utf8')
   enforce(
     'workflow stamps the CLI agent as runs-on',
-    workflowYaml.includes('runs-on: ubuntu-latest')
+    workflowYaml.includes('runs-on: ubuntu-latest'),
   )
   // This workspace was generated with --registry npm, so auth is an NPM_TOKEN
   // repository secret, not PAT — overlay.test.ts's githubActionsYaml unit
@@ -757,17 +765,17 @@ section('js stack', [], () => {
     'workflow authenticates npm via an NPM_TOKEN repository secret, not a variable group',
     workflowYaml.includes('secrets.NPM_TOKEN') &&
       !workflowYaml.includes('npmAuthenticate') &&
-      !workflowYaml.includes('- group:')
+      !workflowYaml.includes('- group:'),
   )
   enforce(
     'workflow does not attach HEAD to a branch (actions/checkout is never detached on push)',
-    workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B')
+    workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B'),
   )
   enforce(
     'workflow packs apps to a drop artifact (no Azure build-tag mechanism)',
     workflowYaml.includes('nx run-many -t package') &&
       workflowYaml.includes('actions/upload-artifact@v4') &&
-      !workflowYaml.includes('addbuildtag')
+      !workflowYaml.includes('addbuildtag'),
   )
   let workflowParsed = null
   try {
@@ -781,24 +789,24 @@ section('js stack', [], () => {
       Boolean(workflowParsed.on?.push) &&
       Boolean(workflowParsed.on?.pull_request) &&
       workflowParsed.permissions?.contents === 'write' &&
-      Array.isArray(workflowParsed.jobs?.ci?.steps)
+      Array.isArray(workflowParsed.jobs?.ci?.steps),
   )
 
   // Same real-execution proof as the Azure pipeline, against this workspace's
   // real node_modules (generated with --registry npm too).
   const npmAuditStepGithub = workflowParsed?.jobs?.ci?.steps?.find(
-    step => step.name === 'npm audit (fails on an actionable advisory)'
+    step => step.name === 'npm audit (fails on an actionable advisory)',
   )
   enforce(
     "workflow's npm audit step is the actionable-gating form, and a fresh workspace passes it",
     Boolean(npmAuditStepGithub) && tryRun(npmAuditStepGithub.run, workspaceGithub),
-    'see log above'
+    'see log above',
   )
 
   enforce(
     '.github/dependabot.yml written alongside the workflow (never for azure-only workspaces)',
     existsSync(path.join(workspaceGithub, '.github/dependabot.yml')) &&
-      !existsSync(path.join(workspace, '.github/dependabot.yml'))
+      !existsSync(path.join(workspace, '.github/dependabot.yml')),
   )
   const dependabotYaml = readFileSync(path.join(workspaceGithub, '.github/dependabot.yml'), 'utf8')
   let dependabotParsed = null
@@ -813,7 +821,7 @@ section('js stack', [], () => {
       dependabotParsed.updates?.map(update => update['package-ecosystem']).join(',') ===
         'npm,github-actions,pip,pub' &&
       Array.isArray(dependabotParsed.updates?.[2]?.directories) &&
-      Array.isArray(dependabotParsed.updates?.[3]?.directories)
+      Array.isArray(dependabotParsed.updates?.[3]?.directories),
   )
 
   /* ---------------------------------------------------------------------------
@@ -838,11 +846,11 @@ section('js stack', [], () => {
    * ------------------------------------------------------------------------- */
 
   console.log(
-    '\n▸ wiring sdk (published) -> utils (private internal) + ms (real external dependency)'
+    '\n▸ wiring sdk (published) -> utils (private internal) + ms (real external dependency)',
   )
   run('npm install ms @types/ms --save-dev', workspace)
   const msVersion = JSON.parse(
-    readFileSync(path.join(workspace, 'node_modules/ms/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'node_modules/ms/package.json'), 'utf8'),
   ).version
   const msSource = readFileSync(path.join(workspace, 'node_modules/ms/index.js'), 'utf8')
   // A literal string constant from ms's own installed source — survives
@@ -855,22 +863,22 @@ section('js stack', [], () => {
   }
   writeFileSync(
     path.join(workspace, 'libs/utils/src/lib/utils.ts'),
-    "export function utils(): string {\n  return 'utils';\n}\n"
+    "export function utils(): string {\n  return 'utils';\n}\n",
   )
   const sdkManifestPath = path.join(workspace, 'packages/sdk/package.json')
   const sdkManifestForDependency = JSON.parse(readFileSync(sdkManifestPath, 'utf8'))
   sdkManifestForDependency.dependencies = {
     ...sdkManifestForDependency.dependencies,
-    ms: `^${msVersion}`
+    ms: `^${msVersion}`,
   }
   writeFileSync(sdkManifestPath, `${JSON.stringify(sdkManifestForDependency, undefined, 2)}\n`)
   writeFileSync(
     path.join(workspace, 'packages/sdk/src/lib/sdk.ts'),
-    "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nexport function sdk(): string {\n  return 'sdk uses ' + utils() + ' and ' + ms(60_000);\n}\n"
+    "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nexport function sdk(): string {\n  return 'sdk uses ' + utils() + ' and ' + ms(60_000);\n}\n",
   )
   writeFileSync(
     path.join(workspace, 'packages/sdk/src/lib/sdk.spec.ts'),
-    "import { sdk } from './sdk.js';\n\ndescribe('sdk', () => {\n  it('uses the internal lib and the external dependency', () => {\n    expect(sdk()).toEqual('sdk uses utils and 1m');\n  });\n});\n"
+    "import { sdk } from './sdk.js';\n\ndescribe('sdk', () => {\n  it('uses the internal lib and the external dependency', () => {\n    expect(sdk()).toEqual('sdk uses utils and 1m');\n  });\n});\n",
   )
   run('npx nx sync', workspace)
 
@@ -883,7 +891,7 @@ section('js stack', [], () => {
   // has no `import.meta.env` support — verified empirically — so the deps go in
   // `main.tsx` (the Vite entry point, never imported by a spec file) instead.
   console.log(
-    '\n▸ wiring react app (web) -> utils (private internal) + ms (real external dependency)'
+    '\n▸ wiring react app (web) -> utils (private internal) + ms (real external dependency)',
   )
   writeFileSync(
     path.join(workspace, 'apps/web/src/main.tsx'),
@@ -905,8 +913,8 @@ section('js stack', [], () => {
       '    <App />',
       '  </StrictMode>,',
       ');',
-      ''
-    ].join('\n')
+      '',
+    ].join('\n'),
   )
 
   console.log('\n▸ mnci add node-app svc')
@@ -918,11 +926,11 @@ section('js stack', [], () => {
   // proven by running the real compiled output, not by grepping for inlined
   // source (that concept doesn't apply to a non-bundled build).
   console.log(
-    '\n▸ wiring node app (svc) -> utils (private internal) + ms (real external dependency)'
+    '\n▸ wiring node app (svc) -> utils (private internal) + ms (real external dependency)',
   )
   writeFileSync(
     path.join(workspace, 'apps/svc/src/main.ts'),
-    "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nconsole.log('deps-check:', utils(), ms(60_000));\n"
+    "import ms from 'ms';\nimport { utils } from '@demo/utils';\n\nconsole.log('deps-check:', utils(), ms(60_000));\n",
   )
   run('npx nx sync', workspace)
 
@@ -941,7 +949,7 @@ section('js stack', [], () => {
   // the removed @nxazure/func plugin, which shelled out to `func` even at
   // generation time) — this is now unconditionally enforced, not a pending gap.
   console.log(
-    '\n▸ wiring node function app (api) -> utils (private internal) + ms (real external dependency)'
+    '\n▸ wiring node function app (api) -> utils (private internal) + ms (real external dependency)',
   )
   // These two are written already Standard-formatted, unlike the earlier
   // fixtures. Every fixture before this one is followed by another `mnci add`,
@@ -958,12 +966,12 @@ section('js stack', [], () => {
   // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/deps.ts'),
-    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps (): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n"
+    "import ms from 'ms'\nimport { utils } from '@demo/utils'\n\nexport function apiDeps (): string {\n  return 'api uses ' + utils() + ' and ' + ms(60_000)\n}\n",
   )
   // @standard-clean
   writeFileSync(
     path.join(workspace, 'apps/api/src/main.ts'),
-    "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello'\nimport { apiDeps } from './deps'\n\nconsole.log(apiDeps())\n"
+    "// esbuild only includes what is reachable from here, so add one import per\n// function file you create under src/functions/.\nimport './functions/hello'\nimport { apiDeps } from './deps'\n\nconsole.log(apiDeps())\n",
   )
   run('npx nx sync', workspace)
 
@@ -973,25 +981,25 @@ section('js stack', [], () => {
 
   enforce(
     'publishable lib has NO project.json (targets are inferred)',
-    !existsSync(path.join(workspace, 'packages/sdk/project.json'))
+    !existsSync(path.join(workspace, 'packages/sdk/project.json')),
   )
   enforce(
     'internal lib has NO project.json (targets are inferred)',
-    !existsSync(path.join(workspace, 'libs/utils/project.json'))
+    !existsSync(path.join(workspace, 'libs/utils/project.json')),
   )
 
   const sdkManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8'),
   )
   enforce('publishable lib named under the scope', sdkManifest.name === '@demo/sdk')
 
   const internalLibraryManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'libs/utils/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'libs/utils/package.json'), 'utf8'),
   )
   enforce('internal lib is private', internalLibraryManifest.private === true)
   enforce(
     'internal lib named under the scope (the sdk import path)',
-    internalLibraryManifest.name === '@demo/utils'
+    internalLibraryManifest.name === '@demo/utils',
   )
 
   enforceWorkspaceShape(workspace, 'after adds')
@@ -1008,7 +1016,7 @@ section('js stack', [], () => {
     enforce(
       `every project keeps an inferred lint target without its own config (${project})`,
       targets.includes('lint'),
-      `targets: ${JSON.stringify(targets)}`
+      `targets: ${JSON.stringify(targets)}`,
     )
   }
 
@@ -1021,7 +1029,7 @@ section('js stack', [], () => {
   enforce(
     'the root config genuinely reports violations in a project with no config of its own',
     !planted.ok && planted.output.includes('no-var'),
-    'nx lint sdk did not report the planted `var`'
+    'nx lint sdk did not report the planted `var`',
   )
   rmSync(plantedPath, { force: true })
 
@@ -1031,7 +1039,7 @@ section('js stack', [], () => {
   enforce(
     'add: an unrecognized kind is rejected up front, not a silent false "success"',
     !tryRun(`node ${CLI} add totally-bogus-kind thing`, workspace) &&
-      !existsSync(path.join(workspace, 'apps/thing'))
+      !existsSync(path.join(workspace, 'apps/thing')),
   )
 
   /* ---------------------------------------------------------------------------
@@ -1041,7 +1049,7 @@ section('js stack', [], () => {
   enforce(
     'nx run-many -t lint,test,build succeeds (node app + node function app included)',
     tryRun('npx nx run-many -t lint,test,build', workspace),
-    'see log above'
+    'see log above',
   )
 
   /* ---------------------------------------------------------------------------
@@ -1066,12 +1074,12 @@ section('js stack', [], () => {
   enforce(
     'mnci sync --check reports a range declared at two versions, and exits non-zero',
     !syncCheckDrifted.ok && syncCheckDrifted.output.includes('ms'),
-    syncCheckDrifted.output
+    syncCheckDrifted.output,
   )
   enforce(
     'mnci sync --check writes nothing',
     JSON.parse(readFileSync(rootManifestPath, 'utf8')).devDependencies.ms === '^2.0.0',
-    'the root manifest changed during a --check run'
+    'the root manifest changed during a --check run',
   )
 
   enforce('mnci sync succeeds', tryRun(`node ${CLI} sync`, workspace), 'see log above')
@@ -1082,14 +1090,14 @@ section('js stack', [], () => {
     'mnci sync converges the drifted range on the INSTALLED version',
     rootManifestAfter.devDependencies.ms === `^${msVersion}` &&
       sdkManifestAfterSync.dependencies.ms === `^${msVersion}`,
-    `root ${rootManifestAfter.devDependencies.ms}, sdk ${sdkManifestAfterSync.dependencies.ms}, installed ${msVersion}`
+    `root ${rootManifestAfter.devDependencies.ms}, sdk ${sdkManifestAfterSync.dependencies.ms}, installed ${msVersion}`,
   )
 
   const syncCheckConverged = tryRunCapture(`node ${CLI} sync --check`, workspace)
   enforce(
     'mnci sync --check is clean once converged',
     syncCheckConverged.ok,
-    syncCheckConverged.output
+    syncCheckConverged.output,
   )
 
   // The whole point of resolving against what is INSTALLED: the lint rule that
@@ -1097,7 +1105,7 @@ section('js stack', [], () => {
   enforce(
     'npm run lint (which runs @nx/dependency-checks) still passes after mnci sync',
     tryRun('npm run lint', workspace),
-    'see log above'
+    'see log above',
   )
 
   /* ---------------------------------------------------------------------------
@@ -1115,27 +1123,27 @@ section('js stack', [], () => {
   enforce(
     'mnci doctor passes on a freshly generated workspace',
     doctorClean.ok,
-    doctorClean.output
+    doctorClean.output,
   )
 
   const manifestWithRootDependency = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
   manifestWithRootDependency.dependencies = { ms: `^${msVersion}` }
   writeFileSync(
     rootManifestPath,
-    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`
+    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`,
   )
 
   const doctorHoisted = tryRunCapture(`node ${CLI} doctor`, workspace)
   enforce(
     'mnci doctor fails on a runtime dependency hoisted to the root manifest',
     !doctorHoisted.ok && doctorHoisted.output.includes('runtime dependencies'),
-    doctorHoisted.output
+    doctorHoisted.output,
   )
 
   delete manifestWithRootDependency.dependencies
   writeFileSync(
     rootManifestPath,
-    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`
+    `${JSON.stringify(manifestWithRootDependency, undefined, 2)}\n`,
   )
 
   /* ---------------------------------------------------------------------------
@@ -1146,20 +1154,20 @@ section('js stack', [], () => {
   enforce(
     'nx run-many -t package succeeds',
     tryRun('npx nx run-many -t package', workspace),
-    'see log above'
+    'see log above',
   )
   const AdmZip = createRequire(path.join(workspace, 'package.json'))('adm-zip')
   enforce(
     'react app builds per environment into the drop (dev/uat/prod zips)',
     ['dev', 'uat', 'prod'].every(environment =>
-      existsSync(path.join(workspace, `dist/drop/react-app-web-${environment}.zip`))
-    )
+      existsSync(path.join(workspace, `dist/drop/react-app-web-${environment}.zip`)),
+    ),
   )
   enforce(
     'react app scaffolds a committed .env per environment',
     ['dev', 'uat', 'prod'].every(environment =>
-      existsSync(path.join(workspace, `apps/web/.env.${environment}`))
-    )
+      existsSync(path.join(workspace, `apps/web/.env.${environment}`)),
+    ),
   )
   enforce(
     'react app zips actually contain a built SPA (index.html + assets), not just an empty drop',
@@ -1169,11 +1177,12 @@ section('js stack', [], () => {
         return false
       }
       const entries = new AdmZip(zipPath).getEntries().map(entry => entry.entryName)
+
       return (
         entries.includes('index.html') &&
         entries.some(entry => entry.startsWith('assets/') && entry.endsWith('.js'))
       )
-    })
+    }),
   )
 
   // A browser bundle inlines everything by default (no npm install step at
@@ -1190,7 +1199,7 @@ section('js stack', [], () => {
     const bundleText = jsAsset ? readFileSync(path.join(assetsDirectory, jsAsset), 'utf8') : ''
     enforce(
       `react app (${environment}) bundle inlines the private lib (utils) and the real external dependency (ms)`,
-      bundleText.includes('utils') && bundleText.includes(MS_SOURCE_MARKER)
+      bundleText.includes('utils') && bundleText.includes(MS_SOURCE_MARKER),
     )
     const ownUrl = `https://api.${environment}.example.com`
     const otherUrls = ['dev', 'uat', 'prod']
@@ -1198,7 +1207,7 @@ section('js stack', [], () => {
       .map(other => `https://api.${other}.example.com`)
     enforce(
       `react app (${environment}) bundle bakes in only its own VITE_API_URL`,
-      bundleText.includes(ownUrl) && otherUrls.every(url => !bundleText.includes(url))
+      bundleText.includes(ownUrl) && otherUrls.every(url => !bundleText.includes(url)),
     )
   }
 
@@ -1212,13 +1221,13 @@ section('js stack', [], () => {
 
   enforce(
     'node app bundles the compiled entry (esbuild non-bundled: mirrors the workspace tree into dist)',
-    existsSync(path.join(workspace, 'apps/svc/dist/main.js'))
+    existsSync(path.join(workspace, 'apps/svc/dist/main.js')),
   )
   const nodeAppRun = tryRunCapture('node apps/svc/dist/main.js', workspace)
   enforce(
     'node app runs standalone, resolving the inlined-by-tsc private lib and the real external dependency correctly',
     nodeAppRun.ok && nodeAppRun.output.includes('utils') && nodeAppRun.output.includes('1m'),
-    nodeAppRun.output
+    nodeAppRun.output,
   )
   const nodeAppZip = path.join(workspace, 'dist/drop/node-app-svc.zip')
   enforce('node app packs into the drop (node-app-svc.zip)', existsSync(nodeAppZip))
@@ -1227,41 +1236,41 @@ section('js stack', [], () => {
     : []
   enforce(
     'node app zip actually contains the runnable dist shim, not just an empty drop',
-    nodeAppZipEntries.includes('main.js')
+    nodeAppZipEntries.includes('main.js'),
   )
 
   // --framework express: a real HTTP-framework dependency was scaffolded (not
   // just a --framework=none bare app), and the generator's own express sample
   // already built+tested green as part of the run-many above.
   const svcExpressManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'apps/svc-express/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'apps/svc-express/package.json'), 'utf8'),
   )
   enforce(
     'node app --framework express declares a real express dependency',
-    Boolean(svcExpressManifest.dependencies?.express)
+    Boolean(svcExpressManifest.dependencies?.express),
   )
   enforce(
     'node app --framework express bundles the compiled entry (esbuild non-bundled, same as --framework=none)',
-    existsSync(path.join(workspace, 'apps/svc-express/dist/main.js'))
+    existsSync(path.join(workspace, 'apps/svc-express/dist/main.js')),
   )
 
   enforce(
     'node function app bundles the compiled entry the same way',
-    existsSync(path.join(workspace, 'apps/api/dist/main.js'))
+    existsSync(path.join(workspace, 'apps/api/dist/main.js')),
   )
   const nodeFunctionAppRun = tryRunCapture('node apps/api/dist/main.js', workspace)
   enforce(
     'node function app runs standalone, resolving the private lib and the real external dependency correctly',
     nodeFunctionAppRun.ok && nodeFunctionAppRun.output.includes('api uses utils and 1m'),
-    nodeFunctionAppRun.output
+    nodeFunctionAppRun.output,
   )
   const nodeFunctionAppManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'apps/api/package.json'), 'utf8'),
   )
   enforce(
     'node function app manifest repaired (main points at the esbuild dist shim, real Azure Functions dependency declared)',
     nodeFunctionAppManifest.main === 'dist/main.js' &&
-      Boolean(nodeFunctionAppManifest.dependencies?.['@azure/functions'])
+      Boolean(nodeFunctionAppManifest.dependencies?.['@azure/functions']),
   )
   enforce(
     // dist/main.js relative to this manifest is the same layout locally
@@ -1269,26 +1278,26 @@ section('js stack', [], () => {
     // is unzipped — a plain 'main.js' (the pre-fix value) never resolves
     // locally, since only 'dist/main.js' exists before a manual copy.
     "node function app's main field actually resolves to a real file — what makes local `func start` work",
-    existsSync(path.join(workspace, 'apps/api', nodeFunctionAppManifest.main))
+    existsSync(path.join(workspace, 'apps/api', nodeFunctionAppManifest.main)),
   )
   enforce(
     'node function app has a package target',
-    Boolean(nodeFunctionAppManifest.nx?.targets?.package)
+    Boolean(nodeFunctionAppManifest.nx?.targets?.package),
   )
   enforce(
     'node function app has a local `func start` target, wired through Nx',
-    nodeFunctionAppManifest.nx?.targets?.start?.options?.command === 'func start'
+    nodeFunctionAppManifest.nx?.targets?.start?.options?.command === 'func start',
   )
   enforce(
     'node function app test target runs green (sample spec passes)',
     tryRun('npx nx test api', workspace),
-    'see log above'
+    'see log above',
   )
 
   const nodeFunctionAppZip = path.join(workspace, 'dist/drop/node-function-app-api.zip')
   enforce(
     'node function app packs into the drop (node-function-app-api.zip)',
-    existsSync(nodeFunctionAppZip)
+    existsSync(nodeFunctionAppZip),
   )
   // No node_modules bundled by design — Azure's Oryx build installs real
   // dependencies from the zipped package.json at deploy time (same model
@@ -1304,7 +1313,7 @@ section('js stack', [], () => {
     'node function app zip nests the dist shim under dist/, alongside host.json and the repaired manifest',
     zipEntries.includes('dist/main.js') &&
       zipEntries.includes('host.json') &&
-      zipEntries.includes('package.json')
+      zipEntries.includes('package.json'),
   )
 
   /* ---------------------------------------------------------------------------
@@ -1314,31 +1323,31 @@ section('js stack', [], () => {
   const sdkBundle = readFileSync(path.join(workspace, 'packages/sdk/dist/index.esm.js'), 'utf8')
   enforce(
     'sdk bundle inlines the private lib (no import of it remains)',
-    !sdkBundle.includes('@demo/utils')
+    !sdkBundle.includes('@demo/utils'),
   )
   enforce(
     'sdk bundle keeps the real external dependency (ms) external — not inlined',
-    sdkBundle.includes("from 'ms'") && !sdkBundle.includes(MS_SOURCE_MARKER)
+    sdkBundle.includes("from 'ms'") && !sdkBundle.includes(MS_SOURCE_MARKER),
   )
   enforce(
     'sdk bundle runs standalone under node, resolving the inlined private lib and the external dependency correctly',
     tryRun(
       'node --input-type=module -e "import { sdk } from \'./packages/sdk/dist/index.esm.js\'; if (sdk() !== \'sdk uses utils and 1m\') { throw new Error(\'wrong output: \' + sdk()) }"',
-      workspace
+      workspace,
     ),
-    'see log above'
+    'see log above',
   )
   const publishedDependencies =
     JSON.parse(readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8'))
       .dependencies ?? {}
   enforce(
     'sdk publishable manifest never mentions the private lib',
-    !Object.hasOwn(publishedDependencies, '@demo/utils')
+    !Object.hasOwn(publishedDependencies, '@demo/utils'),
   )
   enforce(
     'sdk publishable manifest declares the real external dependency (ms) with a real version',
     typeof publishedDependencies.ms === 'string' &&
-      /^[~^]?\d+\.\d+\.\d+/.test(publishedDependencies.ms)
+      /^[~^]?\d+\.\d+\.\d+/.test(publishedDependencies.ms),
   )
   // The strongest possible proof that publishing will actually work: ask npm
   // itself what it would pack, rather than trusting the dist folder's presence
@@ -1347,7 +1356,7 @@ section('js stack', [], () => {
   // dist lived outside the package directory).
   const sdkPackDryRun = tryRunCapture(
     'npm pack --dry-run --json',
-    path.join(workspace, 'packages/sdk')
+    path.join(workspace, 'packages/sdk'),
   )
   let sdkPackedFiles = []
   try {
@@ -1360,7 +1369,7 @@ section('js stack', [], () => {
     sdkPackDryRun.ok &&
       sdkPackedFiles.includes('dist/index.esm.js') &&
       sdkPackedFiles.includes('package.json'),
-    sdkPackDryRun.output
+    sdkPackDryRun.output,
   )
 
   // The gate that was missing when a published library shipped a `types` path its
@@ -1368,24 +1377,24 @@ section('js stack', [], () => {
   // exist in the tarball. Checking `dist/index.esm.js` alone passed while `types`
   // dangled, so TypeScript consumers silently got `any` (TS7016).
   const sdkPackedManifest = JSON.parse(
-    readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8')
+    readFileSync(path.join(workspace, 'packages/sdk/package.json'), 'utf8'),
   )
   const sdkEntryPoints = [
     ['main', sdkPackedManifest.main],
     ['module', sdkPackedManifest.module],
     ['types', sdkPackedManifest.types],
     ['exports[.].types', sdkPackedManifest.exports?.['.']?.types],
-    ['exports[.].import', sdkPackedManifest.exports?.['.']?.import]
+    ['exports[.].import', sdkPackedManifest.exports?.['.']?.import],
   ].filter(([, value]) => typeof value === 'string')
   const danglingEntryPoints = sdkEntryPoints.filter(
-    ([, value]) => !sdkPackedFiles.includes(value.startsWith('./') ? value.slice(2) : value)
+    ([, value]) => !sdkPackedFiles.includes(value.startsWith('./') ? value.slice(2) : value),
   )
   enforce(
     'sdk: every entry point the manifest declares is actually IN the packed tarball',
     danglingEntryPoints.length === 0,
     'dangling: ' +
       danglingEntryPoints.map(([field, value]) => field + ' -> ' + value).join(', ') +
-      ' | packed: ' + sdkPackedFiles.join(', ')
+      ' | packed: ' + sdkPackedFiles.join(', '),
   )
 
   // Declaration maps reference ../src/*.ts, which `files: ["dist"]` never ships, so
@@ -1401,13 +1410,13 @@ section('js stack', [], () => {
   enforce(
     'sdk: the declaration stub uses a URL-style module specifier',
     !sdkStub.includes(String.fromCodePoint(92)),
-    sdkStub
+    sdkStub,
   )
 
   enforce(
     'sdk: no dead declaration maps in the tarball',
     sdkPackedFiles.every(file => !file.endsWith('.d.ts.map')),
-    sdkPackedFiles.filter(file => file.endsWith('.d.ts.map')).join(', ')
+    sdkPackedFiles.filter(file => file.endsWith('.d.ts.map')).join(', '),
   )
 
   /* ---------------------------------------------------------------------------
@@ -1419,11 +1428,11 @@ section('js stack', [], () => {
   // them even if the preset's .gitignore ignores .env*).
   enforce(
     'react .env.dev is tracked (not gitignored)',
-    tryRun('git ls-files --error-unmatch apps/web/.env.dev', workspace)
+    tryRun('git ls-files --error-unmatch apps/web/.env.dev', workspace),
   )
   run(
     'git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial workspace"',
-    workspace
+    workspace,
   )
   // The combined `nx release` command, not the bare `version` subcommand: this
   // workspace's release.git lives at the top level (RELEASE_CONFIG's remarks),
@@ -1433,7 +1442,7 @@ section('js stack', [], () => {
   enforce(
     'nx release --dry-run computes versions from conventional commits',
     tryRun('npx nx release --dry-run --verbose', workspace),
-    'see log above'
+    'see log above',
   )
 
   /* ---------------------------------------------------------------------------
@@ -1457,7 +1466,7 @@ section('js stack', [], () => {
     enforce(
       `affected: touching ${rootConfig} marks the real projects, not only the workspace root`,
       affected.ok && affected.output.includes('sdk') && affected.output.includes('web'),
-      affected.output
+      affected.output,
     )
   }
 
@@ -1475,16 +1484,16 @@ section('js stack', [], () => {
   const pipelineBeforeUpgrade = readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8')
   writeFileSync(
     path.join(workspace, 'azure-pipelines.yml'),
-    `${pipelineBeforeUpgrade}\n# stale hand edit, simulating drift since 'mnci new'\n`
+    `${pipelineBeforeUpgrade}\n# stale hand edit, simulating drift since 'mnci new'\n`,
   )
   enforce(
     'mnci upgrade runs successfully with no flags, from the persisted config alone',
     tryRun(`node ${CLI} upgrade`, workspace),
-    'see log above'
+    'see log above',
   )
   enforce(
     "mnci upgrade restores the drifted pipeline file back to today's generated content",
-    readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8') === pipelineBeforeUpgrade
+    readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8') === pipelineBeforeUpgrade,
   )
 
   const upgradeWithAgentOverrideOk = tryRun(`node ${CLI} upgrade --agent windows-latest`, workspace)
@@ -1493,9 +1502,9 @@ section('js stack', [], () => {
     'mnci upgrade --agent overrides the persisted agent, in both the pipeline and nx.json',
     upgradeWithAgentOverrideOk &&
       readFileSync(path.join(workspace, 'azure-pipelines.yml'), 'utf8').includes(
-        'vmImage: windows-latest'
+        'vmImage: windows-latest',
       ) &&
-      nxJsonAfterAgentOverride.mnci.agent === 'windows-latest'
+      nxJsonAfterAgentOverride.mnci.agent === 'windows-latest',
   )
   run(`node ${CLI} upgrade --agent ubuntu-latest`, workspace)
 })
@@ -1522,26 +1531,26 @@ section('alt stack', [], () => {
   enforce(
     "alt: stack persisted as nx.json generator defaults (linter 'none' + vitest)",
     altNx.generators?.['@nx/js:library']?.linter === 'none' &&
-      altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest'
+      altNx.generators?.['@nx/js:library']?.unitTestRunner === 'vitest',
   )
   enforce(
     'alt: mnci registers @nx/eslint/plugin — what gives every project its lint target',
     (altNx.plugins ?? []).some(
-      entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin'
-    )
+      entry => (typeof entry === 'string' ? entry : entry.plugin) === '@nx/eslint/plugin',
+    ),
   )
   const altManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
   enforce(
     'alt: lint runs ESLint through nx, for every project',
-    altManifest.scripts?.lint === 'nx run-many -t lint'
+    altManifest.scripts?.lint === 'nx run-many -t lint',
   )
   const altCodeWorkspace = JSON.parse(
-    readFileSync(path.join(altWorkspace, 'alt.code-workspace'), 'utf8')
+    readFileSync(path.join(altWorkspace, 'alt.code-workspace'), 'utf8'),
   )
   enforce(
     'alt: and for .ts — the format-on-save bug was a missing [typescript] entry',
     altCodeWorkspace.settings?.['[typescript]']?.['editor.defaultFormatter'] ===
-      'dbaeumer.vscode-eslint'
+      'dbaeumer.vscode-eslint',
   )
   run(`node ${CLI} add npm-lib sdk`, altWorkspace)
   run(`node ${CLI} add react-app web`, altWorkspace)
@@ -1550,7 +1559,7 @@ section('alt stack', [], () => {
   // linting opinion fragmented a little further with each add.
   enforce(
     'alt: npm-lib keeps no eslint config of its own — the root config covers it',
-    !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs'))
+    !existsSync(path.join(altWorkspace, 'packages/sdk/eslint.config.mjs')),
   )
   dropSandboxInjected(altWorkspace)
   // Nx generators emit semicolon/double-quote code, but mnci now runs
@@ -1562,7 +1571,7 @@ section('alt stack', [], () => {
   enforce(
     'alt: lint is green with no manual format step',
     tryRun('npm run lint', altWorkspace),
-    'see log above'
+    'see log above',
   )
 
   // Prove the config in force is actually mnci's, not a default: plant
@@ -1574,7 +1583,7 @@ section('alt stack', [], () => {
   enforce(
     'alt: build (vitest stack) runs green',
     tryRun('npx nx run-many -t build', altWorkspace),
-    'see log above'
+    'see log above',
   )
   const altTest = tryRunCapture('npx nx run-many -t test', altWorkspace)
   // Verified empirically (real windows-latest CI run) that this is an upstream
@@ -1593,14 +1602,14 @@ section('alt stack', [], () => {
     altTest.ok || isKnownWindowsVitestPathBug,
     isKnownWindowsVitestPathBug
       ? "known upstream Windows bug in @nx/react's generated Vitest config (not mnci-authored) — see comment above"
-      : altTest.output
+      : altTest.output,
   )
   enforce(
     'alt: apps still pack per environment into the drop',
     tryRun('npx nx run-many -t package', altWorkspace) &&
       ['dev', 'uat', 'prod'].every(environment =>
-        existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`))
-      )
+        existsSync(path.join(altWorkspace, `dist/drop/react-app-web-${environment}.zip`)),
+      ),
   )
 })
 section('python', ['alt stack'], () => {
@@ -1624,9 +1633,9 @@ section('python', ['alt stack'], () => {
   const packOutput = execSync(
     `npm pack --silent --pack-destination "${nxPythonPipPackDirectory}"`,
     {
-      cwd: nxPythonPipDirectory,
-      encoding: 'utf8'
-    }
+      cwd:      nxPythonPipDirectory,
+      encoding: 'utf8',
+    },
   ).trim()
   const nxPythonPipTarball = path.join(nxPythonPipPackDirectory, packOutput.split('\n').at(-1))
   process.env.MNCI2_PYTHON_PIP_SPEC = nxPythonPipTarball
@@ -1638,14 +1647,14 @@ section('python', ['alt stack'], () => {
   run(`node ${CLI} add python-internal-lib pycore`, altWorkspace)
 
   const altPythonManifest = JSON.parse(
-    readFileSync(path.join(altWorkspace, 'package.json'), 'utf8')
+    readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'),
   )
   enforce(
     'python: no hand-rolled files — @mnci/nx-python-pip installed as a real devDependency, requirements-dev.txt the only file mnci itself writes',
     Boolean(altPythonManifest.devDependencies?.['@mnci/nx-python-pip']) &&
       existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-python-pip/generators.json')) &&
       existsSync(path.join(altWorkspace, 'requirements-dev.txt')) &&
-      !existsSync(path.join(altWorkspace, 'tools/python-build.js'))
+      !existsSync(path.join(altWorkspace, 'tools/python-build.js')),
   )
   // Deliberately non-throwing, unlike the `run()` this used to be. Installing the
   // Python toolchain is the one step here that depends on the *machine* rather than
@@ -1662,12 +1671,12 @@ section('python', ['alt stack'], () => {
   // below, is still open.
   const pythonToolchainInstall = tryRunCapture(
     `${PYTHON} -m pip install --quiet -r requirements-dev.txt`,
-    altWorkspace
+    altWorkspace,
   )
   enforce(
     'python: the fixed toolchain (ruff/pytest/build/twine) installs from the generated requirements-dev.txt',
     pythonToolchainInstall.ok,
-    pythonToolchainInstall.output
+    pythonToolchainInstall.output,
   )
 
   const pysharedProjectPath = path.join(altWorkspace, 'python-packages/pyshared/project.json')
@@ -1679,26 +1688,26 @@ section('python', ['alt stack'], () => {
     (pysharedProject.targets?.['nx-release-publish']?.executor ?? '') ===
       '@mnci/nx-python-pip:publish' &&
       pysharedProject.release?.version?.versionActions ===
-        '@mnci/nx-python-pip/release/version-actions'
+        '@mnci/nx-python-pip/release/version-actions',
   )
   enforce(
     'python: internal lib is a library under libs/ (never publishable, no build/package/publish target)',
-    existsSync(path.join(altWorkspace, 'libs/pycore/project.json'))
+    existsSync(path.join(altWorkspace, 'libs/pycore/project.json')),
   )
   const pycoreProject = JSON.parse(
-    readFileSync(path.join(altWorkspace, 'libs/pycore/project.json'), 'utf8')
+    readFileSync(path.join(altWorkspace, 'libs/pycore/project.json'), 'utf8'),
   )
   enforce(
     'python: internal lib has no build/package/publish targets — vendored by consumers, never released on its own',
     !pycoreProject.targets?.build &&
       !pycoreProject.targets?.package &&
-      !pycoreProject.targets?.['nx-release-publish']
+      !pycoreProject.targets?.['nx-release-publish'],
   )
   enforce(
     'python: function app carries the Azure Functions v2 files, and has no pyproject.toml/build target (source deploy, no wheel)',
     ['function_app.py', 'host.json', 'requirements.txt'].every(file =>
-      existsSync(path.join(altWorkspace, 'apps/pyfunc', file))
-    ) && !existsSync(path.join(altWorkspace, 'apps/pyfunc/pyproject.toml'))
+      existsSync(path.join(altWorkspace, 'apps/pyfunc', file)),
+    ) && !existsSync(path.join(altWorkspace, 'apps/pyfunc/pyproject.toml')),
   )
 
   /* ---------------------------------------------------------------------------
@@ -1716,24 +1725,24 @@ section('python', ['alt stack'], () => {
    * ------------------------------------------------------------------------- */
 
   console.log(
-    '\n▸ mnci add python-vendor pyshared --lib pycore (wiring pyshared, publishable -> pycore, private internal, vendored)'
+    '\n▸ mnci add python-vendor pyshared --lib pycore (wiring pyshared, publishable -> pycore, private internal, vendored)',
   )
   run(`node ${CLI} add python-vendor pyshared --lib pycore`, altWorkspace)
   const pysharedPyprojectPath = path.join(altWorkspace, 'python-packages/pyshared/pyproject.toml')
   enforce(
     "python-vendor: writes the [tool.mnci-python-pip] vendor entry into the consumer's real pyproject.toml",
-    readFileSync(pysharedPyprojectPath, 'utf8').includes('vendor = ["pycore"]')
+    readFileSync(pysharedPyprojectPath, 'utf8').includes('vendor = ["pycore"]'),
   )
   // Real-execution idempotency proof: running it again must not duplicate the entry.
   run(`node ${CLI} add python-vendor pyshared --lib pycore`, altWorkspace)
   enforce(
     'python-vendor is idempotent for real: running it twice does not duplicate the entry',
-    (readFileSync(pysharedPyprojectPath, 'utf8').match(/pycore/g) ?? []).length === 1
+    (readFileSync(pysharedPyprojectPath, 'utf8').match(/pycore/g) ?? []).length === 1,
   )
   // Real-execution rejection proof: a project cannot vendor itself.
   enforce(
     'python-vendor rejects a project vendoring itself, for real (non-zero exit)',
-    !tryRun(`node ${CLI} add python-vendor pycore --lib pycore`, altWorkspace)
+    !tryRun(`node ${CLI} add python-vendor pycore --lib pycore`, altWorkspace),
   )
   // Named greeting.py, not hello.py: pyshared/__init__.py (written by the
   // plugin's `library` generator) already exports a top-level `hello` symbol,
@@ -1747,11 +1756,11 @@ section('python', ['alt stack'], () => {
   // import genuinely resolves before any wheel is ever built.
   writeFileSync(
     path.join(altWorkspace, 'python-packages/pyshared/pyshared/greeting.py'),
-    'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n'
+    'from pycore import hello as core_hello\n\n\ndef build_greeting():\n    return "Hello pyshared uses " + core_hello()\n',
   )
   writeFileSync(
     path.join(altWorkspace, 'python-packages/pyshared/tests/test_greeting.py'),
-    'from pyshared.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting() == "Hello pyshared uses hello from pycore"\n'
+    'from pyshared.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting() == "Hello pyshared uses hello from pycore"\n',
   )
 
   console.log('\n▸ wiring pysvc (packed) -> a real external PyPI dependency (tomli)')
@@ -1765,11 +1774,11 @@ section('python', ['alt stack'], () => {
   // makes it importable locally — this one keeps its test file.
   writeFileSync(
     path.join(altWorkspace, 'apps/pysvc/pysvc/greeting.py'),
-    'import tomli\n\n\ndef build_greeting():\n    return "Hello pysvc uses tomli " + tomli.__version__\n'
+    'import tomli\n\n\ndef build_greeting():\n    return "Hello pysvc uses tomli " + tomli.__version__\n',
   )
   writeFileSync(
     path.join(altWorkspace, 'apps/pysvc/tests/test_greeting.py'),
-    'from pysvc.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting().startswith("Hello pysvc uses tomli ")\n'
+    'from pysvc.greeting import build_greeting\n\n\ndef test_build_greeting():\n    assert build_greeting().startswith("Hello pysvc uses tomli ")\n',
   )
 
   /* ---------------------------------------------------------------------------
@@ -1785,11 +1794,11 @@ section('python', ['alt stack'], () => {
    * this proves it resolves at plain `pytest` time too.
    * ------------------------------------------------------------------------- */
   console.log(
-    '\n▸ global Python install: editable-installing every Python project into one shared environment'
+    '\n▸ global Python install: editable-installing every Python project into one shared environment',
   )
   run(
     `${PYTHON} -m pip install --quiet -e apps/pysvc -e python-packages/pyshared -e libs/pycore -r apps/pyfunc/requirements.txt`,
-    altWorkspace
+    altWorkspace,
   )
 
   // Real-execution proof for the root `python:install` npm script (item 10):
@@ -1800,27 +1809,27 @@ section('python', ['alt stack'], () => {
   // install just above (both guards no-op/skip nothing here since Python
   // projects already exist).
   const altRootManifestForPythonInstall = JSON.parse(
-    readFileSync(path.join(altWorkspace, 'package.json'), 'utf8')
+    readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'),
   )
   enforce(
     'root manifest declares a python:install script chaining both CI Python-install guards',
-    Boolean(altRootManifestForPythonInstall.scripts?.['python:install'])
+    Boolean(altRootManifestForPythonInstall.scripts?.['python:install']),
   )
   enforce(
     'npm run python:install succeeds for real (toolchain + workspace editable install, chained)',
     tryRun('npm run python:install', altWorkspace),
-    'see log above'
+    'see log above',
   )
 
   enforce(
     'python: ruff lint runs green across the python projects',
     tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
-    'see log above'
+    'see log above',
   )
   enforce(
     'python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
     tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
-    'see log above'
+    'see log above',
   )
 
   // Same real-execution proof as the npm audit step above, extracted from this
@@ -1828,25 +1837,25 @@ section('python', ['alt stack'], () => {
   // environment (pip-audit itself came from requirements-dev.txt, installed
   // two steps up) — proves the non-blocking property for real on the Python side.
   const altPipelineParsed = yaml.load(
-    readFileSync(path.join(altWorkspace, 'azure-pipelines.yml'), 'utf8')
+    readFileSync(path.join(altWorkspace, 'azure-pipelines.yml'), 'utf8'),
   )
   const pipAuditStep = altPipelineParsed?.steps?.find(
-    step => step.displayName === 'pip-audit (non-blocking)'
+    step => step.displayName === 'pip-audit (non-blocking)',
   )
   enforce(
     "pipeline's pip-audit step exits 0 even when real vulnerabilities are found",
     Boolean(pipAuditStep) && tryRun(pipAuditStep.script, altWorkspace),
-    'see log above'
+    'see log above',
   )
 
   const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
   const pysharedWheelPath = path.join(
     altWorkspace,
-    'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl'
+    'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl',
   )
   enforce(
     "python: build produces a wheel for the publishable lib (vendoring pycore via the plugin's build executor)",
-    tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath)
+    tryRun('npx nx build pyshared', altWorkspace) && existsSync(pysharedWheelPath),
   )
   const pysharedWheelEntries = existsSync(pysharedWheelPath)
     ? new AdmZipPy(pysharedWheelPath).getEntries().map(entry => entry.entryName)
@@ -1854,7 +1863,7 @@ section('python', ['alt stack'], () => {
   enforce(
     'python: publishable lib wheel vendors the private internal lib (pycore) — no separate install needed',
     pysharedWheelEntries.includes('pycore/__init__.py') &&
-      pysharedWheelEntries.includes('pyshared/greeting.py')
+      pysharedWheelEntries.includes('pyshared/greeting.py'),
   )
   // The strongest possible proof: install the real wheel into a clean venv (no
   // workspace/editable install in play) and run it — mirrors the sdk's "runs
@@ -1863,23 +1872,23 @@ section('python', ['alt stack'], () => {
   run(`${PYTHON} -m venv "${pysharedVenv}"`, altWorkspace)
   run(
     `"${venvExecutable(pysharedVenv, 'pip')}" install --quiet "${pysharedWheelPath}"`,
-    altWorkspace
+    altWorkspace,
   )
   const pysharedVenvRun = tryRunCapture(
     `"${venvExecutable(pysharedVenv, 'python')}" -c "from pyshared.greeting import build_greeting; print(build_greeting())"`,
-    altWorkspace
+    altWorkspace,
   )
   enforce(
     'python: publishable lib installs into a clean venv and runs correctly (private lib resolves with no extra install)',
     pysharedVenvRun.ok && pysharedVenvRun.output.includes('Hello pyshared uses hello from pycore'),
-    pysharedVenvRun.output
+    pysharedVenvRun.output,
   )
 
   enforce(
     'python: apps pack into the drop as <type>-<name>.zip (fits the existing CI)',
     tryRun('npx nx run-many -t package --projects=pysvc,pyfunc', altWorkspace) &&
       existsSync(path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip')) &&
-      existsSync(path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip'))
+      existsSync(path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')),
   )
   const pysvcZipPath = path.join(altWorkspace, 'dist/drop/python-app-pysvc.zip')
   const pysvcZipEntries = existsSync(pysvcZipPath)
@@ -1887,7 +1896,7 @@ section('python', ['alt stack'], () => {
     : []
   enforce(
     'python: app zip actually contains the built wheel (not just an empty drop)',
-    pysvcZipEntries.some(entry => /^pysvc-.*\.whl$/.test(entry))
+    pysvcZipEntries.some(entry => /^pysvc-.*\.whl$/.test(entry)),
   )
   const pyfuncZipPath = path.join(altWorkspace, 'dist/drop/python-function-app-pyfunc.zip')
   const pyfuncZipEntries = existsSync(pyfuncZipPath)
@@ -1896,8 +1905,8 @@ section('python', ['alt stack'], () => {
   enforce(
     'python: function app zip actually contains the deployable source (function_app.py, host.json, requirements.txt)',
     ['function_app.py', 'host.json', 'requirements.txt'].every(file =>
-      pyfuncZipEntries.includes(file)
-    )
+      pyfuncZipEntries.includes(file),
+    ),
   )
 
   const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
@@ -1906,19 +1915,19 @@ section('python', ['alt stack'], () => {
     : ''
   enforce(
     'python: app wheel declares the real external dependency (tomli) — not silently dropped',
-    /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcMetadata)
+    /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcMetadata),
   )
   const pysvcVenv = path.join(temporary, 'py-venv-pysvc')
   run(`${PYTHON} -m venv "${pysvcVenv}"`, altWorkspace)
   run(`"${venvExecutable(pysvcVenv, 'pip')}" install --quiet "${pysvcWheelPath}"`, altWorkspace)
   const pysvcVenvRun = tryRunCapture(
     `"${venvExecutable(pysvcVenv, 'python')}" -c "from pysvc.greeting import build_greeting; print(build_greeting())"`,
-    altWorkspace
+    altWorkspace,
   )
   enforce(
     'python: app installs into a clean venv and runs correctly, resolving the real external dependency from PyPI',
     pysvcVenvRun.ok && pysvcVenvRun.output.includes('Hello pysvc uses tomli '),
-    pysvcVenvRun.output
+    pysvcVenvRun.output,
   )
 
   /* ---------------------------------------------------------------------------
@@ -1929,12 +1938,12 @@ section('python', ['alt stack'], () => {
    * ------------------------------------------------------------------------- */
 
   console.log(
-    '\n▸ mnci add python-vendor pysvc --lib pycore (combined proof: vendoring + a real external dependency on the SAME project)'
+    '\n▸ mnci add python-vendor pysvc --lib pycore (combined proof: vendoring + a real external dependency on the SAME project)',
   )
   run(`node ${CLI} add python-vendor pysvc --lib pycore`, altWorkspace)
   enforce(
     'python: build succeeds with both a vendored internal lib and a real external dependency on the same project',
-    tryRun('npx nx build pysvc', altWorkspace)
+    tryRun('npx nx build pysvc', altWorkspace),
   )
   const pysvcCombinedZip = existsSync(pysvcWheelPath) ? new AdmZipPy(pysvcWheelPath) : null
   const pysvcCombinedEntries = pysvcCombinedZip
@@ -1946,7 +1955,7 @@ section('python', ['alt stack'], () => {
   enforce(
     'python: combined wheel vendors pycore AND keeps the real external dependency declared — no metadata drop (the old @nxlv/python bug does not reproduce with pip)',
     pysvcCombinedEntries.includes('pycore/__init__.py') &&
-      /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcCombinedMetadata)
+      /Requires-Dist:\s*tomli>=2\.0\.0/i.test(pysvcCombinedMetadata),
   )
 
   /* ---------------------------------------------------------------------------
@@ -1957,7 +1966,7 @@ section('python', ['alt stack'], () => {
   run('git init -q -b main && git add -A', altWorkspace)
   run(
     'git -c user.email=e2e@test -c user.name=e2e commit -q -m "feat: initial python packages"',
-    altWorkspace
+    altWorkspace,
   )
   // The combined command, same reasoning as the JS-side check above — the bare
   // `version` subcommand rejects this workspace's top-level release.git.
@@ -1978,20 +1987,20 @@ section('python', ['alt stack'], () => {
       (process.platform === 'win32' ||
         (/shared[^\n]*new version/i.test(altReleaseDryRun.output) &&
           altReleaseDryRun.output.includes('pyproject.toml'))),
-    altReleaseDryRun.output
+    altReleaseDryRun.output,
   )
   // nx release publish --dry-run sets a real, typed dryRun option on every
   // nx-release-publish executor (verified empirically) — no argv-parsing trick
   // needed, unlike the plain nx:run-commands version this plugin replaced.
   const altReleasePublishDryRun = tryRunCapture(
     'npx nx release publish --dry-run --verbose',
-    altWorkspace
+    altWorkspace,
   )
   enforce(
     "python: nx release publish --dry-run previews the twine upload via the plugin's typed dryRun executor option",
     altReleasePublishDryRun.ok &&
       altReleasePublishDryRun.output.includes(`[dry-run] would run: ${PYTHON} -m twine upload`),
-    altReleasePublishDryRun.output
+    altReleasePublishDryRun.output,
   )
 })
 section('go', ['alt stack'], () => {
@@ -2020,7 +2029,7 @@ section('go', ['alt stack'], () => {
       existsSync(path.join(altWorkspace, 'go.mod')) &&
         !existsSync(path.join(altWorkspace, 'go.work')) &&
         findFiles(altWorkspace, name => name === 'go.mod').length === 1,
-      findFiles(altWorkspace, name => name === 'go.mod').join(', ')
+      findFiles(altWorkspace, name => name === 'go.mod').join(', '),
     )
 
     // Read rather than hardcoded: the module path comes from the workspace scope,
@@ -2038,71 +2047,71 @@ section('go', ['alt stack'], () => {
       ['goapi', 'apps/goapi', ['build', 'test', 'lint', 'package', 'start']],
       ['goutil', 'libs/goutil', ['test', 'lint']],
       ['gocore', 'packages/gocore', ['test', 'lint']],
-      ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']]
+      ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']],
     ]) {
       const projectJson = JSON.parse(
-        readFileSync(path.join(altWorkspace, directory, 'project.json'), 'utf8')
+        readFileSync(path.join(altWorkspace, directory, 'project.json'), 'utf8'),
       )
       enforce(
         `go: ${project} has every target written explicitly (${expected.join(', ')})`,
         expected.every(target => Object.hasOwn(projectJson.targets ?? {}, target)),
-        Object.keys(projectJson.targets ?? {}).join(', ')
+        Object.keys(projectJson.targets ?? {}).join(', '),
       )
     }
 
     // A documented, deliberate gap rather than an oversight: go-function-app writes
     // no host.json/custom-handler config, so a `:start` script would just fail.
     const goFunctionAppProject = JSON.parse(
-      readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8')
+      readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8'),
     )
     enforce(
       'go: go-function-app deliberately has NO start target, unlike go-app',
-      !goFunctionAppProject.targets?.start
+      !goFunctionAppProject.targets?.start,
     )
 
     const goLibProject = JSON.parse(
-      readFileSync(path.join(altWorkspace, 'packages/gocore/project.json'), 'utf8')
+      readFileSync(path.join(altWorkspace, 'packages/gocore/project.json'), 'utf8'),
     )
     enforce(
       'go: go-lib is tagged type:go-lib, which is what excludes it from the release scope',
-      goLibProject.tags?.includes('type:go-lib')
+      goLibProject.tags?.includes('type:go-lib'),
     )
 
     // THE payoff of one root module: a cross-project import needs no vendoring, no
     // `replace` directive and no per-project manifest — just the import path.
     writeFileSync(
       path.join(altWorkspace, 'apps/goapi/main.go'),
-      `package main\n\nimport (\n\t"fmt"\n\n\t"${goModule}/libs/goutil"\n)\n\n// Hello delegates across a project boundary through the single root module.\nfunc Hello(name string) string {\n\treturn goutil.Goutil(name)\n}\n\nfunc main() {\n\tfmt.Println(Hello("goapi"))\n}\n`
+      `package main\n\nimport (\n\t"fmt"\n\n\t"${goModule}/libs/goutil"\n)\n\n// Hello delegates across a project boundary through the single root module.\nfunc Hello(name string) string {\n\treturn goutil.Goutil(name)\n}\n\nfunc main() {\n\tfmt.Println(Hello("goapi"))\n}\n`,
     )
     writeFileSync(
       path.join(altWorkspace, 'apps/goapi/main_test.go'),
-      'package main\n\nimport "testing"\n\nfunc TestHelloUsesTheInternalLib(t *testing.T) {\n\tif got := Hello("x"); got != "Goutil x" {\n\t\tt.Fatalf("got %q", got)\n\t}\n}\n'
+      'package main\n\nimport "testing"\n\nfunc TestHelloUsesTheInternalLib(t *testing.T) {\n\tif got := Hello("x"); got != "Goutil x" {\n\t\tt.Fatalf("got %q", got)\n\t}\n}\n',
     )
 
     const goVerify = tryRunCapture(
       'npx nx run-many -t build,test --projects=goapi,goutil,gocore,gofn',
-      altWorkspace
+      altWorkspace,
     )
     enforce(
       'go: real go build + go test pass for all four kinds, with goapi importing libs/goutil across projects and no vendoring step',
       goVerify.ok,
-      goVerify.output
+      goVerify.output,
     )
 
     if (hasGolangciLint()) {
       const goLint = tryRunCapture(
         'npx nx run-many -t lint --projects=goapi,goutil,gocore,gofn',
-        altWorkspace
+        altWorkspace,
       )
       enforce(
         'go: lint runs golangci-lint (not the plugin default `go fmt`, which only reformats)',
         goLint.ok,
-        goLint.output
+        goLint.output,
       )
     } else {
       skip(
         'the go lint assertion',
-        'golangci-lint is not on PATH (the rest of the Go section still ran)'
+        'golangci-lint is not on PATH (the rest of the Go section still ran)',
       )
     }
 
@@ -2111,7 +2120,7 @@ section('go', ['alt stack'], () => {
     enforce(
       'go: package compiles a real binary and zips it to dist/drop/go-app-goapi.zip',
       goPackage.ok && existsSync(goZipPath),
-      goPackage.output
+      goPackage.output,
     )
     if (existsSync(goZipPath)) {
       const AdmZipGo = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
@@ -2127,9 +2136,9 @@ section('go', ['alt stack'], () => {
         goEntries.some(
           entry =>
             (entry.entryName === 'goapi' || entry.entryName === 'goapi.exe') &&
-            entry.header.size > 100_000
+            entry.header.size > 100_000,
         ),
-        goEntries.map(entry => `${entry.entryName} (${entry.header.size}b)`).join(', ')
+        goEntries.map(entry => `${entry.entryName} (${entry.header.size}b)`).join(', '),
       )
     }
 
@@ -2145,7 +2154,7 @@ section('go', ['alt stack'], () => {
     enforce(
       'go: nx release still runs with a go-lib present — it is excluded, not aborting the whole release graph',
       goRelease.ok && !/gocore/.test(goRelease.output),
-      goRelease.output
+      goRelease.output,
     )
   } else {
     skip('the entire Go section', 'the Go toolchain is not on PATH')
@@ -2170,11 +2179,11 @@ section('flutter', [], () => {
     mkdirSync(nxFlutterPackDirectory, { recursive: true })
     const flutterPackOutput = execSync(
       `npm pack --silent --pack-destination "${nxFlutterPackDirectory}"`,
-      { cwd: nxFlutterDirectory, encoding: 'utf8' }
+      { cwd: nxFlutterDirectory, encoding: 'utf8' },
     ).trim()
     process.env.MNCI_NX_FLUTTER_SPEC = path.join(
       nxFlutterPackDirectory,
-      flutterPackOutput.split('\n').at(-1)
+      flutterPackOutput.split('\n').at(-1),
     )
 
     console.log('\n▸ mnci add flutter-app / flutter-lib / flutter-internal-lib')
@@ -2183,12 +2192,12 @@ section('flutter', [], () => {
     run(`node ${CLI} add flutter-internal-lib dartcore`, altWorkspace)
 
     const flutterManifest = JSON.parse(
-      readFileSync(path.join(altWorkspace, 'package.json'), 'utf8')
+      readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'),
     )
     enforce(
       'flutter: the plugin is a real devDependency and mnci itself hand-writes no Dart project files',
       Boolean(flutterManifest.devDependencies?.['@mnci/nx-flutter']) &&
-        existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-flutter/generators.json'))
+        existsSync(path.join(altWorkspace, 'node_modules/@mnci/nx-flutter/generators.json')),
     )
 
     // The central-dependency model: one root pubspec listing every project.
@@ -2196,26 +2205,26 @@ section('flutter', [], () => {
     enforce(
       'flutter: ONE root pubspec.yaml lists all three projects under workspace:',
       ['apps/hello', 'packages/dartshared', 'libs/dartcore'].every(member =>
-        rootPubspec.includes(`- ${member}`)
+        rootPubspec.includes(`- ${member}`),
       ) && rootPubspec.includes('publish_to: none'),
-      rootPubspec
+      rootPubspec,
     )
     enforce(
       'flutter: every member declares `resolution: workspace`, so pub resolves through the root',
       ['apps/hello', 'packages/dartshared', 'libs/dartcore'].every(member =>
         readFileSync(path.join(altWorkspace, member, 'pubspec.yaml'), 'utf8').includes(
-          'resolution: workspace'
-        )
-      )
+          'resolution: workspace',
+        ),
+      ),
     )
     enforce(
       'flutter: lint config is central — each project just includes the root analysis_options.yaml',
       readFileSync(path.join(altWorkspace, 'analysis_options.yaml'), 'utf8').includes(
-        'package:flutter_lints/flutter.yaml'
+        'package:flutter_lints/flutter.yaml',
       ) &&
         readFileSync(path.join(altWorkspace, 'apps/hello/analysis_options.yaml'), 'utf8').includes(
-          'include: ../../analysis_options.yaml'
-        )
+          'include: ../../analysis_options.yaml',
+        ),
     )
 
     // An internal dependency, declared with a PLAIN constraint and no `path:`.
@@ -2226,15 +2235,15 @@ section('flutter', [], () => {
     replaceInFile(
       dartsharedPubspecPath,
       /^dependencies:\r?\n {2}flutter:\r?\n {4}sdk: flutter\r?\n/m,
-      'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n'
+      'dependencies:\n  flutter:\n    sdk: flutter\n  dartcore: ^0.0.1\n',
     )
     writeFileSync(
       path.join(altWorkspace, 'packages/dartshared/lib/dartshared.dart'),
-      "import 'package:dartcore/dartcore.dart';\n\n/// Uses the internal lib across a workspace boundary.\nclass Greeter {\n  /// Bumps a number using dartcore.\n  int bump(int value) => Calculator().addOne(value);\n}\n"
+      "import 'package:dartcore/dartcore.dart';\n\n/// Uses the internal lib across a workspace boundary.\nclass Greeter {\n  /// Bumps a number using dartcore.\n  int bump(int value) => Calculator().addOne(value);\n}\n",
     )
     writeFileSync(
       path.join(altWorkspace, 'packages/dartshared/test/dartshared_test.dart'),
-      "import 'package:flutter_test/flutter_test.dart';\nimport 'package:dartshared/dartshared.dart';\n\nvoid main() {\n  test('bumps via the internal lib', () {\n    expect(Greeter().bump(2), 3);\n  });\n}\n"
+      "import 'package:flutter_test/flutter_test.dart';\nimport 'package:dartshared/dartshared.dart';\n\nvoid main() {\n  test('bumps via the internal lib', () {\n    expect(Greeter().bump(2), 3);\n  });\n}\n",
     )
 
     // THE dependency-injection step: one command for internal + external deps.
@@ -2243,16 +2252,16 @@ section('flutter', [], () => {
     const lockfiles = [
       'pubspec.lock',
       'apps/hello/pubspec.lock',
-      'packages/dartshared/pubspec.lock'
+      'packages/dartshared/pubspec.lock',
     ]
     enforce(
       'flutter: one root pub get produces ONE lockfile — pub deletes the per-package ones',
       existsSync(path.join(altWorkspace, lockfiles[0])) &&
         !existsSync(path.join(altWorkspace, lockfiles[1])) &&
-        !existsSync(path.join(altWorkspace, lockfiles[2]))
+        !existsSync(path.join(altWorkspace, lockfiles[2])),
     )
     const packageConfig = JSON.parse(
-      readFileSync(path.join(altWorkspace, '.dart_tool/package_config.json'), 'utf8')
+      readFileSync(path.join(altWorkspace, '.dart_tool/package_config.json'), 'utf8'),
     )
     // Both halves of the ORIGINAL assertion passed while the dependency was
     // missing entirely, which is why the failure surfaced two assertions later
@@ -2264,14 +2273,14 @@ section('flutter', [], () => {
     enforce(
       'flutter: dartshared actually DECLARES dartcore, with a plain version constraint',
       /^ {2}dartcore: \^\d/m.test(dartsharedPubspec),
-      dartsharedPubspec
+      dartsharedPubspec,
     )
     enforce(
       'flutter: the internal dep resolved to the LOCAL package with no `path:` dependency',
       packageConfig.packages.some(
-        entry => entry.name === 'dartcore' && entry.rootUri.includes('libs/dartcore')
+        entry => entry.name === 'dartcore' && entry.rootUri.includes('libs/dartcore'),
       ) && !dartsharedPubspec.includes('path:'),
-      JSON.stringify(packageConfig.packages.find(entry => entry.name === 'dartcore'))
+      JSON.stringify(packageConfig.packages.find(entry => entry.name === 'dartcore')),
     )
 
     // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
@@ -2284,17 +2293,17 @@ section('flutter', [], () => {
     enforce(
       'flutter: the generated web shell declares a lang, so the workspace lints clean',
       /<html lang="[^"]+"/.test(webIndex),
-      webIndex.slice(0, 200)
+      webIndex.slice(0, 200),
     )
 
     const flutterVerify = tryRunCapture(
       'npx nx run-many -t lint,test --projects=hello,dartshared,dartcore',
-      altWorkspace
+      altWorkspace,
     )
     enforce(
       'flutter: real flutter analyze + flutter test pass for all three projects',
       flutterVerify.ok,
-      flutterVerify.output
+      flutterVerify.output,
     )
 
     const flutterPackage = tryRunCapture('npx nx package hello', altWorkspace)
@@ -2302,7 +2311,7 @@ section('flutter', [], () => {
     enforce(
       'flutter: package builds a real web bundle and zips it to dist/drop/flutter-app-hello.zip',
       flutterPackage.ok && existsSync(flutterZipPath),
-      flutterPackage.output
+      flutterPackage.output,
     )
     if (existsSync(flutterZipPath)) {
       const AdmZipFlutter = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
@@ -2312,9 +2321,9 @@ section('flutter', [], () => {
       enforce(
         'flutter: the drop zip contains a genuinely built web app, not an empty shell',
         ['index.html', 'main.dart.js', 'flutter_bootstrap.js'].every(file =>
-          flutterEntries.includes(file)
+          flutterEntries.includes(file),
         ),
-        flutterEntries.slice(0, 12).join(', ')
+        flutterEntries.slice(0, 12).join(', '),
       )
     }
 
@@ -2323,12 +2332,12 @@ section('flutter', [], () => {
     enforce(
       'flutter: nx release versions the Dart lib from its pubspec.yaml (DartVersionActions), leaving the rest of the release intact',
       flutterRelease.ok && /dartshared/i.test(flutterRelease.output),
-      flutterRelease.output
+      flutterRelease.output,
     )
   } else {
     skip(
       'the entire Flutter section',
-      'the Flutter SDK is not on PATH (install it, or run this on a machine that has it)'
+      'the Flutter SDK is not on PATH (install it, or run this on a machine that has it)',
     )
   }
 })
@@ -2352,5 +2361,5 @@ if (failed.length > 0) {
 console.log(
   `\n✓ ${results.enforced.length} enforced checks passed.${
     results.skipped.length > 0 ? ` (${results.skipped.length} section(s) SKIPPED — see above.)` : ''
-  }`
+  }`,
 )

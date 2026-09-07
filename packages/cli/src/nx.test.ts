@@ -12,7 +12,7 @@ describe('runShell', () => {
     expect(runShell('npx', ['nx', 'graph'], '/repo')).toBe(0)
     expect(mockSpawnSync).toHaveBeenCalledWith('npx', ['nx', 'graph'], {
       stdio: 'inherit',
-      cwd: '/repo'
+      cwd:   '/repo',
     })
   })
 
@@ -32,7 +32,7 @@ describe('runShell', () => {
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npx',
       ['nx', 'g', '@nx/react:app', `apps/${dangerous}`],
-      { stdio: 'inherit', cwd: '/repo' }
+      { stdio: 'inherit', cwd: '/repo' },
     )
   })
 })
@@ -44,7 +44,7 @@ describe('runNx', () => {
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npx',
       ['nx', 'g', '@nx/react:app', 'apps/web'],
-      expect.objectContaining({ cwd: '/workspace' })
+      expect.objectContaining({ cwd: '/workspace' }),
     )
   })
 
@@ -61,7 +61,7 @@ describe('runNpx', () => {
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npx',
       ['create-nx-workspace@latest', 'demo'],
-      expect.objectContaining({ cwd: '/tmp' })
+      expect.objectContaining({ cwd: '/tmp' }),
     )
   })
 
@@ -93,7 +93,7 @@ describe('runFormatter', () => {
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npx',
       ['eslint', '.', '--fix'],
-      expect.objectContaining({ cwd: '/ws' })
+      expect.objectContaining({ cwd: '/ws' }),
     )
     expect(warn).not.toHaveBeenCalled()
   })

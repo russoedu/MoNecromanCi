@@ -9,7 +9,7 @@ import jest from 'eslint-plugin-jest'
  */
 export default [
   {
-    name: 'mnci/tests',
+    name:  'mnci/tests',
     // `jest.*.{js,mjs,cjs,ts}` covers the setup/teardown files a workspace
     // wires through `setupFilesAfterEach` — they use the same globals as a
     // spec but match none of the spec patterns, so without this they fail
@@ -18,27 +18,27 @@ export default [
       '**/*.{spec,test}.{js,mjs,cjs,jsx,ts,mts,cts,tsx}',
       '**/jest.*.{js,mjs,cjs,ts,mts,cts}',
       '**/vitest.*.{js,mjs,cjs,ts,mts,cts}',
-      '**/test-setup.{js,mjs,cjs,ts,mts,cts}'
+      '**/test-setup.{js,mjs,cjs,ts,mts,cts}',
     ],
-    plugins: { jest },
+    plugins:         { jest },
     // Vitest's own globals go alongside Jest's. `describe`/`it`/`expect` are
     // shared, but `vi` is Vitest-only and belongs to no Jest environment — so a
     // `.js` spec using `vi.fn()` reported `'vi' is not defined`, confirmed against
     // the real binary. Narrow (a `.ts` spec escapes it, since `no-undef` is off for
     // TypeScript) but a real failure on a file the user wrote normally.
     languageOptions: {
-      globals: { ...jest.environments.globals.globals, vi: 'readonly', vitest: 'readonly' }
+      globals: { ...jest.environments.globals.globals, vi: 'readonly', vitest: 'readonly' },
     },
     rules: {
-      'jest/no-focused-tests': 'error',
+      'jest/no-focused-tests':   'error',
       'jest/no-identical-title': 'error',
-      'jest/valid-expect': 'error',
+      'jest/valid-expect':       'error',
 
       // Tests legitimately reach for `any` and non-null assertions on fixtures.
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-explicit-any':               'off',
+      '@typescript-eslint/no-non-null-assertion':         'off',
       '@typescript-eslint/explicit-function-return-type': 'off',
-      'unicorn/no-useless-undefined': 'off',
+      'unicorn/no-useless-undefined':                     'off',
 
       // `jest.config.ts`/`vitest.config.ts` match the patterns above, and Nx
       // writes exactly this into every workspace's root jest config:
@@ -51,7 +51,7 @@ export default [
       // `prefer-regex-literals` both failed. Measured: it is the ONLY root-level
       // finding in a freshly generated workspace, and switching it off here is
       // what lets the root `lint` target ship at all.
-      'unicorn/no-anonymous-default-export': 'off'
-    }
-  }
+      'unicorn/no-anonymous-default-export': 'off',
+    },
+  },
 ]

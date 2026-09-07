@@ -5,19 +5,19 @@ import type * as NodeFs from 'node:fs'
 // cannot quietly break an unrelated import somewhere in the module graph.
 jest.mock('node:fs', () => ({
   ...jest.requireActual<typeof NodeFs>('node:fs'),
-  rmSync: jest.fn()
+  rmSync: jest.fn(),
 }))
 jest.mock('../nx', () => ({ runNpx: jest.fn(), runFormatter: jest.fn(), runShell: jest.fn() }))
 jest.mock('../overlay', () => ({
-  applyOverlay: jest.fn(),
-  DEFAULT_STACK: { testRunner: 'jest' }
+  applyOverlay:  jest.fn(),
+  DEFAULT_STACK: { testRunner: 'jest' },
 }))
 jest.mock('../prompts', () => ({
-  promptCi: jest.fn(),
-  promptNxCloud: jest.fn(),
+  promptCi:       jest.fn(),
+  promptNxCloud:  jest.fn(),
   promptRegistry: jest.fn(),
-  promptStack: jest.fn(),
-  promptText: jest.fn()
+  promptStack:    jest.fn(),
+  promptText:     jest.fn(),
 }))
 
 import { rmSync } from 'node:fs'
@@ -64,20 +64,20 @@ describe('runNew', () => {
         '--preset=ts',
         '--pm=npm',
         '--nxCloud=skip',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      '/somewhere'
+      '/somewhere',
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(join('/somewhere', 'demo'), {
       workspaceName: 'demo',
-      scope: '@demo',
-      registry: { kind: 'npm' },
-      agent: 'ubuntu-latest',
+      scope:         '@demo',
+      registry:      { kind: 'npm' },
+      agent:         'ubuntu-latest',
       variableGroup: 'Build',
-      ci: 'azure',
-      stack: DEFAULT_STACK
+      ci:            'azure',
+      stack:         DEFAULT_STACK,
     },
-    expect.any(Function)
+    expect.any(Function),
     )
   })
 
@@ -87,10 +87,10 @@ describe('runNew', () => {
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        agent: 'MyPool',
-        variableGroup: 'CiSecrets'
+        agent:         'MyPool',
+        variableGroup: 'CiSecrets',
       }),
-      expect.any(Function)
+      expect.any(Function),
     )
   })
 
@@ -100,7 +100,7 @@ describe('runNew', () => {
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ ci: 'github' }),
-      expect.any(Function)
+      expect.any(Function),
     )
     expect(mockPromptCi).not.toHaveBeenCalled()
   })
@@ -111,7 +111,7 @@ describe('runNew', () => {
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ ci: 'both' }),
-      expect.any(Function)
+      expect.any(Function),
     )
   })
 
@@ -128,12 +128,12 @@ describe('runNew', () => {
     expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptText).not.toHaveBeenCalledWith(
       'Azure DevOps variable group holding the npm PAT',
-      'Build'
+      'Build',
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ ci: 'github', variableGroup: 'Build' }),
-      expect.any(Function)
+      expect.any(Function),
     )
   })
 
@@ -188,13 +188,13 @@ describe('runNew', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
-      workspaceRoot
+      workspaceRoot,
     )
     // No `npm pkg set` — the overlay stamps `prepare: husky` into the scripts.
     expect(mockRunShell).not.toHaveBeenCalledWith(
       'npm',
       expect.arrayContaining(['pkg']),
-      workspaceRoot
+      workspaceRoot,
     )
     expect(mockRunShell).toHaveBeenCalledWith('npx', ['husky'], workspaceRoot)
   })
@@ -212,10 +212,10 @@ describe('runNew', () => {
 
     expect(mockRmSync).toHaveBeenCalledWith(join(workspaceRoot, 'node_modules'), {
       recursive: true,
-      force: true
+      force:     true,
     })
     expect(mockRmSync).toHaveBeenCalledWith(join(workspaceRoot, 'package-lock.json'), {
-      force: true
+      force: true,
     })
   })
 
@@ -259,39 +259,39 @@ describe('runNew', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
-      workspaceRoot
+      workspaceRoot,
     )
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ stack: { testRunner: 'vitest' } }),
-      expect.any(Function)
+      expect.any(Function),
     )
   })
 
   it('resolves Azure Artifacts coordinates from flags without prompting', async () => {
     await runNew('demo', {
-      yes: true,
-      scope: '@acme',
-      organization: 'org',
-      project: 'proj',
-      artifactsFeed: 'feed'
+      yes:           true,
+      scope:         '@acme',
+      organization:  'org',
+      project:       'proj',
+      artifactsFeed: 'feed',
     })
 
     expect(mockApplyOverlay).toHaveBeenCalledWith(expect.any(String), {
       workspaceName: 'demo',
-      scope: '@acme',
-      registry: {
-        kind: 'azure-artifacts',
-        organization: 'org',
-        project: 'proj',
-        artifactsFeed: 'feed'
+      scope:         '@acme',
+      registry:      {
+        kind:          'azure-artifacts',
+        organization:  'org',
+        project:       'proj',
+        artifactsFeed: 'feed',
       },
-      agent: 'ubuntu-latest',
+      agent:         'ubuntu-latest',
       variableGroup: 'Build',
-      ci: 'azure',
-      stack: DEFAULT_STACK
+      ci:            'azure',
+      stack:         DEFAULT_STACK,
     },
-    expect.any(Function)
+    expect.any(Function),
     )
     expect(mockPromptCi).not.toHaveBeenCalled()
     expect(mockPromptRegistry).not.toHaveBeenCalled()
@@ -314,11 +314,11 @@ describe('runNew', () => {
     expect(mockPromptText).toHaveBeenCalledWith('Workspace name')
     expect(mockPromptText).toHaveBeenCalledWith(
       'CI build agent/runner (vmImage, GitHub Actions runner label, or self-hosted pool name)',
-      'ubuntu-latest'
+      'ubuntu-latest',
     )
     expect(mockPromptText).toHaveBeenCalledWith(
       'Azure DevOps variable group holding the npm PAT',
-      'Build'
+      'Build',
     )
     expect(mockPromptRegistry).toHaveBeenCalled()
     expect(mockPromptCi).toHaveBeenCalled()
@@ -326,7 +326,7 @@ describe('runNew', () => {
     expect(mockApplyOverlay).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ stack: { testRunner: 'vitest' } }),
-      expect.any(Function)
+      expect.any(Function),
     )
     expect(mockRunNpx.mock.calls[0][0]).toContain('shop')
   })
@@ -358,7 +358,7 @@ describe('runNew', () => {
 
   it('rejects an invalid workspace name before creating anything (no create-nx-workspace, no install)', async () => {
     await expect(runNew('Not Valid!', { yes: true })).rejects.toThrow(
-      "Workspace name 'Not Valid!' is invalid"
+      "Workspace name 'Not Valid!' is invalid",
     )
 
     expect(mockRunNpx).not.toHaveBeenCalled()

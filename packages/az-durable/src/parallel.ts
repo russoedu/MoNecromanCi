@@ -33,9 +33,10 @@ export type TaskOutputs<T extends readonly TypedTask<unknown>[]> = {
  */
 export function * all<T extends readonly TypedTask<unknown>[]> (
   context: OrchestrationContext,
-  tasks: readonly [...T]
+  tasks: readonly [...T],
 ): Generator<Task, TaskOutputs<T>, unknown> {
   const results = yield context.df.Task.all(tasks.map(t => t.task))
+
   return results as TaskOutputs<T>
 }
 
@@ -64,7 +65,7 @@ export function * all<T extends readonly TypedTask<unknown>[]> (
  */
 export function * any<T extends readonly TypedTask<unknown>[]> (
   context: OrchestrationContext,
-  tasks: readonly [...T]
+  tasks: readonly [...T],
 ): Generator<Task, T[number], unknown> {
   const won = yield context.df.Task.any(tasks.map(t => t.task))
   const winner = tasks.find(t => t.task === won)
@@ -74,6 +75,7 @@ export function * any<T extends readonly TypedTask<unknown>[]> (
     // wrong element would misroute the branch the caller takes next.
     throw new Error('Task.any returned a task that was not one of the inputs.')
   }
+
   return winner
 }
 

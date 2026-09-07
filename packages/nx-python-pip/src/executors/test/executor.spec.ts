@@ -10,14 +10,14 @@ const mockSpawnSync = jest.mocked(spawnSync)
 
 function context (): ExecutorContext {
   return {
-    root: '/workspace',
-    projectName: 'svc',
-    cwd: '/workspace',
-    isVerbose: false,
+    root:                   '/workspace',
+    projectName:            'svc',
+    cwd:                    '/workspace',
+    isVerbose:              false,
     projectsConfigurations: {
-      version: 2,
-      projects: { svc: { root: 'apps/svc' } }
-    }
+      version:  2,
+      projects: { svc: { root: 'apps/svc' } },
+    },
   } as unknown as ExecutorContext
 }
 
@@ -34,11 +34,11 @@ describe('testExecutor', () => {
       1,
       pythonCommand(),
       ['-m', 'pip', 'install', '--quiet', '-e', '.'],
-      { cwd: join('/workspace', 'apps/svc'), stdio: 'inherit' }
+      { cwd: join('/workspace', 'apps/svc'), stdio: 'inherit' },
     )
     expect(mockSpawnSync).toHaveBeenNthCalledWith(2, pythonCommand(), ['-m', 'pytest'], {
-      cwd: join('/workspace', 'apps/svc'),
-      stdio: 'inherit'
+      cwd:   join('/workspace', 'apps/svc'),
+      stdio: 'inherit',
     })
   })
 
@@ -49,8 +49,8 @@ describe('testExecutor', () => {
 
     expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     expect(mockSpawnSync).toHaveBeenCalledWith(pythonCommand(), ['-m', 'pytest'], {
-      cwd: join('/workspace', 'apps/svc'),
-      stdio: 'inherit'
+      cwd:   join('/workspace', 'apps/svc'),
+      stdio: 'inherit',
     })
   })
 

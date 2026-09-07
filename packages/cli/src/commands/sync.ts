@@ -9,7 +9,7 @@ import {
   resolvedVersion,
   rewriteSpec,
   type DependencySite,
-  type Ecosystem
+  type Ecosystem,
 } from '../deps/inventory'
 import { highestSpec, rangeOperator, specVersion } from '../deps/semver'
 import { runFormatter, runShell } from '../nx'
@@ -27,7 +27,7 @@ import { logger } from '../util/logger'
  */
 export interface SyncOptions {
   /** Report drift and exit non-zero without writing anything. */
-  check?: boolean
+  check?:     boolean
   /** Restrict the run to one ecosystem. */
   ecosystem?: string
 }
@@ -45,17 +45,17 @@ export interface SyncOptions {
  */
 export interface Drift {
   /** The package name. */
-  name: string
+  name:      string
   /** Which ecosystem it belongs to. */
   ecosystem: Ecosystem
   /** The spec every site should converge on. */
-  target: string
+  target:    string
   /** Why that spec won, for the report. */
-  reason: 'resolved' | 'highest'
+  reason:    'resolved' | 'highest'
   /** The sites that disagree with `target` and can be rewritten. */
-  fixable: DependencySite[]
+  fixable:   DependencySite[]
   /** Sites that disagree but whose spec shape cannot safely be edited. */
-  blocked: DependencySite[]
+  blocked:   DependencySite[]
 }
 
 /**
@@ -80,9 +80,10 @@ export function resolveEcosystems (requested: string | undefined): readonly Ecos
   const match = ECOSYSTEMS.find(ecosystem => ecosystem === requested)
   if (!match) {
     throw new Error(
-      `Unknown ecosystem '${requested}'. Expected one of: ${ECOSYSTEMS.join(', ')}.`
+      `Unknown ecosystem '${requested}'. Expected one of: ${ECOSYSTEMS.join(', ')}.`,
     )
   }
+
   return [match]
 }
 
@@ -126,7 +127,7 @@ export function resolveEcosystems (requested: string | undefined): readonly Ecos
  */
 export function collectDrift (
   workspaceRoot: string,
-  ecosystems: readonly Ecosystem[] = ECOSYSTEMS
+  ecosystems: readonly Ecosystem[] = ECOSYSTEMS,
 ): Drift[] {
   // Go has one manifest, so it can never disagree with itself.
   const reconcilable = ecosystems.filter(ecosystem => ecosystem !== 'go')
@@ -156,9 +157,9 @@ export function collectDrift (
       name,
       ecosystem: sites[0].ecosystem,
       target,
-      reason: installed ? 'resolved' : 'highest',
-      fixable: disagreeing.filter(site => site.rewritable),
-      blocked: disagreeing.filter(site => !site.rewritable)
+      reason:    installed ? 'resolved' : 'highest',
+      fixable:   disagreeing.filter(site => site.rewritable),
+      blocked:   disagreeing.filter(site => !site.rewritable),
     })
   }
 
@@ -183,7 +184,7 @@ export function collectDrift (
 function isWorkspaceLocal (
   workspaceRoot: string,
   sites: readonly DependencySite[],
-  name: string
+  name: string,
 ): boolean {
   // pip internal libs are vendored and pub ones are workspace members, so
   // neither is declared under a name this check could resolve.
@@ -207,7 +208,7 @@ function isWorkspaceLocal (
  */
 function chooseTarget (
   sites: readonly DependencySite[],
-  installed: string | undefined
+  installed: string | undefined,
 ): string | undefined {
   if (!installed) {
     return highestSpec(sites.map(site => site.spec))
@@ -226,8 +227,9 @@ function chooseTarget (
   }
 
   const [operator] = [...counts].toSorted(
-    (left, right) => right[1] - left[1] || (left[0] === '^' ? -1 : 1)
+    (left, right) => right[1] - left[1] || (left[0] === '^' ? -1 : 1),
   )[0]
+
   return `${operator}${installed}`
 }
 
@@ -252,6 +254,7 @@ export function applyDrift (drift: readonly Drift[]): string[] {
       }
     }
   }
+
   return [...changed]
 }
 
@@ -284,7 +287,7 @@ export function syncProjectReferences (workspaceRoot: string): void {
   logger.step('Syncing TypeScript project references (nx sync)')
   if (runShell('npx', ['nx', 'sync'], workspaceRoot) !== 0) {
     logger.warn(
-      'nx sync did not complete — run `npx nx sync` yourself so cross-project imports resolve in your editor.'
+      'nx sync did not complete — run `npx nx sync` yourself so cross-project imports resolve in your editor.',
     )
   }
 }
@@ -301,6 +304,7 @@ function describe (finding: Drift): string {
   const sites = [...finding.fixable, ...finding.blocked]
     .map(site => `${site.project === ROOT_LABEL ? ROOT_LABEL : site.project} ${site.spec}`)
     .join(', ')
+
   return `${finding.name} → ${finding.target} (${finding.reason}); disagreeing: ${sites}`
 }
 
@@ -328,7 +332,7 @@ function describe (finding: Drift): string {
 export function runSync (workspaceRoot: string, options: SyncOptions): void {
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
     throw new Error(
-      `No nx.json found in ${workspaceRoot} — run 'mnci sync' from the workspace root.`
+      `No nx.json found in ${workspaceRoot} — run 'mnci sync' from the workspace root.`,
     )
   }
 
@@ -355,10 +359,11 @@ export function runSync (workspaceRoot: string, options: SyncOptions): void {
   if (options.check) {
     if (drift.length > 0) {
       logger.error(
-        `${drift.length} package(s) declared at more than one version. Run 'mnci sync' to converge them.`
+        `${drift.length} package(s) declared at more than one version. Run 'mnci sync' to converge them.`,
       )
       process.exitCode = 1
     }
+
     // --check never runs `nx sync` either: `nx sync:check` is the read-only
     // command for that half, and mnci doctor already calls it.
     return
@@ -372,7 +377,7 @@ export function runSync (workspaceRoot: string, options: SyncOptions): void {
   const blocked = drift.flatMap(finding => finding.blocked)
   for (const site of blocked) {
     logger.warn(
-      `${site.name} in ${site.project} is declared as '${site.spec}', which is not a plain version range — left unchanged.`
+      `${site.name} in ${site.project} is declared as '${site.spec}', which is not a plain version range — left unchanged.`,
     )
   }
 

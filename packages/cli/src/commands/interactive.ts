@@ -36,15 +36,15 @@ export async function runInteractive (): Promise<void> {
   const choiceNew = { name: 'Create a new monorepo', value: 'new' as const }
   const choiceAdd = { name: 'Add a project to this workspace', value: 'add' as const }
   const choiceUpgrade = {
-    name: 'Upgrade this workspace (re-apply the latest overlay)',
-    value: 'upgrade' as const
+    name:  'Upgrade this workspace (re-apply the latest overlay)',
+    value: 'upgrade' as const,
   }
 
   const action = await select<InteractiveAction>({
     message: 'What would you like to do?',
     choices: inWorkspace
       ? [choiceAdd, choiceUpgrade, choiceNew]
-      : [choiceNew, choiceAdd, choiceUpgrade]
+      : [choiceNew, choiceAdd, choiceUpgrade],
   })
 
   if (action === 'new') {

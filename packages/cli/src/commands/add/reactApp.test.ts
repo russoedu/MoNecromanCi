@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -25,7 +25,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -50,16 +50,16 @@ describe('runAdd react-app', () => {
         '--linter=none',
         '--style=css',
         '--e2eTestRunner=none',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
   it('skips the plugin install when it is already a devDependency', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: 'demo', devDependencies: { '@nx/react': '^23.0.0' } })
+      JSON.stringify({ name: 'demo', devDependencies: { '@nx/react': '^23.0.0' } }),
     )
 
     await runAdd('react-app', 'web', {})
@@ -73,7 +73,7 @@ describe('runAdd react-app', () => {
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/web/package.json'),
-      JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true })
+      JSON.stringify({ name: '@demo/web', version: '0.0.1', private: true }),
     )
 
     await runAdd('react-app', 'web', {})
@@ -82,30 +82,30 @@ describe('runAdd react-app', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // A .env.<env> is scaffolded per environment (public VITE_ config).
     for (const environment of ['dev', 'uat', 'prod']) {
       expect(readFileSync(join(workspaceRoot, `apps/web/.env.${environment}`), 'utf8')).toContain(
-        `VITE_ENVIRONMENT=${environment}`
+        `VITE_ENVIRONMENT=${environment}`,
       )
     }
 
     // React apps are inference-only (no project.json): targets are attached via
     // the manifest's `nx` field, preserving the existing manifest.
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/web/package.json'), 'utf8'),
     ) as {
       name: string
       nx: {
         targets: Record<
           string,
           {
-            executor: string
+            executor:   string
             dependsOn?: string[]
-            outputs: string[]
-            options: { command: string; cwd?: string }
+            outputs:    string[]
+            options:    { command: string; cwd?: string }
           }
         >
       }
@@ -117,10 +117,10 @@ describe('runAdd react-app', () => {
     for (const environment of ['dev', 'uat', 'prod']) {
       expect(targets[`build-${environment}`]).toMatchObject({
         executor: 'nx:run-commands',
-        options: {
+        options:  {
           command: `vite build --mode ${environment} --outDir dist-${environment}`,
-          cwd: 'apps/web'
-        }
+          cwd:     'apps/web',
+        },
       })
     }
 
@@ -130,7 +130,7 @@ describe('runAdd react-app', () => {
     expect(targets.package.outputs).toEqual([
       '{workspaceRoot}/dist/drop/react-app-web-dev.zip',
       '{workspaceRoot}/dist/drop/react-app-web-uat.zip',
-      '{workspaceRoot}/dist/drop/react-app-web-prod.zip'
+      '{workspaceRoot}/dist/drop/react-app-web-prod.zip',
     ])
     expect(targets.package.options.command).toContain('writeZip(\'dist/drop/react-app-web-uat.zip\')')
   })
@@ -138,12 +138,12 @@ describe('runAdd react-app', () => {
   it('passes the vitest runner from nx.json to the react generator', async () => {
     writeFileSync(
       join(workspaceRoot, 'nx.json'),
-      JSON.stringify({ mnci: { stack: { testRunner: 'vitest' } } })
+      JSON.stringify({ mnci: { stack: { testRunner: 'vitest' } } }),
     )
     mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/web/package.json'),
-      JSON.stringify({ name: '@demo/web' })
+      JSON.stringify({ name: '@demo/web' }),
     )
 
     await runAdd('react-app', 'web', {})
@@ -170,12 +170,12 @@ describe('root-only ESLint config', () => {
       mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
       writeFileSync(
         join(workspaceRoot, projectRoot, 'package.json'),
-        JSON.stringify({ name: `@demo/${name}` })
+        JSON.stringify({ name: `@demo/${name}` }),
       )
       for (const extension of EXTENSIONS) {
         writeFileSync(
           join(workspaceRoot, projectRoot, `eslint.config.${extension}`),
-          'export default []'
+          'export default []',
         )
       }
 
@@ -183,9 +183,9 @@ describe('root-only ESLint config', () => {
 
       for (const extension of EXTENSIONS) {
         expect(existsSync(join(workspaceRoot, projectRoot, `eslint.config.${extension}`))).toBe(
-          false
+          false,
         )
       }
-    }
+    },
   )
 })

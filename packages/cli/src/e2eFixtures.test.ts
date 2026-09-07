@@ -56,13 +56,21 @@ const REPO_ROOT = join(__dirname, '..', '..', '..')
  */
 function markedFixtures (): Map<string, string> {
   const source = readFileSync(E2E_FILE, 'utf8')
+  // The `,?` before the closing paren is load-bearing. `mnci/house-style` sets
+  // `comma-dangle: always-multiline`, so `eslint --fix` now writes a trailing
+  // comma after the literal — and without this the pattern matched nothing, the
+  // guard found zero marked fixtures, and its per-fixture lint assertions passed
+  // VACUOUSLY over an empty set. That is precisely the failure mode this file
+  // exists to prevent, which is why the count assertion below is not optional.
+  // Tolerates both conventions, so a future flip cannot break it again.
   const pattern =
-    /\/\/ @standard-clean[^\S\n]*\n\s*writeFileSync\(\s*path\.join\([^)]*?'([^']*\.ts)'\)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)/g
+    /\/\/ @standard-clean[^\S\n]*\n\s*writeFileSync\(\s*path\.join\([^)]*?'([^']*\.ts)'\)\s*,\s*("(?:[^"\\]|\\.)*")\s*(?:,\s*)?\)/g
   const fixtures = new Map<string, string>()
   for (const match of source.matchAll(pattern)) {
     const [, target, literal] = match
     fixtures.set(target, JSON.parse(literal) as string)
   }
+
   return fixtures
 }
 
@@ -119,9 +127,9 @@ function stylisticProblems (contents: string): string[] {
         '--config',
         join(REPO_ROOT, 'eslint.config.mjs'),
         '--format',
-        'json'
+        'json',
       ],
-      { cwd: REPO_ROOT, input: contents, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+      { cwd: REPO_ROOT, input: contents, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
     )
   } catch (error) {
     // ESLint exits non-zero whenever it reports anything; the JSON is still on
@@ -130,6 +138,7 @@ function stylisticProblems (contents: string): string[] {
   }
   const results = JSON.parse(raw) as LintResult[]
   assertActuallyLinted(results)
+
   return results
     .flatMap(result => result.messages)
     .filter(message => message.ruleId?.startsWith('@stylistic/'))
@@ -159,7 +168,7 @@ function assertActuallyLinted (results: LintResult[]): void {
     .find(
       message =>
         message.ruleId === null &&
-        /ignored|outside of base path|Parsing error/i.test(message.message)
+        /ignored|outside of base path|Parsing error/i.test(message.message),
     )
   if (skipped) {
     throw new Error(`ESLint did not lint the fixture: ${skipped.message}`)
@@ -175,7 +184,7 @@ describe("the e2e's own TypeScript fixtures satisfy the shipped Standard block",
     // is not a hypothetical failure mode here: an earlier version of this file
     // passed all seven of its tests while linting a path ESLint was ignoring.
     expect(fixtures.map(([target]) => target)).toEqual(
-      expect.arrayContaining(['apps/api/src/deps.ts', 'apps/api/src/main.ts'])
+      expect.arrayContaining(['apps/api/src/deps.ts', 'apps/api/src/main.ts']),
     )
   })
 

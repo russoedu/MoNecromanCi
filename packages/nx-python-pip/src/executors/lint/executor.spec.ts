@@ -22,14 +22,14 @@ const mockSpawnSync = jest.mocked(spawnSync)
 
 function context (): ExecutorContext {
   return {
-    root: '/workspace',
-    projectName: 'svc',
-    cwd: '/workspace',
-    isVerbose: false,
+    root:                   '/workspace',
+    projectName:            'svc',
+    cwd:                    '/workspace',
+    isVerbose:              false,
     projectsConfigurations: {
-      version: 2,
-      projects: { svc: { root: 'apps/svc' } }
-    }
+      version:  2,
+      projects: { svc: { root: 'apps/svc' } },
+    },
   } as unknown as ExecutorContext
 }
 
@@ -43,8 +43,8 @@ describe('lintExecutor', () => {
 
     expect(result).toEqual({ success: true })
     expect(mockSpawnSync).toHaveBeenCalledWith(pythonCommand(), ['-m', 'ruff', 'check', '.'], {
-      cwd: join('/workspace', 'apps/svc'),
-      stdio: 'inherit'
+      cwd:   join('/workspace', 'apps/svc'),
+      stdio: 'inherit',
     })
   })
 

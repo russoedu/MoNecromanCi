@@ -31,6 +31,7 @@ declare const probe: TypedActivity<{ id: string }, { count: number }>
 export function * happy (_c: OrchestrationContext): Generator<Task, number, unknown> {
   const result = yield * callActivity(_c, probe, { id: 'x' })
   const n: number = result.count
+
   return n
 }
 

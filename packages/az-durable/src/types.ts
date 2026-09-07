@@ -3,7 +3,7 @@ import type {
   RegisteredActivity,
   RegisteredOrchestration,
   Task,
-  TimerTask
+  TimerTask,
 } from 'durable-functions'
 
 /**
@@ -26,13 +26,13 @@ import type {
  */
 export interface TypedActivity<TInput, TOutput> {
   /** The activity name as registered in the Function App, verbatim. */
-  readonly name: string
+  readonly name:       string
   /** The value `durable-functions` returned from `app.activity`. */
   readonly registered: RegisteredActivity
   /** Phantom. Never assigned. Makes `TInput` contravariant. */
-  readonly __input?: (input: TInput) => void
+  readonly __input?:   (input: TInput) => void
   /** Phantom. Never assigned. Carries `TOutput`. */
-  readonly __output?: () => TOutput
+  readonly __output?:  () => TOutput
 }
 
 /**
@@ -47,7 +47,7 @@ export interface TypedActivity<TInput, TOutput> {
  */
 export interface TypedOrchestration<TInput, TOutput> {
   /** The orchestration name as registered in the Function App, verbatim. */
-  readonly name: string
+  readonly name:       string
   /** The value `durable-functions` returned from `app.orchestration`. */
   readonly registered: RegisteredOrchestration
   /**
@@ -60,10 +60,10 @@ export interface TypedOrchestration<TInput, TOutput> {
    */
   readonly handler: (
     context: OrchestrationContext,
-    input: TInput
+    input: TInput,
   ) => Generator<Task, TOutput, unknown>
   /** Phantom. Never assigned. Makes `TInput` contravariant. */
-  readonly __input?: (input: TInput) => void
+  readonly __input?:  (input: TInput) => void
   /** Phantom. Never assigned. Carries `TOutput`. */
   readonly __output?: () => TOutput
 }
@@ -80,7 +80,7 @@ export interface TypedOrchestration<TInput, TOutput> {
  */
 export interface TypedTask<TOutput> {
   /** The underlying SDK task. Yield it, or hand it to `all`/`any`. */
-  readonly task: Task
+  readonly task:      Task
   /** Phantom. Never assigned. Carries `TOutput`. */
   readonly __output?: () => TOutput
 }
@@ -100,9 +100,9 @@ export interface TypedTask<TOutput> {
  */
 export interface TypedTimerTask extends TypedTask<void> {
   /** The underlying SDK timer. */
-  readonly task: TimerTask
+  readonly task:        TimerTask
   /** Requests cancellation, applied on the next `yield` or `return`. */
-  readonly cancel: () => void
+  readonly cancel:      () => void
   /** Whether the timer has fired. */
   readonly isCompleted: () => boolean
 }

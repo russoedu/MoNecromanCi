@@ -31,10 +31,11 @@ import type { PublishExecutorSchema } from './schema.d'
  */
 export default async function publishExecutor (
   options: PublishExecutorSchema,
-  context: ExecutorContext
+  context: ExecutorContext,
 ): Promise<{ success: boolean }> {
   if (options.dryRun) {
     console.log(`[dry-run] would run: ${pythonCommand()} -m twine upload --skip-existing dist/*`)
+
     return { success: true }
   }
 
@@ -44,7 +45,8 @@ export default async function publishExecutor (
   const result = spawnSync(
     pythonCommand(),
     ['-m', 'twine', 'upload', '--skip-existing', 'dist/*'],
-    { cwd, stdio: 'inherit' }
+    { cwd, stdio: 'inherit' },
   )
+
   return { success: result.status === 0 }
 }

@@ -20,5 +20,6 @@ export function projectRootFrom (context: ExecutorContext): string {
   if (!root) {
     throw new Error('Could not resolve the project root from the executor context.')
   }
+
   return root
 }

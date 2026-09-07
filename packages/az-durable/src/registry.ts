@@ -35,7 +35,7 @@ export function claimName (kind: 'activity' | 'orchestration', name: string): vo
       `Duplicate ${kind} name '${name}'. Names are global to the Function App and are ` +
         'baked into orchestration history, so two registrations silently misbind.\n' +
         `  first registered at: ${previous}\n` +
-        `  registered again at: ${callSite()}`
+        `  registered again at: ${callSite()}`,
     )
   }
   registered.set(name, callSite())
@@ -80,5 +80,6 @@ function callSite (): string {
   // [0] is the Error line, [1] is callSite, [2] is claimName, [3] is
   // defineActivity/defineOrchestration, [4] is the consumer — the one we want.
   const frame = stack.split('\n', 5)[4]
+
   return frame === undefined ? '<unknown location>' : frame.trim().replace(/^at\s+/, '')
 }

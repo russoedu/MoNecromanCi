@@ -11,36 +11,36 @@ import tseslint from 'typescript-eslint'
 export default [
   ...tseslint.configs.recommended.map(config => ({
     ...config,
-    files: ['**/*.{ts,mts,cts,tsx}']
+    files: ['**/*.{ts,mts,cts,tsx}'],
   })),
   {
-    name: 'mnci/typescript',
+    name:  'mnci/typescript',
     files: ['**/*.{ts,mts,cts,tsx}'],
     rules: {
       // The base rules misfire on TS overloads and declaration merging.
       'no-redeclare': 'off',
-      'no-undef': 'off',
+      'no-undef':     'off',
 
-      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars':          'off',
       '@typescript-eslint/consistent-type-imports': [
         'error',
-        { prefer: 'type-imports', fixStyle: 'separate-type-imports' }
+        { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
       ],
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/no-explicit-any':               'error',
+      '@typescript-eslint/no-non-null-assertion':         'error',
       '@typescript-eslint/explicit-function-return-type': [
         'error',
-        { allowExpressions: true, allowTypedFunctionExpressions: true }
-      ]
-    }
+        { allowExpressions: true, allowTypedFunctionExpressions: true },
+      ],
+    },
   },
   {
-    name: 'mnci/typescript/declarations',
+    name:  'mnci/typescript/declarations',
     // Declaration files legitimately re-declare and use `any` in vendor types.
     files: ['**/*.d.ts'],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/consistent-type-imports': 'off'
-    }
-  }
+      '@typescript-eslint/no-explicit-any':         'off',
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
 ]

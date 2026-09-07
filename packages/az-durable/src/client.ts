@@ -22,11 +22,12 @@ export async function startOrchestration<TInput, TOutput> (
   client: DurableClient,
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
-  options?: { instanceId?: string }
+  options?: { instanceId?: string },
 ): Promise<string> {
   const instanceId = options?.instanceId
+
   return await client.startNew(orchestration.name, {
     input,
-    ...(instanceId !== undefined && { instanceId })
+    ...(instanceId !== undefined && { instanceId }),
   })
 }

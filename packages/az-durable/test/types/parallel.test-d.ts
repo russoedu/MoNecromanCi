@@ -34,7 +34,9 @@ export function * tuplePositions (_c: OrchestrationContext): Generator<Task, voi
   const s: string = first
   const n: number = second
   const o: boolean = third.ok
-  void s; void n; void o
+  void s
+  void n
+  void o
 }
 
 /**

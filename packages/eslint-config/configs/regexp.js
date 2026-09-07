@@ -9,7 +9,7 @@ const NEEDS_TYPE_SERVICES = [
   'regexp/no-legacy-features',
   'regexp/no-missing-g-flag',
   'regexp/no-useless-dollar-replacements',
-  'regexp/no-useless-flag'
+  'regexp/no-useless-flag',
 ]
 
 /**
@@ -62,7 +62,7 @@ const NEEDS_TYPE_SERVICES = [
 export default [
   ...named('mnci/regexp/recommended', [regexp.configs['flat/recommended']]),
   {
-    name: 'mnci/regexp',
+    name:  'mnci/regexp',
     rules: {
       ...Object.fromEntries(NEEDS_TYPE_SERVICES.map(rule => [rule, 'off'])),
 
@@ -77,7 +77,7 @@ export default [
       // generated build/test code trips it, it is a readability preference rather
       // than a correctness rule, and `new RegExp(...)` is legitimate whenever the
       // pattern is composed at runtime — which the rule cannot always tell.
-      'prefer-regex-literals': 'off'
-    }
-  }
+      'prefer-regex-literals': 'off',
+    },
+  },
 ]

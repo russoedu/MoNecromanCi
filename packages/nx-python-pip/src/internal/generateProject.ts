@@ -3,14 +3,14 @@ import {
   pythonModuleDirectory,
   pythonPyprojectToml,
   pythonSampleModule,
-  pythonSampleTest
+  pythonSampleTest,
 } from './pythonProject'
 
 /** The `nx-release-publish` target for a publishable Python library (twine). */
 const PUBLISH_TARGET = {
-  executor: '@mnci/nx-python-pip:publish',
+  executor:  '@mnci/nx-python-pip:publish',
   dependsOn: ['build'],
-  options: {}
+  options:   {},
 }
 
 /**
@@ -24,11 +24,11 @@ const PUBLISH_TARGET = {
  */
 export interface BuildableProjectOptions {
   /** The project name. */
-  name: string
+  name:         string
   /** Workspace-relative directory. */
-  directory: string
+  directory:    string
   /** `application` (apps) or `library` (libs/python-packages). */
-  projectType: 'application' | 'library'
+  projectType:  'application' | 'library'
   /** Adds a `nx-release-publish` target + a project-level `versionActions` override. */
   publishable?: boolean
 }
@@ -58,16 +58,16 @@ export function generateBuildableProject (tree: Tree, options: BuildableProjectO
   const root = options.directory
 
   const targets: ProjectConfiguration['targets'] = {
-    lint: { executor: '@mnci/nx-python-pip:lint', options: {} },
-    test: { executor: '@mnci/nx-python-pip:test', options: {} },
-    build: { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} }
+    lint:  { executor: '@mnci/nx-python-pip:lint', options: {} },
+    test:  { executor: '@mnci/nx-python-pip:test', options: {} },
+    build: { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} },
   }
 
   const project: ProjectConfiguration = {
     root,
     projectType: options.projectType,
-    sourceRoot: root,
-    targets
+    sourceRoot:  root,
+    targets,
   }
 
   if (options.publishable) {

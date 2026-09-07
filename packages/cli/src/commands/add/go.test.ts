@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -22,7 +22,7 @@ function seedProjectJson (relativeDirectory: string, name: string): void {
   mkdirSync(join(workspaceRoot, relativeDirectory), { recursive: true })
   writeFileSync(
     join(workspaceRoot, relativeDirectory, 'project.json'),
-    JSON.stringify({ name, projectType: 'application', targets: {} })
+    JSON.stringify({ name, projectType: 'application', targets: {} }),
   )
 }
 
@@ -34,7 +34,7 @@ function readProjectJson (relativeDirectory: string): {
   >
 } {
   return JSON.parse(
-    readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8')
+    readFileSync(join(workspaceRoot, relativeDirectory, 'project.json'), 'utf8'),
   ) as never
 }
 
@@ -52,7 +52,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -77,7 +77,7 @@ describe('runAdd go', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', '@nx-go/nx-go', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // Order matters: convert-to-one-mod refuses once go.work has any `use` line,
@@ -114,9 +114,9 @@ describe('runAdd go', () => {
         'apps/api',
         '--name=api',
         '--tags=type:go-app',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
 
     const { targets } = readProjectJson('apps/api')
@@ -134,9 +134,9 @@ describe('runAdd go', () => {
 
     const { targets } = readProjectJson('apps/api')
     expect(targets.start).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:   'nx:run-commands',
       continuous: true,
-      options: { command: 'go run .', cwd: 'apps/api' }
+      options:    { command: 'go run .', cwd: 'apps/api' },
     })
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -212,7 +212,7 @@ describe('runAdd go', () => {
 
     expect(mockRunNx).toHaveBeenCalledWith(
       expect.arrayContaining(['@nx-go/nx-go:application', '--tags=type:go-function-app']),
-      workspaceRoot
+      workspaceRoot,
     )
     const { targets } = readProjectJson('apps/handler')
     expect(JSON.stringify(targets.package)).toContain('dist/drop/go-function-app-handler.zip')
@@ -240,9 +240,9 @@ describe('runAdd go', () => {
         'packages/core',
         '--name=core',
         '--tags=type:go-lib',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
 
     const { targets } = readProjectJson('packages/core')
@@ -264,12 +264,12 @@ describe('runAdd go', () => {
         'libs/util',
         '--name=util',
         '--tags=type:go-internal-lib',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
     expect(
-      Object.keys(readProjectJson('libs/util').targets).toSorted((a, b) => a.localeCompare(b))
+      Object.keys(readProjectJson('libs/util').targets).toSorted((a, b) => a.localeCompare(b)),
     ).toEqual(['lint', 'test'])
   })
 
@@ -282,7 +282,7 @@ describe('runAdd go', () => {
       expect(mockRunShell).toHaveBeenCalledWith(
         ['npm', 'install', '--save-dev', '/tmp/nx-go.tgz', '--no-audit', '--no-fund'][0],
         ['install', '--save-dev', '/tmp/nx-go.tgz', '--no-audit', '--no-fund'],
-        workspaceRoot
+        workspaceRoot,
       )
     } finally {
       delete process.env.MNCI_NX_GO_SPEC

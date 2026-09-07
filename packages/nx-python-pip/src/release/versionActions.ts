@@ -41,7 +41,7 @@ export default class PythonVersionActions extends VersionActions {
    * @typeParam None - this method has no generic type parameters.
    */
   async readCurrentVersionFromSourceManifest (
-    tree: Tree
+    tree: Tree,
   ): Promise<{ currentVersion: string; manifestPath: string } | null> {
     // `posix.join`, never plain `join`. An Nx `Tree` path is always
     // workspace-relative and forward-slashed on EVERY platform, while `join`
@@ -63,6 +63,7 @@ export default class PythonVersionActions extends VersionActions {
     if (!match) {
       throw new Error(`Could not find a "version = ..." line under [project] in ${manifestPath}`)
     }
+
     return { currentVersion: match[1], manifestPath }
   }
 
@@ -85,15 +86,16 @@ export default class PythonVersionActions extends VersionActions {
    */
   async readCurrentVersionFromRegistry (
     _tree: Tree,
-    _currentVersionResolverMetadata: Record<string, unknown> | undefined
+    _currentVersionResolverMetadata: Record<string, unknown> | undefined,
   ): Promise<{ currentVersion: string | null; logText: string } | null> {
     const name = this.projectGraphNode.name
     try {
       const output = execFileSync(pythonCommand(), ['-m', 'pip', 'index', 'versions', name], {
         encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore']
+        stdio:    ['ignore', 'pipe', 'ignore'],
       })
       const match = /Available versions:\s*([^\s,]+)/.exec(output)
+
       return { currentVersion: match ? match[1] : null, logText: 'from pip index versions' }
     } catch {
       return { currentVersion: null, logText: 'package not found on registry' }
@@ -119,7 +121,7 @@ export default class PythonVersionActions extends VersionActions {
   async readCurrentVersionOfDependency (
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependencyProjectName: string
+    _dependencyProjectName: string,
   ): Promise<{ currentVersion: string | null; dependencyCollection: string | null }> {
     return { currentVersion: null, dependencyCollection: null }
   }
@@ -139,8 +141,9 @@ export default class PythonVersionActions extends VersionActions {
     const content = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(
       manifestPath,
-      content.replace(VERSION_LINE, () => `version = "${newVersion}"`)
+      content.replace(VERSION_LINE, () => `version = "${newVersion}"`),
     )
+
     return [`Updated ${manifestPath} to version ${newVersion}`]
   }
 
@@ -161,7 +164,7 @@ export default class PythonVersionActions extends VersionActions {
   async updateProjectDependencies (
     _tree: Tree,
     _projectGraph: ProjectGraph,
-    _dependenciesToUpdate: Record<string, string>
+    _dependenciesToUpdate: Record<string, string>,
   ): Promise<string[]> {
     return []
   }
