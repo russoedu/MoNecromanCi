@@ -4,7 +4,7 @@ import {
   addProjectConfiguration,
   type GeneratorCallback,
   type ProjectConfiguration,
-  type Tree
+  type Tree,
 } from '@nx/devkit'
 import { dartPackageName } from './dartPackageName'
 import { runFlutter } from './runFlutter'
@@ -36,13 +36,13 @@ const VERSION_ACTIONS = '@mnci/nx-flutter/release/version-actions'
  */
 export interface FlutterProjectOptions {
   /** The Nx project name (hyphenated form is kept). */
-  name: string
+  name:         string
   /** Workspace-relative directory. */
-  directory: string
+  directory:    string
   /** `application` (apps) or `library` (packages/libs). */
-  projectType: 'application' | 'library'
+  projectType:  'application' | 'library'
   /** Adds the `build`/`package` targets and a `web/` platform directory. */
-  buildable?: boolean
+  buildable?:   boolean
   /** Adds a project-level `versionActions` override so `nx release` can version it. */
   publishable?: boolean
   /**
@@ -54,7 +54,7 @@ export interface FlutterProjectOptions {
    * and, more importantly, addressable by release scoping the same way — the
    * mechanism that keeps `go-lib` out of `release.projects`.
    */
-  tag: string
+  tag:          string
 }
 
 /** The `lint` target: `flutter analyze`, with info-level issues fatal. */
@@ -87,9 +87,9 @@ function buildTarget (name: string): ProjectConfiguration['targets'] {
   return {
     build: {
       executor: '@mnci/nx-flutter:build',
-      outputs: [`{workspaceRoot}/dist/apps/${name}`],
-      options: { outputPath: `dist/apps/${name}` }
-    }
+      outputs:  [`{workspaceRoot}/dist/apps/${name}`],
+      options:  { outputPath: `dist/apps/${name}` },
+    },
   }
 }
 
@@ -110,13 +110,14 @@ function buildTarget (name: string): ProjectConfiguration['targets'] {
 function packageTarget (name: string): ProjectConfiguration['targets'] {
   const zip = `dist/drop/flutter-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('dist/apps/${name}');z.writeZip('${zip}')"`
+
   return {
     package: {
-      executor: 'nx:run-commands',
+      executor:  'nx:run-commands',
       dependsOn: ['build'],
-      outputs: [`{workspaceRoot}/${zip}`],
-      options: { command }
-    }
+      outputs:   [`{workspaceRoot}/${zip}`],
+      options:   { command },
+    },
   }
 }
 
@@ -150,7 +151,7 @@ function packageTarget (name: string): ProjectConfiguration['targets'] {
  */
 function flutterCreateTask (
   workspaceRoot: string,
-  options: FlutterProjectOptions
+  options: FlutterProjectOptions,
 ): GeneratorCallback {
   return () => {
     const packageName = dartPackageName(options.name)
@@ -178,7 +179,7 @@ function flutterCreateTask (
       '--project-name',
       packageName,
       ...(options.buildable ? ['--platforms', 'web'] : []),
-      options.directory
+      options.directory,
     ]
     // Every invocation goes through `runFlutter`, which uses cross-spawn and
     // reports a spawn failure distinctly from a command failure. See its remarks:
@@ -195,7 +196,7 @@ function flutterCreateTask (
     const depth = options.directory.split('/').filter(Boolean).length
     writeFileSync(
       join(workspaceRoot, options.directory, 'analysis_options.yaml'),
-      memberAnalysisOptions(depth)
+      memberAnalysisOptions(depth),
     )
 
     // `flutter create` writes `<html>` with no `lang`, which @html-eslint's
@@ -252,6 +253,7 @@ function workspacePackageName (tree: Tree): string {
   const manifest = tree.read('package.json', 'utf8')
   const name = manifest ? (JSON.parse(manifest) as { name?: string }).name : undefined
   const unscoped = name?.split('/').pop()
+
   return unscoped ? `${dartPackageName(unscoped)}_workspace` : 'workspace'
 }
 
@@ -273,22 +275,22 @@ function workspacePackageName (tree: Tree): string {
  */
 export function generateFlutterProject (
   tree: Tree,
-  options: FlutterProjectOptions
+  options: FlutterProjectOptions,
 ): GeneratorCallback {
   ensureWorkspaceRoot(tree, workspacePackageName(tree))
   addWorkspaceMember(tree, options.directory)
 
   const project: ProjectConfiguration = {
-    root: options.directory,
+    root:        options.directory,
     projectType: options.projectType,
-    sourceRoot: `${options.directory}/lib`,
-    tags: [options.tag],
-    targets: {
+    sourceRoot:  `${options.directory}/lib`,
+    tags:        [options.tag],
+    targets:     {
       ...lintTarget(),
       ...testTarget(),
       ...(options.buildable && buildTarget(options.name)),
-      ...(options.buildable && packageTarget(options.name))
-    }
+      ...(options.buildable && packageTarget(options.name)),
+    },
   }
 
   if (options.publishable) {

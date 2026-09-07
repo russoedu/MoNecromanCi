@@ -6,7 +6,7 @@ import {
   DEFAULT_STACK,
   type CiProvider,
   type RegistryConfig,
-  type StackConfig
+  type StackConfig,
 } from '../overlay'
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../prompts'
 import { logger } from '../util/logger'
@@ -23,27 +23,27 @@ import { assertValidProjectName } from '../util/names'
  */
 export interface NewOptions {
   /** Skip prompts, accepting defaults for everything not passed as a flag. */
-  yes?: boolean
+  yes?:           boolean
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope?: string
+  scope?:         string
   /** Registry kind: `azure-artifacts` or `npm`. */
-  registry?: RegistryConfig['kind']
+  registry?:      RegistryConfig['kind']
   /** Azure DevOps organization (azure-artifacts only). */
-  organization?: string
+  organization?:  string
   /** Azure DevOps project (azure-artifacts only). */
-  project?: string
+  project?:       string
   /** Azure Artifacts feed name (azure-artifacts only). */
   artifactsFeed?: string
   /** CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
-  agent?: string
+  agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
   /** CI provider: `azure` | `github` | `both`. */
-  ci?: CiProvider
+  ci?:            CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
-  testRunner?: StackConfig['testRunner']
+  testRunner?:    StackConfig['testRunner']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
-  nxCloud?: boolean
+  nxCloud?:       boolean
 }
 
 /**
@@ -94,6 +94,7 @@ async function resolveStack (options: NewOptions): Promise<StackConfig> {
     return { testRunner: options.testRunner ?? DEFAULT_STACK.testRunner }
   }
   const prompted = await promptStack()
+
   return { testRunner: prompted.testRunner }
 }
 
@@ -121,6 +122,7 @@ async function resolveCi (options: NewOptions): Promise<CiProvider> {
   if (options.yes) {
     return 'azure'
   }
+
   return await promptCi()
 }
 
@@ -135,15 +137,16 @@ async function resolveCi (options: NewOptions): Promise<CiProvider> {
 async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
   if (options.registry === 'azure-artifacts' || (options.organization && options.artifactsFeed)) {
     return {
-      kind: 'azure-artifacts',
-      organization: options.organization ?? (await promptText('Azure DevOps organization')),
-      project: options.project ?? (await promptText('Azure DevOps project')),
-      artifactsFeed: options.artifactsFeed ?? (await promptText('Artifacts feed name'))
+      kind:          'azure-artifacts',
+      organization:  options.organization ?? (await promptText('Azure DevOps organization')),
+      project:       options.project ?? (await promptText('Azure DevOps project')),
+      artifactsFeed: options.artifactsFeed ?? (await promptText('Artifacts feed name')),
     }
   }
   if (options.registry === 'npm' || options.yes) {
     return { kind: 'npm' }
   }
+
   return await promptRegistry()
 }
 
@@ -184,7 +187,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
       ? 'ubuntu-latest'
       : await promptText(
           'CI build agent/runner (vmImage, GitHub Actions runner label, or self-hosted pool name)',
-          'ubuntu-latest'
+          'ubuntu-latest',
         ))
   // The variable group is an Azure Pipelines concept (GitHub reads a plain
   // `PAT` repository secret instead, no CLI-collected name needed) — skipped
@@ -208,20 +211,20 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
       '--preset=ts',
       '--pm=npm',
       nxCloud ? `--nxCloud=${nxCloudProviderValue(ci)}` : '--nxCloud=skip',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    process.cwd()
+    process.cwd(),
   )
 
   const workspaceRoot = join(process.cwd(), workspaceName)
 
   logger.step(
-    'Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)'
+    'Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)',
   )
   applyOverlay(
     workspaceRoot,
     { workspaceName, scope, registry, agent, variableGroup, ci, stack },
-    logger.detail
+    logger.detail,
   )
 
   // npm honours `overrides` only when it RESOLVES a tree, and by this point
@@ -254,7 +257,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const installStatus = runShell(
     'npm',
     ['install', '--save-dev', 'husky', '@commitlint/cli', '@commitlint/config-conventional'],
-    workspaceRoot
+    workspaceRoot,
   )
   if (installStatus !== 0) {
     throw new Error(`npm install of the toolchain failed with exit code ${installStatus}`)
@@ -273,13 +276,13 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   logger.info('  mnci add react-app web        # or: react-lib, react-internal-lib, node-app,')
   logger.info('                                 #     node-function-app, npm-lib, internal-lib,')
   logger.info(
-    '                                 #     python-app, python-function-app, python-lib, python-internal-lib,'
+    '                                 #     python-app, python-function-app, python-lib, python-internal-lib,',
   )
   logger.info(
-    '                                 #     go-app, go-function-app, go-lib, go-internal-lib,'
+    '                                 #     go-app, go-function-app, go-lib, go-internal-lib,',
   )
   logger.info(
-    '                                 #     flutter-app, flutter-lib, flutter-internal-lib'
+    '                                 #     flutter-app, flutter-lib, flutter-internal-lib',
   )
   logger.info('  git add -A && git commit -m "feat: initial workspace"')
 }

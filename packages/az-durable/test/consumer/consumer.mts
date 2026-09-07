@@ -30,7 +30,7 @@ import { defineActivity } from '@mnci/az-durable'
 type NotAny<T> = 0 extends 1 & T ? never : T
 
 const activity = defineActivity('probe-esm', async (input: { id: string }) => ({
-  title: input.id
+  title: input.id,
 }))
 
 /**

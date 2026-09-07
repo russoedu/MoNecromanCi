@@ -1,15 +1,15 @@
 // @inquirer/prompts ships ESM only, so it must be mocked for jest to load this
 // module at all — and mocking it is what lets the selection be driven directly.
 jest.mock('@inquirer/prompts', () => ({
-  checkbox: jest.fn(),
+  checkbox:  jest.fn(),
   Separator: class {
     constructor (public readonly separator: string) {}
-  }
+  },
 }))
 jest.mock('../nx', () => ({
-  runShell: jest.fn(() => 0),
+  runShell:     jest.fn(() => 0),
   runFormatter: jest.fn(),
-  runCapture: jest.fn(() => ({ status: 1, stdout: '' }))
+  runCapture:   jest.fn(() => ({ status: 1, stdout: '' })),
 }))
 // The registry is the one thing this command cannot own: stubbed so the suite
 // asserts what mnci does with an answer, never what npm replies.
@@ -104,7 +104,7 @@ describe('collectOutdated', () => {
     // command exists rather than a plain `npm-check` invocation.
     expect(outdated[0].sites.map(site => site.project).toSorted(compare)).toEqual([
       'packages/api',
-      'packages/auth'
+      'packages/auth',
     ])
   })
 
@@ -129,7 +129,7 @@ describe('collectOutdated', () => {
     write('nx.json', JSON.stringify({}))
     write(
       'package.json',
-      JSON.stringify({ devDependencies: { big: '^1.0.0', small: '^1.0.0', zero: '^0.1.0' } })
+      JSON.stringify({ devDependencies: { big: '^1.0.0', small: '^1.0.0', zero: '^0.1.0' } }),
     )
     write('node_modules/big/package.json', JSON.stringify({ version: '1.0.0' }))
     write('node_modules/small/package.json', JSON.stringify({ version: '1.0.0' }))
@@ -138,8 +138,8 @@ describe('collectOutdated', () => {
       new Map([
         ['big', '2.0.0'],
         ['small', '1.0.1'],
-        ['zero', '0.2.0']
-      ])
+        ['zero', '0.2.0'],
+      ]),
     )
 
     const outdated = await collectOutdated(workspaceRoot, ['npm'])
@@ -166,7 +166,7 @@ describe('collectOutdated', () => {
     write('package.json', JSON.stringify({ name: '@demo/source' }))
     write(
       'packages/plugin/package.json',
-      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } })
+      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } }),
     )
     write('node_modules/@nx/devkit/package.json', JSON.stringify({ version: '23.1.1' }))
     mockLatestVersions.mockResolvedValue(new Map([['@nx/devkit', '23.2.0']]))
@@ -179,7 +179,7 @@ describe('collectOutdated', () => {
     write('package.json', JSON.stringify({ devDependencies: { '@nx/devkit': '^23.1.1' } }))
     write(
       'packages/plugin/package.json',
-      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } })
+      JSON.stringify({ peerDependencies: { '@nx/devkit': '>=21.0.0' } }),
     )
     write('node_modules/@nx/devkit/package.json', JSON.stringify({ version: '23.1.1' }))
     mockLatestVersions.mockResolvedValue(new Map([['@nx/devkit', '23.2.0']]))
@@ -195,7 +195,7 @@ describe('collectOutdated', () => {
     // ...but only the real one is rewritten.
     expect(readManifest('package.json').devDependencies['@nx/devkit']).toBe('^23.2.0')
     expect(readManifest('packages/plugin/package.json').peerDependencies['@nx/devkit']).toBe(
-      '>=21.0.0'
+      '>=21.0.0',
     )
   })
 
@@ -208,11 +208,11 @@ describe('collectOutdated', () => {
     write('nx.json', JSON.stringify({}))
     write(
       'package.json',
-      JSON.stringify({ devDependencies: { typescript: 'npm:@typescript/typescript6@^6.0.2' } })
+      JSON.stringify({ devDependencies: { typescript: 'npm:@typescript/typescript6@^6.0.2' } }),
     )
     write(
       'node_modules/typescript/package.json',
-      JSON.stringify({ name: '@typescript/typescript6', version: '6.0.2' })
+      JSON.stringify({ name: '@typescript/typescript6', version: '6.0.2' }),
     )
     mockLatestVersions.mockResolvedValue(new Map([['typescript', '7.0.2']]))
 
@@ -333,7 +333,7 @@ describe('runUp', () => {
     const goMod = 'module demo\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n)\n'
     write('go.mod', goMod)
     mockLatestVersions.mockImplementation(async ecosystem =>
-      ecosystem === 'go' ? new Map([['github.com/spf13/cobra', 'v1.9.1']]) : new Map()
+      ecosystem === 'go' ? new Map([['github.com/spf13/cobra', 'v1.9.1']]) : new Map(),
     )
 
     await runUp(workspaceRoot, { yes: true, install: false })
@@ -341,7 +341,7 @@ describe('runUp', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'go',
       ['get', 'github.com/spf13/cobra@v1.9.1'],
-      workspaceRoot
+      workspaceRoot,
     )
     // go.mod is untouched by mnci — `go get` owns it.
     expect(readFileSync(join(workspaceRoot, 'go.mod'), 'utf8')).toBe(goMod)
@@ -353,7 +353,7 @@ describe('runUp', () => {
     write('libs/shared/pyproject.toml', '[project]\ndependencies = ["requests>=2.31.0"]\n')
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
     mockLatestVersions.mockImplementation(async ecosystem =>
-      ecosystem === 'pip' ? new Map([['requests', '2.32.3']]) : new Map()
+      ecosystem === 'pip' ? new Map([['requests', '2.32.3']]) : new Map(),
     )
 
     await runUp(workspaceRoot, { yes: true })

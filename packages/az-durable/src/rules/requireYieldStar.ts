@@ -8,7 +8,7 @@ const DELEGATED = new Set([
   'any',
   'waitForEvent',
   'sleepFor',
-  'sleepUntil'
+  'sleepUntil',
 ])
 
 /**
@@ -32,14 +32,14 @@ const DELEGATED = new Set([
  */
 export const requireYieldStar: Rule = {
   meta: {
-    type: 'suggestion',
-    docs: { description: 'Require `yield *` when calling a delegating helper.' },
-    schema: [],
+    type:     'suggestion',
+    docs:     { description: 'Require `yield *` when calling a delegating helper.' },
+    schema:   [],
     messages: {
       useYieldStar:
         "Use 'yield *' rather than 'yield' with {{name}}(). Delegation is what carries the " +
-        'result type; a bare yield does not typecheck, but the compiler error is obscure.'
-    }
+        'result type; a bare yield does not typecheck, but the compiler error is obscure.',
+    },
   },
   create (context) {
     return {
@@ -63,7 +63,7 @@ export const requireYieldStar: Rule = {
         if (DELEGATED.has(name)) {
           context.report({ node, messageId: 'useYieldStar', data: { name } })
         }
-      }
+      },
     }
-  }
+  },
 }

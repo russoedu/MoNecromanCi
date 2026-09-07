@@ -49,7 +49,7 @@ describe('assertValidProjectName', () => {
 
   it('includes the offending label and value in the error message', () => {
     expect(() => assertValidProjectName('Bad Name', 'Workspace name')).toThrow(
-      "Workspace name 'Bad Name' is invalid"
+      "Workspace name 'Bad Name' is invalid",
     )
   })
 })

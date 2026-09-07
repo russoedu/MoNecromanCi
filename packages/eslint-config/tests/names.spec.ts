@@ -38,14 +38,15 @@ function blockNames (): (string | null)[] {
     process.stdout.write(JSON.stringify(blocks.map(block => block.name ?? null)))
   `
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-    encoding: 'utf8'
+    encoding: 'utf8',
   })
   const stdout = result.stdout?.trim()
   if (!stdout?.startsWith('[')) {
     throw new Error(
-      `could not resolve the config.\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
+      `could not resolve the config.\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
     )
   }
+
   return JSON.parse(stdout) as (string | null)[]
 }
 
@@ -95,7 +96,7 @@ describe('ignore list', () => {
       process.stdout.write(JSON.stringify(mnci.ignores))
     `
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-      encoding: 'utf8'
+      encoding: 'utf8',
     })
     const ignores = JSON.parse(result.stdout.trim()) as string[]
     for (const artifact of ['**/tmp', '**/dist', '**/out-tsc', '**/coverage', '**/node_modules']) {

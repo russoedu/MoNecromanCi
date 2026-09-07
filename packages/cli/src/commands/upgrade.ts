@@ -8,7 +8,7 @@ import {
   type CiProvider,
   type OverlayOptions,
   type RegistryConfig,
-  type StackConfig
+  type StackConfig,
 } from '../overlay'
 import { fileExists } from '../util/fsx'
 import { logger } from '../util/logger'
@@ -29,23 +29,23 @@ import { logger } from '../util/logger'
  */
 export interface UpgradeOptions {
   /** The npm scope for publishable packages (e.g. `@demo`). */
-  scope?: string
+  scope?:         string
   /** Registry kind: `azure-artifacts` or `npm`. */
-  registry?: RegistryConfig['kind']
+  registry?:      RegistryConfig['kind']
   /** Azure DevOps organization (azure-artifacts only). */
-  organization?: string
+  organization?:  string
   /** Azure DevOps project (azure-artifacts only). */
-  project?: string
+  project?:       string
   /** Azure Artifacts feed name (azure-artifacts only). */
   artifactsFeed?: string
   /** CI build agent — a Microsoft-hosted vmImage or a self-hosted pool name. */
-  agent?: string
+  agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
   /** CI provider: `azure` | `github` | `both`. */
-  ci?: CiProvider
+  ci?:            CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
-  testRunner?: StackConfig['testRunner']
+  testRunner?:    StackConfig['testRunner']
 }
 
 /**
@@ -66,7 +66,7 @@ export interface UpgradeOptions {
  */
 function resolveRegistry (
   options: UpgradeOptions,
-  persisted: RegistryConfig | undefined
+  persisted: RegistryConfig | undefined,
 ): RegistryConfig {
   if (options.registry === 'azure-artifacts' || (options.organization && options.artifactsFeed)) {
     const persistedAzure = persisted?.kind === 'azure-artifacts' ? persisted : undefined
@@ -75,9 +75,10 @@ function resolveRegistry (
     const artifactsFeed = options.artifactsFeed ?? persistedAzure?.artifactsFeed
     if (!organization || !project || !artifactsFeed) {
       throw new Error(
-        "Azure Artifacts registry needs --organization, --project and --artifacts-feed (none found in nx.json's persisted config either)."
+        "Azure Artifacts registry needs --organization, --project and --artifacts-feed (none found in nx.json's persisted config either).",
       )
     }
+
     return { kind: 'azure-artifacts', organization, project, artifactsFeed }
   }
   if (options.registry === 'npm') {
@@ -87,7 +88,7 @@ function resolveRegistry (
     return persisted
   }
   throw new Error(
-    "No registry found in nx.json's persisted config. Pass --registry npm or --registry azure-artifacts (with --organization/--project/--artifacts-feed)."
+    "No registry found in nx.json's persisted config. Pass --registry npm or --registry azure-artifacts (with --organization/--project/--artifacts-feed).",
   )
 }
 
@@ -130,7 +131,7 @@ function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<Overlay
   }
   try {
     const existing = readdirSync(workspaceRoot).find(
-      file => file.endsWith('.code-workspace') && file !== 'undefined.code-workspace'
+      file => file.endsWith('.code-workspace') && file !== 'undefined.code-workspace',
     )
     if (existing) {
       return existing.replace(/\.code-workspace$/, '')
@@ -138,6 +139,7 @@ function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<Overlay
   } catch {
     // Fall through to the basename.
   }
+
   return basename(workspaceRoot)
 }
 
@@ -158,7 +160,7 @@ function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<Overlay
 function resolveOverlayOptions (
   workspaceRoot: string,
   options: UpgradeOptions,
-  persisted: Partial<OverlayOptions>
+  persisted: Partial<OverlayOptions>,
 ): OverlayOptions {
   const scope = options.scope ?? persisted.scope
   if (!scope) {
@@ -168,13 +170,13 @@ function resolveOverlayOptions (
   const ci = options.ci ?? persisted.ci
   if (!ci) {
     throw new Error(
-      "No CI provider found in nx.json's persisted config. Pass --ci azure|github|both explicitly."
+      "No CI provider found in nx.json's persisted config. Pass --ci azure|github|both explicitly.",
     )
   }
   const agent = options.agent ?? persisted.agent
   if (!agent) {
     throw new Error(
-      "No CI build agent found in nx.json's persisted config. Pass --agent explicitly."
+      "No CI build agent found in nx.json's persisted config. Pass --agent explicitly.",
     )
   }
   // Azure-only concept; a github-only workspace never needed one, so a
@@ -184,7 +186,7 @@ function resolveOverlayOptions (
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
   if (!testRunner) {
     throw new Error(
-      "No testRunner found in nx.json's persisted config. Pass --test-runner explicitly."
+      "No testRunner found in nx.json's persisted config. Pass --test-runner explicitly.",
     )
   }
 
@@ -195,7 +197,7 @@ function resolveOverlayOptions (
     agent,
     variableGroup,
     ci,
-    stack: { testRunner }
+    stack:         { testRunner },
   }
 }
 
@@ -231,7 +233,7 @@ function resolveOverlayOptions (
 export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): void {
   if (!fileExists(join(workspaceRoot, 'nx.json'))) {
     throw new Error(
-      `No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`
+      `No nx.json found in ${workspaceRoot} — this does not look like an Nx workspace. Run 'mnci upgrade' from the workspace root.`,
     )
   }
   const persisted = readMnciConfig(workspaceRoot)
@@ -264,7 +266,7 @@ export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): voi
   // message, so a large workspace looked hung for a minute or more. `new` already
   // logged this; `upgrade` did not.
   logger.step(
-    'Formatting the workspace (eslint --fix) — the slowest step, minutes on a large workspace'
+    'Formatting the workspace (eslint --fix) — the slowest step, minutes on a large workspace',
   )
   runFormatter(workspaceRoot)
 

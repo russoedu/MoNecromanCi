@@ -2,11 +2,11 @@ jest.mock('commander', () => {
   type ActionHandler = (...parameters: unknown[]) => Promise<void> | void
 
   interface OptionDefinition {
-    key: string
-    flags: string
+    key:        string
+    flags:      string
     takesValue: boolean
     /** True for a `--no-x` flag, whose key is `x` and whose value is false. */
-    negated: boolean
+    negated:    boolean
   }
 
   class FakeCommand {
@@ -14,11 +14,11 @@ jest.mock('commander', () => {
       return flag.replace(/^[[<]/, '').replace(/[\]>]$/, '')
     }
 
-    private readonly subcommands: FakeCommand[] = []
-    private readonly argumentNames: string[] = []
+    private readonly subcommands:       FakeCommand[] = []
+    private readonly argumentNames:     string[] = []
     private readonly optionDefinitions: OptionDefinition[] = []
     private commandName = ''
-    private actionHandler?: ActionHandler
+    private actionHandler?:             ActionHandler
 
     name (): this {
       return this
@@ -36,11 +36,13 @@ jest.mock('commander', () => {
       const subcommand = new FakeCommand()
       subcommand.commandName = nameAndArguments.split(' ', 1)[0]
       this.subcommands.push(subcommand)
+
       return subcommand
     }
 
     argument (flag: string): this {
       this.argumentNames.push(FakeCommand.stripBrackets(flag))
+
       return this
     }
 
@@ -51,6 +53,7 @@ jest.mock('commander', () => {
     // divergent copy of commander's own logic.
     addArgument (argument: { flag: string }): this {
       this.argumentNames.push(FakeCommand.stripBrackets(argument.flag))
+
       return this
     }
 
@@ -64,15 +67,17 @@ jest.mock('commander', () => {
       const negated = longFlagName.startsWith('no-')
       const key = (negated ? longFlagName.slice(3) : longFlagName).replaceAll(
         /-([a-z])/g,
-        (_match, letter: string) => letter.toUpperCase()
+        (_match, letter: string) => letter.toUpperCase(),
       )
       const isTakesValue = /[<[]/.test(flags.split(',').pop() ?? flags)
       this.optionDefinitions.push({ key, flags, takesValue: isTakesValue, negated })
+
       return this
     }
 
     action (handler: ActionHandler): this {
       this.actionHandler = handler
+
       return this
     }
 
@@ -82,6 +87,7 @@ jest.mock('commander', () => {
       // mirroring commander's own behaviour.
       if (commandToken === undefined) {
         await this.actionHandler?.()
+
         return this
       }
       const subcommand = this.subcommands.find(entry => entry.commandName === commandToken)
@@ -105,6 +111,7 @@ jest.mock('commander', () => {
       while (positionals.length < subcommand.argumentNames.length) positionals.push(undefined)
 
       await subcommand.actionHandler?.(...positionals, options)
+
       return this
     }
   }
@@ -133,7 +140,7 @@ jest.mock('./commands/sync', () => ({ runSync: jest.fn() }))
 jest.mock('./commands/up', () => ({ runUp: jest.fn() }))
 jest.mock('./util/versionChecker', () => ({
   checkForUpdate: jest.fn(),
-  readCliVersion: jest.fn(() => '1.0.0')
+  readCliVersion: jest.fn(() => '1.0.0'),
 }))
 
 import { buildProgram, main } from './cli'
@@ -173,11 +180,11 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--registry',
-      'npm'
+      'npm',
     ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
-      expect.objectContaining({ yes: true, registry: 'npm' })
+      expect.objectContaining({ yes: true, registry: 'npm' }),
     )
   })
 
@@ -189,12 +196,12 @@ describe('buildProgram', () => {
       'npm-lib',
       'sdk',
       '--scope',
-      '@acme'
+      '@acme',
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'npm-lib',
       'sdk',
-      expect.objectContaining({ scope: '@acme' })
+      expect.objectContaining({ scope: '@acme' }),
     )
   })
 
@@ -206,12 +213,12 @@ describe('buildProgram', () => {
       'node-app',
       'api',
       '--framework',
-      'fastify'
+      'fastify',
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'node-app',
       'api',
-      expect.objectContaining({ framework: 'fastify' })
+      expect.objectContaining({ framework: 'fastify' }),
     )
   })
 
@@ -223,12 +230,12 @@ describe('buildProgram', () => {
       'python-vendor',
       'svc',
       '--lib',
-      'pycore'
+      'pycore',
     ])
     expect(mockRunAdd).toHaveBeenCalledWith(
       'python-vendor',
       'svc',
-      expect.objectContaining({ lib: 'pycore' })
+      expect.objectContaining({ lib: 'pycore' }),
     )
   })
 
@@ -240,11 +247,11 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--test-runner',
-      'vitest'
+      'vitest',
     ])
     expect(mockRunNew).toHaveBeenCalledWith(
       'demo',
-      expect.objectContaining({ testRunner: 'vitest' })
+      expect.objectContaining({ testRunner: 'vitest' }),
     )
   })
 
@@ -256,7 +263,7 @@ describe('buildProgram', () => {
       'demo',
       '--yes',
       '--ci',
-      'github'
+      'github',
     ])
     expect(mockRunNew).toHaveBeenCalledWith('demo', expect.objectContaining({ ci: 'github' }))
   })
@@ -271,7 +278,7 @@ describe('buildProgram', () => {
     await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'upgrade', '--agent', 'windows-latest'])
     expect(mockRunUpgrade).toHaveBeenCalledWith(
       '/somewhere/demo',
-      expect.objectContaining({ agent: 'windows-latest' })
+      expect.objectContaining({ agent: 'windows-latest' }),
     )
   })
 
@@ -280,7 +287,7 @@ describe('buildProgram', () => {
     await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'sync', '--check'])
     expect(mockRunSync).toHaveBeenCalledWith(
       '/somewhere/demo',
-      expect.objectContaining({ check: true })
+      expect.objectContaining({ check: true }),
     )
   })
 
@@ -288,7 +295,7 @@ describe('buildProgram', () => {
     await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'sync', '--ecosystem', 'pip'])
     expect(mockRunSync).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ ecosystem: 'pip' })
+      expect.objectContaining({ ecosystem: 'pip' }),
     )
   })
 
@@ -297,7 +304,7 @@ describe('buildProgram', () => {
     await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'up', '--yes'])
     expect(mockRunUp).toHaveBeenCalledWith(
       '/somewhere/demo',
-      expect.objectContaining({ yes: true })
+      expect.objectContaining({ yes: true }),
     )
   })
 
@@ -307,7 +314,7 @@ describe('buildProgram', () => {
     await buildProgram('1.0.0').parseAsync(['node', 'mnci', 'up', '--no-install'])
     expect(mockRunUp).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ install: false })
+      expect.objectContaining({ install: false }),
     )
   })
 

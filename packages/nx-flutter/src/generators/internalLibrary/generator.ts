@@ -23,14 +23,15 @@ import type { InternalLibraryGeneratorSchema } from './schema.d'
  */
 export default async function internalLibraryGenerator (
   tree: Tree,
-  options: InternalLibraryGeneratorSchema
+  options: InternalLibraryGeneratorSchema,
 ): Promise<GeneratorCallback> {
   const task = generateFlutterProject(tree, {
-    name: options.name,
-    directory: options.directory ?? `libs/${options.name}`,
+    name:        options.name,
+    directory:   options.directory ?? `libs/${options.name}`,
     projectType: 'library',
-    tag: 'type:flutter-internal-lib'
+    tag:         'type:flutter-internal-lib',
   })
   await formatFiles(tree)
+
   return task
 }

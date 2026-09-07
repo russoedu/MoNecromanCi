@@ -17,35 +17,35 @@ import {
   eventTask,
   resultOf,
   setStatus,
-  timerTask
+  timerTask,
 } from '../../src/index'
 import { any } from '../../src/parallel'
 
 /** The raw input, as it comes back out of the task hub. */
 export interface ResetRequest {
-  readonly siteUrl: string
+  readonly siteUrl:     string
   readonly requestedBy: string
-  readonly dryRun: boolean
+  readonly dryRun:      boolean
 }
 
 const snapshot = defineActivity(
   'SnapshotSite',
   (input: { siteUrl: string }): { snapshotId: string; itemCount: number } => ({
     snapshotId: `snap-${input.siteUrl}`,
-    itemCount: 3
-  })
+    itemCount:  3,
+  }),
 )
 
 const purgeLists = defineActivity(
   'PurgeLists',
-  (input: { snapshotId: string }): { purged: number } => ({ purged: input.snapshotId.length })
+  (input: { snapshotId: string }): { purged: number } => ({ purged: input.snapshotId.length }),
 )
 
 const reprovision = defineActivity(
   'ReprovisionSite',
   (input: { snapshotId: string; purged: number }): { siteId: string } => ({
-    siteId: `site-${input.purged}`
-  })
+    siteId: `site-${input.purged}`,
+  }),
 )
 
 const restoreSnapshot = defineActivity('RestoreSnapshot', (input: { snapshotId: string }): void => {
@@ -56,10 +56,10 @@ const confirmed = defineEvent<{ confirmedBy: string; ticket: string }>('ResetCon
 
 const statuses = defineStatuses({
   awaitingConfirmation: 'awaiting-confirmation',
-  snapshotting: 'snapshotting',
-  purging: 'purging',
-  reprovisioning: 'reprovisioning',
-  restored: 'restored'
+  snapshotting:         'snapshotting',
+  purging:              'purging',
+  reprovisioning:       'reprovisioning',
+  restored:             'restored',
 })
 
 /** Confirmation window for a destructive reset. */
@@ -88,6 +88,7 @@ function parseResetRequest (raw: unknown): ResetRequest {
   ) {
     throw new Error('resetSharePoint: input did not match ResetRequest')
   }
+
   return { siteUrl: value.siteUrl, requestedBy: value.requestedBy, dryRun: value.dryRun }
 }
 
@@ -121,16 +122,18 @@ export const resetSharePoint = defineOrchestration(
       setStatus(context, statuses, 'reprovisioning')
       const site = yield * callActivity(context, reprovision, {
         snapshotId: snap.snapshotId,
-        purged: purge.purged
+        purged:     purge.purged,
       })
+
       return { reset: true as const, siteId: site.siteId, ticket }
     } catch {
       // Compensation. A destructive workflow that cannot roll back is not a
       // workflow, it is an incident.
       setStatus(context, statuses, 'restored')
       yield * callActivity(context, restoreSnapshot, { snapshotId: snap.snapshotId })
+
       return { reset: false as const, reason: 'reset failed; snapshot restored' }
     }
   },
-  { parse: parseResetRequest }
+  { parse: parseResetRequest },
 )

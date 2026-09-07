@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -30,7 +30,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -45,7 +45,7 @@ describe('runAdd python', () => {
     mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/svc/project.json'),
-      JSON.stringify({ name: 'svc', targets: { lint: {}, test: {}, build: {} } })
+      JSON.stringify({ name: 'svc', targets: { lint: {}, test: {}, build: {} } }),
     )
 
     await runAdd('python-app', 'svc', {})
@@ -57,12 +57,12 @@ describe('runAdd python', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', '@mnci/nx-python-pip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
     // Delegates to the plugin's generator, exactly like every other kind.
     expect(mockRunNx).toHaveBeenCalledWith(
       ['g', '@mnci/nx-python-pip:application', 'svc', '--directory=apps/svc', '--no-interactive'],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // requirements-dev.txt (the fixed toolchain) written once.
@@ -75,10 +75,10 @@ describe('runAdd python', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', 'adm-zip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
     const project = JSON.parse(
-      readFileSync(join(workspaceRoot, 'apps/svc/project.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/svc/project.json'), 'utf8'),
     ) as {
       targets: Record<
         string,
@@ -88,22 +88,22 @@ describe('runAdd python', () => {
     expect(project.targets.lint).toBeDefined()
     expect(project.targets.package.dependsOn).toEqual(['build'])
     expect(project.targets.package.outputs).toEqual([
-      '{workspaceRoot}/dist/drop/python-app-svc.zip'
+      '{workspaceRoot}/dist/drop/python-app-svc.zip',
     ])
     expect(project.targets.package.options.command).toContain('addLocalFolder(\'apps/svc/dist\')')
     expect(project.targets.package.options.command).toContain(
-      'writeZip(\'dist/drop/python-app-svc.zip\')'
+      'writeZip(\'dist/drop/python-app-svc.zip\')',
     )
 
     // A runnable main.py (the plugin's own sample module has no entry point)
     // plus a local `python3 main.py` start target, wired through Nx.
     expect(readFileSync(join(workspaceRoot, 'apps/svc/main.py'), 'utf8')).toContain(
-      "if __name__ == '__main__':"
+      "if __name__ == '__main__':",
     )
     expect(project.targets.start).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:   'nx:run-commands',
       continuous: true,
-      options: { command: 'python3 main.py', cwd: 'apps/svc' }
+      options:    { command: 'python3 main.py', cwd: 'apps/svc' },
     })
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -118,7 +118,7 @@ describe('runAdd python', () => {
     mkdirSync(join(workspaceRoot, 'apps/api'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'apps/api/project.json'),
-      JSON.stringify({ name: 'api', targets: { lint: {}, test: {} } })
+      JSON.stringify({ name: 'api', targets: { lint: {}, test: {} } }),
     )
 
     await runAdd('python-function-app', 'api', {})
@@ -129,37 +129,37 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:function-application',
         'api',
         '--directory=apps/api',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // The deployable is source (not the wheel): mnci's own package target zips
     // the files the plugin's generator would have written.
     const project = JSON.parse(
-      readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'apps/api/project.json'), 'utf8'),
     ) as {
       targets: Record<string, { outputs?: string[]; options: { command: string } }>
     }
     expect(project.targets.package.outputs).toEqual([
-      '{workspaceRoot}/dist/drop/python-function-app-api.zip'
+      '{workspaceRoot}/dist/drop/python-function-app-api.zip',
     ])
     expect(project.targets.package.options.command).toContain(
-      'addLocalFile(\'apps/api/function_app.py\')'
+      'addLocalFile(\'apps/api/function_app.py\')',
     )
     expect(project.targets.package.options.command).toContain(
-      'addLocalFolder(\'apps/api/api\',\'api\')'
+      'addLocalFolder(\'apps/api/api\',\'api\')',
     )
     expect(project.targets.package.options.command).toContain(
-      'writeZip(\'dist/drop/python-function-app-api.zip\')'
+      'writeZip(\'dist/drop/python-function-app-api.zip\')',
     )
 
     // A local `func start` needs no prior build here — the source (function_app.py
     // + host.json) is the deployable, unlike node-function-app.
     expect(project.targets.start).toMatchObject({
-      executor: 'nx:run-commands',
+      executor:   'nx:run-commands',
       continuous: true,
-      options: { command: 'func start', cwd: 'apps/api' }
+      options:    { command: 'func start', cwd: 'apps/api' },
     })
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
@@ -178,14 +178,14 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:library',
         'shared',
         '--directory=python-packages/shared',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
     // The plugin's own generator wires nx-release-publish + versionActions —
     // mnci does no post-generation file writing for this kind at all.
     expect(() =>
-      readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'python-packages/shared/project.json'), 'utf8'),
     ).toThrow()
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -204,9 +204,9 @@ describe('runAdd python', () => {
         '@mnci/nx-python-pip:internal-library',
         'core',
         '--directory=libs/core',
-        '--no-interactive'
+        '--no-interactive',
       ],
-      workspaceRoot
+      workspaceRoot,
     )
 
     // No build target at all for an internal lib (nothing to publish), so no
@@ -220,7 +220,7 @@ describe('runAdd python', () => {
 
   it('fails fast when Python is not installed', async () => {
     mockRunShell.mockImplementation((command: string) =>
-      command === 'python3' || command === 'python' ? 1 : 0
+      command === 'python3' || command === 'python' ? 1 : 0,
     )
 
     await expect(runAdd('python-app', 'svc', {})).rejects.toThrow('Python not found')
@@ -230,7 +230,7 @@ describe('runAdd python', () => {
   it('does not reinstall the plugin when already present', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: '@demo/source', devDependencies: { '@mnci/nx-python-pip': '^0.1.0' } })
+      JSON.stringify({ name: '@demo/source', devDependencies: { '@mnci/nx-python-pip': '^0.1.0' } }),
     )
 
     await runAdd('python-internal-lib', 'core', {})
@@ -238,7 +238,7 @@ describe('runAdd python', () => {
     expect(mockRunShell).not.toHaveBeenCalledWith(
       'npm',
       ['install', '--save-dev', '@mnci/nx-python-pip', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 
@@ -250,7 +250,7 @@ describe('runAdd python', () => {
       expect(mockRunShell).toHaveBeenCalledWith(
         'npm',
         ['install', '--save-dev', '/tmp/mnci-nx-python-pip-0.1.0.tgz', '--no-audit', '--no-fund'],
-        workspaceRoot
+        workspaceRoot,
       )
     } finally {
       delete process.env.MNCI2_PYTHON_PIP_SPEC
@@ -260,13 +260,13 @@ describe('runAdd python', () => {
   it('does not overwrite an existing requirements-dev.txt (user edits survive repeat adds)', async () => {
     writeFileSync(
       join(workspaceRoot, 'requirements-dev.txt'),
-      'build\ntwine\nruff\npytest\nsome-extra-tool\n'
+      'build\ntwine\nruff\npytest\nsome-extra-tool\n',
     )
 
     await runAdd('python-internal-lib', 'core', {})
 
     expect(readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')).toContain(
-      'some-extra-tool'
+      'some-extra-tool',
     )
   })
 })
@@ -305,7 +305,7 @@ describe('runAdd python-vendor', () => {
     expect(pyproject).toContain('[tool.mnci-python-pip]\nvendor = ["pycore"]')
     // Inserted before the fixed pytest anchor, not appended blindly at the end.
     expect(pyproject.indexOf('[tool.mnci-python-pip]')).toBeLessThan(
-      pyproject.indexOf('[tool.pytest.ini_options]')
+      pyproject.indexOf('[tool.pytest.ini_options]'),
     )
     expect(mockRunNx).not.toHaveBeenCalled()
   })
@@ -323,8 +323,8 @@ describe('runAdd python-vendor', () => {
       join(workspaceRoot, 'apps/svc/pyproject.toml'),
       SAMPLE_PYPROJECT.replace(
         '[tool.pytest.ini_options]',
-        '[tool.mnci-python-pip]\nvendor = ["other-lib"]\n\n[tool.pytest.ini_options]'
-      )
+        '[tool.mnci-python-pip]\nvendor = ["other-lib"]\n\n[tool.pytest.ini_options]',
+      ),
     )
     mkdirSync(join(workspaceRoot, 'libs/pycore'), { recursive: true })
 
@@ -349,25 +349,25 @@ describe('runAdd python-vendor', () => {
     await runAdd('python-vendor', 'pyshared', { lib: 'pycore' })
 
     expect(
-      readFileSync(join(workspaceRoot, 'python-packages/pyshared/pyproject.toml'), 'utf8')
+      readFileSync(join(workspaceRoot, 'python-packages/pyshared/pyproject.toml'), 'utf8'),
     ).toContain('vendor = ["pycore"]')
   })
 
   it('rejects a consumer with no pyproject.toml (e.g. a Python function app)', async () => {
     await expect(runAdd('python-vendor', 'nonexistent', { lib: 'pycore' })).rejects.toThrow(
-      "No Python project named 'nonexistent'"
+      "No Python project named 'nonexistent'",
     )
   })
 
   it('rejects a lib that is not an internal library under libs/', async () => {
     await expect(runAdd('python-vendor', 'svc', { lib: 'nonexistent-lib' })).rejects.toThrow(
-      "No internal Python library named 'nonexistent-lib'"
+      "No internal Python library named 'nonexistent-lib'",
     )
   })
 
   it('rejects a project vendoring itself', async () => {
     await expect(runAdd('python-vendor', 'pycore', { lib: 'pycore' })).rejects.toThrow(
-      'cannot vendor itself'
+      'cannot vendor itself',
     )
   })
 
@@ -383,10 +383,10 @@ describe('runAdd python-vendor', () => {
     await runAdd(undefined, undefined, {})
 
     expect(mockPromptText).toHaveBeenCalledWith(
-      'Internal Python library to vendor (an existing libs/<name>)'
+      'Internal Python library to vendor (an existing libs/<name>)',
     )
     expect(readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')).toContain(
-      'vendor = ["pycore"]'
+      'vendor = ["pycore"]',
     )
   })
 })

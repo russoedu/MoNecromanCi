@@ -32,10 +32,10 @@ export const UPDATE_KINDS: readonly UpdateKind[] = ['patch', 'minor', 'major', '
  * cheapest half of that.
  */
 export const UPDATE_KIND_LABELS: Record<UpdateKind, { title: string, blurb: string }> = {
-  patch: { title: 'Patch Update', blurb: 'Backwards-compatible bug fixes.' },
-  minor: { title: 'Minor Update', blurb: 'New backwards-compatible features.' },
-  major: { title: 'Major Update', blurb: 'Potentially breaking API changes. Use caution.' },
-  'non-semver': { title: 'Non-Semver', blurb: 'Versions less than 1.0.0, caution.' }
+  'patch':      { title: 'Patch Update', blurb: 'Backwards-compatible bug fixes.' },
+  'minor':      { title: 'Minor Update', blurb: 'New backwards-compatible features.' },
+  'major':      { title: 'Major Update', blurb: 'Potentially breaking API changes. Use caution.' },
+  'non-semver': { title: 'Non-Semver', blurb: 'Versions less than 1.0.0, caution.' },
 }
 
 /**
@@ -49,11 +49,11 @@ export const UPDATE_KIND_LABELS: Record<UpdateKind, { title: string, blurb: stri
  */
 export interface ParsedVersion {
   /** The major segment. */
-  major: number
+  major:       number
   /** The minor segment. */
-  minor: number
+  minor:       number
   /** The patch segment. */
-  patch: number
+  patch:       number
   /** The prerelease suffix without its leading dash, or `undefined`. */
   prerelease?: string
 }
@@ -89,11 +89,12 @@ export function parseVersion (raw: string): ParsedVersion | undefined {
   if (!match) {
     return undefined
   }
+
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
-    prerelease: match[4]
+    major:      Number(match[1]),
+    minor:      Number(match[2]),
+    patch:      Number(match[3]),
+    prerelease: match[4],
   }
 }
 
@@ -114,6 +115,7 @@ export function parseVersion (raw: string): ParsedVersion | undefined {
  */
 export function rangeOperator (spec: string): string {
   const trimmed = spec.trim()
+
   return RANGE_OPERATORS.find(operator => trimmed.startsWith(operator)) ?? ''
 }
 
@@ -135,6 +137,7 @@ export function rangeOperator (spec: string): string {
  */
 export function specVersion (spec: string): string | undefined {
   const bare = spec.trim().slice(rangeOperator(spec).length).trim()
+
   return /^\d+\.\d+(?:\.\d+)?(?:-[\w.-]+)?$/.test(bare) ? bare : undefined
 }
 
@@ -179,6 +182,7 @@ export function compareVersions (left: string, right: string): number {
   if (!b.prerelease) {
     return -1
   }
+
   return a.prerelease < b.prerelease ? -1 : 1
 }
 
@@ -223,6 +227,7 @@ export function classify (current: string, latest: string): UpdateKind {
   if (from.major !== to.major) {
     return 'major'
   }
+
   return from.minor === to.minor ? 'patch' : 'minor'
 }
 
@@ -253,5 +258,6 @@ export function highestSpec (specs: readonly string[]): string | undefined {
       bestVersion = version
     }
   }
+
   return best
 }

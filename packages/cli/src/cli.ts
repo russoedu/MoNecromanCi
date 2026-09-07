@@ -51,7 +51,7 @@ export function buildProgram (cliVersion: string): Command {
     .option('--artifacts-feed <name>', 'Azure Artifacts feed')
     .option(
       '--agent <pool>',
-      'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name'
+      'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name',
     )
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
     .option('--ci <provider>', 'CI provider: azure | github | both')
@@ -64,7 +64,7 @@ export function buildProgram (cliVersion: string): Command {
   program
     .command('upgrade')
     .description(
-      'Re-apply the latest MoNecromanCI overlay to this workspace (release config, pipeline, npmrc, commitlint, husky hook, curated scripts)'
+      'Re-apply the latest MoNecromanCI overlay to this workspace (release config, pipeline, npmrc, commitlint, husky hook, curated scripts)',
     )
     .option('--scope <scope>', 'npm scope for publishable packages (overrides the persisted value)')
     .option('--registry <kind>', 'azure-artifacts | npm (overrides the persisted value)')
@@ -76,7 +76,7 @@ export function buildProgram (cliVersion: string): Command {
     .option('--ci <provider>', 'CI provider: azure | github | both (overrides the persisted value)')
     .option(
       '--test-runner <runner>',
-      'unit-test runner: jest | vitest (overrides the persisted value)'
+      'unit-test runner: jest | vitest (overrides the persisted value)',
     )
     .action((options: UpgradeOptions) => {
       runUpgrade(process.cwd(), options)
@@ -85,7 +85,7 @@ export function buildProgram (cliVersion: string): Command {
   program
     .command('doctor')
     .description(
-      'Check this workspace against the invariants mnci maintains (one ESLint config, no stray .prettierrc, the eslint plugin registered, the resolved eslint major, .npmrc vs the recorded registry, versionActions overrides, nx sync) — read-only; exits non-zero if anything failed'
+      'Check this workspace against the invariants mnci maintains (one ESLint config, no stray .prettierrc, the eslint plugin registered, the resolved eslint major, .npmrc vs the recorded registry, versionActions overrides, nx sync) — read-only; exits non-zero if anything failed',
     )
     .action(() => {
       runDoctor(process.cwd())
@@ -94,7 +94,7 @@ export function buildProgram (cliVersion: string): Command {
   program
     .command('sync')
     .description(
-      "Make every project agree: converge external dependency ranges declared at more than one version, then run 'nx sync' for TypeScript project references. Go is a no-op — one root go.mod means one version of every module"
+      "Make every project agree: converge external dependency ranges declared at more than one version, then run 'nx sync' for TypeScript project references. Go is a no-op — one root go.mod means one version of every module",
     )
     .option('--check', 'report drift and exit non-zero without writing anything')
     .option('--ecosystem <name>', 'restrict to one ecosystem: npm | pip | pub | go')
@@ -105,7 +105,7 @@ export function buildProgram (cliVersion: string): Command {
   program
     .command('up')
     .description(
-      'Show every dependency with a newer published release — grouped patch/minor/major/non-semver, with the projects declaring each one — and interactively update the ones you pick'
+      'Show every dependency with a newer published release — grouped patch/minor/major/non-semver, with the projects declaring each one — and interactively update the ones you pick',
     )
     .option('--check', 'report only; never prompt and never write (the default when piped)')
     .option('-y, --yes', 'select every available update without prompting')
@@ -126,16 +126,16 @@ export function buildProgram (cliVersion: string): Command {
     .option('--scope <scope>', 'npm scope for a publishable lib (defaults to @<workspace name>)')
     .option(
       '--framework <framework>',
-      'node-app only: express | fastify | koa | nest | none (default: none)'
+      'node-app only: express | fastify | koa | nest | none (default: none)',
     )
     .option(
       '--lib <name>',
-      'python-vendor only: the internal Python library (libs/<name>) to vendor into <name>'
+      'python-vendor only: the internal Python library (libs/<name>) to vendor into <name>',
     )
     .action(
       async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
         await runAdd(kind, name, options)
-      }
+      },
     )
 
   // Bare `mnci` (no subcommand) launches the guided wizard; commander runs

@@ -14,8 +14,8 @@ export type { Rule } from './rules/shared.js'
  */
 export const rules: Record<string, Rule> = {
   'no-nondeterministic-orchestrator': noNondeterministicOrchestrator,
-  'no-untyped-activity-handler': noUntypedActivityHandler,
-  'require-yield-star': requireYieldStar
+  'no-untyped-activity-handler':      noUntypedActivityHandler,
+  'require-yield-star':               requireYieldStar,
 }
 
 /**
@@ -39,11 +39,11 @@ export const plugin = { rules }
  */
 export const recommended = {
   plugins: { 'az-durable': plugin },
-  rules: {
+  rules:   {
     'az-durable/no-nondeterministic-orchestrator': 'error',
-    'az-durable/no-untyped-activity-handler': 'error',
-    'az-durable/require-yield-star': 'warn'
-  }
+    'az-durable/no-untyped-activity-handler':      'error',
+    'az-durable/require-yield-star':               'warn',
+  },
 } as const
 
 export { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator.js'

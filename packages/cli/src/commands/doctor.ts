@@ -19,9 +19,9 @@ import { logger } from '../util/logger'
  */
 export interface Finding {
   /** Short check name, shown as the line label. */
-  check: string
+  check:   string
   /** Whether the invariant holds. */
-  ok: boolean
+  ok:      boolean
   /** What is wrong, when it is not ok. */
   detail?: string
   /** The command or edit that fixes it. */
@@ -72,25 +72,25 @@ function toPosix (path: string): string {
 function checkEslintConfigs (workspaceRoot: string): Finding[] {
   const rootConfigs = globSync('eslint.config.{js,mjs,cjs,ts,mts,cts}', { cwd: workspaceRoot })
   const projectConfigs = globSync('{apps,libs,packages}/*/eslint.config.{js,mjs,cjs,ts,mts,cts}', {
-    cwd: workspaceRoot
+    cwd: workspaceRoot,
   }).map(config => toPosix(config))
 
   return [
     {
       check: 'root ESLint config',
-      ok: rootConfigs.length === 1,
+      ok:    rootConfigs.length === 1,
       detail:
         rootConfigs.length === 0
           ? 'no eslint.config.* at the workspace root'
           : `${rootConfigs.length} root configs: ${rootConfigs.join(', ')}`,
-      remedy: 'run `mnci upgrade` to rewrite the root config'
+      remedy: 'run `mnci upgrade` to rewrite the root config',
     },
     {
-      check: 'no per-project ESLint configs',
-      ok: projectConfigs.length === 0,
+      check:  'no per-project ESLint configs',
+      ok:     projectConfigs.length === 0,
       detail: `found ${projectConfigs.length}: ${projectConfigs.join(', ')}`,
-      remedy: 'run `mnci upgrade`, which sweeps {apps,libs,packages}/*/eslint.config.*'
-    }
+      remedy: 'run `mnci upgrade`, which sweeps {apps,libs,packages}/*/eslint.config.*',
+    },
   ]
 }
 
@@ -110,8 +110,9 @@ function checkEslintConfigs (workspaceRoot: string): Finding[] {
 function declaredDevDependencies (workspaceRoot: string): Record<string, string> {
   try {
     const manifest = readJson<{ devDependencies?: Record<string, string> }>(
-      join(workspaceRoot, 'package.json')
+      join(workspaceRoot, 'package.json'),
     )
+
     return manifest.devDependencies ?? {}
   } catch {
     return {}
@@ -154,14 +155,15 @@ function checkNoRetiredFormatter (workspaceRoot: string): Finding {
   if (stale.length === 0) {
     return { check: 'ESLint is the only linter and formatter', ok: true }
   }
+
   return {
     check: 'no retired formatter is still configured',
-    ok: false,
+    ok:    false,
     detail:
       `Found: ${stale.join(', ')}. These no longer run, but an editor extension ` +
       'still resolves them and will reformat on save against an opinion no gate ' +
       'checks.',
-    remedy: "Run 'mnci upgrade' to remove them."
+    remedy: "Run 'mnci upgrade' to remove them.",
   }
 }
 
@@ -183,13 +185,14 @@ function checkEslintPlugin (nxJson: Record<string, unknown>): Finding {
   const registered = plugins.some(
     entry =>
       (typeof entry === 'string' ? entry : (entry as { plugin?: string }).plugin) ===
-      '@nx/eslint/plugin'
+      '@nx/eslint/plugin',
   )
+
   return {
-    check: '@nx/eslint/plugin registered',
-    ok: registered,
+    check:  '@nx/eslint/plugin registered',
+    ok:     registered,
     detail: 'not in nx.json plugins — every project silently loses its lint target',
-    remedy: 'run `mnci upgrade`'
+    remedy: 'run `mnci upgrade`',
   }
 }
 
@@ -220,11 +223,12 @@ function checkResolvedEslint (workspaceRoot: string): Finding | undefined {
   try {
     const { version } = readJson<{ version: string }>(manifestPath)
     const major = version.split('.', 1)[0]
+
     return {
-      check: `resolved eslint is ${SUPPORTED_ESLINT_MAJOR}.x`,
-      ok: major === SUPPORTED_ESLINT_MAJOR,
+      check:  `resolved eslint is ${SUPPORTED_ESLINT_MAJOR}.x`,
+      ok:     major === SUPPORTED_ESLINT_MAJOR,
       detail: `node_modules/eslint is ${version}, but this stack supports ${SUPPORTED_ESLINT_MAJOR}.x (eslint-plugin-react has no release beyond it)`,
-      remedy: `pin eslint to ${ESLINT_VERSION} in every package manifest, then reinstall`
+      remedy: `pin eslint to ${ESLINT_VERSION} in every package manifest, then reinstall`,
     }
   } catch {
     return undefined
@@ -250,7 +254,7 @@ function checkResolvedEslint (workspaceRoot: string): Finding | undefined {
 function checkNpmrc (
   workspaceRoot: string,
   registry: RegistryConfig | undefined,
-  scope: string | undefined
+  scope: string | undefined,
 ): Finding | undefined {
   const npmrcPath = join(workspaceRoot, '.npmrc')
   if (!registry || !fileExists(npmrcPath)) {
@@ -259,17 +263,18 @@ function checkNpmrc (
   const npmrc = readFileSync(npmrcPath, 'utf8')
   if (registry.kind === 'npm') {
     return {
-      check: '.npmrc authenticates the public registry',
-      ok: npmrc.includes('//registry.npmjs.org/:_authToken='),
+      check:  '.npmrc authenticates the public registry',
+      ok:     npmrc.includes('//registry.npmjs.org/:_authToken='),
       detail: 'no npmjs.org token line — `npm publish` cannot authenticate',
-      remedy: 'run `mnci upgrade`'
+      remedy: 'run `mnci upgrade`',
     }
   }
+
   return {
-    check: '.npmrc routes the scope to the feed',
-    ok: scope !== undefined && npmrc.includes(`${scope}:registry=`),
+    check:  '.npmrc routes the scope to the feed',
+    ok:     scope !== undefined && npmrc.includes(`${scope}:registry=`),
     detail: `no '${scope ?? '@scope'}:registry=' line — a scoped package could publish to npmjs.org instead of the feed`,
-    remedy: 'run `mnci upgrade`'
+    remedy: 'run `mnci upgrade`',
   }
 }
 
@@ -290,8 +295,9 @@ function checkNpmrc (
 function checkVersionActions (workspaceRoot: string): Finding[] {
   const candidates = [
     ...globSync('packages/*/pubspec.yaml', { cwd: workspaceRoot }),
-    ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot })
+    ...globSync('python-packages/*/pyproject.toml', { cwd: workspaceRoot }),
   ].map(manifest => toPosix(manifest))
+
   return candidates.flatMap(manifest => {
     const projectRoot = manifest.slice(0, manifest.lastIndexOf('/'))
     const projectJsonPath = join(workspaceRoot, projectRoot, 'project.json')
@@ -304,13 +310,14 @@ function checkVersionActions (workspaceRoot: string): Finding[] {
     } catch {
       // No project.json at all, so no override — the initialiser already says so.
     }
+
     return [
       {
-        check: `${projectRoot} keeps its versionActions override`,
-        ok: hasOverride,
+        check:  `${projectRoot} keeps its versionActions override`,
+        ok:     hasOverride,
         detail: 'missing — nx release aborts for the ENTIRE workspace, not just this project',
-        remedy: `add release.version.versionActions to ${projectRoot}/project.json`
-      }
+        remedy: `add release.version.versionActions to ${projectRoot}/project.json`,
+      },
     ]
   })
 }
@@ -344,27 +351,27 @@ const TARGET_FILE_OPTIONS = ['main', 'tsConfig', 'packageJson'] as const
  */
 function declaredTargets (
   workspaceRoot: string,
-  projectRoot: string
+  projectRoot: string,
 ): { source: string; targets: Record<string, { options?: Record<string, unknown> }> }[] {
   const sources: {
-    source: string
+    source:  string
     targets: Record<string, { options?: Record<string, unknown> }>
   }[] = []
   for (const [file, extract] of [
     ['project.json', (json: Record<string, unknown>) => json['targets']],
     [
       'package.json',
-      (json: Record<string, unknown>) => (json['nx'] as Record<string, unknown>)?.['targets']
-    ]
+      (json: Record<string, unknown>) => (json['nx'] as Record<string, unknown>)?.['targets'],
+    ],
   ] as const) {
     try {
       const targets = extract(
-        readJson<Record<string, unknown>>(join(workspaceRoot, projectRoot, file))
+        readJson<Record<string, unknown>>(join(workspaceRoot, projectRoot, file)),
       )
       if (targets && typeof targets === 'object') {
         sources.push({
-          source: `${projectRoot}/${file}`,
-          targets: targets as Record<string, { options?: Record<string, unknown> }>
+          source:  `${projectRoot}/${file}`,
+          targets: targets as Record<string, { options?: Record<string, unknown> }>,
         })
       }
     } catch {
@@ -372,6 +379,7 @@ function declaredTargets (
       // already report a workspace that broken.
     }
   }
+
   return sources
 }
 
@@ -404,16 +412,16 @@ function checkTargetFilesExist (workspaceRoot: string): Finding[] {
   const projectRoots = new Set(
     [
       ...globSync('{apps,libs,packages}/*/project.json', { cwd: workspaceRoot }),
-      ...globSync('{apps,libs,packages}/*/package.json', { cwd: workspaceRoot })
-    ].map(manifest => toPosix(manifest).split('/').slice(0, 2).join('/'))
+      ...globSync('{apps,libs,packages}/*/package.json', { cwd: workspaceRoot }),
+    ].map(manifest => toPosix(manifest).split('/').slice(0, 2).join('/')),
   )
 
   return [...projectRoots].flatMap(projectRoot =>
     declaredTargets(workspaceRoot, projectRoot).flatMap(({ source, targets }) =>
       Object.entries(targets).flatMap(([targetName, target]) =>
-        checkOneTargetsFiles(workspaceRoot, source, targetName, target)
-      )
-    )
+        checkOneTargetsFiles(workspaceRoot, source, targetName, target),
+      ),
+    ),
   )
 }
 
@@ -436,7 +444,7 @@ function checkOneTargetsFiles (
   workspaceRoot: string,
   source: string,
   targetName: string,
-  target: { options?: Record<string, unknown> }
+  target: { options?: Record<string, unknown> },
 ): Finding[] {
   return TARGET_FILE_OPTIONS.flatMap(option => {
     const value = target?.options?.[option]
@@ -447,13 +455,14 @@ function checkOneTargetsFiles (
     if (!checkable || fileExists(join(workspaceRoot, value))) {
       return []
     }
+
     return [
       {
-        check: `${source} → ${targetName}.${option} points at a real file`,
-        ok: false,
+        check:  `${source} → ${targetName}.${option} points at a real file`,
+        ok:     false,
         detail: `${value} does not exist — the target fails as if the compiler were misconfigured`,
-        remedy: `create ${value}, or correct ${option} in ${source}`
-      }
+        remedy: `create ${value}, or correct ${option} in ${source}`,
+      },
     ]
   })
 }
@@ -472,10 +481,10 @@ function checkOneTargetsFiles (
  */
 function checkSync (workspaceRoot: string): Finding {
   return {
-    check: 'TypeScript project references synced',
-    ok: runShell('npx', ['nx', 'sync:check'], workspaceRoot) === 0,
+    check:  'TypeScript project references synced',
+    ok:     runShell('npx', ['nx', 'sync:check'], workspaceRoot) === 0,
     detail: 'nx sync:check failed — a stale project reference was never committed',
-    remedy: 'run `npx nx sync` and commit the result'
+    remedy: 'run `npx nx sync` and commit the result',
   }
 }
 
@@ -517,17 +526,17 @@ function checkNoRootRuntimeDependencies (workspaceRoot: string): Finding | undef
   let declared: string[]
   try {
     declared = Object.keys(
-      readJson<{ dependencies?: Record<string, string> }>(manifestPath).dependencies ?? {}
+      readJson<{ dependencies?: Record<string, string> }>(manifestPath).dependencies ?? {},
     )
   } catch {
     return undefined
   }
 
   return {
-    check: 'no runtime dependencies in the root manifest',
-    ok: declared.length === 0,
+    check:  'no runtime dependencies in the root manifest',
+    ok:     declared.length === 0,
     detail: `the root package.json declares ${declared.join(', ')} — the root is private and never published, and @nx/rollup externalises only what a project's own manifest declares, so a package importing one of these ships an inlined private copy instead`,
-    remedy: `move ${declared.join(', ')} into the dependencies of each package that imports it (devDependencies at the root are fine — that is what the root is for)`
+    remedy: `move ${declared.join(', ')} into the dependencies of each package that imports it (devDependencies at the root are fine — that is what the root is for)`,
   }
 }
 
@@ -553,7 +562,7 @@ function checkNoRootRuntimeDependencies (workspaceRoot: string): Finding | undef
  */
 function checkRollupSourceMaps (workspaceRoot: string): Finding[] {
   const configs = globSync(['packages/*/rollup.config.cjs', 'libs/*/rollup.config.cjs'], {
-    cwd: workspaceRoot
+    cwd: workspaceRoot,
   }).map(config => toPosix(config))
 
   return configs.flatMap(relativePath => {
@@ -563,14 +572,15 @@ function checkRollupSourceMaps (workspaceRoot: string): Finding[] {
     } catch {
       return []
     }
+
     return [
       {
         check: `source maps enabled in ${relativePath}`,
-        ok: hasRollupSourceMaps(config),
+        ok:    hasRollupSourceMaps(config),
         detail:
           'rollup emits no .js.map without it, so a breakpoint in a .ts file can never bind',
-        remedy: 'run `mnci upgrade`, which adds it to every rollup config'
-      }
+        remedy: 'run `mnci upgrade`, which adds it to every rollup config',
+      },
     ]
   })
 }
@@ -596,12 +606,12 @@ export function collectFindings (workspaceRoot: string): Finding[] {
   const nxJsonPath = join(workspaceRoot, 'nx.json')
   if (!fileExists(nxJsonPath)) {
     throw new Error(
-      `No nx.json found in ${workspaceRoot} — run 'mnci doctor' from the workspace root.`
+      `No nx.json found in ${workspaceRoot} — run 'mnci doctor' from the workspace root.`,
     )
   }
   const nxJson = readJson<{
     plugins?: unknown[]
-    mnci?: { registry?: RegistryConfig; scope?: string }
+    mnci?:    { registry?: RegistryConfig; scope?: string }
   }>(nxJsonPath)
 
   return [
@@ -614,7 +624,7 @@ export function collectFindings (workspaceRoot: string): Finding[] {
     ...checkRollupSourceMaps(workspaceRoot),
     ...checkVersionActions(workspaceRoot),
     ...checkTargetFilesExist(workspaceRoot),
-    checkSync(workspaceRoot)
+    checkSync(workspaceRoot),
   ].filter((finding): finding is Finding => finding !== undefined)
 }
 
@@ -652,6 +662,7 @@ export function runDoctor (workspaceRoot: string): void {
 
   if (failed.length === 0) {
     logger.success(`All ${findings.length} checks passed.`)
+
     return
   }
   logger.error(`${failed.length} of ${findings.length} checks failed.`)

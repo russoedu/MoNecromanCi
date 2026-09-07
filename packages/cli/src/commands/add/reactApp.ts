@@ -8,7 +8,7 @@ import {
   ensurePlugin,
   registerProjectCommands,
   removeGeneratedEslintConfig,
-  type WorkspaceStack
+  type WorkspaceStack,
 } from './shared'
 
 /**
@@ -67,27 +67,28 @@ export function reactAppTargets (name: string): Record<string, unknown> {
   for (const environment of REACT_ENVIRONMENTS) {
     targets[`build-${environment}`] = {
       executor: 'nx:run-commands',
-      outputs: [`{workspaceRoot}/apps/${name}/dist-${environment}`],
-      options: {
+      outputs:  [`{workspaceRoot}/apps/${name}/dist-${environment}`],
+      options:  {
         command: `vite build --mode ${environment} --outDir dist-${environment}`,
-        cwd: `apps/${name}`
-      }
+        cwd:     `apps/${name}`,
+      },
     }
   }
   const zipStatements = REACT_ENVIRONMENTS.map(
     environment =>
-      `z=new A();z.addLocalFolder('apps/${name}/dist-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`
+      `z=new A();z.addLocalFolder('apps/${name}/dist-${environment}');z.writeZip('dist/drop/react-app-${name}-${environment}.zip')`,
   ).join(';')
   targets.package = {
-    executor: 'nx:run-commands',
+    executor:  'nx:run-commands',
     dependsOn: REACT_ENVIRONMENTS.map(environment => `build-${environment}`),
-    outputs: REACT_ENVIRONMENTS.map(
-      environment => `{workspaceRoot}/dist/drop/react-app-${name}-${environment}.zip`
+    outputs:   REACT_ENVIRONMENTS.map(
+      environment => `{workspaceRoot}/dist/drop/react-app-${name}-${environment}.zip`,
     ),
     options: {
-      command: `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');let z;${zipStatements}"`
-    }
+      command: `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');let z;${zipStatements}"`,
+    },
   }
+
   return targets
 }
 
@@ -150,9 +151,9 @@ export function addReactApp (workspaceRoot: string, name: string, stack: Workspa
       '--linter=none',
       '--style=css',
       '--e2eTestRunner=none',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   ensureAdmZip(workspaceRoot)
   const reactAppRoot = join(workspaceRoot, 'apps', name)

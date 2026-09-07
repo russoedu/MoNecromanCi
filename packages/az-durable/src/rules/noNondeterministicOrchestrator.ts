@@ -2,11 +2,11 @@ import { calleeName, isOrchestrationRegistration, type Node, type Rule } from '.
 
 /** Global reads that differ on every replay, with the replacement to suggest. */
 const FORBIDDEN_CALLS: Record<string, string> = {
-  'Date.now': 'now(context).getTime()',
-  'Math.random': 'context.df.newGuid(...) or an activity',
+  'Date.now':          'now(context).getTime()',
+  'Math.random':       'context.df.newGuid(...) or an activity',
   'crypto.randomUUID': 'context.df.newGuid(...)',
-  fetch: 'an activity — network calls must not run in an orchestrator',
-  axios: 'an activity — network calls must not run in an orchestrator'
+  'fetch':             'an activity — network calls must not run in an orchestrator',
+  'axios':             'an activity — network calls must not run in an orchestrator',
 }
 
 /**
@@ -25,16 +25,16 @@ const FORBIDDEN_CALLS: Record<string, string> = {
  */
 export const noNondeterministicOrchestrator: Rule = {
   meta: {
-    type: 'problem',
-    docs: { description: 'Disallow non-deterministic operations inside an orchestration.' },
-    schema: [],
+    type:     'problem',
+    docs:     { description: 'Disallow non-deterministic operations inside an orchestration.' },
+    schema:   [],
     messages: {
       forbidden: '{{what}} is non-deterministic on replay. Use {{fix}} instead.',
-      newDate: 'new Date() is non-deterministic on replay. Use now(context) instead.',
+      newDate:   'new Date() is non-deterministic on replay. Use now(context) instead.',
       processEnv:
         'process.env is read at replay time and may differ between deploys. ' +
-        'Read it in an activity, or pass it as orchestration input.'
-    }
+        'Read it in an activity, or pass it as orchestration input.',
+    },
   },
   create (context) {
     let depth = 0
@@ -48,8 +48,9 @@ export const noNondeterministicOrchestrator: Rule = {
         depth -= 1
       }
     }
+
     return {
-      CallExpression: (node: Node) => {
+      'CallExpression': (node: Node) => {
         enter(node)
         if (depth === 0) {
           return
@@ -66,7 +67,7 @@ export const noNondeterministicOrchestrator: Rule = {
         }
       },
       'CallExpression:exit': exit,
-      NewExpression: (node: Node) => {
+      'NewExpression':       (node: Node) => {
         if (depth === 0) {
           return
         }
@@ -78,7 +79,7 @@ export const noNondeterministicOrchestrator: Rule = {
           context.report({ node, messageId: 'newDate' })
         }
       },
-      MemberExpression: (node: Node) => {
+      'MemberExpression': (node: Node) => {
         if (depth === 0) {
           return
         }
@@ -92,7 +93,7 @@ export const noNondeterministicOrchestrator: Rule = {
         ) {
           context.report({ node, messageId: 'processEnv' })
         }
-      }
+      },
     }
-  }
+  },
 }

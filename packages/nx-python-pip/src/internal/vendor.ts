@@ -26,6 +26,7 @@ export function parseVendorEntries (pyprojectToml: string): string[] {
   if (!match) {
     return []
   }
+
   return match[1]
     .split(',')
     .map(entry => entry.trim().replaceAll(/^["']|["']$/g, ''))
@@ -50,7 +51,7 @@ export function parseVendorEntries (pyprojectToml: string): string[] {
  */
 export function addPackagesToWheelTarget (
   pyprojectToml: string,
-  moduleDirectories: string[]
+  moduleDirectories: string[],
 ): string {
   return pyprojectToml.replace(
     /^(\s*packages\s*=\s*)\[([^\]]*)\]/m,
@@ -60,7 +61,8 @@ export function addPackagesToWheelTarget (
         .map(entry => entry.trim().replaceAll(/^["']|["']$/g, ''))
         .filter(Boolean)
       const merged = [...new Set([...names, ...moduleDirectories])]
+
       return `${prefix}[${merged.map(name => `"${name}"`).join(', ')}]`
-    }
+    },
   )
 }

@@ -21,8 +21,8 @@ const mockSpawnSync = jest.mocked(spawn.sync)
 function contextFor (root: string, projectRoot: string): ExecutorContext {
   return {
     root,
-    projectName: 'web',
-    projectsConfigurations: { version: 2, projects: { web: { root: projectRoot } } }
+    projectName:            'web',
+    projectsConfigurations: { version: 2, projects: { web: { root: projectRoot } } },
   } as unknown as ExecutorContext
 }
 
@@ -31,8 +31,9 @@ function spawnArguments (): { command: string; argv: string[]; cwd: string } {
   const [command, argv, options] = mockSpawnSync.mock.calls[0] as [
     string,
     string[],
-    { cwd: string }
+    { cwd: string },
   ]
+
   return { command, argv, cwd: options.cwd }
 }
 
@@ -67,7 +68,7 @@ describe('lint executor', () => {
     mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(lintExecutor({}, contextFor('/ws', 'apps/web'))).resolves.toEqual({
-      success: false
+      success: false,
     })
   })
 })
@@ -87,7 +88,7 @@ describe('test executor', () => {
     mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(testExecutor({}, contextFor('/ws', 'libs/core'))).resolves.toEqual({
-      success: false
+      success: false,
     })
   })
 })
@@ -107,7 +108,7 @@ describe('build executor', () => {
     // every report shares the relative `--output`.
     const result = await buildExecutor(
       { outputPath: 'dist/apps/web' },
-      contextFor('/ws', 'apps/web')
+      contextFor('/ws', 'apps/web'),
     )
 
     expect(result).toEqual({ success: true })
@@ -137,7 +138,7 @@ describe('build executor', () => {
     mockSpawnSync.mockReturnValue(completed(1))
 
     await expect(
-      buildExecutor({ outputPath: 'dist/apps/web' }, contextFor('/ws', 'apps/web'))
+      buildExecutor({ outputPath: 'dist/apps/web' }, contextFor('/ws', 'apps/web')),
     ).resolves.toEqual({ success: false })
   })
 })

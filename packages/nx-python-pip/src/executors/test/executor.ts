@@ -27,14 +27,14 @@ import type { TestExecutorSchema } from './schema.d'
  */
 export default async function testExecutor (
   options: TestExecutorSchema,
-  context: ExecutorContext
+  context: ExecutorContext,
 ): Promise<{ success: boolean }> {
   const cwd = join(context.root, projectRootFrom(context))
 
   if (options.installEditable !== false) {
     const install = spawnSync(pythonCommand(), ['-m', 'pip', 'install', '--quiet', '-e', '.'], {
       cwd,
-      stdio: 'inherit'
+      stdio: 'inherit',
     })
     if (install.status !== 0) {
       return { success: false }
@@ -42,5 +42,6 @@ export default async function testExecutor (
   }
 
   const result = spawnSync(pythonCommand(), ['-m', 'pytest'], { cwd, stdio: 'inherit' })
+
   return { success: result.status === 0 }
 }

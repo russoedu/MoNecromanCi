@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
@@ -30,18 +30,18 @@ function seedProjectManifest (projectRoot: string, name: string): void {
     join(workspaceRoot, projectRoot, 'package.json'),
     JSON.stringify({
       name,
-      main: './dist/index.esm.js',
-      module: './dist/index.esm.js',
-      types: './dist/index.esm.d.ts',
+      main:    './dist/index.esm.js',
+      module:  './dist/index.esm.js',
+      types:   './dist/index.esm.d.ts',
       exports: {
         './package.json': './package.json',
-        '.': {
-          types: './dist/index.esm.d.ts',
-          import: './dist/index.esm.js',
-          default: './dist/index.esm.js'
-        }
-      }
-    })
+        '.':              {
+          types:   './dist/index.esm.d.ts',
+          import:  './dist/index.esm.js',
+          default: './dist/index.esm.js',
+        },
+      },
+    }),
   )
 }
 
@@ -53,7 +53,7 @@ beforeEach(() => {
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', devDependencies: {} })
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
   )
 })
 
@@ -89,7 +89,7 @@ describe('react-lib', () => {
     await runAdd('react-lib', 'ui', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
     ) as { publishConfig?: { access?: string } }
     expect(manifest.publishConfig?.access).toBe('public')
   })
@@ -100,7 +100,7 @@ describe('react-lib', () => {
     await runAdd('react-lib', 'ui', { scope: '@acme' })
 
     expect(generatorCalls().find(c => c.includes('@nx/react:library'))).toContain(
-      '--importPath=@acme/ui'
+      '--importPath=@acme/ui',
     )
     expect(mockPromptText).not.toHaveBeenCalled()
   })
@@ -138,7 +138,7 @@ describe('react-lib', () => {
     // Verified against a real generated pair: typecheck fails before this, passes
     // after.
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
     ) as { types?: string; main?: string; exports?: { '.': { types?: string } } }
 
     expect(manifest.types).toBe('./dist/src/index.d.ts')
@@ -152,13 +152,13 @@ describe('react-lib', () => {
     mkdirSync(join(workspaceRoot, 'packages/ui'), { recursive: true })
     writeFileSync(
       join(workspaceRoot, 'packages/ui/package.json'),
-      JSON.stringify({ name: '@demo/ui', types: './dist/custom.d.ts' })
+      JSON.stringify({ name: '@demo/ui', types: './dist/custom.d.ts' }),
     )
 
     await runAdd('react-lib', 'ui', {})
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
     ) as { types?: string }
     expect(manifest.types).toBe('./dist/custom.d.ts')
   })
@@ -186,7 +186,7 @@ describe('react-internal-lib', () => {
     await runAdd('react-internal-lib', 'design', {})
 
     const privateManifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8'),
     ) as { types?: string }
     // The types repair applies to the private kind too — it is the one a
     // react-lib consumes, so a wrong declaration path breaks the consumer.
@@ -197,7 +197,7 @@ describe('react-internal-lib', () => {
     expect(generate).not.toContain('--publishable')
 
     const manifest = JSON.parse(
-      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8')
+      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8'),
     ) as { private?: boolean }
     expect(manifest.private).toBe(true)
   })
@@ -210,7 +210,7 @@ describe('react-internal-lib', () => {
     // The generator's own default is `none`, which would make this lib
     // unimportable from any react-lib/npm-lib in the same workspace.
     expect(generatorCalls().find(c => c.includes('@nx/react:library'))).toContain(
-      '--bundler=rollup'
+      '--bundler=rollup',
     )
   })
 

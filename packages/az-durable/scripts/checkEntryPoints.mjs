@@ -22,9 +22,9 @@ const declared = new Set(
     manifest.module,
     manifest.types,
     ...Object.values(manifest.exports ?? {}).flatMap(entry =>
-      typeof entry === 'string' ? [entry] : Object.values(entry)
-    )
-  ].filter(entry => typeof entry === 'string' && entry !== './package.json')
+      typeof entry === 'string' ? [entry] : Object.values(entry),
+    ),
+  ].filter(entry => typeof entry === 'string' && entry !== './package.json'),
 )
 
 const missing = [...declared].filter(entry => !existsSync(path.join(root, entry)))
@@ -37,7 +37,7 @@ if (missing.length > 0) {
   // Thrown, not `process.exit`: the non-zero status is what a CI step reads,
   // and an uncaught throw gives that plus a stack naming this file.
   throw new Error(
-    `${missing.length} declared entry point(s) missing from the build: ${missing.join(', ')}`
+    `${missing.length} declared entry point(s) missing from the build: ${missing.join(', ')}`,
   )
 }
 console.log('\nevery declared entry point exists')

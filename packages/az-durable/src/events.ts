@@ -13,7 +13,7 @@ import type { TypedTask } from './types.js'
  */
 export interface EventRef<TPayload> {
   /** The event name, verbatim. */
-  readonly name: string
+  readonly name:       string
   /** Phantom. Never assigned. Carries `TPayload`. */
   readonly __payload?: () => TPayload
 }
@@ -49,9 +49,10 @@ export function defineEvent<TPayload> (name: string): EventRef<TPayload> {
  */
 export function * waitForEvent<TPayload> (
   context: OrchestrationContext,
-  event: EventRef<TPayload>
+  event: EventRef<TPayload>,
 ): Generator<Task, TPayload, unknown> {
   const payload = yield eventTask(context, event).task
+
   return payload as TPayload
 }
 
@@ -74,7 +75,7 @@ export function * waitForEvent<TPayload> (
  */
 export function eventTask<TPayload> (
   context: OrchestrationContext,
-  event: EventRef<TPayload>
+  event: EventRef<TPayload>,
 ): TypedTask<TPayload> {
   return { task: context.df.waitForExternalEvent(event.name) }
 }
@@ -99,7 +100,7 @@ export async function raiseEvent<TPayload> (
   client: DurableClient,
   instanceId: string,
   event: EventRef<TPayload>,
-  payload: TPayload
+  payload: TPayload,
 ): Promise<void> {
   await client.raiseEvent(instanceId, event.name, payload)
 }

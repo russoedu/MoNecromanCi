@@ -20,7 +20,7 @@ function ensurePython (workspaceRoot: string): void {
     runShell('python', ['--version'], workspaceRoot) === 0
   if (!hasPython) {
     throw new Error(
-      'Python not found. Install Python 3.9+ first: https://www.python.org/downloads/'
+      'Python not found. Install Python 3.9+ first: https://www.python.org/downloads/',
     )
   }
 }
@@ -190,9 +190,9 @@ if __name__ == '__main__':
  */
 function pythonAppStartTarget (name: string): Record<string, unknown> {
   return {
-    executor: 'nx:run-commands',
+    executor:   'nx:run-commands',
     continuous: true,
-    options: { command: 'python3 main.py', cwd: `apps/${name}` }
+    options:    { command: 'python3 main.py', cwd: `apps/${name}` },
   }
 }
 
@@ -214,9 +214,9 @@ function pythonAppStartTarget (name: string): Record<string, unknown> {
  */
 function pythonFunctionAppStartTarget (name: string): Record<string, unknown> {
   return {
-    executor: 'nx:run-commands',
+    executor:   'nx:run-commands',
     continuous: true,
-    options: { command: 'func start', cwd: `apps/${name}` }
+    options:    { command: 'func start', cwd: `apps/${name}` },
   }
 }
 
@@ -238,11 +238,12 @@ function pythonFunctionAppStartTarget (name: string): Record<string, unknown> {
 function pythonAppPackageTarget (name: string): Record<string, unknown> {
   const zip = `dist/drop/python-app-${name}.zip`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFolder('apps/${name}/dist');z.writeZip('${zip}')"`
+
   return {
-    executor: 'nx:run-commands',
+    executor:  'nx:run-commands',
     dependsOn: ['build'],
-    outputs: [`{workspaceRoot}/${zip}`],
-    options: { command }
+    outputs:   [`{workspaceRoot}/${zip}`],
+    options:   { command },
   }
 }
 
@@ -266,15 +267,16 @@ function pythonAppPackageTarget (name: string): Record<string, unknown> {
  */
 function pythonFunctionAppPackageTarget (
   name: string,
-  moduleDirectory: string
+  moduleDirectory: string,
 ): Record<string, unknown> {
   const zip = `dist/drop/python-function-app-${name}.zip`
   const root = `apps/${name}`
   const command = `node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const A=require('adm-zip');const z=new A();z.addLocalFile('${root}/function_app.py');z.addLocalFile('${root}/host.json');z.addLocalFile('${root}/requirements.txt');z.addLocalFolder('${root}/${moduleDirectory}','${moduleDirectory}');z.writeZip('${zip}')"`
+
   return {
     executor: 'nx:run-commands',
-    outputs: [`{workspaceRoot}/${zip}`],
-    options: { command }
+    outputs:  [`{workspaceRoot}/${zip}`],
+    options:  { command },
   }
 }
 
@@ -301,12 +303,12 @@ export function addPythonApp (workspaceRoot: string, name: string): void {
 
   runNx(
     ['g', '@mnci/nx-python-pip:application', name, `--directory=apps/${name}`, '--no-interactive'],
-    workspaceRoot
+    workspaceRoot,
   )
   writeFileEnsured(join(workspaceRoot, 'apps', name, 'main.py'), pythonAppMain(name))
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonAppPackageTarget(name),
-    start: pythonAppStartTarget(name)
+    start:   pythonAppStartTarget(name),
   })
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
@@ -337,14 +339,14 @@ export function addPythonFunctionApp (workspaceRoot: string, name: string): void
       '@mnci/nx-python-pip:function-application',
       name,
       `--directory=apps/${name}`,
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   const moduleDirectory = pythonModuleDirectory(name)
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonFunctionAppPackageTarget(name, moduleDirectory),
-    start: pythonFunctionAppStartTarget(name)
+    start:   pythonFunctionAppStartTarget(name),
   })
   registerProjectCommands(workspaceRoot, name, { build: false, start: `nx run ${name}:start` })
 }
@@ -375,9 +377,9 @@ export function addPythonLib (workspaceRoot: string, name: string): void {
       '@mnci/nx-python-pip:library',
       name,
       `--directory=python-packages/${name}`,
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
@@ -408,9 +410,9 @@ export function addPythonInternalLib (workspaceRoot: string, name: string): void
       '@mnci/nx-python-pip:internal-library',
       name,
       `--directory=libs/${name}`,
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   registerProjectCommands(workspaceRoot, name, { build: false })
 }
@@ -440,10 +442,10 @@ const PYTHON_PROJECT_DIRS = ['apps', 'python-packages', 'libs'] as const
  */
 function findPythonProjectDirectory (
   workspaceRoot: string,
-  name: string
+  name: string,
 ): (typeof PYTHON_PROJECT_DIRS)[number] | undefined {
   return PYTHON_PROJECT_DIRS.find(directory =>
-    fileExists(join(workspaceRoot, directory, name, 'pyproject.toml'))
+    fileExists(join(workspaceRoot, directory, name, 'pyproject.toml')),
   )
 }
 
@@ -469,6 +471,7 @@ function parseVendorEntries (pyprojectToml: string): string[] {
   if (!match) {
     return []
   }
+
   return match[1]
     .split(',')
     .map(entry => entry.trim().replaceAll(/^["']|["']$/g, ''))
@@ -499,12 +502,14 @@ function addVendorEntry (pyprojectToml: string, lib: string): string {
   const existing = parseVendorEntries(pyprojectToml)
   if (existing.length > 0) {
     const merged = [...existing, lib].map(name => `"${name}"`).join(', ')
+
     return pyprojectToml.replace(
       /^(\s*vendor\s*=\s*)\[[^\]]*\]/m,
-      (_match, prefix: string) => `${prefix}[${merged}]`
+      (_match, prefix: string) => `${prefix}[${merged}]`,
     )
   }
   const table = `[tool.mnci-python-pip]\nvendor = ["${lib}"]\n\n`
+
   return pyprojectToml.includes('[tool.pytest.ini_options]')
     ? pyprojectToml.replace('[tool.pytest.ini_options]', () => `${table}[tool.pytest.ini_options]`)
     : `${pyprojectToml}\n${table}`
@@ -546,7 +551,7 @@ export async function addPythonVendor (
   workspaceRoot: string,
   consumer: string,
   options: AddOptions,
-  kindProvided: boolean
+  kindProvided: boolean,
 ): Promise<void> {
   const lib =
     options.lib ??
@@ -555,19 +560,19 @@ export async function addPythonVendor (
       : await promptText('Internal Python library to vendor (an existing libs/<name>)'))
   if (!lib) {
     throw new Error(
-      '`add python-vendor` needs the library to vendor: pass --lib <name> (an existing libs/<name> internal library).'
+      '`add python-vendor` needs the library to vendor: pass --lib <name> (an existing libs/<name> internal library).',
     )
   }
 
   const consumerDirectory = findPythonProjectDirectory(workspaceRoot, consumer)
   if (!consumerDirectory) {
     throw new Error(
-      `No Python project named '${consumer}' with a pyproject.toml found (checked apps/, python-packages/, libs/). A Python function app has no pyproject.toml — there is nothing to vendor into.`
+      `No Python project named '${consumer}' with a pyproject.toml found (checked apps/, python-packages/, libs/). A Python function app has no pyproject.toml — there is nothing to vendor into.`,
     )
   }
   if (!fileExists(join(workspaceRoot, 'libs', lib, 'pyproject.toml'))) {
     throw new Error(
-      `No internal Python library named '${lib}' found at libs/${lib}/pyproject.toml. Only an internal library (added via 'mnci add python-internal-lib') can be vendored.`
+      `No internal Python library named '${lib}' found at libs/${lib}/pyproject.toml. Only an internal library (added via 'mnci add python-internal-lib') can be vendored.`,
     )
   }
   if (consumerDirectory === 'libs' && consumer === lib) {
@@ -578,11 +583,12 @@ export async function addPythonVendor (
   const pyprojectToml = readFileSync(pyprojectPath, 'utf8')
   if (parseVendorEntries(pyprojectToml).includes(lib)) {
     logger.info(`'${consumer}' already vendors '${lib}' — nothing to do.`)
+
     return
   }
 
   writeFileEnsured(pyprojectPath, addVendorEntry(pyprojectToml, lib))
   logger.success(
-    `'${consumer}' now vendors '${lib}' — its wheel will include '${lib}''s module on the next build.`
+    `'${consumer}' now vendors '${lib}' — its wheel will include '${lib}''s module on the next build.`,
   )
 }

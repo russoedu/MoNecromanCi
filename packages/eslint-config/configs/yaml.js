@@ -8,11 +8,11 @@ import { named } from './named.js'
 export default [
   ...named('mnci/yaml/recommended', yml.configs['flat/recommended']),
   {
-    name: 'mnci/yaml',
+    name:  'mnci/yaml',
     files: ['**/*.{yml,yaml}'],
     rules: {
       // Formatting belongs to Prettier, which handles YAML natively.
-      'yml/no-empty-mapping-value': 'off'
-    }
-  }
+      'yml/no-empty-mapping-value': 'off',
+    },
+  },
 ]

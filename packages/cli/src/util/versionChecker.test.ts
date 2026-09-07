@@ -21,6 +21,7 @@ async function flushAndCapture (): Promise<string> {
   })
   await new Promise(resolve => setImmediate(resolve))
   logSpy.mockRestore()
+
   return lines.join('\n')
 }
 
@@ -74,7 +75,7 @@ describe('checkForUpdate', () => {
     expect(mockSpawnSync).toHaveBeenCalledWith(
       'npm',
       ['view', '@mnci/cli', 'version'],
-      expect.objectContaining({ timeout: 2000 })
+      expect.objectContaining({ timeout: 2000 }),
     )
     expect(output).toContain('2.0.0')
     expect(output).toContain('npm install -g @mnci/cli@latest')
@@ -105,7 +106,7 @@ describe('checkForUpdate', () => {
       { status: 1, stdout: '' },
       { error: new Error('ETIMEDOUT'), status: null, stdout: '' },
       { status: 0, stdout: ' '.repeat(3) },
-      { status: 0, stdout: 'not-a-version' }
+      { status: 0, stdout: 'not-a-version' },
     ]) {
       mockSpawnSync.mockReturnValue(result as never)
       checkForUpdate('1.0.0')

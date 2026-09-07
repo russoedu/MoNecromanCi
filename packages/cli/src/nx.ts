@@ -30,6 +30,7 @@ import { logger } from './util/logger'
  */
 export function runShell (command: string, arguments_: string[], cwd: string): number {
   const result = spawn.sync(command, arguments_, { stdio: 'inherit', cwd })
+
   return result.status ?? 1
 }
 
@@ -96,14 +97,15 @@ export function runCapture (command: string, arguments_: string[], cwd: string):
   const result = spawn.sync(command, arguments_, {
     cwd,
     encoding: 'utf8',
-    timeout: CAPTURE_TIMEOUT_MS,
-    stdio: ['ignore', 'pipe', 'ignore']
+    timeout:  CAPTURE_TIMEOUT_MS,
+    stdio:    ['ignore', 'pipe', 'ignore'],
   })
   // `result.error` covers the spawn that never started (an absent toolchain,
   // most often) — there `status` is null and stdout is null too.
   if (result.error) {
     return { status: 1, stdout: '' }
   }
+
   return { status: result.status ?? 1, stdout: result.stdout ?? '' }
 }
 
@@ -132,13 +134,13 @@ export function runCapture (command: string, arguments_: string[], cwd: string):
 export async function runCaptureAsync (
   command: string,
   arguments_: string[],
-  cwd: string
+  cwd: string,
 ): Promise<CaptureResult> {
   return await new Promise<CaptureResult>(resolve => {
     const child = spawn(command, arguments_, {
       cwd,
       timeout: CAPTURE_TIMEOUT_MS,
-      stdio: ['ignore', 'pipe', 'ignore']
+      stdio:   ['ignore', 'pipe', 'ignore'],
     })
     let stdout = ''
     child.stdout?.setEncoding('utf8')
@@ -175,7 +177,7 @@ export async function runCaptureAsync (
 export async function pool<TIn, TOut> (
   items: readonly TIn[],
   limit: number,
-  job: (item: TIn) => Promise<TOut>
+  job: (item: TIn) => Promise<TOut>,
 ): Promise<TOut[]> {
   const results: TOut[] = Array.from({ length: items.length })
   let next = 0
@@ -189,6 +191,7 @@ export async function pool<TIn, TOut> (
   }
 
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => await worker()))
+
   return results
 }
 
@@ -282,7 +285,7 @@ export function runFormatter (cwd: string, target = '.'): void {
   if (status !== 0) {
     logger.warn(
       `eslint could not format '${target}' (exit code ${status}). ` +
-        "The project was generated; run 'npm run format' to normalise it."
+        "The project was generated; run 'npm run format' to normalise it.",
     )
   }
 }

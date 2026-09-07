@@ -12,7 +12,7 @@ import {
   repairPublishableManifest,
   writeProjectReadme,
   type AddOptions,
-  type WorkspaceStack
+  type WorkspaceStack,
 } from './shared'
 
 /**
@@ -73,7 +73,7 @@ export async function addReactLib (
   name: string,
   options: AddOptions,
   kindProvided: boolean,
-  stack: WorkspaceStack
+  stack: WorkspaceStack,
 ): Promise<void> {
   ensurePlugin(workspaceRoot, '@nx/react')
   const scope =
@@ -92,9 +92,9 @@ export async function addReactLib (
       `--bundler=${REACT_LIB_BUNDLER}`,
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   const publishableManifest = join(workspaceRoot, 'packages', name, 'package.json')
   markPublic(publishableManifest)
@@ -131,7 +131,7 @@ export async function addReactLib (
 export function addReactInternalLib (
   workspaceRoot: string,
   name: string,
-  stack: WorkspaceStack
+  stack: WorkspaceStack,
 ): void {
   ensurePlugin(workspaceRoot, '@nx/react')
   runNx(
@@ -143,9 +143,9 @@ export function addReactInternalLib (
       `--bundler=${REACT_LIB_BUNDLER}`,
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   const privateManifest = join(workspaceRoot, 'libs', name, 'package.json')
   markPrivate(privateManifest)

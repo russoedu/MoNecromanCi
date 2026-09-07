@@ -25,6 +25,7 @@ let actions: DartVersionActions
 function actionsFor (root: string): DartVersionActions {
   const instance = Object.create(DartVersionActions.prototype) as DartVersionActions
   Object.assign(instance, { projectGraphNode: { name: 'shared', data: { root } } })
+
   return instance
 }
 
@@ -39,7 +40,7 @@ describe('readCurrentVersionFromSourceManifest', () => {
 
     await expect(actions.readCurrentVersionFromSourceManifest(tree)).resolves.toEqual({
       currentVersion: '1.2.3',
-      manifestPath: 'packages/shared/pubspec.yaml'
+      manifestPath:   'packages/shared/pubspec.yaml',
     })
   })
 
@@ -51,7 +52,7 @@ describe('readCurrentVersionFromSourceManifest', () => {
     tree.write('packages/shared/pubspec.yaml', 'name: shared\nenvironment:\n  sdk: ^3.6.0\n')
 
     await expect(actions.readCurrentVersionFromSourceManifest(tree)).rejects.toThrow(
-      /Could not find a top-level "version:" key in packages\/shared\/pubspec\.yaml/
+      /Could not find a top-level "version:" key in packages\/shared\/pubspec\.yaml/,
     )
   })
 })
@@ -81,13 +82,13 @@ describe('registry and dependency behaviour', () => {
   it('reports no registry version — Dart packages here are released by git tag only', async () => {
     await expect(actions.readCurrentVersionFromRegistry(tree, undefined)).resolves.toEqual({
       currentVersion: null,
-      logText: expect.stringContaining('git tag')
+      logText:        expect.stringContaining('git tag'),
     })
   })
 
   it('reports nothing for a dependency — workspace members resolve locally', async () => {
     await expect(
-      actions.readCurrentVersionOfDependency(tree, {} as never, 'core')
+      actions.readCurrentVersionOfDependency(tree, {} as never, 'core'),
     ).resolves.toEqual({ currentVersion: null, dependencyCollection: null })
   })
 
@@ -110,7 +111,7 @@ describe('the versionActions path generators stamp onto a project', () => {
     // `resolveJsonModule` and would drag package.json into the emitted output.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const manifest = require('../../package.json') as {
-      name: string
+      name:    string
       exports: Record<string, { default: string }>
     }
     expect(stamped.startsWith(manifest.name)).toBe(true)

@@ -13,7 +13,7 @@ describe('promptText', () => {
     const value = await promptText('Name', 'fallback')
     expect(value).toBe('Ada')
     expect(mockInput).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Name', default: 'fallback' })
+      expect.objectContaining({ message: 'Name', default: 'fallback' }),
     )
   })
 
@@ -43,13 +43,13 @@ describe('promptRegistry', () => {
       .mockResolvedValueOnce('feed')
 
     expect(await promptRegistry('default-org')).toEqual({
-      kind: 'azure-artifacts',
-      organization: 'org',
-      project: 'proj',
-      artifactsFeed: 'feed'
+      kind:          'azure-artifacts',
+      organization:  'org',
+      project:       'proj',
+      artifactsFeed: 'feed',
     })
     expect(mockInput).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Azure DevOps organization', default: 'default-org' })
+      expect.objectContaining({ message: 'Azure DevOps organization', default: 'default-org' }),
     )
   })
 })

@@ -66,7 +66,7 @@ describe('withWorkspaceResolution', () => {
     expect(updated).toContain('resolution: workspace')
     // It must land after `environment:`, which is where Dart documents it.
     expect(updated.indexOf('resolution: workspace')).toBeGreaterThan(
-      updated.indexOf('environment:')
+      updated.indexOf('environment:'),
     )
     // …and before the dependencies it governs, i.e. not appended at the end.
     expect(updated.indexOf('resolution: workspace')).toBeLessThan(updated.indexOf('dependencies:'))
@@ -101,7 +101,7 @@ describe('withWorkspaceResolution', () => {
 
     expect(updated).toContain('resolution: workspace')
     expect(updated.indexOf('resolution: workspace')).toBeGreaterThan(
-      updated.indexOf('environment:')
+      updated.indexOf('environment:'),
     )
     expect(updated.indexOf('resolution: workspace')).toBeLessThan(updated.indexOf('dependencies:'))
   })

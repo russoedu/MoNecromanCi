@@ -1,7 +1,7 @@
 jest.mock('../../nx', () => ({
-  runNx: jest.fn(),
+  runNx:        jest.fn(),
   runFormatter: jest.fn(),
-  runShell: jest.fn(() => 0)
+  runShell:     jest.fn(() => 0),
 }))
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -12,7 +12,7 @@ import {
   registerProjectCommands,
   relocateRootRuntimeDependencies,
   removeGeneratedEslintConfig,
-  rootRuntimeDependencies
+  rootRuntimeDependencies,
 } from './shared'
 
 const mockRunShell = jest.mocked(runShell)
@@ -68,9 +68,9 @@ describe('registerProjectCommands', () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
       JSON.stringify({
-        name: '@demo/source',
-        scripts: { lint: 'nx run-many -t lint', mine: 'echo hi' }
-      })
+        name:    '@demo/source',
+        scripts: { lint: 'nx run-many -t lint', mine: 'echo hi' },
+      }),
     )
 
     registerProjectCommands(workspaceRoot, 'web', { build: true })
@@ -101,20 +101,20 @@ describe('registerProjectCommands', () => {
     // documented pre-commit routine, so this must not break the next `add`.
     writeFileSync(
       join(workspaceRoot, 'demo.code-workspace'),
-      '{\n  "folders": [\n    {\n      "path": ".",\n      "name": "demo",\n    },\n  ],\n  "tasks": { "version": "2.0.0", "tasks": [] },\n}\n'
+      '{\n  "folders": [\n    {\n      "path": ".",\n      "name": "demo",\n    },\n  ],\n  "tasks": { "version": "2.0.0", "tasks": [] },\n}\n',
     )
 
     expect(() => registerProjectCommands(workspaceRoot, 'web', { build: true })).not.toThrow()
     expect(tasks()).toEqual([
       { label: 'web: qa', type: 'npm', script: 'web:qa', problemMatcher: [], group: 'qa' },
-      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' }
+      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' },
     ])
   })
 
   it('appends matching VS Code tasks, grouped by build/test and isBackground for start', () => {
     writeFileSync(
       join(workspaceRoot, 'demo.code-workspace'),
-      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } })
+      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } }),
     )
 
     registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
@@ -123,19 +123,19 @@ describe('registerProjectCommands', () => {
       { label: 'web: qa', type: 'npm', script: 'web:qa', problemMatcher: [], group: 'qa' },
       { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' },
       {
-        label: 'web: start',
-        type: 'npm',
-        script: 'web:start',
+        label:          'web: start',
+        type:           'npm',
+        script:         'web:start',
         problemMatcher: [],
-        isBackground: true
-      }
+        isBackground:   true,
+      },
     ])
   })
 
   it("replaces a project's own tasks on a repeat call without touching another project's", () => {
     writeFileSync(
       join(workspaceRoot, 'demo.code-workspace'),
-      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } })
+      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } }),
     )
     registerProjectCommands(workspaceRoot, 'lib', { build: true })
     registerProjectCommands(workspaceRoot, 'web', { build: false })
@@ -152,7 +152,7 @@ describe('registerProjectCommands', () => {
     registerProjectCommands(workspaceRoot, 'web', { build: true })
 
     const workspaceFile = JSON.parse(
-      readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')
+      readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8'),
     ) as { tasks: { version: string } }
     expect(workspaceFile.tasks.version).toBe('2.0.0')
   })
@@ -212,7 +212,7 @@ describe('removeGeneratedEslintConfig', () => {
 function writeRoot (dependencies: Record<string, string> | undefined): void {
   writeFileSync(
     join(workspaceRoot, 'package.json'),
-    JSON.stringify({ name: '@demo/source', private: true, ...(dependencies && { dependencies }) })
+    JSON.stringify({ name: '@demo/source', private: true, ...(dependencies && { dependencies }) }),
   )
 }
 
@@ -220,11 +220,12 @@ function writeRoot (dependencies: Record<string, string> | undefined): void {
 function writeProject (
   root: string,
   name: string,
-  manifest: Record<string, unknown> = {}
+  manifest: Record<string, unknown> = {},
 ): string {
   mkdirSync(join(workspaceRoot, root, name), { recursive: true })
   const path = join(workspaceRoot, root, name, 'package.json')
   writeFileSync(path, JSON.stringify({ name: `@demo/${name}`, ...manifest }))
+
   return path
 }
 
@@ -238,12 +239,12 @@ function deps (path: string): Record<string, string> | undefined {
 describe('relocateRootRuntimeDependencies', () => {
   it('moves what the generator added into the project, leaving the root with none', () => {
     const before = rootRuntimeDependencies(workspaceRoot)
-    writeRoot({ react: '^19.0.0', 'react-dom': '^19.0.0' })
+    writeRoot({ 'react': '^19.0.0', 'react-dom': '^19.0.0' })
     const project = writeProject('apps', 'web')
 
     relocateRootRuntimeDependencies(workspaceRoot, 'web', before)
 
-    expect(deps(project)).toEqual({ react: '^19.0.0', 'react-dom': '^19.0.0' })
+    expect(deps(project)).toEqual({ 'react': '^19.0.0', 'react-dom': '^19.0.0' })
     // The doctor check this exists to satisfy reads `dependencies` and requires
     // it empty, so the key is dropped rather than left as {}.
     expect(deps(join(workspaceRoot, 'package.json'))).toBeUndefined()
@@ -267,7 +268,7 @@ describe('relocateRootRuntimeDependencies', () => {
     const before = rootRuntimeDependencies(workspaceRoot)
     writeRoot({ '@azure/functions': '^4.0.0' })
     const project = writeProject('apps', 'api', {
-      dependencies: { '@azure/functions': '^4.16.2' }
+      dependencies: { '@azure/functions': '^4.16.2' },
     })
 
     relocateRootRuntimeDependencies(workspaceRoot, 'api', before)
@@ -308,7 +309,7 @@ describe('relocateRootRuntimeDependencies', () => {
     expect(mockRunShell).toHaveBeenCalledWith(
       'npm',
       ['install', '--package-lock-only', '--no-audit', '--no-fund'],
-      workspaceRoot
+      workspaceRoot,
     )
   })
 

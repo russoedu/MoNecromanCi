@@ -50,30 +50,30 @@ const eslintReactRecommended = eslintReact.configs['recommended-typescript']
  */
 export default [
   {
-    name: 'mnci/react',
-    files: ['**/*.{jsx,tsx}'],
+    name:            'mnci/react',
+    files:           ['**/*.{jsx,tsx}'],
     languageOptions: {
-      globals: { ...globals.browser },
-      parserOptions: { ecmaFeatures: { jsx: true } }
+      globals:       { ...globals.browser },
+      parserOptions: { ecmaFeatures: { jsx: true } },
     },
     plugins: {
       ...eslintReactRecommended.plugins,
-      'react-hooks': reactHooks,
+      'react-hooks':   reactHooks,
       'react-refresh': reactRefresh,
-      'jsx-a11y': jsxA11y
+      'jsx-a11y':      jsxA11y,
     },
     settings: { ...eslintReactRecommended.settings },
-    rules: {
+    rules:    {
       ...eslintReactRecommended.rules,
       ...jsxA11y.flatConfigs.recommended.rules,
 
       // The two rules both plugins implement. See the remarks above: the React
       // team's plugin is the authority, so `@eslint-react`'s copies go off
       // rather than reporting the same defect twice.
-      '@eslint-react/rules-of-hooks': 'off',
+      '@eslint-react/rules-of-hooks':  'off',
       '@eslint-react/exhaustive-deps': 'off',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/rules-of-hooks':    'error',
+      'react-hooks/exhaustive-deps':   'warn',
 
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
 
@@ -82,7 +82,7 @@ export default [
       // would make Nx's own generated `app.tsx` fail lint in a workspace the
       // user has not touched yet. Still enforced on plain `.ts`, where the
       // return type is real API surface.
-      '@typescript-eslint/explicit-function-return-type': 'off'
-    }
-  }
+      '@typescript-eslint/explicit-function-return-type': 'off',
+    },
+  },
 ]

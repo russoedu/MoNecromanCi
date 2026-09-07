@@ -7,13 +7,15 @@ function contextAt (fixed: Date): OrchestrationContext {
   const context = {
     df: {
       currentUtcDateTime: fixed,
-      createTimer: (fireAt: Date): Task => {
+      createTimer:        (fireAt: Date): Task => {
         timers.push(fireAt)
+
         return { isCompleted: false, isFaulted: false }
-      }
+      },
     },
-    timers
+    timers,
   }
+
   return context as unknown as OrchestrationContext & { timers: Date[] }
 }
 

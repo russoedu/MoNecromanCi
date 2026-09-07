@@ -26,15 +26,16 @@ import type { LibraryGeneratorSchema } from './schema.d'
  */
 export default async function libraryGenerator (
   tree: Tree,
-  options: LibraryGeneratorSchema
+  options: LibraryGeneratorSchema,
 ): Promise<GeneratorCallback> {
   const task = generateFlutterProject(tree, {
-    name: options.name,
-    directory: options.directory ?? `packages/${options.name}`,
+    name:        options.name,
+    directory:   options.directory ?? `packages/${options.name}`,
     projectType: 'library',
-    tag: 'type:flutter-lib',
-    publishable: true
+    tag:         'type:flutter-lib',
+    publishable: true,
   })
   await formatFiles(tree)
+
   return task
 }

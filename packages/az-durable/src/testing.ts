@@ -14,7 +14,7 @@ import type { TypedOrchestration } from './types.js'
  */
 export interface RecordedCall {
   /** The activity or orchestration name, as scheduled. */
-  readonly name: string
+  readonly name:  string
   /** The input it was scheduled with. */
   readonly input: unknown
 }
@@ -46,9 +46,9 @@ export interface WorkflowStub {
    * THROW inside the orchestration, which is how failure branches and
    * retry-exhaustion paths become testable.
    */
-  readonly activities: Record<string, (input: unknown) => StubResult>
+  readonly activities:  Record<string, (input: unknown) => StubResult>
   /** Fixed clock, so time-dependent output is deterministic. Defaults to the epoch. */
-  readonly now?: Date
+  readonly now?:        Date
   /** Instance id the orchestration sees. Defaults to `test-instance`. */
   readonly instanceId?: string
   /**
@@ -77,11 +77,11 @@ export interface WorkflowStub {
  */
 export interface WorkflowRun<TInput, TOutput> {
   /** The orchestration's return value. */
-  readonly result: TOutput
+  readonly result:          TOutput
   /** Every activity and sub-orchestration call, in order. */
-  readonly calls: RecordedCall[]
+  readonly calls:           RecordedCall[]
   /** Every `setCustomStatus` transition, in order. */
-  readonly statuses: string[]
+  readonly statuses:        string[]
   /**
    * The input the orchestration asked to restart with, if it called
    * `self.continueAsNew`.
@@ -114,11 +114,11 @@ interface ThrowRequest {
 
 /** A task the fake context hands back; carries what was scheduled. */
 interface FakeTask extends Task {
-  readonly __name: string
+  readonly __name:  string
   readonly __input: unknown
   /** Present on timers only. Set by `cancel()`. */
-  isCanceled?: boolean
-  cancel?: () => void
+  isCanceled?:      boolean
+  cancel?:          () => void
 }
 
 /**
@@ -152,7 +152,7 @@ interface FakeTask extends Task {
 export function runWorkflow<TInput, TOutput> (
   orchestration: TypedOrchestration<TInput, TOutput>,
   input: TInput,
-  stub: WorkflowStub
+  stub: WorkflowStub,
 ): WorkflowRun<TInput, TOutput> {
   const calls: RecordedCall[] = []
   const statuses: string[] = []
@@ -161,17 +161,18 @@ export function runWorkflow<TInput, TOutput> (
 
   const schedule = (name: string, scheduledInput: unknown): FakeTask => {
     calls.push({ name, input: scheduledInput })
+
     return { isCompleted: false, isFaulted: false, __name: name, __input: scheduledInput }
   }
 
   const context = {
     df: {
-      instanceId: stub.instanceId ?? 'test-instance',
-      isReplaying: false,
-      currentUtcDateTime: clock,
-      callActivity: schedule,
-      callActivityWithRetry: (name: string, _retry: unknown, i: unknown) => schedule(name, i),
-      callSubOrchestrator: (name: string, i: unknown) => schedule(name, i),
+      instanceId:                   stub.instanceId ?? 'test-instance',
+      isReplaying:                  false,
+      currentUtcDateTime:           clock,
+      callActivity:                 schedule,
+      callActivityWithRetry:        (name: string, _retry: unknown, i: unknown) => schedule(name, i),
+      callSubOrchestrator:          (name: string, i: unknown) => schedule(name, i),
       callSubOrchestratorWithRetry: (name: string, _retry: unknown, i: unknown) =>
         schedule(name, i),
       waitForExternalEvent: (name: string) => schedule(name, undefined),
@@ -179,12 +180,13 @@ export function runWorkflow<TInput, TOutput> (
       // harness that blocked on one would be useless. `cancel` is real,
       // because an orchestration that correctly cancels its losing timer must
       // not crash in a test for doing the right thing.
-      createTimer: (fireAt: Date) => {
+      createTimer:          (fireAt: Date) => {
         const timer = schedule('__timer', fireAt.toISOString())
         timer.isCanceled = false
         timer.cancel = () => {
           timer.isCanceled = true
         }
+
         return timer
       },
       setCustomStatus: (value: unknown) => {
@@ -199,9 +201,9 @@ export function runWorkflow<TInput, TOutput> (
         // to its value, so choosing here would hand the orchestration the
         // wrong kind of thing — which is exactly the bug the reconstructed
         // workflows found.
-        any: (tasks: Task[]) => ({ isCompleted: false, isFaulted: false, __any: tasks })
-      }
-    }
+        any: (tasks: Task[]) => ({ isCompleted: false, isFaulted: false, __any: tasks }),
+      },
+    },
   } as unknown as OrchestrationContext
 
   const generator = orchestration.handler(context, input)
@@ -215,6 +217,7 @@ export function runWorkflow<TInput, TOutput> (
       ? generator.throw(resumed.__throw)
       : generator.next(resumed)
   }
+
   return continuedAsNew === undefined
     ? { result: step.value, calls, statuses }
     : { result: step.value, calls, statuses, continuedAsNew }
@@ -251,7 +254,7 @@ function resolve (task: Task, stub: WorkflowStub): unknown {
     // Naming the activity matters: the alternative is `undefined` flowing into
     // the orchestration and failing somewhere unrelated.
     throw new Error(
-      `No stub registered for '${name}'. Add it to stub.activities to run this workflow.`
+      `No stub registered for '${name}'. Add it to stub.activities to run this workflow.`,
     )
   }
   const result = activity(input)
@@ -261,6 +264,7 @@ function resolve (task: Task, stub: WorkflowStub): unknown {
     // so the DRIVER injects it; see {@link ThrowRequest}.
     return { __throw: result }
   }
+
   return result
 }
 
@@ -289,12 +293,13 @@ function resolveRace (candidates: Task[], stub: WorkflowStub): Task {
   const winner = candidates.find(c => (c as FakeTask).__name === chosen)
   if (winner === undefined) {
     throw new Error(
-      `raceWinner chose '${String(chosen)}', which is not racing. Candidates: ${names.join(', ')}.`
+      `raceWinner chose '${String(chosen)}', which is not racing. Candidates: ${names.join(', ')}.`,
     )
   }
   const mutable = winner as { result?: unknown; isCompleted: boolean }
   mutable.result = (winner as FakeTask).__name === '__timer' ? undefined : resolve(winner, stub)
   mutable.isCompleted = true
+
   return winner
 }
 

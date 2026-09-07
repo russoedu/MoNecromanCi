@@ -10,7 +10,7 @@ import {
   repairPublishableManifest,
   writeProjectReadme,
   type AddOptions,
-  type WorkspaceStack
+  type WorkspaceStack,
 } from './shared'
 
 /**
@@ -43,7 +43,7 @@ export async function addNpmLib (
   name: string,
   options: AddOptions,
   kindProvided: boolean,
-  stack: WorkspaceStack
+  stack: WorkspaceStack,
 ): Promise<void> {
   const scope =
     options.scope ??
@@ -60,9 +60,9 @@ export async function addNpmLib (
       '--bundler=rollup',
       `--unitTestRunner=${stack.testRunner}`,
       '--linter=none',
-      '--no-interactive'
+      '--no-interactive',
     ],
-    workspaceRoot
+    workspaceRoot,
   )
   const manifestPath = join(workspaceRoot, 'packages', name, 'package.json')
   markPublic(manifestPath)

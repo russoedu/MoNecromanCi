@@ -7,7 +7,7 @@ import {
   isNewer,
   parseVersion,
   rangeOperator,
-  specVersion
+  specVersion,
 } from './semver'
 
 describe('parseVersion', () => {
@@ -34,7 +34,7 @@ describe('rangeOperator', () => {
     ['~1.2.3', '~'],
     ['>=1.2.3', '>='],
     ['<=1.2.3', '<='],
-    ['1.2.3', '']
+    ['1.2.3', ''],
   ])('reads %s as %s', (spec, expected) => {
     expect(rangeOperator(spec)).toBe(expected)
   })
@@ -92,7 +92,7 @@ describe('classify', () => {
   it.each([
     ['1.2.3', '1.2.9', 'patch'],
     ['1.2.3', '1.5.0', 'minor'],
-    ['1.2.3', '2.0.0', 'major']
+    ['1.2.3', '2.0.0', 'major'],
   ])('buckets %s to %s as %s', (current, latest, expected) => {
     expect(classify(current, latest)).toBe(expected)
   })

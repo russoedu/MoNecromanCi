@@ -214,7 +214,48 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Every Generated Library Was Undebuggable (Latest)
+### Five Deliberate Departures From Standard (Latest)
+
+Requested after a side-by-side diff of a hand-written config against what
+`@mnci/eslint-config` resolves: 54 rules compared, 11 already identical, 34 set
+differently, 9 mnci had no opinion on. Five of the differences are now adopted.
+
+- **A NEW BLOCK, not edits to `mnci/standard`.** That block is a
+  programmatically extracted port of neostandard and its docblock says so;
+  editing it in place would make the claim false and would silently revert these
+  choices the next time anyone re-extracts upstream. `mnci/house-style` is
+  composed after it — the departures win, and every one of them sits in one file
+  with a reason attached.
+- **`comma-dangle` → `always-multiline`, `key-spacing` → aligned on value,
+  `quote-props` → `consistent-as-needed`, `max-statements-per-line` → 2, and a
+  required blank line before `return`.**
+- **Two of those rules are coupled, and that is the thing to know.** Aligning
+  object values needs `key-spacing`'s `align` AND an exception in
+  `no-multi-spaces` — alignment IS more than one space. Move one without the
+  other and the config contradicts itself: one rule reports what the other
+  demands and no `--fix` can satisfy both. `exceptions` also **replaces**
+  @stylistic's default object rather than merging, so `Property` and
+  `ImportAttribute` are re-listed; omitting them would switch alignment off
+  inside object literals, the place it is most wanted.
+- **`newline-before-return` was asked for and deliberately not used.** Its own
+  metadata says `availableUntil: "11.0.0"` — deprecated since ESLint 4 and
+  removed at the next major. `@stylistic/padding-line-between-statements` with
+  `{ prev: '*', next: 'return' }` was compared against it on the same fixture
+  and reports identically, including the case that matters: a `return` that is
+  the only statement in its block, which neither flags.
+- **151 files reformatted, and the reformat found two brittle assumptions.**
+  `e2eFixtures.test.ts` scanned the e2e for `@standard-clean` markers with a
+  regex that assumed no trailing comma; once `--fix` added them it matched
+  nothing, found zero fixtures, and its per-fixture assertions passed
+  **vacuously** — the exact failure mode that file exists to prevent. And the
+  `formatting.ts` fixture's multi-space sat on a `VariableDeclarator`, which is
+  now deliberately allowed, so it had stopped exercising `no-multi-spaces` while
+  still asserting it did.
+- Five tests pin the new block, including that an aligned fixture lints
+  completely clean — a `toEqual([])`, so a future rule that quarrels with the
+  alignment cannot slip through as an extra finding.
+
+### Every Generated Library Was Undebuggable
 
 Reported as "VS Code ignores my breakpoints and marks them grey" in a real
 generated workspace. Three independent causes, none of which reports an error,

@@ -45,7 +45,7 @@ const repoRoot = join(__dirname, '..', '..', '..')
 
 interface Step {
   name?: string
-  run?: string
+  run?:  string
   uses?: string
 }
 
@@ -93,7 +93,7 @@ function usesOf (workflow: Workflow): string[] {
 }
 
 const actual = yaml.load(
-  readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8')
+  readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8'),
 ) as Workflow
 
 // Generated with this repo's own persisted options, so the comparison is against
@@ -167,8 +167,8 @@ describe('the e2e job provisions the toolchains its own suite needs', () => {
     // fixed something.
     const provisioning = steps.filter(step =>
       ['golangci-lint', 'Flutter SDK', 'Go tool bin'].some(marker =>
-        (step.name ?? '').includes(marker)
-      )
+        (step.name ?? '').includes(marker),
+      ),
     )
 
     expect(provisioning.length).toBeGreaterThan(0)
@@ -199,8 +199,8 @@ describe('the e2e job provisions the toolchains its own suite needs', () => {
     // and it cannot degrade silently, because the report names every skip.
     const networkSteps = steps.filter(candidate =>
       ['golangci-lint', 'Flutter SDK', 'PATH'].some(marker =>
-        (candidate.name ?? '').includes(marker)
-      )
+        (candidate.name ?? '').includes(marker),
+      ),
     )
 
     expect(networkSteps.length).toBeGreaterThan(0)
