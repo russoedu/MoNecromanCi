@@ -1694,7 +1694,7 @@ describe('DOTNET_SDK_VERSION', () => {
     // 18-month STS. Pinning CI/devcontainer provisioning to an STS release
     // would need a bump on a much tighter clock than mnci's other toolchain
     // pins.
-    const major = Number(DOTNET_SDK_VERSION.split('.')[0])
+    const major = Number(DOTNET_SDK_VERSION.split('.', 1)[0])
     expect(major % 2).toBe(0)
   })
 })

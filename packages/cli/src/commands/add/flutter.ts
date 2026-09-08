@@ -1,31 +1,7 @@
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
-import { readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
-
-/**
- * Merges an extra target into a plugin-written `project.json`.
- *
- * @remarks
- * `@mnci/nx-flutter`'s generators write a real `project.json` (lint/test/
- * build/package), same as `@mnci/nx-python-pip` and `@nx-go/nx-go` — this is
- * the analogous post-generation merge those two plugins' `add/*.ts` modules
- * already have their own copy of (`addProjectJsonTargets`), used here only
- * for the `start` target ({@link flutterAppStartTarget}), which the plugin
- * itself has no opinion on.
- *
- * @param projectJsonPath - Absolute path to the project's `project.json`.
- * @param newTargets - The targets to merge in.
- * @returns Nothing.
- * @throws Propagates any `fs`/JSON error reading or writing the file.
- * @typeParam None - this function has no generic type parameters.
- */
-function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
-  const project = readJson<Record<string, unknown>>(projectJsonPath)
-  const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
-  writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
-}
+import { addProjectJsonTargets, ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
 
 /**
  * The `start` target for a Flutter app: `flutter run -d chrome`, locally.
