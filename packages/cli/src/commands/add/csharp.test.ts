@@ -8,7 +8,7 @@ jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
 import { select } from '@inquirer/prompts'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
@@ -22,6 +22,24 @@ const mockSelect = jest.mocked(select)
 const mockPromptText = jest.mocked(promptText)
 
 let workspaceRoot: string
+
+/**
+ * The real repo's `node_modules`, five levels up from this file
+ * (`commands/add/ -> commands -> src -> cli -> packages -> repo root`).
+ *
+ * @remarks
+ * `tools/csharp-version-actions.cjs` `require()`s `nx/release`, exactly as
+ * it will inside a real generated workspace. This test's workspace is a
+ * throwaway `mkdtempSync` directory with no `node_modules` of its own, so a
+ * symlink borrows the real one rather than mocking `nx/release` away — the
+ * point of the test is that the real base class resolves and behaves.
+ */
+const repoNodeModules = join(__dirname, '..', '..', '..', '..', '..', 'node_modules')
+
+/** Symlinks the real repo's `node_modules` into a throwaway workspace so `require('nx/release')` resolves. @param root - The throwaway workspace root. */
+function linkRealNodeModules (root: string): void {
+  symlinkSync(repoNodeModules, join(root, 'node_modules'), 'junction')
+}
 
 /** Reads a generated project.json back. */
 function readProjectJson (relativeDirectory: string): {
@@ -37,9 +55,30 @@ function shellCalls (command: string): string[][] {
   return mockRunShell.mock.calls.filter(call => call[0] === command).map(call => call[1])
 }
 
+/**
+ * Fakes `dotnet new`'s one filesystem side effect the real code now depends
+ * on: `addCsharpLib` reads the freshly scaffolded `.csproj` back
+ * (`addInitialVersion`) to inject a starting `<Version>`, so a mock that
+ * only returns an exit code — true of every other kind here — leaves that
+ * read hitting a file that was never written.
+ */
+function fakeDotnetNew (command: string, args: string[], cwd: string): number {
+  if (command === 'dotnet' && args[0] === 'new') {
+    const identity = args[args.indexOf('-n') + 1]
+    const outDir = args[args.indexOf('-o') + 1]
+    mkdirSync(join(cwd, outDir), { recursive: true })
+    writeFileSync(
+      join(cwd, outDir, `${identity}.csproj`),
+      '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n  </PropertyGroup>\n</Project>\n',
+    )
+  }
+
+  return 0
+}
+
 beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-csharp-'))
-  mockRunShell.mockImplementation(() => 0)
+  mockRunShell.mockImplementation(fakeDotnetNew)
   jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
@@ -177,6 +216,97 @@ describe('runAdd csharp-lib', () => {
     expect(rootManifest.scripts['sdk:build']).toBe('nx run sdk:build')
     expect(rootManifest.scripts['sdk:qa']).toBe('nx run sdk:lint && nx run sdk:test')
     expect(rootManifest.scripts['sdk:start']).toBeUndefined()
+  })
+
+  it('starts the .csproj at an explicit 0.1.0, since dotnet new writes no <Version> at all', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const csproj = readFileSync(join(workspaceRoot, 'packages/sdk/Demo.Sdk.csproj'), 'utf8')
+    expect(csproj).toContain('<Version>0.1.0</Version>')
+  })
+
+  it('points project.json at the shared tools/csharp-version-actions.cjs for nx release', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const project = readProjectJson('packages/sdk') as unknown as {
+      release?: { version?: { versionActions?: string } }
+    }
+    expect(project.release?.version?.versionActions).toBe('tools/csharp-version-actions.cjs')
+    expect(existsSync(join(workspaceRoot, 'tools/csharp-version-actions.cjs'))).toBe(true)
+  })
+
+  it('writes a CsharpVersionActions that reads/writes a .csproj <Version> and validates its presence', async () => {
+    // A real integration check, not a string-content assertion: `require()`
+    // the exact file mnci writes into a generated workspace and exercise it
+    // against a minimal fake Tree, the same way nx release actually drives
+    // it (see resolveVersionActionsForProject in nx's own source).
+    await runAdd('csharp-lib', 'sdk', {})
+    linkRealNodeModules(workspaceRoot)
+
+    const csprojPath = join(workspaceRoot, 'packages/sdk/Demo.Sdk.csproj')
+    writeFileSync(
+      csprojPath,
+      '<Project Sdk="Microsoft.NET.Sdk">\n  <PropertyGroup>\n    <Version>1.2.3</Version>\n  </PropertyGroup>\n</Project>\n',
+    )
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require of a generated-workspace file, mirroring how nx release itself loads it.
+    const CsharpVersionActions = require(join(workspaceRoot, 'tools/csharp-version-actions.cjs')) as new (
+      ...arguments_: unknown[]
+    ) => {
+      validate:                             (tree: unknown) => Promise<void>
+      readCurrentVersionFromSourceManifest: (
+        tree: unknown,
+      ) => Promise<{ currentVersion: string; manifestPath: string } | null>
+      readCurrentVersionFromRegistry: (
+        tree: unknown,
+        metadata: unknown,
+      ) => Promise<{ currentVersion: string | null; logText: string }>
+      updateProjectVersion: (tree: unknown, newVersion: string) => Promise<string[]>
+    }
+
+    const fakeTree = {
+      children: (dir: string) => (dir.endsWith('sdk') ? ['Demo.Sdk.csproj'] : []),
+      read:     (path: string) => (path.includes('Demo.Sdk.csproj') ? readFileSync(csprojPath, 'utf8') : null),
+      write:    (path: string, contents: string) => {
+        if (path.includes('Demo.Sdk.csproj')) writeFileSync(csprojPath, contents)
+      },
+      exists: (path: string) => path.includes('Demo.Sdk.csproj'),
+    }
+
+    const instance = new CsharpVersionActions(
+      {},
+      { name: 'sdk', data: { root: 'packages/sdk' } },
+      {},
+    )
+
+    await expect(instance.readCurrentVersionFromSourceManifest(fakeTree)).resolves.toEqual({
+      currentVersion: '1.2.3',
+      manifestPath:   'packages/sdk/Demo.Sdk.csproj',
+    })
+
+    const registryResult = await instance.readCurrentVersionFromRegistry(fakeTree, undefined)
+    expect(registryResult.currentVersion).toBeNull()
+    expect(registryResult.logText).toContain('git tag')
+
+    await expect(instance.validate(fakeTree)).resolves.toBeUndefined()
+
+    await instance.updateProjectVersion(fakeTree, '1.3.0')
+    expect(readFileSync(csprojPath, 'utf8')).toContain('<Version>1.3.0</Version>')
+  })
+
+  it('validate() throws when no .csproj exists at all, catching a project with a missing manifest', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+    linkRealNodeModules(workspaceRoot)
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require of a generated-workspace file, mirroring how nx release itself loads it.
+    const CsharpVersionActions = require(join(workspaceRoot, 'tools/csharp-version-actions.cjs')) as new (
+      ...arguments_: unknown[]
+    ) => { validate: (tree: unknown) => Promise<void> }
+
+    const emptyTree = { children: () => [] }
+    const instance = new CsharpVersionActions({}, { name: 'sdk', data: { root: 'packages/sdk' } }, {})
+
+    await expect(instance.validate(emptyTree)).rejects.toThrow(/does not have a \.csproj file/)
   })
 })
 

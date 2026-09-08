@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { DOTNET_SDK_VERSION } from '../../overlay'
 import { promptText } from '../../prompts'
-import { writeFileEnsured } from '../../util/fsx'
+import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 import {
   addProjectJsonTargets,
@@ -267,6 +268,223 @@ function pascalScope (scope: string): string {
 }
 
 /**
+ * The workspace-relative path every publishable `csharp-lib`'s
+ * `release.version.versionActions` points at.
+ *
+ * @remarks
+ * Not a package specifier, deliberately: Nx resolves that config value in
+ * two ways (`nx/dist/.../version-actions.js`, `resolveVersionActionsPath`,
+ * read directly rather than assumed) — first as a module specifier via
+ * `require.resolve(path)`, then, when that fails, as
+ * `require.resolve(join(workspaceRoot, path))`. The second form is exactly
+ * what {@link CSHARP_VERSION_ACTIONS} needs and nothing more: a shared,
+ * hand-written file `mnci add csharp-lib` writes straight into the
+ * generated workspace, with no sixth mnci package to scaffold, publish and
+ * keep versioned just to carry one class — unlike `@mnci/nx-python-pip` and
+ * `@mnci/nx-flutter`, which exist because a whole generator/executor surface
+ * was missing, not one release hook.
+ */
+const CSHARP_VERSION_ACTIONS_PATH = 'tools/csharp-version-actions.cjs'
+
+/**
+ * The `tools/csharp-version-actions.cjs` file every `csharp-lib` shares.
+ *
+ * @remarks
+ * `@nx/dotnet` supplies build/test/pack inference but no `versionActions` at
+ * all — verified against the real published package, the same way its
+ * generator-less shape was verified (see {@link scaffoldDotnetProject}'s
+ * remarks). Without this, `nx release` falls back to its npm default, which
+ * looks for a `package.json` a `.csproj` project does not have, and aborts
+ * while building the release graph — the same failure mode already fixed
+ * for `go-lib` (see `RELEASE_CONFIG`'s `!tag:type:go-lib` exclusion in
+ * `overlay.ts`). Exclusion is the wrong fix here, unlike Go: a `go-lib` has
+ * no independent version because mnci puts every Go project in one shared
+ * `go.mod`, but every `csharp-lib` is its own `.csproj` with its own
+ * independently published NuGet identity — excluding it would silently stop
+ * versioning packages the user explicitly asked to publish.
+ *
+ * **The `.csproj` filename varies per project** (the PascalCase scope+name
+ * identity, not a fixed name the way `pubspec.yaml`/`package.json` are), so
+ * this globs the project root for the first `*.csproj` rather than
+ * `nx/release`'s built-in `validManifestFilenames` auto-discovery, which
+ * only matches an exact filename — the reason `validate()` is overridden
+ * too, rather than left to the base class's default (which would silently
+ * find nothing to validate, since it drives off that same exact-match list).
+ *
+ * **`readCurrentVersionFromRegistry` is never actually called for these
+ * projects** — verified by reading `nx`'s own release source
+ * (`resolve-current-version.js`), not assumed: `RELEASE_CONFIG` sets
+ * `version.conventionalCommits: true`, which makes Nx default
+ * `currentVersionResolver` to `'git-tag'`, and that path reads the version
+ * straight off the matching `{projectName}@{version}` tag — it only calls
+ * into `readCurrentVersionFromSourceManifest` as the disk fallback when no
+ * tag exists yet (the first release) or a clone has no tags fetched (see
+ * `mnci-details.md`'s "run `git fetch --tags` first" troubleshooting entry).
+ * So a real NuGet registry query here would be dead code today; overridden
+ * anyway, with a null-and-explain return, purely to satisfy the base
+ * class's contract — the exact shape `DartVersionActions` already uses for
+ * the same reason (Dart's Flutter packages are git-tag-only for a different
+ * cause, no pub.dev feed at all, but the resulting method body is
+ * identical in spirit).
+ *
+ * Written as `.cjs`, not `.ts` or a bare `.js`: Nx `require()`s this file
+ * directly (`requireWithTsconfigFallback`, not `loadTsFile` — that branch is
+ * keyed on a `.ts`/`.cts`/`.mts` extension), and `.cjs` resolves as
+ * CommonJS regardless of whichever `"type"` the generated root
+ * `package.json` declares, so there is nothing here to get wrong by an
+ * ESM/CJS mismatch two files can drift on independently.
+ *
+ * **Unverified without a real SDK/Nx release run** — the same caveat
+ * {@link csharpAppPackageTarget} and `csharpFunctionAppCsproj` already carry.
+ * `nx release --dry-run` against a real generated workspace with a real
+ * `csharp-lib` is what the gated e2e (tracked separately) exists to confirm.
+ */
+const CSHARP_VERSION_ACTIONS = `'use strict'
+
+const { join } = require('node:path')
+const { VersionActions } = require('nx/release')
+
+const VERSION_TAG = /<Version>([^<]*)<\\/Version>/
+
+function findCsproj (tree, root) {
+  const name = tree.children(root).find((entry) => entry.endsWith('.csproj'))
+  return name ? join(root, name) : null
+}
+
+/**
+ * Hand-written Nx release VersionActions for a publishable C# library: reads
+ * and writes the <Version> element of the project's own .csproj. Written by
+ * \`mnci add csharp-lib\` — see that command's source for why this is a
+ * workspace file rather than an npm package.
+ */
+class CsharpVersionActions extends VersionActions {
+  validManifestFilenames = ['*.csproj']
+
+  async readCurrentVersionFromSourceManifest (tree) {
+    const manifestPath = findCsproj(tree, this.projectGraphNode.data.root)
+    if (!manifestPath) {
+      return null
+    }
+    const contents = tree.read(manifestPath, 'utf8') ?? ''
+    const match = VERSION_TAG.exec(contents)
+    if (!match || !match[1]) {
+      throw new Error(\`Could not find a <Version> element in \${manifestPath}\`)
+    }
+
+    return { currentVersion: match[1], manifestPath }
+  }
+
+  async readCurrentVersionFromRegistry (_tree, _currentVersionResolverMetadata) {
+    return {
+      currentVersion: null,
+      logText:        'C# libraries resolve their current version from git tags, not a registry lookup',
+    }
+  }
+
+  async readCurrentVersionOfDependency (_tree, _projectGraph, _dependencyProjectName) {
+    return { currentVersion: null, dependencyCollection: null }
+  }
+
+  async updateProjectVersion (tree, newVersion) {
+    const manifestPath = findCsproj(tree, this.projectGraphNode.data.root)
+    if (!manifestPath) {
+      throw new Error(\`No .csproj found in \${this.projectGraphNode.data.root}\`)
+    }
+    const contents = tree.read(manifestPath, 'utf8') ?? ''
+    if (!VERSION_TAG.test(contents)) {
+      throw new Error(\`Could not find a <Version> element in \${manifestPath}\`)
+    }
+    tree.write(manifestPath, contents.replace(VERSION_TAG, \`<Version>\${newVersion}</Version>\`))
+
+    return [\`Updated \${manifestPath} to version \${newVersion}\`]
+  }
+
+  async updateProjectDependencies (_tree, _projectGraph, _dependenciesToUpdate) {
+    return []
+  }
+
+  async validate (tree) {
+    if (!findCsproj(tree, this.projectGraphNode.data.root)) {
+      throw new Error(\`The project "\${this.projectGraphNode.name}" does not have a .csproj file available in \${this.projectGraphNode.data.root}\`)
+    }
+  }
+}
+
+module.exports = CsharpVersionActions
+`
+
+/**
+ * Writes the shared `tools/csharp-version-actions.cjs` file, idempotently.
+ *
+ * @remarks
+ * Identical content on every call, so an unconditional overwrite on each
+ * `mnci add csharp-lib` is safe — the same idempotency every other
+ * mnci-owned file in a generated workspace already relies on.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any `fs` error writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function writeCsharpVersionActions (workspaceRoot: string): void {
+  writeFileEnsured(join(workspaceRoot, CSHARP_VERSION_ACTIONS_PATH), CSHARP_VERSION_ACTIONS)
+}
+
+/**
+ * Points a project's `project.json` at {@link CSHARP_VERSION_ACTIONS_PATH}
+ * for `nx release`.
+ *
+ * @remarks
+ * Mirrors `addProjectJsonTargets` in `shared.ts` — same tolerant-of-a-missing-file
+ * read, same merge-not-replace shape — but merges into `release.version`
+ * rather than `targets`, so it stays a small sibling function rather than a
+ * parameter added to that one to cover a single caller.
+ *
+ * @param projectJsonPath - Absolute path to the project's `project.json`.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function addProjectJsonReleaseVersionActions (projectJsonPath: string): void {
+  const project = fileExists(projectJsonPath)
+    ? readJson<Record<string, unknown>>(projectJsonPath)
+    : {}
+  const release = (project.release as Record<string, unknown> | undefined) ?? {}
+  const version = (release.version as Record<string, unknown> | undefined) ?? {}
+  writeFileEnsured(
+    projectJsonPath,
+    toJson({
+      ...project,
+      release: { ...release, version: { ...version, versionActions: CSHARP_VERSION_ACTIONS_PATH } },
+    }),
+  )
+}
+
+/**
+ * Adds an explicit `<Version>0.1.0</Version>` to a freshly scaffolded
+ * `.csproj`, inside its first `<PropertyGroup>`.
+ *
+ * @remarks
+ * `dotnet new classlib` writes no `<Version>` element at all — NuGet
+ * defaults an absent one to `1.0.0` implicitly, which is a fine publish
+ * default but a bad *first* one for {@link CSHARP_VERSION_ACTIONS} to read:
+ * an explicit starting value here is what lets that class read/write a real
+ * element from the very first `nx release`, rather than special-casing a
+ * project whose manifest declares no version yet — the same reason `npm-lib`
+ * and `python-lib` both start their manifests with an explicit version
+ * rather than leaving it to a generator default.
+ *
+ * @param csprojPath - Absolute path to the freshly scaffolded `.csproj`.
+ * @returns Nothing.
+ * @throws Propagates any `fs` error reading or writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function addInitialVersion (csprojPath: string): void {
+  const contents = readFileSync(csprojPath, 'utf8')
+  writeFileEnsured(csprojPath, contents.replace('<PropertyGroup>', '<PropertyGroup>\n    <Version>0.1.0</Version>'))
+}
+
+/**
  * Adds a publishable C# library under `packages/`: `dotnet new classlib`.
  *
  * @remarks
@@ -280,10 +498,13 @@ function pascalScope (scope: string): string {
  * distribution path is `nx release` (NuGet publish), the same as
  * `npm-lib`/`python-lib`, never the `dist/drop` zip convention that exists
  * for apps. `@nx/dotnet` already infers a `pack` target from the `.csproj`
- * alone, so there is nothing extra to wire here — see the `nx release`
- * integration this still needs (tracked separately, since a `.csproj` lib
- * has no `package.json` for Nx's default `versionActions` to read, the same
- * failure mode already fixed for `go-lib`).
+ * alone, so there is nothing extra to wire here.
+ *
+ * Wires `nx release` itself: an explicit `<Version>0.1.0</Version>` (see
+ * {@link addInitialVersion}) plus a project-level `release.version.versionActions`
+ * override pointing at the shared {@link CSHARP_VERSION_ACTIONS_PATH} (see
+ * that constant's remarks for why a `.csproj` lib needs one at all, and why
+ * it is a workspace file rather than a sixth mnci package).
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
@@ -310,12 +531,11 @@ export async function addCsharpLib (
       : await promptText('NuGet package scope for the published library', defaultScope(workspaceRoot)))
 
   const projectRoot = `packages/${name}`
-  scaffoldDotnetProject(
-    workspaceRoot,
-    projectRoot,
-    `${pascalScope(scope)}.${pascalCase(name)}`,
-    'classlib',
-  )
+  const identity = `${pascalScope(scope)}.${pascalCase(name)}`
+  scaffoldDotnetProject(workspaceRoot, projectRoot, identity, 'classlib')
+  addInitialVersion(join(workspaceRoot, projectRoot, `${identity}.csproj`))
+  writeCsharpVersionActions(workspaceRoot)
+  addProjectJsonReleaseVersionActions(join(workspaceRoot, projectRoot, 'project.json'))
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
 
