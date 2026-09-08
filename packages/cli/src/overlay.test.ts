@@ -17,6 +17,7 @@ import {
   DEFAULT_STACK,
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
+  ESLINT_CONFIG_VERSION,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
   FLUTTER_SDK_VERSION,
@@ -1989,6 +1990,68 @@ describe('applyOverlay', () => {
     // it has to resolve against a declared `eslint` — assert both halves.
     expect(manifest.devDependencies.eslint).toBe(ESLINT_VERSION)
     expect(ESLINT_VERSION.startsWith('^10.')).toBe(true)
+  })
+
+  it('writes an @mnci/eslint-config range that floats to future 0.x releases via npm update alone', () => {
+    // Reported bug, reproduced by construction: a real generated workspace was
+    // still declaring `^0.1.0` after 20+ published releases. `^` on a pre-1.0
+    // package is minor-locked - `^0.1.0` means `>=0.1.0 <0.2.0` - so `npm
+    // update` could never carry it past 0.1.x, no matter how long the workspace
+    // went between `mnci upgrade` runs. Verified with the real `semver`
+    // resolver (the same one npm itself uses), not a hand-rolled comparison.
+    //
+    // Deliberately NOT pinned to today's published version: hardcoding "the
+    // latest is 0.3.6" would go stale the moment 0.3.7 ships, which is exactly
+    // the class of bug this test exists to catch. Instead it asserts the
+    // PROPERTY that must hold no matter what version ships next - an
+    // arbitrarily far-future 0.x still satisfies the range - so the test
+    // cannot rot the way the code it is guarding against did.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- no @types/semver; see below
+    const semver = require('semver') as { satisfies: (version: string, range: string) => boolean }
+
+    expect(semver.satisfies('0.1.0', ESLINT_CONFIG_VERSION)).toBe(true)
+    // Stands in for "whatever the latest 0.x is by the time this test runs" -
+    // a number this high can never accidentally become real, so it only passes
+    // if the range genuinely has no minor ceiling.
+    expect(semver.satisfies('0.999.999', ESLINT_CONFIG_VERSION)).toBe(true)
+    // Below the floor: an ancient release must still be excluded.
+    expect(semver.satisfies('0.0.9', ESLINT_CONFIG_VERSION)).toBe(false)
+    // Crossing into a stable 1.0 is an intentional decision (bumping this
+    // constant), not something `npm update` should do on its own.
+    expect(semver.satisfies('1.0.0', ESLINT_CONFIG_VERSION)).toBe(false)
+
+    // The structural guard against ever reintroducing the exact bug: any
+    // range of the form `^0.x` is minor-locked under npm's semver rules, full
+    // stop, regardless of which 0.x this constant happens to read today.
+    expect(ESLINT_CONFIG_VERSION).not.toMatch(/^\^0\./)
+
+    overlayWith(DEFAULT_STACK)
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>
+    }
+    expect(manifest.devDependencies['@mnci/eslint-config']).toBe(ESLINT_CONFIG_VERSION)
+  })
+
+  it('mnci upgrade replaces a stale caret range instead of leaving a workspace stuck on it', () => {
+    // The second half of the bug: even fixing the constant does nothing for a
+    // workspace that already has the old `^0.1.0` written into its manifest,
+    // unless `mnci upgrade` actually overwrites it rather than deferring to
+    // what is already there.
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({
+        name:            'x',
+        devDependencies: { '@mnci/eslint-config': '^0.1.0' },
+      }),
+    )
+
+    overlayWith(DEFAULT_STACK)
+
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>
+    }
+    expect(manifest.devDependencies['@mnci/eslint-config']).toBe(ESLINT_CONFIG_VERSION)
+    expect(manifest.devDependencies['@mnci/eslint-config']).not.toBe('^0.1.0')
   })
 
   it("merges overrides rather than replacing a workspace's own", () => {

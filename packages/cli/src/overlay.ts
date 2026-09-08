@@ -534,11 +534,22 @@ export const COMMIT_MSG_HOOK = `npx --no -- commitlint --edit "$1"
  * The `@mnci/eslint-config` version generated workspaces depend on.
  *
  * @remarks
- * A caret range, so `npm update` carries lint-rule improvements into existing
- * workspaces without an `mnci upgrade` — the reason the config ships as a
- * package rather than as a template string in this file.
+ * NOT a caret range, deliberately — `^` on a pre-1.0 package is minor-locked:
+ * `^0.1.0` means `>=0.1.0 <0.2.0`, so `npm update` can never cross into 0.2.0
+ * or later. That defeats the one reason this ships as a package rather than a
+ * template string in this file: "`npm update` carries lint-rule improvements
+ * into existing workspaces without an `mnci upgrade`" was never actually true
+ * under `^0.1.0`. Found in a real generated workspace still declaring
+ * `^0.1.0` after 20+ published releases — `mnci upgrade` was also stamping
+ * this constant back over any manual bump on every run (see
+ * {@link eslintToolchainDependencies}'s call site), so there was no way out
+ * except editing the range by hand and never running `mnci upgrade` again.
+ *
+ * `>=0.1.0 <1.0.0` floats across every 0.x release without an upper bound
+ * inside that line, while still requiring an explicit bump of this constant
+ * (an intentional `mnci upgrade`-worthy decision) to cross into a stable 1.0.
  */
-export const ESLINT_CONFIG_VERSION = '^0.1.0'
+export const ESLINT_CONFIG_VERSION = '>=0.1.0 <1.0.0'
 
 /**
  * The `@mnci/eslint-config` spec to write into a generated workspace's manifest.
