@@ -1983,22 +1983,30 @@ const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');c
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  * Skips cleanly when the workspace has no apps yet.
  *
- * **Detects a project the way Nx itself does — `apps/*\/project.json`, OR an
- * `apps/*\/package.json` carrying an `nx` key — not `project.json` alone.**
- * `@nx/node:application` and `@nx/react:application` write no `project.json`
- * at all: their targets are inferred, and `add/*.ts`'s `addNxTargets` layers
- * the `package` target on through the manifest's own `nx.targets` field (see
- * its doc comment) specifically to avoid the project-name clash a second
- * `project.json` would risk in a TS-solution workspace. A `project.json`-only
- * check therefore never sees a `node-app` or `react-app` project at all: the
- * step silently logs "No apps to pack - skipping", `dist/drop` stays empty,
- * and every step downstream (`PublishBuildArtifacts`, the per-app build tag)
- * has nothing to work with — a green run with no artifact. Go, Python and
- * Flutter apps all get a real generator-written `project.json`, so they were
- * never affected; only the manifest-inference kinds were invisible to this
- * check.
+ * **Detects a project the way Nx itself does — `apps/*\/project.json`, an
+ * `apps/*\/package.json` carrying an `nx` key, OR an `apps/*\/*.csproj` — not
+ * `project.json` alone.** `@nx/node:application` and `@nx/react:application`
+ * write no `project.json` at all: their targets are inferred, and
+ * `add/*.ts`'s `addNxTargets` layers the `package` target on through the
+ * manifest's own `nx.targets` field (see its doc comment) specifically to
+ * avoid the project-name clash a second `project.json` would risk in a
+ * TS-solution workspace. `@nx/dotnet` (C#) is inference-only for the same
+ * reason but has no manifest at all to carry an `nx` key on — verified
+ * against the real published package, whose own `createNodes` glob is keyed
+ * on `.csproj` directly — so `csharp.ts` creates a minimal `project.json`
+ * itself purely to carry mnci's own `package` target, which the plain
+ * `hasProjectJson` check already covers once that file exists. The
+ * `*.csproj` branch below exists for the case a user later drops that
+ * `project.json`, or for a `.csproj` this CLI never generated at all: a
+ * `project.json`-only check would go back to never seeing that project. A
+ * `project.json`-only check historically never saw a `node-app` or
+ * `react-app` project at all either: the step silently logs "No apps to pack
+ * - skipping", `dist/drop` stays empty, and every step downstream
+ * (`PublishBuildArtifacts`, the per-app build tag) has nothing to work with —
+ * a green run with no artifact. Go, Python and Flutter apps all get a real
+ * generator-written `project.json`, so they were never affected.
  */
-const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});if(!hasProjectJson&&!hasInlineNx){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
+const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});const hasCsproj=fs.globSync(\'apps/*/*.csproj\').length>0;if(!hasProjectJson&&!hasInlineNx&&!hasCsproj){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
  * Builds the portable `node -e` one-liner that versions, tags and publishes

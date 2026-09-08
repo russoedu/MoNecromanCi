@@ -6,10 +6,12 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
+import { githubActionsYaml } from '../../overlay'
 import { runAdd } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
@@ -114,5 +116,50 @@ describe('runAdd csharp-app', () => {
     expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
     expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+  })
+})
+
+// Skipped on Windows for the same reason node.test.ts's equivalent suite is: a
+// PATH stub for `npx` needs a `.cmd` shim under cmd.exe, and this platform's
+// job here is the e2e, not these unit-level guard executions.
+const describeOnPosix = process.platform === 'win32' ? describe.skip : describe
+
+describeOnPosix("the generated pipeline's pack-apps guard, run against a bare .csproj", () => {
+  // csharp.ts's own add path always creates a project.json (so the guard's
+  // pre-existing hasProjectJson branch already covers it), which is exactly
+  // why this needs its OWN fixture: a .csproj with no project.json at all —
+  // a user-authored one this CLI never generated — to actually exercise the
+  // third detection branch rather than one already covered by the other two.
+  it('is detected by the pack guard from the .csproj alone, with no project.json present', () => {
+    mkdirSync(join(workspaceRoot, 'apps/api'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/api/Api.csproj'), '<Project Sdk="Microsoft.NET.Sdk" />\n')
+
+    const pipeline = githubActionsYaml('ubuntu-latest')
+    const guard = (pipeline.match(/node -e "[^"]*"/g) ?? []).find(candidate =>
+      candidate.includes('No apps to pack'),
+    )
+    expect(guard).toBeTruthy()
+
+    const log = join(workspaceRoot, 'nx-command.log')
+    mkdirSync(join(workspaceRoot, 'stub-bin'))
+    writeFileSync(
+      join(workspaceRoot, 'stub-bin/npx'),
+      `#!/bin/sh\necho "$@" > "${log}"\nexit 0\n`,
+      { mode: 0o755 },
+    )
+
+    const result = spawnSync(guard ?? '', {
+      cwd:      workspaceRoot,
+      shell:    true,
+      encoding: 'utf8',
+      env:      {
+        ...process.env,
+        PATH: `${join(workspaceRoot, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`,
+      },
+    })
+
+    expect(result.stdout).not.toContain('No apps to pack')
+    expect(existsSync(log)).toBe(true)
+    expect(readFileSync(log, 'utf8').trim()).toBe('nx run-many -t package')
   })
 })

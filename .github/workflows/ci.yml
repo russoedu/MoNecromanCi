@@ -168,10 +168,12 @@ jobs:
 
       # Pack every app into dist/drop/<type>-<name>.zip via each app's 'package'
       # target. Portable guard: skip cleanly when the workspace has no apps yet.
-      # Detects a project the way Nx itself does - apps/*/project.json, OR an
+      # Detects a project the way Nx itself does - apps/*/project.json, an
       # apps/*/package.json carrying an nx key (node-app/react-app write no
-      # project.json at all; their targets are inference-only).
-      - run: node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const hasProjectJson=fs.globSync('apps/*/project.json').length>0;const hasInlineNx=fs.globSync('apps/*/package.json').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,'utf8')).nx)}catch{return false}});if(!hasProjectJson&&!hasInlineNx){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"
+      # project.json at all; their targets are inference-only), or an
+      # apps/*/*.csproj (C# via @nx/dotnet - same inference-only shape, but
+      # with no manifest at all to carry an nx key on).
+      - run: node -e "const fs=require('node:fs');fs.mkdirSync('dist/drop',{recursive:true});const hasProjectJson=fs.globSync('apps/*/project.json').length>0;const hasInlineNx=fs.globSync('apps/*/package.json').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,'utf8')).nx)}catch{return false}});const hasCsproj=fs.globSync('apps/*/*.csproj').length>0;if(!hasProjectJson&&!hasInlineNx&&!hasCsproj){console.log('No apps to pack - skipping.');process.exit(0)}process.exit(require('node:child_process').spawnSync('npx nx run-many -t package',{stdio:'inherit',shell:true}).status ?? 1)"
         name: Pack all apps (one zip per app -> dist/drop)
         if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
