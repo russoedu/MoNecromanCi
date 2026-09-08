@@ -17,6 +17,7 @@ import {
   DEFAULT_STACK,
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
+  DOTNET_SDK_VERSION,
   ESLINT_CONFIG_VERSION,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
@@ -1678,6 +1679,23 @@ describe('rootScripts', () => {
     // identical and the test asserted the same thing twice — stack-independence
     // is now guaranteed by the signature rather than by assertion.
     expect(rootScripts()['python:install']).toBeDefined()
+  })
+})
+
+describe('DOTNET_SDK_VERSION', () => {
+  it('is a major.minor.x range, matching what actions/setup-dotnet and UseDotNet@2 expect', () => {
+    // Unlike NODE_VERSION (a bare major — setup-node resolves majors on its
+    // own), .NET's own install actions want the '.x' suffix explicit.
+    expect(DOTNET_SDK_VERSION).toMatch(/^\d+\.\d+\.x$/)
+  })
+
+  it('pins an even (LTS) major, not an odd short-term-support one', () => {
+    // .NET's own support policy: even-numbered majors are LTS, odd ones are
+    // 18-month STS. Pinning CI/devcontainer provisioning to an STS release
+    // would need a bump on a much tighter clock than mnci's other toolchain
+    // pins.
+    const major = Number(DOTNET_SDK_VERSION.split('.')[0])
+    expect(major % 2).toBe(0)
   })
 })
 

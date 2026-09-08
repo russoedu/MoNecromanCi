@@ -1748,6 +1748,31 @@ export const NODE_VERSION = '24'
 export const NPM_VERSION = '11'
 
 /**
+ * The .NET SDK version a generated workspace's C# projects are built and
+ * tested against.
+ *
+ * @remarks
+ * `@nx/dotnet` (the official Nx plugin mnci delegates to for C#) requires SDK
+ * 8.0+; `10.0.x` is pinned rather than 8.0 because .NET's even-numbered
+ * majors are the LTS line (8.0 released Nov 2023, 10.0 Nov 2025) and 10.0 is
+ * the current one — the same reasoning `NODE_VERSION` already applies to
+ * Node. **Verify the current LTS against the real .NET release notes before
+ * this ships**, the way `FLUTTER_SDK_VERSION` was pinned against a real
+ * `flutter --version` rather than assumed.
+ *
+ * The `.x` keeps the range open to patch releases the way `actions/setup-dotnet`
+ * and `UseDotNet@2` both expect it (`dotnet-version: '10.0.x'` /
+ * `version: '10.0.x'`) — unlike {@link NODE_VERSION}, which is a bare major
+ * because `setup-node` resolves majors on its own; .NET's own tooling wants
+ * the `.x` suffix explicit.
+ *
+ * Exported so tests can assert it and both CI providers' install steps and
+ * the devcontainer's `dotnet` feature read the same value — the exact drift
+ * {@link NODE_VERSION} already exists to prevent for Node.
+ */
+export const DOTNET_SDK_VERSION = '10.0.x'
+
+/**
  * The shared expression that resolves where the Flutter SDK is installed.
  *
  * @remarks
