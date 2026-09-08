@@ -1483,11 +1483,25 @@ describe('devcontainerJson', () => {
     )
   })
 
-  it('brings Python and Go as features rather than a hand-maintained Dockerfile', () => {
+  it('brings Python, Go and .NET as features rather than a hand-maintained Dockerfile', () => {
     expect(Object.keys(parsed().features)).toEqual([
       'ghcr.io/devcontainers/features/python:1',
       'ghcr.io/devcontainers/features/go:1',
+      'ghcr.io/devcontainers/features/dotnet:2',
     ])
+  })
+
+  it("pins the .NET feature to DOTNET_SDK_VERSION with the trailing '.x' stripped", () => {
+    // The devcontainer feature's own schema takes 'X.Y'/'X.Y.Z', never the
+    // '.x' wildcard suffix actions/setup-dotnet and UseDotNet@2 expect — so
+    // this derives from the one constant rather than hardcoding a second
+    // value that could drift from it.
+    const dotnetFeature = parsed().features['ghcr.io/devcontainers/features/dotnet:2'] as {
+      version?: string
+    }
+
+    expect(dotnetFeature.version).toBe('10.0')
+    expect(DOTNET_SDK_VERSION).toBe(`${dotnetFeature.version}.x`)
   })
 
   it("reuses the pipeline's own toolchain guards instead of a third copy", () => {

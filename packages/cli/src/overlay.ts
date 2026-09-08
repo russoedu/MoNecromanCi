@@ -610,9 +610,21 @@ export const ESLINT_VERSION = '^10.8.0'
  *   `pubspec.yaml`), so a JS-only workspace pays almost nothing and a polyglot
  *   one gets exactly what CI gets. Reimplementing them would create a third
  *   copy to keep in sync.
- * - **Go and Python arrive as devcontainer *features*, not as a custom image.**
- *   A Dockerfile would be a second thing to maintain against upstream, and
- *   features are the mechanism the ecosystem maintains for precisely this.
+ * - **Go, Python and .NET arrive as devcontainer *features*, not as a custom
+ *   image.** A Dockerfile would be a second thing to maintain against
+ *   upstream, and features are the mechanism the ecosystem maintains for
+ *   precisely this. Unlike CI's install steps, a feature runs once at
+ *   container build time rather than on every job, so there is no reason to
+ *   gate it on the workspace actually having a project of that kind — Python
+ *   and Go have never been gated either.
+ * - **`ghcr.io/devcontainers/features/dotnet:2`'s `version` option takes
+ *   `X.Y`/`X.Y.Z`, not {@link DOTNET_SDK_VERSION}'s `X.Y.x` verbatim** — that
+ *   suffix is specifically what `actions/setup-dotnet` and `UseDotNet@2`
+ *   expect (see its remarks), and the feature's own schema (checked directly
+ *   against `devcontainer-feature.json`, proposals `latest`/`lts`/`10.0`/…)
+ *   documents no `.x` form at all. The `.x` is stripped rather than a second
+ *   constant maintained in parallel, so there is still exactly one source of
+ *   truth to bump.
  * - **Flutter is NOT a feature**, because no maintained one exists — the same
  *   reason `@mnci/nx-flutter` had to be written. The SDK guard clones a pinned
  *   tag into the home directory, which is what CI does, so the version matches
@@ -630,6 +642,7 @@ export function devcontainerJson (workspaceName: string): string {
     features: {
       'ghcr.io/devcontainers/features/python:1': { version: '3.12' },
       'ghcr.io/devcontainers/features/go:1':     { version: 'latest' },
+      'ghcr.io/devcontainers/features/dotnet:2': { version: DOTNET_SDK_VERSION.replace(/\.x$/, '') },
     },
     // `npm ci` first: every guard after it runs through the workspace's own
     // scripts and Nx, which do not exist until the install completes.
