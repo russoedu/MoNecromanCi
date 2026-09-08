@@ -5,6 +5,7 @@ import { promptText } from '../prompts'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
+import { addCsharpApp } from './add/csharp'
 import { addFlutterApp, addFlutterInternalLib, addFlutterLib } from './add/flutter'
 import { addGoApp, addGoFunctionApp, addGoInternalLib, addGoLib } from './add/go'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
@@ -32,7 +33,7 @@ import {
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just nineteen.
+ * The project kinds this CLI can add — deliberately just twenty.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -124,15 +125,16 @@ export type ProjectKind =
   'go-internal-lib' |
   'flutter-app' |
   'flutter-lib' |
-  'flutter-internal-lib'
+  'flutter-internal-lib' |
+  'csharp-app'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
  *
  * @remarks
  * Also drives the interactive kind picker shown when `add` is run bare. The
- * React family first, then the rest of the TS/JS kinds, then Python, Go and
- * Flutter.
+ * React family first, then the rest of the TS/JS kinds, then Python, Go,
+ * Flutter and C#.
  */
 export const PROJECT_KINDS: ProjectKind[] = [
   'react-app',
@@ -154,6 +156,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'flutter-app',
   'flutter-lib',
   'flutter-internal-lib',
+  'csharp-app',
 ]
 
 /**
@@ -300,6 +303,10 @@ export async function runAdd (
     }
     case 'flutter-internal-lib': {
       addFlutterInternalLib(workspaceRoot, resolvedName)
+      break
+    }
+    case 'csharp-app': {
+      addCsharpApp(workspaceRoot, resolvedName)
       break
     }
     case 'python-vendor': {
