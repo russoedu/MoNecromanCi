@@ -5,7 +5,7 @@ import { promptText } from '../prompts'
 import { fileExists, readJson } from '../util/fsx'
 import { logger } from '../util/logger'
 import { assertValidProjectName } from '../util/names'
-import { addCsharpApp, addCsharpLib } from './add/csharp'
+import { addCsharpApp, addCsharpInternalLib, addCsharpLib } from './add/csharp'
 import { addFlutterApp, addFlutterInternalLib, addFlutterLib } from './add/flutter'
 import { addGoApp, addGoFunctionApp, addGoInternalLib, addGoLib } from './add/go'
 import { addNodeApp, addNodeFunctionApp } from './add/node'
@@ -33,7 +33,7 @@ import {
 export type { AddOptions } from './add/shared'
 
 /**
- * The project kinds this CLI can add — deliberately just twenty-one.
+ * The project kinds this CLI can add — deliberately just twenty-two.
  *
  * @remarks
  * Each maps to an official (or established first-party) Nx plugin generator;
@@ -127,7 +127,8 @@ export type ProjectKind =
   'flutter-lib' |
   'flutter-internal-lib' |
   'csharp-app' |
-  'csharp-lib'
+  'csharp-lib' |
+  'csharp-internal-lib'
 
 /**
  * Every kind {@link runAdd} accepts, in menu order.
@@ -159,6 +160,7 @@ export const PROJECT_KINDS: ProjectKind[] = [
   'flutter-internal-lib',
   'csharp-app',
   'csharp-lib',
+  'csharp-internal-lib',
 ]
 
 /**
@@ -313,6 +315,10 @@ export async function runAdd (
     }
     case 'csharp-lib': {
       await addCsharpLib(workspaceRoot, resolvedName, options, kindProvided)
+      break
+    }
+    case 'csharp-internal-lib': {
+      addCsharpInternalLib(workspaceRoot, resolvedName)
       break
     }
     case 'python-vendor': {

@@ -180,6 +180,46 @@ describe('runAdd csharp-lib', () => {
   })
 })
 
+describe('runAdd csharp-internal-lib', () => {
+  it('scaffolds an unscoped class library under libs/ — never published, no PackageId prefix', async () => {
+    await runAdd('csharp-internal-lib', 'util', {})
+
+    expect(shellCalls('dotnet')).toContainEqual([
+      'new',
+      'classlib',
+      '-n',
+      'Util',
+      '-o',
+      'libs/util',
+      '--framework',
+      'net10.0',
+    ])
+  })
+
+  it('registers no :build root script — an internal-only lib has none, matching go-internal-lib', async () => {
+    await runAdd('csharp-internal-lib', 'util', {})
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['util:build']).toBeUndefined()
+    expect(rootManifest.scripts['util:qa']).toBe('nx run util:lint && nx run util:test')
+  })
+
+  it('tells the user how to wire it into a consumer, since C# has no implicit resolution', async () => {
+    const logged: string[] = []
+    jest.spyOn(console, 'log').mockImplementation((message: unknown) => {
+      logged.push(String(message))
+    })
+
+    await runAdd('csharp-internal-lib', 'util', {})
+
+    expect(logged.join('\n')).toContain(
+      'dotnet add <consumer>.csproj reference libs/util/Util.csproj',
+    )
+  })
+})
+
 // Skipped on Windows for the same reason node.test.ts's equivalent suite is: a
 // PATH stub for `npx` needs a `.cmd` shim under cmd.exe, and this platform's
 // job here is the e2e, not these unit-level guard executions.

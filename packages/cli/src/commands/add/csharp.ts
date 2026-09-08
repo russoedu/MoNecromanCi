@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { DOTNET_SDK_VERSION } from '../../overlay'
 import { promptText } from '../../prompts'
+import { logger } from '../../util/logger'
 import {
   addProjectJsonTargets,
   defaultScope,
@@ -315,4 +316,46 @@ export async function addCsharpLib (
     'classlib',
   )
   registerProjectCommands(workspaceRoot, name, { build: true })
+}
+
+/**
+ * Adds an internal (never-published) C# library under `libs/`.
+ *
+ * @remarks
+ * No scope prefix, unlike {@link addCsharpLib}: a `PackageId` only means
+ * anything for something that gets published, and this never does — the
+ * same reasoning `internal-lib`'s plain `@nx/js:lib --bundler=tsc` needs no
+ * `--importPath` either. `build: false` in the `registerProjectCommands`
+ * call for the same reason: consistent with `go-internal-lib`, an
+ * internal-only library gets no root `<name>:build` script of its own.
+ *
+ * **Consuming it is a manual step, deliberately not automated here.**
+ * `mnci add`'s own signature has no "consumer" argument for this kind (that
+ * is `python-vendor`'s narrower job, wiring one named consumer at a time) —
+ * every other internal-lib kind resolves automatically once generated
+ * (TS via `node_modules` symlinks, Go via one shared module, Dart via the
+ * pub workspace's plain version constraint), but C#'s `<ProjectReference>`
+ * has no such implicit resolution: it is an explicit edit to the consuming
+ * `.csproj`, which `dotnet add <consumer> reference <lib>` makes in one
+ * command. The step is named for the user rather than skipped silently, the
+ * same courtesy {@link addGoInternalLib}'s `goModulePath` message already
+ * extends for Go's import path.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The project name (already validated).
+ * @returns Nothing.
+ * @throws Error when the SDK is missing, or the plugin install/scaffold fails.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function addCsharpInternalLib (workspaceRoot: string, name: string): void {
+  ensureDotnet(workspaceRoot)
+  ensurePlugin(workspaceRoot, '@nx/dotnet')
+
+  const projectRoot = `libs/${name}`
+  const identity = pascalCase(name)
+  scaffoldDotnetProject(workspaceRoot, projectRoot, identity, 'classlib')
+  registerProjectCommands(workspaceRoot, name, { build: false })
+  logger.step(
+    `Reference it from a consumer with: dotnet add <consumer>.csproj reference ${projectRoot}/${identity}.csproj`,
+  )
 }
