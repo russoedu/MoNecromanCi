@@ -220,6 +220,64 @@ describe('runAdd csharp-internal-lib', () => {
   })
 })
 
+describe('runAdd csharp-function-app', () => {
+  it('scaffolds via the base console template, then overlays the isolated-worker shape', async () => {
+    await runAdd('csharp-function-app', 'api', {})
+
+    // Same base scaffold as csharp-app, matching addNodeFunctionApp's
+    // "generate the plain app, then overlay" split.
+    expect(shellCalls('dotnet')).toContainEqual([
+      'new',
+      'console',
+      '-n',
+      'Api',
+      '-o',
+      'apps/api',
+      '--framework',
+      'net10.0',
+    ])
+
+    const csproj = readFileSync(join(workspaceRoot, 'apps/api/Api.csproj'), 'utf8')
+    expect(csproj).toContain('Sdk="Azure.Functions.Sdk/1.0.0"')
+    expect(csproj).toContain('Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore')
+
+    const program = readFileSync(join(workspaceRoot, 'apps/api/Program.cs'), 'utf8')
+    expect(program).toContain('FunctionsApplication.CreateBuilder')
+    expect(program).toContain('ConfigureFunctionsWebApplication')
+
+    const hello = readFileSync(join(workspaceRoot, 'apps/api/Hello.cs'), 'utf8')
+    expect(hello).toContain('namespace Api;')
+    expect(hello).toContain('[Function("Hello")]')
+    expect(hello).toContain('[HttpTrigger(AuthorizationLevel.Anonymous, "get")]')
+
+    expect(readFileSync(join(workspaceRoot, 'apps/api/host.json'), 'utf8')).toContain(
+      'extensionBundle',
+    )
+  })
+
+  it('adds a package target zipping the isolated-worker publish output, and a dotnet run start target', async () => {
+    await runAdd('csharp-function-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets.package.executor).toBe('nx:run-commands')
+    const command = String(targets.package.options?.command)
+    expect(command).toContain('dist/drop/csharp-function-app-api.zip')
+    expect(targets.start).toMatchObject({
+      executor:   'nx:run-commands',
+      continuous: true,
+      options:    { command: 'dotnet run', cwd: 'apps/api' },
+    })
+  })
+
+  it('never scopes it with a PackageId prefix — a function app is never NuGet-published', async () => {
+    await runAdd('csharp-function-app', 'api', {})
+
+    expect(shellCalls('dotnet')).not.toContainEqual(
+      expect.arrayContaining(['-n', expect.stringContaining('Demo.')]),
+    )
+  })
+})
+
 // Skipped on Windows for the same reason node.test.ts's equivalent suite is: a
 // PATH stub for `npx` needs a `.cmd` shim under cmd.exe, and this platform's
 // job here is the e2e, not these unit-level guard executions.

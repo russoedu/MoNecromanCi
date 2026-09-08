@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { DOTNET_SDK_VERSION } from '../../overlay'
 import { promptText } from '../../prompts'
+import { writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 import {
   addProjectJsonTargets,
@@ -358,4 +359,181 @@ export function addCsharpInternalLib (workspaceRoot: string, name: string): void
   logger.step(
     `Reference it from a consumer with: dotnet add <consumer>.csproj reference ${projectRoot}/${identity}.csproj`,
   )
+}
+
+/**
+ * The `host.json` every generated Azure Functions app writes, C# included.
+ *
+ * @remarks
+ * Identical to `NODE_FUNCTION_APP_HOST_JSON` — the extension bundle format is
+ * the Functions runtime schema, not a language concern — duplicated rather
+ * than imported across a `node.ts`/`csharp.ts` boundary that would otherwise
+ * read as one language depending on another's internals for something
+ * neither actually owns.
+ */
+const CSHARP_FUNCTION_APP_HOST_JSON = `{
+  "version": "2.0",
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}
+`
+
+/**
+ * The isolated-worker `.csproj`, overwriting whatever the base `console`
+ * scaffold wrote.
+ *
+ * @remarks
+ * `dotnet new` ships no Azure Functions template of its own — verified
+ * against Microsoft's own current (2026) isolated-worker guide, not assumed:
+ * a Functions app is an ordinary console app whose project file opts into
+ * the `Azure.Functions.Sdk` MSBuild project SDK, the same "scaffold the base
+ * shape, then overlay the Functions-specific files" split every other
+ * `*-function-app` kind already uses (see `addNodeFunctionApp`).
+ *
+ * `Azure.Functions.Sdk` is the CURRENT recommended project shape (superseding
+ * the older explicit `Microsoft.Azure.Functions.Worker.Sdk` package
+ * reference plus hand-set `AzureFunctionsVersion`/`OutputType` properties):
+ * it auto-configures both, is shorter, and is what Microsoft's own migration
+ * guide moves existing projects TO — so new projects should start there
+ * rather than at the thing that guide migrates away from.
+ *
+ * **Unverified without a real SDK — the same caveat as
+ * {@link csharpAppPackageTarget}.** The package versions below are current
+ * as measured against Microsoft's own docs at the time this was written; a
+ * real `dotnet restore` is what the gated e2e (task tracked separately)
+ * exists to confirm once it can run against a live SDK.
+ *
+ * @returns The `.csproj` XML content.
+ * @throws Never - pure string formatting.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpFunctionAppCsproj (): string {
+  return `<Project Sdk="Azure.Functions.Sdk/1.0.0">
+  <PropertyGroup>
+    <TargetFramework>${targetFramework()}</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
+  </ItemGroup>
+</Project>
+`
+}
+
+/**
+ * The isolated-worker `Program.cs`, overwriting the base scaffold's `Main`.
+ *
+ * @remarks
+ * `FunctionsApplication.CreateBuilder` + `ConfigureFunctionsWebApplication`
+ * is the current `IHostApplicationBuilder` pattern (requires the 2.x worker
+ * package, which {@link csharpFunctionAppCsproj} pins) — the ASP.NET Core
+ * integration that lets a trigger use the ordinary `HttpRequest`/
+ * `IActionResult` types in {@link csharpFunctionAppHello} rather than the
+ * isolated-worker-specific `HttpRequestData`/`HttpResponseData` pair.
+ */
+const CSHARP_FUNCTION_APP_PROGRAM = `using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Extensions.Hosting;
+
+var builder = FunctionsApplication.CreateBuilder(args);
+
+builder.ConfigureFunctionsWebApplication();
+
+builder.Build().Run();
+`
+
+/**
+ * The HTTP-triggered sample function written into a generated C# function app.
+ *
+ * @remarks
+ * Mirrors `NODE_FUNCTION_APP_HELLO`'s role: a minimal, real handler so the
+ * generated app is runnable rather than an empty shell, using the
+ * ASP.NET-Core-integrated `HttpRequest`/`IActionResult` shape ASP.NET Core
+ * integration.
+ *
+ * @param identity - The project's PascalCase identity, used as the namespace.
+ * @returns The C# source for the sample function class.
+ * @throws Never - pure string formatting.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpFunctionAppHello (identity: string): string {
+  return `using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+
+namespace ${identity};
+
+public class Hello
+{
+    [Function("Hello")]
+    public IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequest req)
+    {
+        return new OkObjectResult("Hello from mnci.");
+    }
+}
+`
+}
+
+/**
+ * The `start` target for a C# function app: `dotnet run`, locally.
+ *
+ * @remarks
+ * `Azure.Functions.Sdk` wires `dotnet run` to start the Functions host
+ * directly when Azure Functions Core Tools (`func`) is installed — the same
+ * assumption `nodeFunctionAppStartTarget`'s `func start` already makes, just
+ * invoked through `dotnet` rather than `func` itself, since that is what
+ * the project's own tooling now integrates with.
+ *
+ * @param projectRoot - Workspace-relative project directory.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpFunctionAppStartTarget (projectRoot: string): Record<string, unknown> {
+  return {
+    executor:   'nx:run-commands',
+    continuous: true,
+    options:    { command: 'dotnet run', cwd: projectRoot },
+  }
+}
+
+/**
+ * Adds a C# Azure Function app: an isolated-worker overlay on the base
+ * console scaffold.
+ *
+ * @remarks
+ * Structurally the same split as `addNodeFunctionApp`/`addPythonFunctionApp`:
+ * scaffold the plain app, then overwrite/add exactly the files a Functions
+ * app needs (`.csproj`, `Program.cs`, one sample HTTP trigger, `host.json`).
+ * No scope/`PackageId` concept, unlike {@link addCsharpLib} — a function app
+ * is never NuGet-published, matching every other `*-function-app` kind.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The project name (already validated).
+ * @returns Nothing.
+ * @throws Error when the SDK is missing, or the plugin install/scaffold fails.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function addCsharpFunctionApp (workspaceRoot: string, name: string): void {
+  ensureDotnet(workspaceRoot)
+  ensurePlugin(workspaceRoot, '@nx/dotnet')
+  ensureAdmZip(workspaceRoot)
+
+  const projectRoot = `apps/${name}`
+  const identity = pascalCase(name)
+  scaffoldDotnetProject(workspaceRoot, projectRoot, identity, 'console')
+
+  const absoluteRoot = join(workspaceRoot, projectRoot)
+  writeFileEnsured(join(absoluteRoot, `${identity}.csproj`), csharpFunctionAppCsproj())
+  writeFileEnsured(join(absoluteRoot, 'Program.cs'), CSHARP_FUNCTION_APP_PROGRAM)
+  writeFileEnsured(join(absoluteRoot, 'Hello.cs'), csharpFunctionAppHello(identity))
+  writeFileEnsured(join(absoluteRoot, 'host.json'), CSHARP_FUNCTION_APP_HOST_JSON)
+
+  addProjectJsonTargets(join(absoluteRoot, 'project.json'), {
+    package: csharpAppPackageTarget('csharp-function-app', projectRoot, name),
+    start:   csharpFunctionAppStartTarget(projectRoot),
+  })
+  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
 }
