@@ -1,7 +1,15 @@
 import { join } from 'node:path'
 import { runShell } from '../../nx'
 import { DOTNET_SDK_VERSION } from '../../overlay'
-import { addProjectJsonTargets, ensureAdmZip, ensurePlugin, registerProjectCommands } from './shared'
+import { promptText } from '../../prompts'
+import {
+  addProjectJsonTargets,
+  defaultScope,
+  ensureAdmZip,
+  ensurePlugin,
+  registerProjectCommands,
+  type AddOptions,
+} from './shared'
 
 /**
  * The `dotnet new` template mnci passes straight through to the .NET CLI.
@@ -101,8 +109,13 @@ function pascalCase (name: string): string {
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param projectRoot - Workspace-relative directory (e.g. `apps/<name>`).
- * @param name - The kebab-case project name (already validated).
- * @param template - The `dotnet new` template.
+ * @param identity - The project/namespace/assembly identity `dotnet new`
+ * writes as `-n` — PascalCase for an app, `<PascalScope>.<PascalName>` for a
+ * publishable lib (see {@link addCsharpLib}).
+ * @param template - The `dotnet new` template. A bare `string`, not
+ * {@link DotnetTemplate}: that type is the user-facing app choice
+ * (mirroring `NodeFramework`), while a lib's template (`classlib`) is fixed
+ * and internal — never something `csharp-lib` exposes a flag for.
  * @returns Nothing.
  * @throws Error when the underlying `dotnet new` exits non-zero.
  * @typeParam None - this function has no generic type parameters.
@@ -110,13 +123,13 @@ function pascalCase (name: string): string {
 function scaffoldDotnetProject (
   workspaceRoot: string,
   projectRoot: string,
-  name: string,
-  template: DotnetTemplate,
+  identity: string,
+  template: string,
 ): void {
   if (
     runShell(
       'dotnet',
-      ['new', template, '-n', pascalCase(name), '-o', projectRoot, '--framework', targetFramework()],
+      ['new', template, '-n', identity, '-o', projectRoot, '--framework', targetFramework()],
       workspaceRoot,
     ) !== 0
   ) {
@@ -220,10 +233,86 @@ export function addCsharpApp (
   ensureAdmZip(workspaceRoot)
 
   const projectRoot = `apps/${name}`
-  scaffoldDotnetProject(workspaceRoot, projectRoot, name, template)
+  scaffoldDotnetProject(workspaceRoot, projectRoot, pascalCase(name), template)
   addProjectJsonTargets(join(workspaceRoot, projectRoot, 'project.json'), {
     package: csharpAppPackageTarget('csharp-app', projectRoot, name),
     start:   csharpAppStartTarget(projectRoot),
   })
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+}
+
+/**
+ * Converts a workspace scope (`@demo`, `@my-org`) to the PascalCase prefix a
+ * NuGet `PackageId` conventionally uses (`Demo`, `MyOrg`).
+ *
+ * @remarks
+ * NuGet has no `@scope/name` convention the way npm does — package IDs are
+ * flat, dot-separated strings (`Company.Product`), so the workspace scope is
+ * folded into the project's own identity at `dotnet new` time
+ * (`<PascalScope>.<PascalName>`) rather than written into any manifest field
+ * afterwards. `dotnet new classlib -n Demo.Sdk` sets the assembly name, the
+ * root namespace AND the default `PackageId` all in one step, which is also
+ * why {@link addCsharpLib} needs no post-generation manifest repair the way
+ * `npm-lib` does — there is no separate "importPath" field to get wrong.
+ *
+ * @param scope - The workspace scope, e.g. `@demo`.
+ * @returns The PascalCase prefix, e.g. `Demo`.
+ * @throws Never - pure string transformation.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pascalScope (scope: string): string {
+  return pascalCase(scope.replace(/^@/, ''))
+}
+
+/**
+ * Adds a publishable C# library under `packages/`: `dotnet new classlib`.
+ *
+ * @remarks
+ * The scope is resolved exactly the way `addNpmLib` resolves it: an explicit
+ * `--scope` wins; otherwise the flag path (`kindProvided`) defaults it
+ * silently, while the interactive/bare path prompts for it (with the
+ * workspace's own scope as the default) — one shared UX across every
+ * publishable-lib kind, not a C#-specific decision.
+ *
+ * No `package`/zip target, unlike {@link addCsharpApp}: a publishable lib's
+ * distribution path is `nx release` (NuGet publish), the same as
+ * `npm-lib`/`python-lib`, never the `dist/drop` zip convention that exists
+ * for apps. `@nx/dotnet` already infers a `pack` target from the `.csproj`
+ * alone, so there is nothing extra to wire here — see the `nx release`
+ * integration this still needs (tracked separately, since a `.csproj` lib
+ * has no `package.json` for Nx's default `versionActions` to read, the same
+ * failure mode already fixed for `go-lib`).
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The project name (already validated).
+ * @param options - The CLI flags.
+ * @param kindProvided - Whether `kind` was passed as a flag (vs. prompted) —
+ * gates whether the scope is prompted for or silently defaulted.
+ * @returns A promise that resolves when the scaffold has finished.
+ * @throws Error when the SDK is missing, or the plugin install/scaffold fails.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function addCsharpLib (
+  workspaceRoot: string,
+  name: string,
+  options: AddOptions,
+  kindProvided: boolean,
+): Promise<void> {
+  ensureDotnet(workspaceRoot)
+  ensurePlugin(workspaceRoot, '@nx/dotnet')
+
+  const scope =
+    options.scope ??
+    (kindProvided
+      ? defaultScope(workspaceRoot)
+      : await promptText('NuGet package scope for the published library', defaultScope(workspaceRoot)))
+
+  const projectRoot = `packages/${name}`
+  scaffoldDotnetProject(
+    workspaceRoot,
+    projectRoot,
+    `${pascalScope(scope)}.${pascalCase(name)}`,
+    'classlib',
+  )
+  registerProjectCommands(workspaceRoot, name, { build: true })
 }

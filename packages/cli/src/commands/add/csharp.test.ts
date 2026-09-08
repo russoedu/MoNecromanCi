@@ -6,16 +6,20 @@ jest.mock('../../nx', () => ({
 jest.mock('../../prompts', () => ({ promptText: jest.fn() }))
 jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
 
+import { select } from '@inquirer/prompts'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { githubActionsYaml } from '../../overlay'
+import { promptText } from '../../prompts'
 import { runAdd } from '../add'
 
 const mockRunNx = jest.mocked(runNx)
 const mockRunShell = jest.mocked(runShell)
+const mockSelect = jest.mocked(select)
+const mockPromptText = jest.mocked(promptText)
 
 let workspaceRoot: string
 
@@ -116,6 +120,63 @@ describe('runAdd csharp-app', () => {
     expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
     expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+  })
+})
+
+describe('runAdd csharp-lib', () => {
+  it('scaffolds a NuGet-publishable class library under packages/, PackageId scoped', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    expect(shellCalls('dotnet')).toContainEqual([
+      'new',
+      'classlib',
+      '-n',
+      'Demo.Sdk',
+      '-o',
+      'packages/sdk',
+      '--framework',
+      'net10.0',
+    ])
+  })
+
+  it('folds a multi-word scope into PascalCase, matching the NuGet dotted convention', async () => {
+    await runAdd('csharp-lib', 'sdk', { scope: '@my-org' })
+
+    expect(shellCalls('dotnet')).toContainEqual(
+      expect.arrayContaining(['-n', 'MyOrg.Sdk']),
+    )
+  })
+
+  it('does not prompt for scope on the flag path (kind passed) — defaults it silently', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    expect(mockPromptText).not.toHaveBeenCalled()
+  })
+
+  it('prompts for the scope on the interactive path (kind not passed)', async () => {
+    mockSelect.mockResolvedValue('csharp-lib')
+    mockPromptText.mockResolvedValueOnce('sdk').mockResolvedValueOnce('@acme') // name, then scope
+
+    await runAdd(undefined, undefined, {})
+
+    expect(mockPromptText).toHaveBeenCalledWith(
+      'NuGet package scope for the published library',
+      '@demo',
+    )
+    expect(shellCalls('dotnet')).toContainEqual(
+      expect.arrayContaining(['-n', 'Acme.Sdk']),
+    )
+  })
+
+  it('registers root scripts, with no :start (a library has no local dev server)', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['sdk:build']).toBe('nx run sdk:build')
+    expect(rootManifest.scripts['sdk:qa']).toBe('nx run sdk:lint && nx run sdk:test')
+    expect(rootManifest.scripts['sdk:start']).toBeUndefined()
   })
 })
 
