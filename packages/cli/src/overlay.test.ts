@@ -413,18 +413,32 @@ describe('azurePipelinesYaml', () => {
     // Both providers share one condition across pack, publish, tag, release and
     // tag-push. Asserting the COUNT is what stops the narrowing from silently
     // reaching a step it was never meant to gate — or missing one it was.
+    // The .NET SDK install task also carries a 'condition:' — a different
+    // gate (does the workspace have any C# project) for a different reason —
+    // so this matches the release condition's exact text rather than mere
+    // presence, or the two would be indistinguishable here.
     const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
       steps: { condition?: string; displayName?: string }[]
     }
-    const gated = document_.steps.filter(step => step.condition !== undefined)
+    const releaseCondition =
+      "and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), " +
+      "eq(variables['Build.SourceBranchName'], 'main'))"
+    const gated = document_.steps.filter(step => step.condition === releaseCondition)
 
     expect(gated).toHaveLength(5)
-    for (const step of gated) {
-      expect(step.condition).toBe(
-        "and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), " +
-          "eq(variables['Build.SourceBranchName'], 'main'))",
-      )
+  })
+
+  it('gates the .NET SDK install task on the workspace having a C# project, not on main', () => {
+    // Distinct from the release condition above: this must run on every
+    // branch and PR — a C# project needs the SDK to build/test/lint long
+    // before anything releases — so it cannot reuse onMain.
+    const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      steps: { task?: string; condition?: string; inputs?: { version?: string } }[]
     }
+    const install = document_.steps.find(step => step.task === 'UseDotNet@2')
+
+    expect(install?.condition).toBe("eq(variables['hasDotnetProjects'], 'true')")
+    expect(install?.inputs?.version).toBe(DOTNET_SDK_VERSION)
   })
 
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN variable), not PAT, for the public npm registry', () => {
@@ -830,6 +844,19 @@ describe('githubActionsYaml', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
     expect(workflow).toContain('actions/checkout@v4')
     expect(workflow).not.toContain('checkout -B')
+  })
+
+  it('installs the .NET SDK via actions/setup-dotnet, gated on the workspace having a C# project', () => {
+    // hashFiles(), not onMain: a C# project needs the SDK to build/test/lint
+    // on every branch and PR, long before anything releases — the opposite
+    // gate from the release-only steps above.
+    const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
+      jobs?: { ci?: { steps?: { uses?: string; if?: string; with?: Record<string, string> }[] } }
+    }
+    const install = document_.jobs?.ci?.steps?.find(step => step.uses === 'actions/setup-dotnet@v4')
+
+    expect(install?.if).toBe("${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}")
+    expect(install?.with?.['dotnet-version']).toBe(DOTNET_SDK_VERSION)
   })
 
   it('authenticates npm via a PAT repository secret, not a variable group', () => {

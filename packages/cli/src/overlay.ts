@@ -1773,6 +1773,35 @@ export const NPM_VERSION = '11'
 export const DOTNET_SDK_VERSION = '10.0.x'
 
 /**
+ * Detects whether the workspace has any C# project — `apps/*\/*.csproj`,
+ * `packages/*\/*.csproj`, `libs/*\/*.csproj`, the same three roots
+ * {@link PACK_APPS_GUARD} and `add/csharp.ts` already scan — and publishes
+ * the result as an Azure Pipelines variable
+ * (`##vso[task.setvariable variable=hasDotnetProjects]`).
+ *
+ * @remarks
+ * Unlike Python, Go and Flutter's provisioning, .NET SDK install is not a
+ * portable `node -e` one-liner: `UseDotNet@2` / `actions/setup-dotnet` are
+ * each provider's own maintained, cached installer, and hand-rolling a
+ * cross-platform equivalent of either would be strictly worse than using
+ * them — the same trade already made for Node/npm setup itself, which is
+ * fully provider-specific (`actions/setup-node` + `cache: npm` vs. Azure's
+ * pre-installed image Node plus a separate `Cache@2` task). So this constant
+ * exists only to give the Azure *task* something to gate on: unlike a
+ * `script:` step, `UseDotNet@2` cannot self-gate by exiting early, and
+ * Azure's `condition:` expression language has no glob-matching function —
+ * where GitHub Actions' `hashFiles()` covers the same case inline (see
+ * {@link githubActionsYaml}), Azure needs this detection step to run first
+ * and hand the answer to `condition:` through a variable.
+ *
+ * Both the pattern list and the `##vso` syntax are copied from
+ * {@link PACK_APPS_GUARD}'s sibling `build.addbuildtag` usage further down
+ * this file — the same "publish a fact for a later step" mechanism, just
+ * read by `condition:` instead of by a human.
+ */
+const DOTNET_DETECT_AZURE = 'node -e "const fs=require(\'node:fs\');const has=[...fs.globSync(\'apps/*/*.csproj\'),...fs.globSync(\'packages/*/*.csproj\'),...fs.globSync(\'libs/*/*.csproj\')].length>0;console.log(\'##vso[task.setvariable variable=hasDotnetProjects]\'+has)"'
+
+/**
  * The shared expression that resolves where the Flutter SDK is installed.
  *
  * @remarks
@@ -2352,6 +2381,20 @@ steps:
   - script: ${FLUTTER_PUB_GET_GUARD}
     displayName: Resolve Dart dependencies (one pub get for the whole workspace)
 
+  # .NET, if the workspace has any. Azure's 'condition:' expression language
+  # has no glob function, so this script step detects C# projects first and
+  # hands the answer to the install task below through a pipeline variable —
+  # see DOTNET_DETECT_AZURE's remarks for why this differs from every other
+  # toolchain's self-gating 'node -e' guard.
+  - script: ${DOTNET_DETECT_AZURE}
+    displayName: Detect .NET projects
+
+  - task: UseDotNet@2
+    displayName: Install the .NET SDK (${DOTNET_SDK_VERSION})
+    condition: eq(variables['hasDotnetProjects'], 'true')
+    inputs:
+      version: ${DOTNET_SDK_VERSION}
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -2608,6 +2651,16 @@ jobs:
       # writes a single root pubspec.lock they all share.
       - run: ${FLUTTER_PUB_GET_GUARD}
         name: Resolve Dart dependencies (one pub get for the whole workspace)
+
+      # .NET, if the workspace has any. actions/setup-dotnet is the
+      # maintained, cached installer GitHub itself ships, so this uses it
+      # directly rather than a hand-rolled 'node -e' guard — see
+      # DOTNET_DETECT_AZURE's remarks for the full reasoning. hashFiles()
+      # gates it inline, so a JS-only workspace pays nothing.
+      - uses: actions/setup-dotnet@v4
+        if: \${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}
+        with:
+          dotnet-version: ${DOTNET_SDK_VERSION}
 
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
