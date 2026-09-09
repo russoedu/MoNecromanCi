@@ -1534,6 +1534,155 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
 }
 
 /**
+ * The Azure Artifacts NuGet v3 feed URL for a registry config.
+ *
+ * @remarks
+ * Same multi-protocol feed {@link pythonPublishUrl} already reads — one
+ * org/project/feed serves npm, Python **and** NuGet — so this is the third
+ * reader of the same {@link RegistryConfig}, not a separate prompt. Public
+ * npm has no NuGet analogue wired in this cut, the same gap
+ * {@link pythonPublishUrl}'s own remarks document for PyPI: publishing to
+ * public nuget.org needs a nuget.org-issued API key, a credential mnci
+ * collects nowhere, so this returns `undefined` and `csharp-lib` is
+ * versioned + tagged but not auto-published — see {@link addCsharpLib}.
+ *
+ * @param registry - The monorepo's resolved registry configuration.
+ * @returns The NuGet v3 service index URL for Azure Artifacts, or
+ * `undefined` for npm.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function nugetFeedUrl (registry: RegistryConfig): string | undefined {
+  if (registry.kind === 'azure-artifacts') {
+    return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/nuget/v3/index.json`
+  }
+
+  return undefined
+}
+
+/**
+ * The fixed `nuget.config` source key mnci registers the Azure Artifacts
+ * NuGet feed under.
+ *
+ * @remarks
+ * Deliberately a constant, not `registry.artifactsFeed` — the real feed
+ * name. `packageSourceCredentials` attaches to a source by its registered
+ * KEY, not its URL, so the publish target in `add/csharp.ts`
+ * (`dotnet nuget push --source ...`) needs to name the SAME key
+ * {@link nugetConfigContent} registers. Fixing it here means that target
+ * needs no {@link RegistryConfig} of its own at generation time — it just
+ * references this constant — which is what keeps `addCsharpLib` from
+ * needing to re-derive the workspace's registry choice per `add`, the way
+ * Python's `nx-release-publish` target also carries no registry specifics
+ * of its own (its `TWINE_*` env vars are injected only at CI release time).
+ */
+export const NUGET_AZURE_SOURCE = 'AzureArtifacts'
+
+/**
+ * Builds the `nuget.config` body for a registry configuration.
+ *
+ * @remarks
+ * Mirrors {@link npmrcContent}'s split, but the underlying auth mechanics
+ * genuinely differ — verified against NuGet's own docs
+ * (`nuget.config` file reference, and Azure Artifacts' "Publish NuGet
+ * packages with dotnet CLI" guide), not assumed from the `.npmrc` case:
+ *
+ * - **NuGet's env-var substitution is `%VAR%` on every platform, never
+ *   `${VAR}` or `$VAR`.** Confirmed from Microsoft's own compatibility
+ *   table: `$MY_VAR` resolves on none of `nuget.exe`/`dotnet.exe`, Windows or
+ *   Mac. Getting this backwards is the exact class of trap the `.npmrc`
+ *   Bearer-vs-Basic saga already cost this repo once — a config that
+ *   *parses* but silently never substitutes anything.
+ * - **`packageSourceCredentials` attaches to a REGISTERED source by key**,
+ *   not to the URL passed to `--source` at push time — confirmed by Azure's
+ *   own guide, which registers the feed under `packageSources` even though
+ *   `dotnet nuget push --source <url>` alone would also resolve the URL.
+ *   Skipping registration would leave the credentials with nothing to
+ *   attach to. {@link NUGET_AZURE_SOURCE} is that key.
+ * - **`packageSourceMapping` scopes the private feed to this workspace's own
+ *   `<PascalScope>.*` packages**, the direct analogue of `.npmrc`'s
+ *   scope-only routing and for the identical reason: an unscoped
+ *   `<packageSources>` entry would have every `dotnet restore` — including a
+ *   contributor's local one, with no PAT set — query the private feed for
+ *   packages that were never going to be found there, on every build.
+ * - **Public nuget.org needs no credentials at all** — restore is anonymous,
+ *   and {@link nugetFeedUrl}'s remarks explain why publish is left
+ *   unconfigured for that choice rather than half-wired.
+ *
+ * The one PAT is the same **raw** value `twine` already uses (see
+ * {@link pythonPublishEnvFragment}), not the base64 form `.npmrc`'s
+ * `_password` takes — NuGet's Basic auth is handled by the HTTP client
+ * itself from a plain `Username`/`ClearTextPassword` pair, so no manual
+ * base64 step belongs here.
+ *
+ * @param registry - The monorepo's resolved registry configuration.
+ * @param scope - The npm scope (e.g. `@demo`); its PascalCase form is the
+ * `packageSourceMapping` pattern, matching {@link addCsharpLib}'s own
+ * `<PascalScope>.<PascalName>` NuGet identity.
+ * @returns The full text of the generated `nuget.config`.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function nugetConfigContent (registry: RegistryConfig, scope: string): string {
+  if (registry.kind === 'npm') {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<!-- Publish authentication for NuGet is deliberately UNCONFIGURED for the
+     public npm registry choice: publishing to public nuget.org needs a
+     nuget.org-issued API key, a credential mnci collects nowhere (the same
+     gap Python's PyPI publish has for this same registry choice). A
+     csharp-lib is still versioned and tagged; run "dotnet nuget push"
+     yourself with your own key, or regenerate with --registry
+     azure-artifacts. -->
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+`
+  }
+
+  const pascalScope = scope
+    .replace(/^@/, '')
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
+  const feedUrl = nugetFeedUrl(registry) as string
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- NuGet's own environment-variable syntax is '%VAR%' on every platform —
+     never '\${VAR}'/'$VAR', which resolve on none of them. NUGET_PAT is the
+     RAW PAT (not base64 — unlike .npmrc's _password, NuGet's HTTP client
+     handles Basic auth itself from Username + ClearTextPassword), exported
+     only by the CI release step (see nugetPublishEnvFragment in mnci); an
+     ordinary build/test/lint step never needs it, since packageSourceMapping
+     below scopes this feed to ${pascalScope}.* packages only. -->
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="${NUGET_AZURE_SOURCE}" value="${feedUrl}" />
+  </packageSources>
+  <packageSourceCredentials>
+    <${NUGET_AZURE_SOURCE}>
+      <add key="Username" value="AzureArtifacts" />
+      <add key="ClearTextPassword" value="%NUGET_PAT%" />
+    </${NUGET_AZURE_SOURCE}>
+  </packageSourceCredentials>
+  <packageSourceMapping>
+    <clear />
+    <packageSource key="${NUGET_AZURE_SOURCE}">
+      <package pattern="${pascalScope}.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+`
+}
+
+/**
  * The portable `node -e` one-liner that installs the fixed Python toolchain
  * (`ruff`/`pytest`/`build`/`twine`) from `requirements-dev.txt`.
  *
@@ -2063,12 +2212,14 @@ const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'d
  *
  * @param pythonPublishEnv - A `node -e`-fragment that exports `TWINE_*` when
  * there are Python packages and a configured feed, or `''` to export nothing.
+ * @param nugetPublishEnv - A `node -e`-fragment that exports `NUGET_PAT` when
+ * there are C# packages and a configured feed, or `''` to export nothing.
  * @returns The full `node -e` release one-liner.
  * @throws Never - pure string building.
  * @typeParam None - this function has no generic type parameters.
  */
-function releaseGuard (pythonPublishEnv: string): string {
-  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
+function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): string {
+  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;const hasCsharp=fs.globSync('packages/*/*.csproj').length>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
 /**
@@ -2085,6 +2236,24 @@ function releaseGuard (pythonPublishEnv: string): string {
 function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
   return pythonPublishUrl
     ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+    : ''
+}
+
+/**
+ * Injected into {@link releaseGuard}: when there are C# packages and a
+ * configured Azure feed, export the raw PAT `nuget.config`'s `%NUGET_PAT%`
+ * placeholder reads (see {@link nugetConfigContent}'s remarks for why NuGet
+ * takes the raw value, unlike `.npmrc`'s base64 `_password`).
+ *
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
+ * @returns The `node -e` fragment, or `''` when there is no NuGet feed.
+ * @throws Never - pure string mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nugetPublishEnvFragment (nugetFeedUrl?: string): string {
+  return nugetFeedUrl
+    ? 'if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}'
     : ''
 }
 
@@ -2190,6 +2359,10 @@ export function poolBlock (agent: string): string {
  * @param variableGroup - The Library variable group holding the base64 `PAT`.
  * @param pythonPublishUrl - The twine upload URL for Python packages, or
  * `undefined` to leave Python publishing unconfigured (public npm).
+ * @param registryKind - The workspace's registry kind — selects `PAT` vs
+ * `NPM_TOKEN` for the npm-authenticating steps.
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
@@ -2199,6 +2372,7 @@ export function azurePipelinesYaml (
   variableGroup: string,
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
+  nugetFeedUrl?: string,
 ): string {
   // ENUMERATED CI reasons, never "not a pull request" — the Azure half of the
   // fix #22 made for GitHub, and the more exposed of the two.
@@ -2448,13 +2622,14 @@ steps:
     displayName: Tag the run per app (type-name)
     condition: ${onMain}
 
-  # Version + tag + publish, in one release, for npm (packages/*) AND Python
-  # (python-packages/*) — conventional commits, tag-only push. Portable guard:
-  # nx release errors on an empty scope, so skip cleanly when there is nothing
-  # to release. When there are Python packages and an Azure feed, twine
-  # publish credentials are exported (raw PAT, decoded from the base64 variable).
-  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
-    displayName: Release — version, tag and publish (npm + Python)
+  # Version + tag + publish, in one release, for npm (packages/*), Python
+  # (python-packages/*) AND C# (packages/*/*.csproj) — conventional commits,
+  # tag-only push. Portable guard: nx release errors on an empty scope, so
+  # skip cleanly when there is nothing to release. When there are Python or
+  # C# packages and an Azure feed, twine/NuGet publish credentials are
+  # exported (raw PAT, decoded from the base64 variable).
+  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+    displayName: Release — version, tag and publish (npm + Python + C#)
     condition: ${onMain}
     env:
       ${npmAuthName}: ${npmAuthValue}
@@ -2506,6 +2681,9 @@ steps:
  * `undefined` to leave Python publishing unconfigured (public npm).
  * @param registryKind - The workspace's registry kind — selects `PAT` vs
  * `NPM_TOKEN` for the npm-authenticating steps.
+ * @param ci - Which CI provider(s) the workspace generates a pipeline for.
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
  * @returns The full text of `.github/workflows/ci.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
@@ -2515,6 +2693,7 @@ export function githubActionsYaml (
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
   ci: CiProvider = 'github',
+  nugetFeedUrl?: string,
 ): string {
   // `== 'push'`, not `!= 'pull_request'`. Identical today — the generated workflow
   // has exactly two triggers, `push` and `pull_request` — but the negative form
@@ -2709,11 +2888,12 @@ jobs:
           path: dist/drop
           if-no-files-found: ignore
 
-      # Version + tag + publish, in one release, for npm (packages/*) AND Python
-      # (python-packages/*) — conventional commits, tag-only push. Portable guard:
-      # nx release errors on an empty scope, so skip cleanly when there is nothing
-      # to release. When there are Python packages and an Azure feed, twine
-      # publish credentials are exported (raw PAT, decoded from the base64 secret).${
+      # Version + tag + publish, in one release, for npm (packages/*), Python
+      # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
+      # commits, tag-only push. Portable guard: nx release errors on an empty
+      # scope, so skip cleanly when there is nothing to release. When there
+      # are Python or C# packages and an Azure feed, twine/NuGet publish
+      # credentials are exported (raw PAT, decoded from the base64 secret).${
         githubReleases
           ? `
       # This provider also creates a per-project GitHub Release (changelog
@@ -2723,8 +2903,8 @@ jobs:
       # why every other provider combination keeps the explicit push step below.`
           : ''
       }
-      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
-        name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python)
+      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+        name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python + C#)
         if: \${{ ${onMain} }}
         env:
           ${npmAuthName}: ${npmAuthValue}${
@@ -3177,18 +3357,19 @@ export function applyOverlay (
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)
+  const nugetUrl = nugetFeedUrl(options.registry)
   if (options.ci === 'azure' || options.ci === 'both') {
     onProgress('azure-pipelines.yml — build, verify, pack and release')
     writeFileEnsured(
       join(workspaceRoot, 'azure-pipelines.yml'),
-      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind),
+      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind, nugetUrl),
     )
   }
   if (options.ci === 'github' || options.ci === 'both') {
     onProgress('.github/workflows/ci.yml and dependabot.yml')
     writeFileEnsured(
       join(workspaceRoot, '.github/workflows/ci.yml'),
-      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci),
+      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci, nugetUrl),
     )
     writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), dependabotConfig(workspaceRoot))
   }

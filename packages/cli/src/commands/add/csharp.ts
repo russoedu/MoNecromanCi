@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../../nx'
-import { DOTNET_SDK_VERSION } from '../../overlay'
+import { DOTNET_SDK_VERSION, NUGET_AZURE_SOURCE, nugetConfigContent, readMnciConfig } from '../../overlay'
 import { promptText } from '../../prompts'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
@@ -485,6 +485,52 @@ function addInitialVersion (csprojPath: string): void {
 }
 
 /**
+ * The `nx-release-publish` target for a `csharp-lib`: `dotnet pack` then
+ * `dotnet nuget push` every produced `.nupkg`.
+ *
+ * @remarks
+ * `nx release publish` requires the target literally named
+ * `nx-release-publish` — confirmed by reading Nx's own release source
+ * (`publish.js`), not assumed — and skips a project silently if it lacks
+ * one, UNLESS every matched project lacks it, which throws for the whole
+ * `nx release publish` run. So this target is always present, never
+ * conditioned on the registry choice at generation time — the choice is
+ * read at RUNTIME instead, from whether `NUGET_PAT` is set (only true when
+ * {@link nugetPublishEnvFragment} in `overlay.ts` exported it, which only
+ * happens for the Azure Artifacts registry). That keeps this target free of
+ * any {@link RegistryConfig} of its own, the same way Python's publish
+ * target carries no registry specifics — its `TWINE_*` env vars are
+ * injected only at CI release time too.
+ *
+ * Runs its own `dotnet pack` into an mnci-controlled `dist/` directory
+ * rather than depending on `@nx/dotnet`'s inferred `pack` target's output
+ * location — the same reasoning {@link csharpAppPackageTarget} already
+ * applies for `dotnet publish`, unverifiable here without a live SDK.
+ *
+ * `--source` names {@link NUGET_AZURE_SOURCE}, the fixed key
+ * {@link nugetConfigContent} registers the feed under — `--api-key` is a
+ * required-but-ignored placeholder for an Azure Artifacts feed (confirmed
+ * from Microsoft's own "Publish NuGet packages with dotnet CLI" guide:
+ * "you can use any string as its value"); the real auth is the
+ * `packageSourceCredentials` entry keyed to that same source.
+ *
+ * **Unverified without a real SDK/Azure feed** — the same caveat every
+ * other C# kind carries; the gated e2e (tracked separately) is what
+ * confirms it.
+ *
+ * @param projectRoot - Workspace-relative project directory.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpLibPublishTarget (projectRoot: string): Record<string, unknown> {
+  const outDir = `${projectRoot}/dist`
+  const command = `node -e "if(!process.env.NUGET_PAT){console.log('NuGet publish is not configured for this registry choice (no NUGET_PAT) - skipping. Regenerate with --registry azure-artifacts, or run dotnet nuget push manually.');process.exit(0)}const cp=require('node:child_process');const pack=cp.spawnSync('dotnet',['pack','${projectRoot}','-c','Release','-o','${outDir}'],{stdio:'inherit',shell:true});if(pack.status!==0)process.exit(pack.status??1);const fs=require('node:fs');for(const pkg of fs.globSync('${outDir}/*.nupkg')){const push=cp.spawnSync('dotnet',['nuget','push',pkg,'--source','${NUGET_AZURE_SOURCE}','--api-key','AZ'],{stdio:'inherit',shell:true});if(push.status!==0)process.exit(push.status??1)}"`
+
+  return { executor: 'nx:run-commands', options: { command } }
+}
+
+/**
  * Adds a publishable C# library under `packages/`: `dotnet new classlib`.
  *
  * @remarks
@@ -504,7 +550,18 @@ function addInitialVersion (csprojPath: string): void {
  * {@link addInitialVersion}) plus a project-level `release.version.versionActions`
  * override pointing at the shared {@link CSHARP_VERSION_ACTIONS_PATH} (see
  * that constant's remarks for why a `.csproj` lib needs one at all, and why
- * it is a workspace file rather than a sixth mnci package).
+ * it is a workspace file rather than a sixth mnci package), and an
+ * `nx-release-publish` target (see {@link csharpLibPublishTarget}) so
+ * `nx release` actually pushes the package, not just versions and tags it.
+ *
+ * Also (re)writes the shared root `nuget.config` from the workspace's
+ * persisted registry choice ({@link readMnciConfig}) — the same "written by
+ * `mnci add` on the first project of that kind" lifecycle
+ * `requirements-dev.txt` already has for Python, since a JS-only or
+ * Go/Flutter-only workspace has no reason to carry a NuGet config file at
+ * all. Falls back to the public npm registry when an older, pre-registry
+ * workspace's `nx.json` carries no persisted choice, rather than assuming
+ * Azure Artifacts credentials that were never collected.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
@@ -536,6 +593,13 @@ export async function addCsharpLib (
   addInitialVersion(join(workspaceRoot, projectRoot, `${identity}.csproj`))
   writeCsharpVersionActions(workspaceRoot)
   addProjectJsonReleaseVersionActions(join(workspaceRoot, projectRoot, 'project.json'))
+  addProjectJsonTargets(join(workspaceRoot, projectRoot, 'project.json'), {
+    'nx-release-publish': csharpLibPublishTarget(projectRoot),
+  })
+
+  const registry = readMnciConfig(workspaceRoot).registry ?? { kind: 'npm' }
+  writeFileEnsured(join(workspaceRoot, 'nuget.config'), nugetConfigContent(registry, scope))
+
   registerProjectCommands(workspaceRoot, name, { build: true })
 }
 

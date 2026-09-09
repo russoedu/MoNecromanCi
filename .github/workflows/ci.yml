@@ -184,13 +184,14 @@ jobs:
           path: dist/drop
           if-no-files-found: ignore
 
-      # Version + tag + publish, in one release, for npm (packages/*) AND Python
-      # (python-packages/*) — conventional commits, tag-only push. Portable guard:
-      # nx release errors on an empty scope, so skip cleanly when there is nothing
-      # to release. When there are Python packages and an Azure feed, twine
-      # publish credentials are exported (raw PAT, decoded from the base64 secret).
-      - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
-        name: Release — version, tag and publish (npm + Python)
+      # Version + tag + publish, in one release, for npm (packages/*), Python
+      # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
+      # commits, tag-only push. Portable guard: nx release errors on an empty
+      # scope, so skip cleanly when there is nothing to release. When there
+      # are Python or C# packages and an Azure feed, twine/NuGet publish
+      # credentials are exported (raw PAT, decoded from the base64 secret).
+      - run: node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;const hasCsharp=fs.globSync('packages/*/*.csproj').length>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"
+        name: Release — version, tag and publish (npm + Python + C#)
         if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

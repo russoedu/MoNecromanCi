@@ -235,6 +235,53 @@ describe('runAdd csharp-lib', () => {
     expect(existsSync(join(workspaceRoot, 'tools/csharp-version-actions.cjs'))).toBe(true)
   })
 
+  it('adds an nx-release-publish target that packs then pushes to the fixed NUGET_AZURE_SOURCE key', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const { targets } = readProjectJson('packages/sdk')
+    const publish = targets['nx-release-publish']
+    expect(publish.executor).toBe('nx:run-commands')
+    const command = String(publish.options?.command)
+    expect(command).toContain("'pack','packages/sdk'")
+    expect(command).toContain("'nuget','push'")
+    expect(command).toContain("'--source','AzureArtifacts'")
+    // Self-gates at RUNTIME on NUGET_PAT rather than being generated
+    // differently per registry — the target itself carries no registry
+    // specifics, matching Python's nx-release-publish target.
+    expect(command).toContain('process.env.NUGET_PAT')
+  })
+
+  it('writes a public-registry nuget.config (no credentials) by default', async () => {
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const config = readFileSync(join(workspaceRoot, 'nuget.config'), 'utf8')
+    expect(config).toContain('nuget.org')
+    expect(config).not.toContain('packageSourceCredentials')
+  })
+
+  it('writes an Azure Artifacts nuget.config when the workspace was generated with that registry', async () => {
+    writeFileSync(
+      join(workspaceRoot, 'nx.json'),
+      JSON.stringify({
+        mnci: {
+          registry: {
+            kind:          'azure-artifacts',
+            organization:  'org',
+            project:       'proj',
+            artifactsFeed: 'feed',
+          },
+        },
+      }),
+    )
+
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const config = readFileSync(join(workspaceRoot, 'nuget.config'), 'utf8')
+    expect(config).toContain('AzureArtifacts')
+    expect(config).toContain('_packaging/feed/nuget/v3/index.json')
+    expect(config).toContain('%NUGET_PAT%')
+  })
+
   it('writes a CsharpVersionActions that reads/writes a .csproj <Version> and validates its presence', async () => {
     // A real integration check, not a string-content assertion: `require()`
     // the exact file mnci writes into a generated workspace and exercise it
