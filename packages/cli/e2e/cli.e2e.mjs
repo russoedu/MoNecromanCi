@@ -385,6 +385,17 @@ function hasGolangciLint () {
   }
 }
 
+/** Whether the .NET SDK is available to drive the C# section. */
+function hasDotnet () {
+  try {
+    execSync('dotnet --version', { stdio: 'ignore' })
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 const temporary = mkdtempSync(path.join(tmpdir(), 'mnci-e2e-'))
 const workspace = path.join(temporary, 'demo')
 // Hoisted out of the `alt stack` section on purpose: `python` and `go` are
@@ -2213,6 +2224,160 @@ section('go', ['alt stack'], () => {
     )
   } else {
     skip('the entire Go section', 'the Go toolchain is not on PATH')
+  }
+})
+section('csharp', ['alt stack'], () => {
+  /* ---------------------------------------------------------------------------
+   * C# — @nx/dotnet (the official Nx plugin, inference-only: build/test/restore/
+   * pack are all discovered live from each .csproj via a bundled MSBuild
+   * analyzer) plus mnci's own scaffolding through the real `dotnet` CLI, since
+   * the plugin ships NO generator at all — verified against the real published
+   * package, not assumed from its docs (see scaffoldDotnetProject's remarks in
+   * add/csharp.ts).
+   *
+   * Every invariant here was, until this section first ran, in the same state
+   * the Go section's own header describes: documented and unverified. Several
+   * pieces of add/csharp.ts carry an explicit "Unverified without a real
+   * SDK" caveat in their own docstrings — csharpAppPackageTarget's `dotnet
+   * publish` + zip, csharpFunctionAppCsproj's Azure.Functions.Sdk isolated-
+   * worker shape and pinned package versions, and CSHARP_VERSION_ACTIONS'
+   * <Version> read/write against nx release's real git-tag resolution — and
+   * this section is what confirms or refutes each of them for the first time.
+   *
+   * Uses altWorkspace (--registry npm, public) rather than a third generated
+   * workspace: it already carries a releasable npm-lib (`sdk`), which
+   * csharp-lib's own release check needs for the same reason the Go section's
+   * comment explains — a workspace whose ONLY releasable project is excluded
+   * or empty makes `nx release` fail for an unrelated reason before this
+   * section's own assertion is even reached.
+   * ------------------------------------------------------------------------- */
+
+  if (hasDotnet()) {
+    console.log('\n▸ mnci add csharp-app / csharp-internal-lib / csharp-lib / csharp-function-app')
+    run(`node ${CLI} add csharp-app csapp`, altWorkspace)
+    run(`node ${CLI} add csharp-internal-lib csutil`, altWorkspace)
+    run(`node ${CLI} add csharp-lib cslib`, altWorkspace)
+    run(`node ${CLI} add csharp-function-app csfn`, altWorkspace)
+
+    // @nx/dotnet writes NO project.json at all — every target it contributes
+    // (build/test/restore/pack/…) is pure inference from the .csproj alone.
+    // The only things a project.json here carries are mnci's own additions,
+    // so this checks exactly those rather than anything @nx/dotnet owns.
+    for (const [project, directory, expected] of [
+      ['csapp', 'apps/csapp', ['package', 'start']],
+      ['csfn', 'apps/csfn', ['package', 'start']],
+      ['cslib', 'packages/cslib', ['nx-release-publish']],
+    ]) {
+      const projectJson = JSON.parse(
+        readFileSync(path.join(altWorkspace, directory, 'project.json'), 'utf8'),
+      )
+      enforce(
+        `csharp: ${project} carries mnci's own targets (${expected.join(', ')}) on top of @nx/dotnet's inferred ones`,
+        expected.every(target => Object.hasOwn(projectJson.targets ?? {}, target)),
+        Object.keys(projectJson.targets ?? {}).join(', '),
+      )
+    }
+
+    // The one NuGet lib is scoped to the workspace's own scope, PackageId-style:
+    // dotnet new classlib -n Alt.Cslib sets assembly name, namespace AND the
+    // default PackageId in one step — no post-generation manifest repair, unlike
+    // npm-lib's `types` path bug.
+    enforce(
+      'csharp: cslib is scoped Alt.Cslib.csproj, the NuGet dotted PackageId convention',
+      existsSync(path.join(altWorkspace, 'packages/cslib/Alt.Cslib.csproj')),
+    )
+    enforce(
+      'csharp: cslib starts at an explicit <Version>0.1.0</Version> — dotnet new writes none at all',
+      readFileSync(path.join(altWorkspace, 'packages/cslib/Alt.Cslib.csproj'), 'utf8').includes(
+        '<Version>0.1.0</Version>',
+      ),
+    )
+
+    // csharp-internal-lib has NO project.json target of its own (see
+    // addCsharpInternalLib's remarks — an internal-only library gets no root
+    // :build script either) and, unlike every other internal-lib kind, no
+    // automatic consumer resolution: a <ProjectReference> is a manual edit.
+    // Exercised for real, with the exact command mnci's own log line suggests.
+    run(
+      'dotnet add apps/csapp/Csapp.csproj reference libs/csutil/Csutil.csproj',
+      altWorkspace,
+    )
+    replaceInFile(
+      path.join(altWorkspace, 'apps/csapp/Program.cs'),
+      /Console\.WriteLine\([^)]*\);/,
+      'Console.WriteLine(new Csutil.Class1().ToString());',
+    )
+
+    const csBuild = tryRunCapture(
+      'npx nx run-many -t build --projects=csapp,csutil,cslib,csfn',
+      altWorkspace,
+    )
+    enforce(
+      'csharp: real dotnet build passes for all four kinds, with csapp referencing libs/csutil across projects via a real <ProjectReference>',
+      csBuild.ok,
+      csBuild.output,
+    )
+
+    const csAppPackage = tryRunCapture('npx nx package csapp', altWorkspace)
+    const csAppZipPath = path.join(altWorkspace, 'dist/drop/csharp-app-csapp.zip')
+    enforce(
+      'csharp: csharp-app package runs its own dotnet publish and zips a real build to dist/drop',
+      csAppPackage.ok && existsSync(csAppZipPath),
+      csAppPackage.output,
+    )
+    if (existsSync(csAppZipPath)) {
+      const AdmZipCsharp = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
+      const csAppEntries = new AdmZipCsharp(csAppZipPath).getEntries()
+      enforce(
+        'csharp: the drop zip holds a genuinely compiled app, not an empty shell',
+        csAppEntries.some(entry => entry.entryName.endsWith('.dll') && entry.header.size > 1_000),
+        csAppEntries.map(entry => `${entry.entryName} (${entry.header.size}b)`).join(', '),
+      )
+    }
+
+    // The single most uncertain piece in the whole C# surface: Azure.Functions.Sdk,
+    // its exact isolated-worker Program.cs shape and the two pinned package
+    // versions, none of which this repo could verify without a live SDK until now.
+    const csFunctionPackage = tryRunCapture('npx nx package csfn', altWorkspace)
+    const csFunctionZipPath = path.join(altWorkspace, 'dist/drop/csharp-function-app-csfn.zip')
+    enforce(
+      'csharp: the Azure Functions isolated-worker app (Azure.Functions.Sdk) actually restores and builds',
+      csFunctionPackage.ok && existsSync(csFunctionZipPath),
+      csFunctionPackage.output,
+    )
+
+    // The highest-consequence C# invariant, the direct analogue of the Go
+    // section's go-lib check: a csharp-lib has no package.json, so without
+    // CSHARP_VERSION_ACTIONS, Nx's default versionActions would look for one
+    // and abort while building the release graph — killing `nx release` for
+    // EVERY project, not just this one. Checked against real nx release
+    // internals (git-tag resolution, disk fallback), not the fake Tree a unit
+    // test drives.
+    const csRelease = tryRunCapture('npx nx release --dry-run', altWorkspace)
+    enforce(
+      'csharp: nx release versions cslib from its .csproj <Version> (CsharpVersionActions), leaving the rest of the release intact',
+      csRelease.ok && /cslib/i.test(csRelease.output),
+      csRelease.output,
+    )
+
+    // registry npm (public) means no NUGET_PAT is ever exported — the publish
+    // target must self-gate cleanly here, not error, the same documented gap
+    // Python's PyPI publish already has for this same registry choice.
+    const csPublish = tryRunCapture('npx nx run cslib:nx-release-publish', altWorkspace)
+    enforce(
+      'csharp: nx-release-publish self-gates cleanly on the public registry (no NUGET_PAT) instead of failing',
+      csPublish.ok && /NuGet publish is not configured/.test(csPublish.output),
+      csPublish.output,
+    )
+
+    enforce(
+      'csharp: nuget.config was written, registering public nuget.org with no credentials for this registry choice',
+      existsSync(path.join(altWorkspace, 'nuget.config')) &&
+        readFileSync(path.join(altWorkspace, 'nuget.config'), 'utf8').includes('nuget.org') &&
+        !readFileSync(path.join(altWorkspace, 'nuget.config'), 'utf8').includes('packageSourceCredentials'),
+    )
+  } else {
+    skip('the entire C# section', 'the .NET SDK is not on PATH')
   }
 })
 section('flutter', [], () => {

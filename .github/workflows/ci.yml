@@ -284,6 +284,19 @@ jobs:
         name: Add the Flutter SDK to PATH
         continue-on-error: true
 
+      # The .NET SDK, provisioned UNCONDITIONALLY — same reasoning as Go and
+      # Flutter above. The `ci` job's own install step (githubActionsYaml's
+      # actions/setup-dotnet) is gated on `hashFiles('**/*.csproj') != ''`,
+      # which this job's working directory (this repo, not a generated
+      # workspace) never satisfies — so without this, the e2e's C# section
+      # would report `SKIPPED the entire C# section` on every run, the exact
+      # gap Go and Flutter already had before the block above existed.
+      - uses: actions/setup-dotnet@v4
+        name: Install the .NET SDK (10.0.x, so the e2e's C# section runs)
+        continue-on-error: true
+        with:
+          dotnet-version: 10.0.x
+
       - run: npx nx build @mnci/cli
         name: Build @mnci/cli
 
