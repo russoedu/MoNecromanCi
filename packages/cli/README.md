@@ -653,16 +653,22 @@ Pushes to `main` then:
   from the artifact). A classic Azure release/CD pipeline keys its trigger off
   these; GitHub Actions has no equivalent mechanism, so the `drop` artifact
   (one zip per app inside it) is the portable substitute there.
-- **Release — version, tag and publish** — one `npx nx release --yes` for both
-  npm (`packages/*`) and Python (`python-packages/*`): version bump from
-  conventional commits → `{projectName}@{version}` git tag pushed to `main`
-  (tag-only, never a commit) → publish to the feed (npm via `.npmrc`, Python via
-  `twine` when an Azure feed is configured — installed from the generated
-  `requirements-dev.txt`, no uv, no Poetry). Reuses the base64 `PAT`, decoded to
-  the raw token twine needs for the Python publish. Skipped cleanly when there
-  is nothing to release. A guarded step installs the fixed Python toolchain
-  (`ruff`/`pytest`/`build`/`twine`/`pip-audit`) before any Python target runs,
-  skipped cleanly on a workspace with no Python projects. On a `--ci=github`
+- **Release — version, tag and publish** — one `npx nx release --yes` covering
+  npm (`packages/*`), Python (`python-packages/*`) and C# (a `csharp-lib`'s
+  NuGet publish): version bump from conventional commits →
+  `{projectName}@{version}` git tag pushed to `main` (tag-only, never a
+  commit) → publish to the feed (npm via `.npmrc`, Python via `twine` when an
+  Azure feed is configured — installed from the generated
+  `requirements-dev.txt`, no uv, no Poetry — and a `csharp-lib`'s own
+  `nx-release-publish` target running `dotnet pack`/`dotnet nuget push` when
+  `NUGET_PAT` is set, self-gating to a no-op otherwise). Reuses the base64
+  `PAT`, decoded to the raw token twine needs for the Python publish and to
+  the raw token NuGet's `%NUGET_PAT%` substitution needs. Skipped cleanly
+  when there is nothing to release. A guarded step installs the fixed Python
+  toolchain (`ruff`/`pytest`/`build`/`twine`/`pip-audit`) before any Python
+  target runs, skipped cleanly on a workspace with no Python projects. Go and
+  Flutter libraries publish by git tag only — see their own sections below —
+  so neither needs a step here. On a `--ci=github`
   workspace this same step also creates a **GitHub Release per project**, with
   a changelog Nx generates from conventional commits — `nx release` pushes the
   tag itself here (needs `GITHUB_TOKEN`, which GitHub Actions provides for
@@ -1264,4 +1270,74 @@ build agents, so the generated pipeline installs it itself (see below).
   and pub workspaces need Dart 3.6+. Three guarded steps precede the build —
   install, add to `PATH`, and one root `flutter pub get` — and all three skip
   cleanly when the workspace has no root `pubspec.yaml`; the install also skips
+
+## C# (`dotnet new` directly — `@nx/dotnet` is inference-only)
+
+Requires the **.NET SDK** on the machine and on the build agent; `mnci add
+csharp-*` fails fast with an install link when `dotnet` is not on the `PATH`.
+There is no third-party Nx plugin here the way there is for Go or Flutter:
+`@nx/dotnet` was checked directly (packed and read, not assumed maintained) and
+ships **no `generators.json`** — it is inference-only, reading an existing
+`.csproj` rather than creating one. So every kind below scaffolds via
+`dotnet new` and writes its own `project.json` explicitly, the same posture Go
+already takes for its single-module layout.
+
+| Kind                   | Location          | Build / deploy                                                                                                    |
+| ---------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `csharp-app`            | `apps/<name>`     | `dotnet build`/`publish` into `dist/apps/<name>/`, zipped into `dist/drop/csharp-app-<name>.zip`                   |
+| `csharp-function-app`   | `apps/<name>`     | Azure Functions, .NET **isolated worker**; same build, zipped into `dist/drop/csharp-function-app-<name>.zip`     |
+| `csharp-lib`            | `packages/<name>` | publishable to **NuGet** — see below; build + test targets                                                        |
+| `csharp-internal-lib`   | `libs/<name>`     | private shared code, build + test only, consumed via a real MSBuild `<ProjectReference>`                          |
+
+- **`nx release` needed no new npm package.** Nx's own version-actions
+  resolution (`resolveVersionActionsPath`, read directly from its source
+  rather than assumed) tries `require.resolve` as a package specifier first,
+  then falls back to a **workspace-relative** path. So `csharp-lib` gets a
+  plain `tools/csharp-version-actions.cjs` written into the generated
+  workspace itself, extending Nx's real `VersionActions` and reading/writing
+  the sole `.csproj`'s `<Version>` element — no publish, no registry, nothing
+  beyond a file already sitting in the workspace tree.
+- **The `nx-release-publish` target is always present, and gates itself at
+  runtime.** Nx throws for the whole release group if *zero* projects carry
+  the literal `nx-release-publish` target name, so `csharp-lib` always gets
+  one (`dotnet pack` then `dotnet nuget push`), regardless of registry
+  choice. It checks `process.env.NUGET_PAT` only when it actually runs,
+  printing "NuGet publish is not configured for this registry choice —
+  skipping" and exiting 0 when unset, rather than the target being
+  conditional at generation time.
+- **`nuget.config` mirrors `.npmrc`'s design.** A `--registry npm` workspace
+  gets `nuget.org` only, with no credentials — same honest "there is nothing
+  to route" reasoning the npm variant uses. A `--registry azure-artifacts`
+  workspace registers the feed under the fixed source key `AzureArtifacts`
+  (never the real feed name, so the publish target needs no registry
+  specifics baked in at generation time) with `packageSourceCredentials`
+  referencing `%NUGET_PAT%` — NuGet's environment-variable substitution
+  syntax on every platform (`${VAR}`/`$VAR` resolve on none of
+  nuget.exe/dotnet.exe/Windows/Mac; verified against Microsoft's own docs).
+  The same base64 `PAT` secret npm and twine already use is decoded to the
+  raw token NuGet needs.
+- **Cross-project references are real MSBuild, not a workspace trick.** A
+  `csharp-app` or `csharp-internal-lib` consumer adds a sibling with
+  `dotnet add <proj> reference <sibling proj>`, which writes an ordinary
+  `<ProjectReference Include="..." />` element — there is no npm-style
+  symlinking or a Dart pub workspace's shared resolution to lean on here.
+- **`mnci sync`/`mnci up` cover NuGet too.** `<PackageReference>` versions are
+  read from every `.csproj`, and the latest-version lookup shells out to
+  `dotnet package search --exact-match --format json` — consulting whatever
+  sources the workspace's own `nuget.config` resolves, the same
+  "go through the ecosystem's own tool" rule `npm view`/`pip index versions`
+  already follow, so a private feed's auth just works with no extra code.
+  Unlike npm or pub, NuGet has no single workspace-wide resolved version to
+  report: each `.csproj` restores independently into its own
+  `obj/project.assets.json`, so `mnci sync`'s "resolved version" column is
+  honestly empty for this ecosystem.
+- **`build` and `test` are pure `@nx/dotnet` inference, not mnci-written
+  targets** — the plugin discovers both live from each `.csproj`, the same
+  way `lint`/`typecheck` are inferred for TS projects from `eslint.config.mjs`
+  and `tsconfig.json`. C# has neither a `lint` nor a `typecheck` target: the
+  workspace's `nx run-many -t lint,typecheck,test,build` step simply skips
+  both for a C# project the same clean way it already skips `typecheck` for
+  a Go or Flutter one — `dotnet build`'s own compiler is the correctness
+  check. `PACK_APPS_GUARD` detects `.csproj`-based apps for the drop-zip step
+  the same way it detects Go and Node ones.
   when an SDK is already available.
