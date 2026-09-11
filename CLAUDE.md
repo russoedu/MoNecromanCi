@@ -257,7 +257,55 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### C# / .NET Support (Latest)
+### `npm audit` Red Again — the Same Two Traps, Recurring (Latest)
+
+CI's `npm audit` step went red with 9 high-severity findings, none of them new
+code — the entire tree was untouched, just time passing while advisory
+databases and `nx`'s own dependency graph moved. Both root causes are the
+**exact classes already documented** two entries below (the original "9
+vulnerabilities" writeup), recurring rather than repeating verbatim.
+
+- **The `js-yaml` pin drifted stale a second time, for the same advisory.**
+  `GHSA-2883-xcg3-v3hh` (the `maxTotalMergeKeys` DoS) originally listed its
+  fixed versions as `>=3.15.2`/`>=4.3.2`; this repo's overrides were bumped to
+  `^3.15.1`/`^4.3.1` at the time — both now confirmed to sit **one patch
+  short** of the advisory's own stated fix line, not a database re-widening.
+  Three overrides needed correcting: `@verdaccio/config` and `cosmiconfig`'s
+  `js-yaml` (`^4.3.1` → `^4.3.2`), and `@istanbuljs/load-nyc-config`'s
+  (`^3.15.1` → `^3.15.2`). Confirmed against the registry directly
+  (`npm view js-yaml versions`) that both target versions exist and are the
+  advisory's actual fix commits, not guessed.
+- **A second instance of the "nx's own transitive dependency" class**: `nx`
+  depends on `smol-toml <=1.7.0`
+  (`GHSA-7w5x-hrqm-74c2`, a parser DoS on malformed TOML), which fanned out
+  through the dependency graph to flag `@nx/js`, `@nx/eslint`,
+  `@nx/eslint-plugin`, `@nx/jest`, `@nx/rollup` and `@nx/workspace` as
+  high-severity — six findings from one root cause, all suggesting
+  `npm audit fix`'s answer of downgrading `nx` a full major (23.x → 22.6.4),
+  exactly the wrong fix for a version this repo pins deliberately. Added
+  `"smol-toml": "^1.7.1"` under the existing `nx` override block instead —
+  same shape as the earlier `axios`/`brace-expansion` entries there.
+- **The one remaining finding (`esbuild`, low) is the same documented,
+  deliberately-inert one** from two entries below — `esbuild: ^0.28.1` at the
+  override root cannot reach past `tsup`'s own `esbuild: ^0.27.0` dependency
+  declaration, low severity keeps it under the blocking threshold regardless,
+  and this is restated rather than re-investigated since nothing about it
+  changed.
+- **Verified by running the actual `NPM_AUDIT_STEP` script locally**, not by
+  reading `npm audit`'s summary — the whole point of the split is that
+  severity alone doesn't decide blocking, `fixAvailable` does. Before the fix:
+  9 high findings block, all from `nx`'s `smol-toml` and the two stale
+  `js-yaml` pins. After: exits 0, with the `esbuild` low logged as a
+  below-threshold note, matching the pre-existing baseline exactly.
+- **The standing lesson repeats itself on schedule**: a `package.json`
+  `overrides` entry pinned to "the fix" is a claim about a point in time, not
+  an invariant — advisory ranges and `npm audit fix`'s suggested target both
+  move under an unchanged tree. Nothing about this specific pin failing again
+  suggests a process fix (an automated re-check would just be another gate to
+  keep honest); it is recorded here so the next drift is diagnosed in
+  minutes rather than re-derived.
+
+### C# / .NET Support
 
 A fifth language, following the established pattern: thin delegation to the
 official tooling, an inline `VersionActions` for `nx release`, and a registry
