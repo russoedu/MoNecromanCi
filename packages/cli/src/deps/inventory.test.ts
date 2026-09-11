@@ -9,10 +9,12 @@ import { runCapture } from '../nx'
 import {
   ROOT_LABEL,
   collectInventory,
+  csprojPackageReferences,
   hasEcosystem,
   parseRequirement,
   pubspecBlockEntries,
   pyprojectDependencies,
+  replaceNugetSpec,
   replacePipSpec,
   replacePubSpec,
   resolvedVersion,
@@ -250,6 +252,64 @@ describe('pub', () => {
   })
 })
 
+describe('nuget', () => {
+  it('reads a PackageReference from a .csproj', () => {
+    write(
+      'packages/sdk/Demo.Sdk.csproj',
+      [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <PropertyGroup>',
+        '    <Version>0.1.0</Version>',
+        '  </PropertyGroup>',
+        '  <ItemGroup>',
+        '    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />',
+        '  </ItemGroup>',
+        '</Project>',
+        '',
+      ].join('\n'),
+    )
+
+    const inventory = collectInventory(workspaceRoot, ['nuget'])
+    const site = siteIn(inventory.get('Newtonsoft.Json'), 'packages/sdk')
+    expect(site.spec).toBe('13.0.3')
+    expect(site.section).toBe('dep')
+    expect(site.rewritable).toBe(true)
+    // The project's OWN <Version> is never reported as a "dependency" —
+    // same boundary collectNpm/collectPub/collectPip already keep.
+    expect(inventory.get('0.1.0')).toBeUndefined()
+  })
+
+  it('marks an MSBuild property reference or a range as unrewritable', () => {
+    write(
+      'apps/api/Demo.Api.csproj',
+      [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <ItemGroup>',
+        '    <PackageReference Include="Shared.Contracts" Version="$(SharedVersion)" />',
+        '    <PackageReference Include="Ranged.Pkg" Version="[1.0,2.0)" />',
+        '  </ItemGroup>',
+        '</Project>',
+        '',
+      ].join('\n'),
+    )
+
+    const inventory = collectInventory(workspaceRoot, ['nuget'])
+    expect(siteIn(inventory.get('Shared.Contracts'), 'apps/api').rewritable).toBe(false)
+    expect(siteIn(inventory.get('Ranged.Pkg'), 'apps/api').rewritable).toBe(false)
+  })
+
+  it('finds Include and Version in either attribute order', () => {
+    const content =
+      '<PackageReference Version="2.1.0" Include="Reordered.Pkg" />'
+    expect(csprojPackageReferences(content)).toEqual([{ name: 'Reordered.Pkg', spec: '2.1.0' }])
+  })
+
+  it('ignores a self-closing tag missing either attribute', () => {
+    expect(csprojPackageReferences('<PackageReference Include="NoVersion" />')).toEqual([])
+    expect(csprojPackageReferences('<PackageReference Version="1.0.0" />')).toEqual([])
+  })
+})
+
 describe('go', () => {
   it('reads the root go.mod and labels indirect requirements', () => {
     write(
@@ -293,6 +353,12 @@ describe('hasEcosystem', () => {
   it('detects pip from a project pyproject even with no root requirements file', () => {
     write('libs/shared/pyproject.toml', '[project]\nname = "shared"\n')
     expect(hasEcosystem(workspaceRoot, 'pip')).toBe(true)
+  })
+
+  it('detects nuget from a project .csproj — it has no root marker at all', () => {
+    expect(hasEcosystem(workspaceRoot, 'nuget')).toBe(false)
+    write('packages/sdk/Demo.Sdk.csproj', '<Project Sdk="Microsoft.NET.Sdk"></Project>\n')
+    expect(hasEcosystem(workspaceRoot, 'nuget')).toBe(true)
   })
 })
 
@@ -359,6 +425,31 @@ describe('rewriteSpec', () => {
     expect(content).toContain('  http: ^1.3.0')
     expect(content).toContain('  flutter:\n    sdk: flutter')
   })
+
+  it("rewrites a .csproj's PackageReference Version without touching a sibling tag", () => {
+    const path = write(
+      'packages/sdk/Demo.Sdk.csproj',
+      [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <ItemGroup>',
+        '    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />',
+        '    <PackageReference Include="Other.Pkg" Version="1.0.0" />',
+        '  </ItemGroup>',
+        '</Project>',
+        '',
+      ].join('\n'),
+    )
+    const site = siteIn(
+      collectInventory(workspaceRoot, ['nuget']).get('Newtonsoft.Json'),
+      'packages/sdk',
+    )
+
+    expect(rewriteSpec(site, '13.0.3')).toBe(true)
+
+    const content = readFileSync(path, 'utf8')
+    expect(content).toContain('<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />')
+    expect(content).toContain('<PackageReference Include="Other.Pkg" Version="1.0.0" />')
+  })
 })
 
 describe('replacePipSpec', () => {
@@ -378,6 +469,43 @@ describe('replacePubSpec', () => {
   it('leaves a key that introduces a nested map alone', () => {
     const before = 'dependencies:\n  flutter:\n    sdk: flutter\n'
     expect(replacePubSpec(before, 'flutter', '^1.0.0')).toBe(before)
+  })
+})
+
+describe('replaceNugetSpec', () => {
+  it('rewrites only the matching Include tag, not the next Version= in the file', () => {
+    const before =
+      '<PackageReference Include="A.Pkg" Version="1.0.0" />\n' +
+      '<PackageReference Include="B.Pkg" Version="1.0.0" />\n'
+
+    expect(replaceNugetSpec(before, 'A.Pkg', '2.0.0')).toBe(
+      '<PackageReference Include="A.Pkg" Version="2.0.0" />\n' +
+        '<PackageReference Include="B.Pkg" Version="1.0.0" />\n',
+    )
+  })
+
+  it('is unchanged when no tag matches — never a false-positive edit', () => {
+    const before = '<PackageReference Include="A.Pkg" Version="1.0.0" />\n'
+    expect(replaceNugetSpec(before, 'Missing.Pkg', '2.0.0')).toBe(before)
+  })
+
+  it('escapes a dotted package ID rather than treating "." as any-character', () => {
+    // An unescaped '.' in 'Microsoft.Extensions.Http' would also match
+    // 'MicrosoftXExtensionsXHttp', silently rewriting the wrong tag.
+    const before =
+      '<PackageReference Include="MicrosoftXExtensionsXHttp" Version="1.0.0" />\n' +
+      '<PackageReference Include="Microsoft.Extensions.Http" Version="1.0.0" />\n'
+
+    const after = replaceNugetSpec(before, 'Microsoft.Extensions.Http', '9.0.0')
+    expect(after).toContain('<PackageReference Include="MicrosoftXExtensionsXHttp" Version="1.0.0" />')
+    expect(after).toContain('<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />')
+  })
+
+  it('treats the replacement value literally, even if it looks like a regex backreference', () => {
+    // A '$1'-style replacement value would corrupt this specific input if
+    // String#replace's special pattern handling were ever reintroduced.
+    const before = '<PackageReference Include="A.Pkg" Version="1.0.0" />\n'
+    expect(replaceNugetSpec(before, 'A.Pkg', '$1-weird')).toContain('Version="$1-weird"')
   })
 })
 
@@ -416,5 +544,8 @@ describe('resolvedVersion', () => {
     expect(resolvedVersion(workspaceRoot, 'pip', 'requests')).toBeUndefined()
     // Go's root go.mod IS the resolved state — there is nothing else to read.
     expect(resolvedVersion(workspaceRoot, 'go', 'github.com/spf13/cobra')).toBeUndefined()
+    // NuGet has no single workspace-wide resolved state to read either — each
+    // .csproj restores into its own obj/project.assets.json.
+    expect(resolvedVersion(workspaceRoot, 'nuget', 'Newtonsoft.Json')).toBeUndefined()
   })
 })

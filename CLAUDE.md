@@ -38,7 +38,7 @@ commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
 .npmrc                    # publish auth (azure also routes @scope to the feed)
 <workspace-name>.code-workspace  # single-file VS Code workspace (folders, extensions, settings)
-.devcontainer/devcontainer.json   # Node/Python/Go/Flutter toolchain matching CI
+.devcontainer/devcontainer.json   # Node/Python/Go/Flutter/.NET toolchain matching CI
 package.json              # Root scripts (build, lint, test, format, release:preview, etc)
 ```
 
@@ -62,12 +62,13 @@ does it too — the docs already tell users to `git diff` before committing an u
   `space-before-function-paren`, which no formatter could ever satisfy. There is
   no Prettier and no oxfmt; `eslint --fix` is the formatter
 - **Testing**: Jest (default) or Vitest
-- **Build**: esbuild (Node apps), Rollup (npm libs), `python -m build` (Python), `go build` (Go), `flutter build web` (Flutter)
+- **Build**: esbuild (Node apps), Rollup (npm libs), `python -m build` (Python), `go build` (Go), `flutter build web` (Flutter), `dotnet build` (C#)
 - **Release**: `nx release` (versioning from conventional commits, git tag-only push)
 - **CI**: Azure Pipelines and/or GitHub Actions
 - **Python toolchain**: pip (not uv), Ruff, pytest, PyPA `build`/`twine`
 - **Go toolchain**: one root `go.mod` (single module), golangci-lint, `go test`, via `@nx-go/nx-go`
 - **Flutter toolchain**: one root `pubspec.yaml` (Dart pub workspace), `flutter analyze`/`test`, via `@mnci/nx-flutter`
+- **.NET toolchain**: `dotnet` SDK, delegating to `@nx/dotnet` (inference-only — no generators, so mnci scaffolds via `dotnet new` directly), `dotnet pack`/`dotnet nuget push` for release
 
 ## Key Files & Their Purpose
 
@@ -79,7 +80,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 - **`packages/cli/src/commands/upgrade.ts`** — re-apply overlay to existing workspace
 - **`packages/cli/src/commands/doctor.ts`** — read-only invariant check (`mnci doctor`); exits non-zero on any finding, and every finding names its remedy
 - **`packages/cli/src/commands/sync.ts`** — `mnci sync`: converge every external dependency range declared at more than one version, then run `nx sync` for TypeScript project references. Owns the one call to `nx sync` (`mnci add` imports it from here)
-- **`packages/cli/src/commands/up.ts`** — `mnci up`: `npm-check -u`'s grouped report and multiselect, plus the projects column, across npm/pip/pub/go
+- **`packages/cli/src/commands/up.ts`** — `mnci up`: `npm-check -u`'s grouped report and multiselect, plus the projects column, across npm/pip/pub/nuget/go
 - **`packages/cli/src/deps/`** — the cross-language machinery both commands share: `inventory.ts` (read and minimally rewrite every manifest shape), `semver.ts` (parse, compare, bucket), `registry.ts` (latest version per ecosystem)
 
 ### Core Implementation
@@ -114,6 +115,48 @@ does it too — the docs already tell users to `git diff` before committing an u
   semantically right call: one root `go.mod` means one module, so its packages
   have no independent versions to bump.
 
+### C# (third-party plugin, inference-only)
+
+- **`packages/cli/src/commands/add/csharp.ts`** — the four C# kinds
+  (`csharp-app`, `csharp-lib`, `csharp-internal-lib`, `csharp-function-app`),
+  scaffolded directly via `dotnet new` rather than through `@nx/dotnet`
+  generators — `@nx/dotnet` is **inference-only** (confirmed by `npm pack`ing
+  it and reading its contents: it ships no `generators.json` at all), so it
+  writes no `project.json` and mnci writes every target explicitly, the same
+  posture as Go's single-module layout.
+- **`writeCsharpVersionActions()`** writes `tools/csharp-version-actions.cjs`
+  into the *generated* workspace — a workspace-relative `.cjs` file, not a
+  new npm package. Nx's `resolveVersionActionsPath` tries `require.resolve`
+  as a package specifier first and falls back to a workspace-relative
+  `require.resolve(join(workspaceRoot, path))`, which is what makes this
+  work with nothing published. `CsharpVersionActions` extends Nx's own
+  `VersionActions` and reads/writes the `<Version>` element of the project's
+  single `.csproj`, globbed at runtime rather than hardcoded.
+- **`csharpLibPublishTarget()`** writes an `nx-release-publish` target
+  (`dotnet pack` then `dotnet nuget push`) that is **always present**,
+  regardless of registry choice — Nx throws if *zero* projects in a release
+  group carry that exact target name, so the target exists unconditionally
+  and self-gates at *runtime* on `process.env.NUGET_PAT`, printing "NuGet
+  publish is not configured" and exiting 0 when absent. Mirrors how the
+  Python publish target carries no registry specifics at generation time.
+- **`nugetConfigContent()`** (`overlay.ts`) mirrors `.npmrc`'s design for the
+  same reason: `nuget.org` needs no credentials, and an Azure Artifacts feed
+  is registered under the fixed key `NUGET_AZURE_SOURCE` (`'AzureArtifacts'`)
+  with `packageSourceCredentials` referencing `%NUGET_PAT%` — NuGet's
+  environment-variable substitution syntax on every platform, verified
+  against Microsoft's own docs (never `${VAR}` or `$VAR`). The key is fixed
+  rather than derived from the real feed name so the publish target needs no
+  `RegistryConfig` of its own at generation time.
+- `mnci sync`/`mnci up` gained a `nuget` ecosystem in `deps/inventory.ts` and
+  `deps/registry.ts`: NuGet references are read from `<PackageReference>`
+  elements in every `.csproj`, and `latestNugetVersions()` shells out to
+  `dotnet package search --exact-match --format json` — the same
+  "ask the ecosystem's own tool, never hand-roll the registry call" rule
+  `latestNpmVersions`/`latestPipVersions` already follow. `resolvedVersion`
+  honestly returns `undefined` for NuGet: each `.csproj` restores into its
+  own `obj/project.assets.json`, so unlike npm/pub there is no single
+  workspace-wide resolved version to report.
+
 ### Flutter Plugin (Independent Package)
 
 - **`packages/nx-flutter/`** — a real `@nx/devkit` plugin (`@mnci/nx-flutter`).
@@ -147,7 +190,7 @@ does it too — the docs already tell users to `git diff` before committing an u
 ### Testing & E2E
 
 - **`packages/cli/src/commands/*.test.ts`** — unit tests for each command
-- **`packages/cli/e2e/cli.e2e.mjs`** — real generation → lint/test/build/package for all kinds (JS, Python, **Go**, Flutter). Gated as an Nx `e2e` target, and only run in CI by a `workflow_dispatch`-only Windows job (it takes ~25-30 min). Go and Flutter are each gated on their toolchain and reported as **SKIPPED** when absent — never silently dropped, which is exactly how Go went uncovered for so long.
+- **`packages/cli/e2e/cli.e2e.mjs`** — real generation → lint/test/build/package for all kinds (JS, Python, **Go**, Flutter, **C#**). Gated as an Nx `e2e` target, and run in CI by a nightly-scheduled, Windows-only job (it takes ~25-30 min). Go, Flutter and C# are each gated on their toolchain and reported as **SKIPPED** when absent — never silently dropped, which is exactly how Go went uncovered for so long. The `e2e-windows` job's own toolchain-install steps are unconditional (`continue-on-error`, network operations on someone else's infrastructure) rather than reusing the `ci` job's `existsSync('go.mod')`-style guards, which key on the working directory and would never fire in a job whose generated workspaces live in a temp directory.
 - **ESLint config exception** (root `eslint.config.mjs`) — `tsdoc-require-2/require-param` and
   `require-type-param` are off for `overlay.ts`, since `rootScripts()` takes no parameters
 
@@ -214,7 +257,106 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### Five Deliberate Departures From Standard (Latest)
+### C# / .NET Support (Latest)
+
+A fifth language, following the established pattern: thin delegation to the
+official tooling, an inline `VersionActions` for `nx release`, and a registry
+overlay mirroring `.npmrc`. Requested with two explicit scoping constraints —
+kinds matching Node's shape as closely as possible, and NuGet publishing
+mirroring the npm/`.npmrc` design — settled before any code was written.
+
+- **`@nx/dotnet` was researched first, and the finding decided the whole
+  architecture.** It is **inference-only** — verified by `npm pack`ing it and
+  reading the tarball, which ships no `generators.json` at all. So there is
+  no `@nx/dotnet:application`/`:library` to delegate to the way `@nx/react`
+  or `@nx-go/nx-go` are delegated to; every kind scaffolds directly via
+  `dotnet new` and writes its own `project.json`, the same posture Go already
+  takes for its single-module layout.
+- **Four kinds**: `csharp-app`, `csharp-lib` (publishable → NuGet),
+  `csharp-internal-lib`, `csharp-function-app` (Azure Functions .NET isolated
+  worker). Cross-project references are wired as real MSBuild
+  `<ProjectReference>` elements — verified in the e2e by adding one with
+  `dotnet add reference` and building the consumer.
+- **`nx release` needed no new npm package.** Nx's own
+  `resolveVersionActionsPath` (`node_modules/nx/dist/.../version-actions.js`,
+  read directly rather than assumed) tries `require.resolve` as a package
+  specifier first, then falls back to a **workspace-relative** path. So
+  `CsharpVersionActions` ships as `tools/csharp-version-actions.cjs`, written
+  into the generated workspace by `writeCsharpVersionActions()`, extending
+  Nx's real `VersionActions` and reading/writing the sole `.csproj`'s
+  `<Version>` element.
+- **The publish target is always present and self-gates at runtime, not at
+  generation time.** Nx's `nx-release-publish` requires at least one project
+  in a release group to carry that exact target name or the whole `nx
+  release publish` throws — so `csharpLibPublishTarget()` is written
+  unconditionally, and checks `process.env.NUGET_PAT` when it actually runs,
+  printing "NuGet publish is not configured for this registry choice" and
+  exiting 0 rather than being absent. Verified in the e2e: `nx run
+  cslib:nx-release-publish` on a public-registry workspace exits 0 and
+  prints exactly that.
+- **`nuget.config` mirrors `.npmrc`'s reasoning, including the same auth
+  trap already documented for Azure Artifacts.** NuGet's `%VAR%`
+  environment-variable substitution syntax (never `${VAR}`/`$VAR` — checked
+  against Microsoft's own compatibility table, which shows neither form
+  resolves on any of nuget.exe/dotnet.exe/Windows/Mac) feeds a PAT into
+  `packageSourceCredentials`, keyed on the fixed constant
+  `NUGET_AZURE_SOURCE` (`'AzureArtifacts'`) rather than the real feed name —
+  so the publish target needs no `RegistryConfig` at generation time, the
+  same design already used for Python's `TWINE_*` env vars.
+- **`mnci sync`/`mnci up` gained NuGet**, on request, closing the same gap
+  npm/pip/pub/go already had covered. `latestNugetVersions()` shells out to
+  `dotnet package search --exact-match --format json` (needs SDK 8.0.2xx+,
+  well under `DOTNET_SDK_VERSION`) rather than hitting the NuGet API
+  directly — the same "go through the ecosystem's own tool so a private feed
+  and its auth just work" reasoning `npm view`/`pip index versions` already
+  follow. `resolvedVersion` honestly returns `undefined` for NuGet: each
+  `.csproj` restores into its own `obj/project.assets.json`, so there is no
+  single workspace-wide resolved version the way pub's shared lockfile gives.
+- **`add/csharp.ts` reached 100% coverage** across all four metrics, including
+  tests that exercise the *actual written* `tools/csharp-version-actions.cjs`
+  file end-to-end against a fake Nx `Tree` (via a `node_modules` junction
+  into throwaway test workspaces), not a mock of the class.
+- **A regex and a string-replacement finding, both from ESLint rules that
+  exist for real reasons.** `csprojPackageReferences`'s tag-matching regex
+  originally paired `\s+` with an adjacent `[^>]*?`, which
+  `regexp/no-super-linear-backtracking` correctly flagged as ambiguous
+  (polynomial backtracking on crafted input); fixed by removing the
+  redundant `\s+`. `replaceNugetSpec` originally built its replacement with a
+  `` `$1${spec}$2` `` template, which `unicorn/no-unsafe-string-replacement`
+  flagged because `spec` could itself contain `$`-prefixed sequences
+  `String.replace` interprets specially; fixed with a replacer **function**
+  instead, matching the existing `replacePipSpec`/`replacePubSpec` pattern.
+- **The e2e had generated zero C# projects**, so every invariant above was
+  documented and unverified. A new `csharp` section (mirroring Go's) adds all
+  four kinds to the shared `altWorkspace`, wires a real project reference,
+  builds and packages both `csharp-app` and `csharp-function-app` — the
+  latter's `Azure.Functions.Sdk`/`Microsoft.Azure.Functions.Worker` package
+  references verified to genuinely exist via direct NuGet API queries, since
+  this environment has no `.NET SDK` to `dotnet restore` against — and runs
+  `nx release --dry-run`, confirming `cslib` is named in the output as the Go
+  section does for `go-lib`.
+- **This repo's own `e2e-windows` job would have reported the C# section
+  `SKIPPED` forever**, for the exact reason already documented for Go and
+  Flutter: its toolchain-install guards key on `existsSync('*.csproj')`
+  against the job's own working directory (this repo), which the e2e's
+  generated workspaces, living in a temp directory, never satisfy. Fixed
+  with an unconditional, pinned, `continue-on-error` `actions/setup-dotnet@v4`
+  step, plus a `pipelineDrift.test.ts` assertion pinning it to
+  `DOTNET_SDK_VERSION` — mutation-tested by bumping the pinned version in the
+  workflow and confirming the new assertion catches it before reverting.
+- **A pre-existing, unrelated gap found and deliberately not chased**:
+  writing a test against `cli.ts`'s `Argument(...).choices(PROJECT_KINDS)`
+  using the real `commander` package failed with `Cannot use import
+  statement outside a module` — commander v15 ships **no CJS entry point**
+  (its `exports` field has only a `default` condition), and this project's
+  `ts-jest`-only transform config does not cover `.js` files under
+  `node_modules`. Modifying the shared `jest.config.mjs` to fix one edge-case
+  test was judged disproportionate to the C# task's scope; the file was
+  deleted rather than left half-working, and the finding is recorded here
+  instead — the actual choices-validation logic was independently confirmed
+  correct by reading commander's source directly.
+
+### Five Deliberate Departures From Standard
 
 Requested after a side-by-side diff of a hand-written config against what
 `@mnci/eslint-config` resolves: 54 rules compared, 11 already identical, 34 set

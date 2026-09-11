@@ -2,9 +2,15 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
 import { promptText } from '../../prompts'
-import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
+import { fileExists, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin, registerProjectCommands, type AddOptions } from './shared'
+import {
+  addProjectJsonTargets,
+  ensureAdmZip,
+  hasPlugin,
+  registerProjectCommands,
+  type AddOptions,
+} from './shared'
 
 /**
  * Fails fast, with an install hint, when Python is not on the PATH.
@@ -123,27 +129,6 @@ function ensureRequirementsDev (workspaceRoot: string): void {
  */
 function pythonModuleDirectory (name: string): string {
   return name.replaceAll('-', '_')
-}
-
-/**
- * Merges extra targets into a plugin-written `project.json`.
- *
- * @remarks
- * `@mnci/nx-python-pip`'s generators write a real `project.json` (not an
- * inference-only manifest), so the `package` (zip) target — mnci's own CI
- * convention, not a generic plugin concern — is merged straight into it
- * after generation.
- *
- * @param projectJsonPath - Absolute path to the project's `project.json`.
- * @param newTargets - The targets to merge in.
- * @returns Nothing.
- * @throws Propagates any `fs`/JSON error reading or writing the file.
- * @typeParam None - this function has no generic type parameters.
- */
-function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
-  const project = readJson<Record<string, unknown>>(projectJsonPath)
-  const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
-  writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
 }
 
 /**

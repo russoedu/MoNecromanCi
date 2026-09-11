@@ -428,6 +428,14 @@ function applyUpdate (entry: Outdated): string[] {
  * project editable in one resolver pass — a per-project install would resolve
  * each project's requirements in isolation.
  *
+ * The NuGet step is `nx run-many -t restore`, never a bare `dotnet restore`:
+ * `@nx/dotnet`'s inference gives every `.csproj` its own `restore` target,
+ * but there is no root `.sln`/`.csproj` for a bare `dotnet restore` at the
+ * workspace root to act on — it would fail outright with "the current
+ * working directory does not contain a project or solution file".
+ * `nx run-many` is what reaches every project the way `flutter pub get`/
+ * `go mod tidy` reach every dependency in one call for their own ecosystems.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param ecosystems - The ecosystems whose manifests were edited.
  * @returns Nothing.
@@ -439,6 +447,7 @@ function reinstall (workspaceRoot: string, ecosystems: ReadonlySet<Ecosystem>): 
     ['npm', 'npm', ['install']],
     ['pip', 'npm', ['run', 'python:install']],
     ['pub', 'flutter', ['pub', 'get']],
+    ['nuget', 'npx', ['nx', 'run-many', '-t', 'restore']],
     ['go', 'go', ['mod', 'tidy']],
   ]
 

@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../../nx'
-import { fileExists, readJson, toJson, writeFileEnsured } from '../../util/fsx'
+import { fileExists } from '../../util/fsx'
 import { logger } from '../../util/logger'
-import { ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
+import { addProjectJsonTargets, ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
 
 /**
  * Fails fast, with an install hint, when Go is not on the PATH.
@@ -153,28 +153,6 @@ function goModulePath (workspaceRoot: string): string | undefined {
   } catch {
     return undefined
   }
-}
-
-/**
- * Merges extra targets into a plugin-written `project.json`.
- *
- * @remarks
- * `@nx-go/nx-go`'s generators write a real `project.json`, but with an empty
- * `targets` map: the plugin supplies targets by inference, and inference is
- * keyed on a per-project `go.mod`. In mnci's single-root-module layout there
- * are no per-project manifests, so nothing is inferred and mnci writes the
- * targets explicitly — the same thing every other mnci kind does anyway.
- *
- * @param projectJsonPath - Absolute path to the project's `project.json`.
- * @param newTargets - The targets to merge in.
- * @returns Nothing.
- * @throws Propagates any `fs`/JSON error reading or writing the file.
- * @typeParam None - this function has no generic type parameters.
- */
-function addProjectJsonTargets (projectJsonPath: string, newTargets: Record<string, unknown>): void {
-  const project = readJson<Record<string, unknown>>(projectJsonPath)
-  const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
-  writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
 }
 
 /**

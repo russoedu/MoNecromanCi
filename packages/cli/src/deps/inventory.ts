@@ -4,7 +4,7 @@ import { runCapture } from '../nx'
 import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
 
 /**
- * The four dependency ecosystems a generated workspace can contain.
+ * The five dependency ecosystems a generated workspace can contain.
  *
  * @remarks
  * The set is closed on purpose — it mirrors the project kinds `mnci add`
@@ -13,16 +13,17 @@ import { fileExists, readJson, toJson, writeFileEnsured } from '../util/fsx'
  *
  * @typeParam None - this type has no generic type parameters.
  */
-export type Ecosystem = 'npm' | 'pip' | 'pub' | 'go'
+export type Ecosystem = 'npm' | 'pip' | 'pub' | 'nuget' | 'go'
 
 /**
  * Every ecosystem, in the order commands report them.
  *
  * @remarks
  * npm first because it is the only one present in every workspace; Go last
- * because it is the one with nothing to reconcile.
+ * because it is the one with nothing to reconcile — every other ecosystem,
+ * NuGet included, has a real per-project manifest whose versions can drift.
  */
-export const ECOSYSTEMS: readonly Ecosystem[] = ['npm', 'pip', 'pub', 'go']
+export const ECOSYSTEMS: readonly Ecosystem[] = ['npm', 'pip', 'pub', 'nuget', 'go']
 
 /**
  * The label shown for the workspace root, which is not a project.
@@ -81,12 +82,16 @@ export type Inventory = Map<string, DependencySite[]>
 /** Where each ecosystem's per-project manifests live, relative to the root. */
 const MANIFEST_GLOBS: Record<Ecosystem, string[]> = {
   // `libs/*` carries private internal libs; `packages/*` the publishable ones.
-  npm: ['apps/*/package.json', 'libs/*/package.json', 'packages/*/package.json'],
+  npm:   ['apps/*/package.json', 'libs/*/package.json', 'packages/*/package.json'],
   // Matches PYTHON_PROJECT_DIRS in commands/add/python.ts.
-  pip: ['apps/*/pyproject.toml', 'python-packages/*/pyproject.toml', 'libs/*/pyproject.toml'],
-  pub: ['apps/*/pubspec.yaml', 'packages/*/pubspec.yaml', 'libs/*/pubspec.yaml'],
+  pip:   ['apps/*/pyproject.toml', 'python-packages/*/pyproject.toml', 'libs/*/pyproject.toml'],
+  pub:   ['apps/*/pubspec.yaml', 'packages/*/pubspec.yaml', 'libs/*/pubspec.yaml'],
+  // Unlike every other ecosystem, the filename itself varies (the project's own
+  // PascalCase identity, not a fixed name) — the same three roots
+  // PACK_APPS_GUARD and add/csharp.ts already scan.
+  nuget: ['apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj'],
   // Single root module by design — there are no per-project Go manifests.
-  go:  [],
+  go:    [],
 }
 
 /**
@@ -164,7 +169,13 @@ export function hasEcosystem (workspaceRoot: string, ecosystem: Ecosystem): bool
   if (ecosystem === 'go') {
     return fileExists(join(workspaceRoot, 'go.mod'))
   }
-  const rootMarker: Record<Exclude<Ecosystem, 'go'>, string> = {
+  // NuGet has no root-level marker at all, unlike the other three: nuget.config
+  // is publish auth, not a dependency declaration, and mnci writes it only once
+  // a csharp-lib exists anyway. The per-project glob is the only signal.
+  if (ecosystem === 'nuget') {
+    return globSync(MANIFEST_GLOBS.nuget, { cwd: workspaceRoot }).length > 0
+  }
+  const rootMarker: Record<Exclude<Ecosystem, 'go' | 'nuget'>, string> = {
     npm: 'package.json',
     pip: 'requirements-dev.txt',
     pub: 'pubspec.yaml',
@@ -542,6 +553,102 @@ function stripQuotes (value: string): string {
 }
 
 /**
+ * Reads every NuGet declaration in the workspace.
+ *
+ * @remarks
+ * The `.csproj` itself is never read for the project's OWN identity or
+ * version — same boundary `collectNpm`/`collectPub`/`collectPip` already keep
+ * for `package.json`'s `name`/`version` fields — only `<PackageReference>`
+ * entries are external dependencies.
+ *
+ * One section only (`dep`): SDK-style `.csproj` has no first-class
+ * dependencies-vs-devDependencies split the way npm/pip do — a test-only
+ * package is just a `PackageReference` in whichever project needs it (often
+ * a dedicated `*.Tests` project), not a separate block on a shared manifest.
+ * Reporting an invented split would be less honest than reporting none.
+ *
+ * An internal C# library is never expressed as a `PackageReference` at all —
+ * it is a `<ProjectReference>`, a structurally different element this never
+ * scans — so unlike npm there is no "is this actually a workspace project"
+ * ambiguity to resolve for a name found here.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Every NuGet declaration found.
+ * @throws Never - an unreadable manifest is skipped.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function collectNuget (workspaceRoot: string): DependencySite[] {
+  const sites: DependencySite[] = []
+
+  const csprojPaths = globSync(MANIFEST_GLOBS.nuget, { cwd: workspaceRoot })
+  for (const relativePath of csprojPaths) {
+    let content: string
+    try {
+      content = readFileSync(join(workspaceRoot, relativePath), 'utf8')
+    } catch {
+      continue
+    }
+    for (const entry of csprojPackageReferences(content)) {
+      sites.push({
+        name:         entry.name,
+        ecosystem:    'nuget',
+        project:      projectOf(relativePath),
+        manifestPath: join(workspaceRoot, relativePath),
+        section:      'dep',
+        spec:         entry.spec,
+        // A plain SemVer string is rewritable; an MSBuild property reference
+        // ($(SharedVersion)) or an interval-notation range ([1.0,2.0)) is
+        // reported only — neither is a version this can safely overwrite.
+        rewritable:   /^\d/.test(entry.spec),
+      })
+    }
+  }
+
+  return sites
+}
+
+/**
+ * Extracts every `<PackageReference Include="…" Version="…" />` from a
+ * `.csproj`'s text.
+ *
+ * @remarks
+ * Two passes, not one combined regex — the same discipline
+ * `pubspecBlockEntries` already applies (find the block, then read its
+ * children): the outer pattern finds a bounded `<PackageReference … />` tag
+ * (anchored on `/>` so it cannot run past the tag it started in), and a
+ * second pass reads `Include`/`Version` out of the captured attribute text in
+ * either order — `dotnet add package` always writes `Include` first, but
+ * nothing enforces that once a human edits the file by hand.
+ *
+ * Deliberately narrow: the nested-element form
+ * (`<PackageReference Include="X"><Version>1.0</Version></PackageReference>`)
+ * is valid MSBuild but is not what `dotnet new`/`dotnet add package` emit —
+ * verified against every `.csproj` this CLI itself generates — so it is left
+ * unrecognised rather than guessed at.
+ *
+ * @param content - The `.csproj` text.
+ * @returns Every package reference found, name and version spec.
+ * @throws Never - a file with no matching tag yields an empty list.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function csprojPackageReferences (
+  content: string,
+): Array<{ name: string, spec: string }> {
+  const entries: Array<{ name: string, spec: string }> = []
+
+  for (const tag of content.matchAll(/<PackageReference([^>]*)\/>/g)) {
+    const attributes = tag[1]
+    const name = /\bInclude\s*=\s*"([^"]*)"/.exec(attributes)?.[1]
+    const spec = /\bVersion\s*=\s*"([^"]*)"/.exec(attributes)?.[1]
+    if (name && spec) {
+      entries.push({ name, spec })
+    }
+  }
+
+  return entries
+}
+
+/**
  * Reads the root `go.mod`'s require block.
  *
  * @remarks
@@ -604,10 +711,11 @@ export function collectInventory (
   ecosystems: readonly Ecosystem[] = ECOSYSTEMS,
 ): Inventory {
   const readers: Record<Ecosystem, (root: string) => DependencySite[]> = {
-    npm: collectNpm,
-    pip: collectPip,
-    pub: collectPub,
-    go:  collectGo,
+    npm:   collectNpm,
+    pip:   collectPip,
+    pub:   collectPub,
+    nuget: collectNuget,
+    go:    collectGo,
   }
 
   const inventory: Inventory = new Map()
@@ -667,10 +775,26 @@ export function rewriteSpec (site: DependencySite, spec: string): boolean {
   }
 
   const before = readFileSync(site.manifestPath, 'utf8')
-  const after =
-    site.ecosystem === 'pip'
-      ? replacePipSpec(before, name, spec)
-      : replacePubSpec(before, name, spec)
+  const after = ((): string => {
+    switch (site.ecosystem) {
+      case 'pip': {
+        return replacePipSpec(before, name, spec)
+      }
+      case 'pub': {
+        return replacePubSpec(before, name, spec)
+      }
+      case 'nuget': {
+        return replaceNugetSpec(before, name, spec)
+      }
+      // 'go' entries are never rewritable (see collectGo), so this is
+      // unreachable in practice — returning the text unchanged is the safe
+      // no-op if that invariant is ever broken, rather than guessing at a
+      // rewrite for a format this branch was never meant to handle.
+      default: {
+        return before
+      }
+    }
+  })()
   if (after === before) {
     return false
   }
@@ -724,6 +848,43 @@ export function replacePubSpec (content: string, name: string, spec: string): st
     new RegExp(String.raw`^(\s+${escapeForRegex(name)}:[^\S\n]*)\S[^\n]*$`, 'gm'),
     (match, lead: string) => `${lead}${spec}`,
   )
+}
+
+/**
+ * Replaces a `<PackageReference>`'s `Version` attribute in a `.csproj`.
+ *
+ * @remarks
+ * Anchored on `Include="<name>"` first, then rewrites only the `Version=`
+ * attribute of that SAME tag — not the next occurrence of `Version=`
+ * anywhere in the file, which a simpler name-then-version scan could land on
+ * if two `PackageReference` tags for different packages sit close together.
+ * The name is escaped for the same reason {@link replacePipSpec} escapes
+ * one: a NuGet package ID can contain `.` (`Microsoft.Extensions.Http`), and
+ * an unescaped `.` in a regex matches any character.
+ *
+ * @param content - The file's current text.
+ * @param name - The package ID, exactly as `Include=` spells it.
+ * @param spec - The new version.
+ * @returns The updated text, unchanged when no entry matched.
+ * @throws Never - performs string replacement only.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function replaceNugetSpec (content: string, name: string, spec: string): string {
+  const escaped = escapeForRegex(name)
+  const includePattern = new RegExp(String.raw`\bInclude\s*=\s*"${escaped}"`)
+
+  // Same two-pass shape as csprojPackageReferences: find the bounded tag
+  // first, then edit only inside it — so a Version= attribute belonging to a
+  // DIFFERENT package's tag is never touched, and every replacement value is
+  // a function's return, never a `$1`-style template a version string could
+  // collide with.
+  return content.replaceAll(/<PackageReference([^>]*)\/>/g, (tag: string, attributes: string) => {
+    if (!includePattern.test(attributes)) {
+      return tag
+    }
+
+    return tag.replace(/\bVersion\s*=\s*"[^"]*"/, () => `Version="${spec}"`)
+  })
 }
 
 /**
@@ -812,6 +973,15 @@ export function isAliasedInstall (workspaceRoot: string, name: string): boolean 
  * answer is the weakest of the three and why an absent one falls back to the
  * highest declared range rather than failing.
  *
+ * NuGet has no single answer to give: each `.csproj` restores into its OWN
+ * `obj/project.assets.json`, so the same package could genuinely resolve to
+ * different versions in different projects — unlike pub's one shared
+ * workspace lockfile. Reporting one of those arbitrarily would be a wrong
+ * answer dressed as a precise one, so this returns `undefined`, the same
+ * "nothing to resolve here" contract Go already has for a different reason.
+ * An absent resolved version falls back to the highest declared range, same
+ * as pip.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param ecosystem - Which ecosystem the package belongs to.
  * @param name - The package name.
@@ -861,6 +1031,8 @@ export function resolvedVersion (
     return /^Version:\s*(\S+)/m.exec(result.stdout)?.[1]
   }
 
-  // Go: the root go.mod IS the resolved state — one module, one version.
+  // nuget: no single workspace-wide resolved state to read (see the remarks
+  // above). go: the root go.mod IS the resolved state — one module, one
+  // version — so there is nothing further to resolve either.
   return undefined
 }

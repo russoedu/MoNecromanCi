@@ -792,6 +792,40 @@ export function addNxTargets (manifestPath: string, newTargets: Record<string, u
 }
 
 /**
+ * Merges extra targets into a project's `project.json`, creating it if the
+ * plugin that generated the project wrote none.
+ *
+ * @remarks
+ * Was identical, hand-duplicated code in `go.ts`, `python.ts` and
+ * `flutter.ts` — each of those plugins writes a real `project.json` (`go`'s
+ * with an empty `targets` map, since `@nx-go/nx-go`'s own inference needs a
+ * per-project `go.mod` mnci's single-root-module layout does not have; Python
+ * and Flutter's carry their own lint/test/build already). Extracted once a
+ * fourth caller needed it: `@nx/dotnet` is inference-only and writes no
+ * `project.json` at all, so `csharp.ts` needs this to also CREATE one — the
+ * one behavioural difference from the three hand-duplicated originals, which
+ * could assume the file already existed. Tolerating a missing file is a
+ * strict widening: the three existing callers are unaffected, since their
+ * generators always write the file first.
+ *
+ * @param projectJsonPath - Absolute path to the project's `project.json`.
+ * @param newTargets - The targets to merge in.
+ * @returns Nothing.
+ * @throws Propagates any `fs`/JSON error reading or writing the file.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function addProjectJsonTargets (
+  projectJsonPath: string,
+  newTargets: Record<string, unknown>,
+): void {
+  const project = fileExists(projectJsonPath)
+    ? readJson<Record<string, unknown>>(projectJsonPath)
+    : {}
+  const targets = (project.targets as Record<string, unknown> | undefined) ?? {}
+  writeFileEnsured(projectJsonPath, toJson({ ...project, targets: { ...targets, ...newTargets } }))
+}
+
+/**
  * Every ESLint flat-config filename an `@nx/*` generator might write.
  *
  * @remarks

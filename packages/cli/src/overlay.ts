@@ -610,9 +610,21 @@ export const ESLINT_VERSION = '^10.8.0'
  *   `pubspec.yaml`), so a JS-only workspace pays almost nothing and a polyglot
  *   one gets exactly what CI gets. Reimplementing them would create a third
  *   copy to keep in sync.
- * - **Go and Python arrive as devcontainer *features*, not as a custom image.**
- *   A Dockerfile would be a second thing to maintain against upstream, and
- *   features are the mechanism the ecosystem maintains for precisely this.
+ * - **Go, Python and .NET arrive as devcontainer *features*, not as a custom
+ *   image.** A Dockerfile would be a second thing to maintain against
+ *   upstream, and features are the mechanism the ecosystem maintains for
+ *   precisely this. Unlike CI's install steps, a feature runs once at
+ *   container build time rather than on every job, so there is no reason to
+ *   gate it on the workspace actually having a project of that kind — Python
+ *   and Go have never been gated either.
+ * - **`ghcr.io/devcontainers/features/dotnet:2`'s `version` option takes
+ *   `X.Y`/`X.Y.Z`, not {@link DOTNET_SDK_VERSION}'s `X.Y.x` verbatim** — that
+ *   suffix is specifically what `actions/setup-dotnet` and `UseDotNet@2`
+ *   expect (see its remarks), and the feature's own schema (checked directly
+ *   against `devcontainer-feature.json`, proposals `latest`/`lts`/`10.0`/…)
+ *   documents no `.x` form at all. The `.x` is stripped rather than a second
+ *   constant maintained in parallel, so there is still exactly one source of
+ *   truth to bump.
  * - **Flutter is NOT a feature**, because no maintained one exists — the same
  *   reason `@mnci/nx-flutter` had to be written. The SDK guard clones a pinned
  *   tag into the home directory, which is what CI does, so the version matches
@@ -630,6 +642,7 @@ export function devcontainerJson (workspaceName: string): string {
     features: {
       'ghcr.io/devcontainers/features/python:1': { version: '3.12' },
       'ghcr.io/devcontainers/features/go:1':     { version: 'latest' },
+      'ghcr.io/devcontainers/features/dotnet:2': { version: DOTNET_SDK_VERSION.replace(/\.x$/, '') },
     },
     // `npm ci` first: every guard after it runs through the workspace's own
     // scripts and Nx, which do not exist until the install completes.
@@ -1521,6 +1534,155 @@ export function pythonPublishUrl (registry: RegistryConfig): string | undefined 
 }
 
 /**
+ * The Azure Artifacts NuGet v3 feed URL for a registry config.
+ *
+ * @remarks
+ * Same multi-protocol feed {@link pythonPublishUrl} already reads — one
+ * org/project/feed serves npm, Python **and** NuGet — so this is the third
+ * reader of the same {@link RegistryConfig}, not a separate prompt. Public
+ * npm has no NuGet analogue wired in this cut, the same gap
+ * {@link pythonPublishUrl}'s own remarks document for PyPI: publishing to
+ * public nuget.org needs a nuget.org-issued API key, a credential mnci
+ * collects nowhere, so this returns `undefined` and `csharp-lib` is
+ * versioned + tagged but not auto-published — see {@link addCsharpLib}.
+ *
+ * @param registry - The monorepo's resolved registry configuration.
+ * @returns The NuGet v3 service index URL for Azure Artifacts, or
+ * `undefined` for npm.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function nugetFeedUrl (registry: RegistryConfig): string | undefined {
+  if (registry.kind === 'azure-artifacts') {
+    return `https://pkgs.dev.azure.com/${registry.organization}/${registry.project}/_packaging/${registry.artifactsFeed}/nuget/v3/index.json`
+  }
+
+  return undefined
+}
+
+/**
+ * The fixed `nuget.config` source key mnci registers the Azure Artifacts
+ * NuGet feed under.
+ *
+ * @remarks
+ * Deliberately a constant, not `registry.artifactsFeed` — the real feed
+ * name. `packageSourceCredentials` attaches to a source by its registered
+ * KEY, not its URL, so the publish target in `add/csharp.ts`
+ * (`dotnet nuget push --source ...`) needs to name the SAME key
+ * {@link nugetConfigContent} registers. Fixing it here means that target
+ * needs no {@link RegistryConfig} of its own at generation time — it just
+ * references this constant — which is what keeps `addCsharpLib` from
+ * needing to re-derive the workspace's registry choice per `add`, the way
+ * Python's `nx-release-publish` target also carries no registry specifics
+ * of its own (its `TWINE_*` env vars are injected only at CI release time).
+ */
+export const NUGET_AZURE_SOURCE = 'AzureArtifacts'
+
+/**
+ * Builds the `nuget.config` body for a registry configuration.
+ *
+ * @remarks
+ * Mirrors {@link npmrcContent}'s split, but the underlying auth mechanics
+ * genuinely differ — verified against NuGet's own docs
+ * (`nuget.config` file reference, and Azure Artifacts' "Publish NuGet
+ * packages with dotnet CLI" guide), not assumed from the `.npmrc` case:
+ *
+ * - **NuGet's env-var substitution is `%VAR%` on every platform, never
+ *   `${VAR}` or `$VAR`.** Confirmed from Microsoft's own compatibility
+ *   table: `$MY_VAR` resolves on none of `nuget.exe`/`dotnet.exe`, Windows or
+ *   Mac. Getting this backwards is the exact class of trap the `.npmrc`
+ *   Bearer-vs-Basic saga already cost this repo once — a config that
+ *   *parses* but silently never substitutes anything.
+ * - **`packageSourceCredentials` attaches to a REGISTERED source by key**,
+ *   not to the URL passed to `--source` at push time — confirmed by Azure's
+ *   own guide, which registers the feed under `packageSources` even though
+ *   `dotnet nuget push --source <url>` alone would also resolve the URL.
+ *   Skipping registration would leave the credentials with nothing to
+ *   attach to. {@link NUGET_AZURE_SOURCE} is that key.
+ * - **`packageSourceMapping` scopes the private feed to this workspace's own
+ *   `<PascalScope>.*` packages**, the direct analogue of `.npmrc`'s
+ *   scope-only routing and for the identical reason: an unscoped
+ *   `<packageSources>` entry would have every `dotnet restore` — including a
+ *   contributor's local one, with no PAT set — query the private feed for
+ *   packages that were never going to be found there, on every build.
+ * - **Public nuget.org needs no credentials at all** — restore is anonymous,
+ *   and {@link nugetFeedUrl}'s remarks explain why publish is left
+ *   unconfigured for that choice rather than half-wired.
+ *
+ * The one PAT is the same **raw** value `twine` already uses (see
+ * {@link pythonPublishEnvFragment}), not the base64 form `.npmrc`'s
+ * `_password` takes — NuGet's Basic auth is handled by the HTTP client
+ * itself from a plain `Username`/`ClearTextPassword` pair, so no manual
+ * base64 step belongs here.
+ *
+ * @param registry - The monorepo's resolved registry configuration.
+ * @param scope - The npm scope (e.g. `@demo`); its PascalCase form is the
+ * `packageSourceMapping` pattern, matching {@link addCsharpLib}'s own
+ * `<PascalScope>.<PascalName>` NuGet identity.
+ * @returns The full text of the generated `nuget.config`.
+ * @throws Never - performs a pure mapping with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function nugetConfigContent (registry: RegistryConfig, scope: string): string {
+  if (registry.kind === 'npm') {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<!-- Publish authentication for NuGet is deliberately UNCONFIGURED for the
+     public npm registry choice: publishing to public nuget.org needs a
+     nuget.org-issued API key, a credential mnci collects nowhere (the same
+     gap Python's PyPI publish has for this same registry choice). A
+     csharp-lib is still versioned and tagged; run "dotnet nuget push"
+     yourself with your own key, or regenerate with --registry
+     azure-artifacts. -->
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+`
+  }
+
+  const pascalScope = scope
+    .replace(/^@/, '')
+    .split('-')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
+  const feedUrl = nugetFeedUrl(registry) as string
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- NuGet's own environment-variable syntax is '%VAR%' on every platform —
+     never '\${VAR}'/'$VAR', which resolve on none of them. NUGET_PAT is the
+     RAW PAT (not base64 — unlike .npmrc's _password, NuGet's HTTP client
+     handles Basic auth itself from Username + ClearTextPassword), exported
+     only by the CI release step (see nugetPublishEnvFragment in mnci); an
+     ordinary build/test/lint step never needs it, since packageSourceMapping
+     below scopes this feed to ${pascalScope}.* packages only. -->
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="${NUGET_AZURE_SOURCE}" value="${feedUrl}" />
+  </packageSources>
+  <packageSourceCredentials>
+    <${NUGET_AZURE_SOURCE}>
+      <add key="Username" value="AzureArtifacts" />
+      <add key="ClearTextPassword" value="%NUGET_PAT%" />
+    </${NUGET_AZURE_SOURCE}>
+  </packageSourceCredentials>
+  <packageSourceMapping>
+    <clear />
+    <packageSource key="${NUGET_AZURE_SOURCE}">
+      <package pattern="${pascalScope}.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+`
+}
+
+/**
  * The portable `node -e` one-liner that installs the fixed Python toolchain
  * (`ruff`/`pytest`/`build`/`twine`) from `requirements-dev.txt`.
  *
@@ -1748,6 +1910,60 @@ export const NODE_VERSION = '24'
 export const NPM_VERSION = '11'
 
 /**
+ * The .NET SDK version a generated workspace's C# projects are built and
+ * tested against.
+ *
+ * @remarks
+ * `@nx/dotnet` (the official Nx plugin mnci delegates to for C#) requires SDK
+ * 8.0+; `10.0.x` is pinned rather than 8.0 because .NET's even-numbered
+ * majors are the LTS line (8.0 released Nov 2023, 10.0 Nov 2025) and 10.0 is
+ * the current one — the same reasoning `NODE_VERSION` already applies to
+ * Node. **Verify the current LTS against the real .NET release notes before
+ * this ships**, the way `FLUTTER_SDK_VERSION` was pinned against a real
+ * `flutter --version` rather than assumed.
+ *
+ * The `.x` keeps the range open to patch releases the way `actions/setup-dotnet`
+ * and `UseDotNet@2` both expect it (`dotnet-version: '10.0.x'` /
+ * `version: '10.0.x'`) — unlike {@link NODE_VERSION}, which is a bare major
+ * because `setup-node` resolves majors on its own; .NET's own tooling wants
+ * the `.x` suffix explicit.
+ *
+ * Exported so tests can assert it and both CI providers' install steps and
+ * the devcontainer's `dotnet` feature read the same value — the exact drift
+ * {@link NODE_VERSION} already exists to prevent for Node.
+ */
+export const DOTNET_SDK_VERSION = '10.0.x'
+
+/**
+ * Detects whether the workspace has any C# project — `apps/*\/*.csproj`,
+ * `packages/*\/*.csproj`, `libs/*\/*.csproj`, the same three roots
+ * {@link PACK_APPS_GUARD} and `add/csharp.ts` already scan — and publishes
+ * the result as an Azure Pipelines variable
+ * (`##vso[task.setvariable variable=hasDotnetProjects]`).
+ *
+ * @remarks
+ * Unlike Python, Go and Flutter's provisioning, .NET SDK install is not a
+ * portable `node -e` one-liner: `UseDotNet@2` / `actions/setup-dotnet` are
+ * each provider's own maintained, cached installer, and hand-rolling a
+ * cross-platform equivalent of either would be strictly worse than using
+ * them — the same trade already made for Node/npm setup itself, which is
+ * fully provider-specific (`actions/setup-node` + `cache: npm` vs. Azure's
+ * pre-installed image Node plus a separate `Cache@2` task). So this constant
+ * exists only to give the Azure *task* something to gate on: unlike a
+ * `script:` step, `UseDotNet@2` cannot self-gate by exiting early, and
+ * Azure's `condition:` expression language has no glob-matching function —
+ * where GitHub Actions' `hashFiles()` covers the same case inline (see
+ * {@link githubActionsYaml}), Azure needs this detection step to run first
+ * and hand the answer to `condition:` through a variable.
+ *
+ * Both the pattern list and the `##vso` syntax are copied from
+ * {@link PACK_APPS_GUARD}'s sibling `build.addbuildtag` usage further down
+ * this file — the same "publish a fact for a later step" mechanism, just
+ * read by `condition:` instead of by a human.
+ */
+const DOTNET_DETECT_AZURE = 'node -e "const fs=require(\'node:fs\');const has=[...fs.globSync(\'apps/*/*.csproj\'),...fs.globSync(\'packages/*/*.csproj\'),...fs.globSync(\'libs/*/*.csproj\')].length>0;console.log(\'##vso[task.setvariable variable=hasDotnetProjects]\'+has)"'
+
+/**
  * The shared expression that resolves where the Flutter SDK is installed.
  *
  * @remarks
@@ -1958,22 +2174,30 @@ const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');c
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}.
  * Skips cleanly when the workspace has no apps yet.
  *
- * **Detects a project the way Nx itself does — `apps/*\/project.json`, OR an
- * `apps/*\/package.json` carrying an `nx` key — not `project.json` alone.**
- * `@nx/node:application` and `@nx/react:application` write no `project.json`
- * at all: their targets are inferred, and `add/*.ts`'s `addNxTargets` layers
- * the `package` target on through the manifest's own `nx.targets` field (see
- * its doc comment) specifically to avoid the project-name clash a second
- * `project.json` would risk in a TS-solution workspace. A `project.json`-only
- * check therefore never sees a `node-app` or `react-app` project at all: the
- * step silently logs "No apps to pack - skipping", `dist/drop` stays empty,
- * and every step downstream (`PublishBuildArtifacts`, the per-app build tag)
- * has nothing to work with — a green run with no artifact. Go, Python and
- * Flutter apps all get a real generator-written `project.json`, so they were
- * never affected; only the manifest-inference kinds were invisible to this
- * check.
+ * **Detects a project the way Nx itself does — `apps/*\/project.json`, an
+ * `apps/*\/package.json` carrying an `nx` key, OR an `apps/*\/*.csproj` — not
+ * `project.json` alone.** `@nx/node:application` and `@nx/react:application`
+ * write no `project.json` at all: their targets are inferred, and
+ * `add/*.ts`'s `addNxTargets` layers the `package` target on through the
+ * manifest's own `nx.targets` field (see its doc comment) specifically to
+ * avoid the project-name clash a second `project.json` would risk in a
+ * TS-solution workspace. `@nx/dotnet` (C#) is inference-only for the same
+ * reason but has no manifest at all to carry an `nx` key on — verified
+ * against the real published package, whose own `createNodes` glob is keyed
+ * on `.csproj` directly — so `csharp.ts` creates a minimal `project.json`
+ * itself purely to carry mnci's own `package` target, which the plain
+ * `hasProjectJson` check already covers once that file exists. The
+ * `*.csproj` branch below exists for the case a user later drops that
+ * `project.json`, or for a `.csproj` this CLI never generated at all: a
+ * `project.json`-only check would go back to never seeing that project. A
+ * `project.json`-only check historically never saw a `node-app` or
+ * `react-app` project at all either: the step silently logs "No apps to pack
+ * - skipping", `dist/drop` stays empty, and every step downstream
+ * (`PublishBuildArtifacts`, the per-app build tag) has nothing to work with —
+ * a green run with no artifact. Go, Python and Flutter apps all get a real
+ * generator-written `project.json`, so they were never affected.
  */
-const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});if(!hasProjectJson&&!hasInlineNx){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
+const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});const hasCsproj=fs.globSync(\'apps/*/*.csproj\').length>0;if(!hasProjectJson&&!hasInlineNx&&!hasCsproj){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
  * Builds the portable `node -e` one-liner that versions, tags and publishes
@@ -1988,12 +2212,14 @@ const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'d
  *
  * @param pythonPublishEnv - A `node -e`-fragment that exports `TWINE_*` when
  * there are Python packages and a configured feed, or `''` to export nothing.
+ * @param nugetPublishEnv - A `node -e`-fragment that exports `NUGET_PAT` when
+ * there are C# packages and a configured feed, or `''` to export nothing.
  * @returns The full `node -e` release one-liner.
  * @throws Never - pure string building.
  * @typeParam None - this function has no generic type parameters.
  */
-function releaseGuard (pythonPublishEnv: string): string {
-  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;if(!hasNpm&&!hasPython){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
+function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): string {
+  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;const hasCsharp=fs.globSync('packages/*/*.csproj').length>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
 /**
@@ -2010,6 +2236,24 @@ function releaseGuard (pythonPublishEnv: string): string {
 function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
   return pythonPublishUrl
     ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+    : ''
+}
+
+/**
+ * Injected into {@link releaseGuard}: when there are C# packages and a
+ * configured Azure feed, export the raw PAT `nuget.config`'s `%NUGET_PAT%`
+ * placeholder reads (see {@link nugetConfigContent}'s remarks for why NuGet
+ * takes the raw value, unlike `.npmrc`'s base64 `_password`).
+ *
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
+ * @returns The `node -e` fragment, or `''` when there is no NuGet feed.
+ * @throws Never - pure string mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nugetPublishEnvFragment (nugetFeedUrl?: string): string {
+  return nugetFeedUrl
+    ? 'if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}'
     : ''
 }
 
@@ -2115,6 +2359,10 @@ export function poolBlock (agent: string): string {
  * @param variableGroup - The Library variable group holding the base64 `PAT`.
  * @param pythonPublishUrl - The twine upload URL for Python packages, or
  * `undefined` to leave Python publishing unconfigured (public npm).
+ * @param registryKind - The workspace's registry kind — selects `PAT` vs
+ * `NPM_TOKEN` for the npm-authenticating steps.
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
@@ -2124,6 +2372,7 @@ export function azurePipelinesYaml (
   variableGroup: string,
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
+  nugetFeedUrl?: string,
 ): string {
   // ENUMERATED CI reasons, never "not a pull request" — the Azure half of the
   // fix #22 made for GitHub, and the more exposed of the two.
@@ -2319,6 +2568,20 @@ steps:
   - script: ${FLUTTER_PUB_GET_GUARD}
     displayName: Resolve Dart dependencies (one pub get for the whole workspace)
 
+  # .NET, if the workspace has any. Azure's 'condition:' expression language
+  # has no glob function, so this script step detects C# projects first and
+  # hands the answer to the install task below through a pipeline variable —
+  # see DOTNET_DETECT_AZURE's remarks for why this differs from every other
+  # toolchain's self-gating 'node -e' guard.
+  - script: ${DOTNET_DETECT_AZURE}
+    displayName: Detect .NET projects
+
+  - task: UseDotNet@2
+    displayName: Install the .NET SDK (${DOTNET_SDK_VERSION})
+    condition: eq(variables['hasDotnetProjects'], 'true')
+    inputs:
+      version: ${DOTNET_SDK_VERSION}
+
   # Fails fast, with an unambiguous message, when a stale TypeScript project
   # reference (or another sync generator's drift) was never synced+committed
   # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -2359,13 +2622,14 @@ steps:
     displayName: Tag the run per app (type-name)
     condition: ${onMain}
 
-  # Version + tag + publish, in one release, for npm (packages/*) AND Python
-  # (python-packages/*) — conventional commits, tag-only push. Portable guard:
-  # nx release errors on an empty scope, so skip cleanly when there is nothing
-  # to release. When there are Python packages and an Azure feed, twine
-  # publish credentials are exported (raw PAT, decoded from the base64 variable).
-  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
-    displayName: Release — version, tag and publish (npm + Python)
+  # Version + tag + publish, in one release, for npm (packages/*), Python
+  # (python-packages/*) AND C# (packages/*/*.csproj) — conventional commits,
+  # tag-only push. Portable guard: nx release errors on an empty scope, so
+  # skip cleanly when there is nothing to release. When there are Python or
+  # C# packages and an Azure feed, twine/NuGet publish credentials are
+  # exported (raw PAT, decoded from the base64 variable).
+  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+    displayName: Release — version, tag and publish (npm + Python + C#)
     condition: ${onMain}
     env:
       ${npmAuthName}: ${npmAuthValue}
@@ -2417,6 +2681,9 @@ steps:
  * `undefined` to leave Python publishing unconfigured (public npm).
  * @param registryKind - The workspace's registry kind — selects `PAT` vs
  * `NPM_TOKEN` for the npm-authenticating steps.
+ * @param ci - Which CI provider(s) the workspace generates a pipeline for.
+ * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
+ * `undefined` to leave NuGet publishing unconfigured (public npm).
  * @returns The full text of `.github/workflows/ci.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
@@ -2426,6 +2693,7 @@ export function githubActionsYaml (
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
   ci: CiProvider = 'github',
+  nugetFeedUrl?: string,
 ): string {
   // `== 'push'`, not `!= 'pull_request'`. Identical today — the generated workflow
   // has exactly two triggers, `push` and `pull_request` — but the negative form
@@ -2576,6 +2844,16 @@ jobs:
       - run: ${FLUTTER_PUB_GET_GUARD}
         name: Resolve Dart dependencies (one pub get for the whole workspace)
 
+      # .NET, if the workspace has any. actions/setup-dotnet is the
+      # maintained, cached installer GitHub itself ships, so this uses it
+      # directly rather than a hand-rolled 'node -e' guard — see
+      # DOTNET_DETECT_AZURE's remarks for the full reasoning. hashFiles()
+      # gates it inline, so a JS-only workspace pays nothing.
+      - uses: actions/setup-dotnet@v4
+        if: \${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}
+        with:
+          dotnet-version: ${DOTNET_SDK_VERSION}
+
       # Fails fast, with an unambiguous message, when a stale TypeScript project
       # reference (or another sync generator's drift) was never synced+committed
       # locally — sync.applyChanges (nx.json) only auto-applies interactively, so
@@ -2610,11 +2888,12 @@ jobs:
           path: dist/drop
           if-no-files-found: ignore
 
-      # Version + tag + publish, in one release, for npm (packages/*) AND Python
-      # (python-packages/*) — conventional commits, tag-only push. Portable guard:
-      # nx release errors on an empty scope, so skip cleanly when there is nothing
-      # to release. When there are Python packages and an Azure feed, twine
-      # publish credentials are exported (raw PAT, decoded from the base64 secret).${
+      # Version + tag + publish, in one release, for npm (packages/*), Python
+      # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
+      # commits, tag-only push. Portable guard: nx release errors on an empty
+      # scope, so skip cleanly when there is nothing to release. When there
+      # are Python or C# packages and an Azure feed, twine/NuGet publish
+      # credentials are exported (raw PAT, decoded from the base64 secret).${
         githubReleases
           ? `
       # This provider also creates a per-project GitHub Release (changelog
@@ -2624,8 +2903,8 @@ jobs:
       # why every other provider combination keeps the explicit push step below.`
           : ''
       }
-      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl))}
-        name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python)
+      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+        name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python + C#)
         if: \${{ ${onMain} }}
         env:
           ${npmAuthName}: ${npmAuthValue}${
@@ -3078,18 +3357,19 @@ export function applyOverlay (
   // Either or both, per the chosen provider — a GitHub-hosted repo can skip
   // the unused Azure file entirely instead of carrying dead CI config.
   const publishUrl = pythonPublishUrl(options.registry)
+  const nugetUrl = nugetFeedUrl(options.registry)
   if (options.ci === 'azure' || options.ci === 'both') {
     onProgress('azure-pipelines.yml — build, verify, pack and release')
     writeFileEnsured(
       join(workspaceRoot, 'azure-pipelines.yml'),
-      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind),
+      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind, nugetUrl),
     )
   }
   if (options.ci === 'github' || options.ci === 'both') {
     onProgress('.github/workflows/ci.yml and dependabot.yml')
     writeFileEnsured(
       join(workspaceRoot, '.github/workflows/ci.yml'),
-      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci),
+      githubActionsYaml(options.agent, publishUrl, options.registry.kind, options.ci, nugetUrl),
     )
     writeFileEnsured(join(workspaceRoot, '.github/dependabot.yml'), dependabotConfig(workspaceRoot))
   }

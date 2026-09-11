@@ -69,6 +69,16 @@ the run continues instead of silently deleting every section below it. The item'
 sizing turned out wrong in a useful direction: it feared 94 bindings crossing section
 boundaries, and ESLint's `no-undef` proved exactly one does.
 
+**#31 (C# / .NET support) is done** — a fifth language, following the same shape as
+Go and Flutter: `@nx/dotnet` turned out to be inference-only (verified by packing and
+reading it, not assumed), so all four kinds scaffold via `dotnet new` directly and
+write their own targets. `nx release` needed no new npm package — Nx's own
+`VersionActions` resolution accepts a workspace-relative file. `nuget.config` mirrors
+`.npmrc`'s design, and `mnci sync`/`mnci up` gained a NuGet ecosystem on request. §3
+has the detail; the e2e now drives all four kinds gated on the `.NET` toolchain, the
+same pattern Go and Flutter established, and this repo's own `e2e-windows` job needed
+the same unconditional-provisioning fix already documented for both.
+
 **Open — gates that still don't gate (§8):** just #23 (Azure's release trigger still
 has the shape #22 fixed for GitHub — a manual queue on `main` publishes), and it is
 blocked on a real Azure run rather than on effort: no Azure pipeline has ever
@@ -446,10 +456,91 @@ the open question.
 
 ### Lower priority
 
-- **.NET / C#** — plausible given how Azure-DevOps-centric the tool is
 - **Infrastructure as code** — Bicep or Terraform kind
 - **Docs site** — Docusaurus/Astro, including for the monorepo itself
 - **Angular / Vue / Svelte** — React is currently the only frontend framework
+
+### 31. C# / .NET support — ✅ done
+
+Filed here as "plausible given how Azure-DevOps-centric the tool is" and now built,
+following the same delegate-to-official-tooling shape as every other language.
+
+**`@nx/dotnet` was researched before any code was written, and it settled the whole
+design.** Packed and read directly rather than assumed maintained: it ships **no
+`generators.json`**, so it is inference-only — there is no `@nx/dotnet:application` or
+`:library` the way `@nx/react` or `@nx-go/nx-go` provide one. Every kind therefore
+scaffolds via `dotnet new` directly and writes its own `project.json`, the same
+posture Go's single-module layout already takes.
+
+**Four kinds**, matching Node's shape as closely as possible: `csharp-app`,
+`csharp-lib` (publishable, → NuGet), `csharp-internal-lib`, `csharp-function-app`
+(Azure Functions, .NET isolated worker). Cross-project references are real MSBuild
+`<ProjectReference>` elements, verified in the e2e with `dotnet add reference` plus a
+real cross-project build.
+
+**`nx release` needed no new published package.** Nx's own
+`resolveVersionActionsPath` (read directly from `node_modules/nx/dist/…`, not
+assumed) tries `require.resolve` as a package specifier first, then falls back to a
+**workspace-relative** path — so `CsharpVersionActions` ships as a plain
+`tools/csharp-version-actions.cjs` written into the generated workspace, extending
+Nx's real `VersionActions` and reading/writing the sole `.csproj`'s `<Version>`
+element via a runtime glob rather than a hardcoded filename.
+
+**The publish target is always present, gated at runtime rather than at generation
+time.** Nx requires at least one project per release group to carry the literal
+`nx-release-publish` target name or the whole release throws, so
+`csharpLibPublishTarget()` is written unconditionally and checks
+`process.env.NUGET_PAT` only when it actually runs — printing "NuGet publish is not
+configured for this registry choice" and exiting 0 when absent, rather than the
+target itself being conditional. Verified in the e2e: running it directly on a
+public-registry workspace exits 0 and prints exactly that line.
+
+**`nuget.config` mirrors `.npmrc`'s design, including the same Bearer-vs-Basic trap
+already documented for Azure Artifacts.** Verified against Microsoft's own docs
+rather than assumed: NuGet's environment-variable substitution is `%VAR%` on every
+platform (`${VAR}`/`$VAR` resolve on none of nuget.exe/dotnet.exe/Windows/Mac). The
+Azure Artifacts branch registers the feed under the fixed key `NUGET_AZURE_SOURCE`
+(`'AzureArtifacts'`, deliberately not the real feed name) with
+`packageSourceCredentials` referencing `%NUGET_PAT%`, so the publish target needs no
+registry specifics at generation time — the same trick Python's `TWINE_*` env vars
+already use.
+
+**`mnci sync`/`mnci up` gained a NuGet ecosystem**, requested explicitly to close the
+same gap npm/pip/pub/go already had closed. `latestNugetVersions()` shells out to
+`dotnet package search --exact-match --format json` (needs SDK 8.0.2xx+, well under
+`DOTNET_SDK_VERSION`) — the same "go through the ecosystem's own tool, never
+hand-roll the registry call" reasoning `npm view`/`pip index versions` already use, so
+a private feed and its `nuget.config` auth just work. `resolvedVersion` honestly
+returns `undefined` for NuGet: each `.csproj` restores into its own
+`obj/project.assets.json`, so unlike npm or pub there is no single workspace-wide
+resolved version to report — stated rather than faked.
+
+**The e2e had generated zero C# projects**, so every invariant above was documented
+and unverified — the exact gap Go and Flutter closed earlier for their own languages.
+A new `csharp` section mirrors Go's: gated on `hasDotnet()`, reported `SKIPPED` when
+absent, adds all four kinds to the shared `altWorkspace`, builds and packages both
+`csharp-app` and `csharp-function-app` (the latter's package references verified to
+genuinely exist via direct NuGet API queries, since this environment has no `.NET
+SDK` to `dotnet restore` against), and runs `nx release --dry-run`, confirming `cslib`
+is named in the output — the direct analogue of the go-lib check.
+
+**This repo's own `e2e-windows` job would have reported the C# section `SKIPPED`
+forever**, for the identical reason already documented for Go and Flutter: its own
+toolchain-install guards key on `existsSync('*.csproj')` against the job's working
+directory (this repo, not a generated workspace), which the e2e's temp-directory
+workspaces never satisfy. Fixed with an unconditional, pinned, `continue-on-error`
+`actions/setup-dotnet@v4` step, plus a `pipelineDrift.test.ts` assertion pinning it to
+`DOTNET_SDK_VERSION` — mutation-tested by bumping the pinned version and confirming
+the new assertion fails before reverting it.
+
+**One pre-existing, unrelated gap found and deliberately not chased**: a test against
+`cli.ts`'s `Argument(...).choices(PROJECT_KINDS)` using the real `commander` package
+failed with `Cannot use import statement outside a module` — commander v15 ships no
+CJS entry point, and this project's `ts-jest`-only transform does not cover `.js`
+files under `node_modules`. Fixing it means touching the shared `jest.config.mjs` for
+one edge-case test, judged disproportionate to this item's scope. The choices logic
+itself was independently confirmed correct by reading commander's source directly;
+the file was deleted rather than left half-working, and this is the record of why.
 
 ---
 

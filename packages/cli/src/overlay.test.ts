@@ -17,6 +17,7 @@ import {
   DEFAULT_STACK,
   devcontainerJson,
   ESLINT_BLOCK_INVENTORY,
+  DOTNET_SDK_VERSION,
   ESLINT_CONFIG_VERSION,
   ESLINT_PEER_OVERRIDES,
   ESLINT_VERSION,
@@ -28,6 +29,9 @@ import {
   NODE_VERSION,
   NPM_VERSION,
   npmrcContent,
+  NUGET_AZURE_SOURCE,
+  nugetConfigContent,
+  nugetFeedUrl,
   poolBlock,
   pythonPublishUrl,
   readMnciConfig,
@@ -208,6 +212,88 @@ describe('npmrcContent', () => {
     // dependency resolution in every generated workspace.
     expect(npmrcContent({ kind: 'npm' }, '@demo')).not.toContain('legacy-peer-deps')
     expect(npmrcContent(azure, '@demo')).not.toContain('legacy-peer-deps')
+  })
+})
+
+describe('nugetFeedUrl', () => {
+  it('derives the NuGet v3 feed URL from the same Azure Artifacts feed (multi-protocol)', () => {
+    expect(
+      nugetFeedUrl({
+        kind:          'azure-artifacts',
+        organization:  'org',
+        project:       'proj',
+        artifactsFeed: 'feed',
+      }),
+    ).toBe('https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json')
+  })
+
+  it('returns undefined for public npm (no public-nuget.org publish wired in this cut)', () => {
+    expect(nugetFeedUrl({ kind: 'npm' })).toBeUndefined()
+  })
+})
+
+describe('nugetConfigContent', () => {
+  const azureRegistry = {
+    kind:          'azure-artifacts',
+    organization:  'org',
+    project:       'proj',
+    artifactsFeed: 'feed',
+  } as const
+
+  it('registers only nuget.org, with no credentials, for the public npm registry', () => {
+    const config = nugetConfigContent({ kind: 'npm' }, '@demo')
+
+    expect(config).toContain('<add key="nuget.org" value="https://api.nuget.org/v3/index.json" />')
+    expect(config).not.toContain('packageSourceCredentials')
+    expect(config).not.toContain('ClearTextPassword')
+  })
+
+  it("explains why public-registry publish is unconfigured, matching PyPI's own gap", () => {
+    const config = nugetConfigContent({ kind: 'npm' }, '@demo')
+
+    expect(config).toContain('UNCONFIGURED')
+    expect(config).toContain('azure-artifacts')
+  })
+
+  it('registers the Azure feed under the fixed NUGET_AZURE_SOURCE key, not the real feed name', () => {
+    // The publish target in add/csharp.ts references this same constant, so
+    // credentials and the push command can never drift from each other.
+    const config = nugetConfigContent(azureRegistry, '@demo')
+    const feedUrl = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json'
+
+    expect(config).toContain(`<add key="${NUGET_AZURE_SOURCE}" value="${feedUrl}" />`)
+    expect(config).not.toContain('key="feed"')
+  })
+
+  it('attaches credentials to that same registered source, as the RAW PAT via %NUGET_PAT%', () => {
+    const config = nugetConfigContent(azureRegistry, '@demo')
+
+    expect(config).toContain(`<${NUGET_AZURE_SOURCE}>`)
+    expect(config).toContain('<add key="Username" value="AzureArtifacts" />')
+    expect(config).toContain('<add key="ClearTextPassword" value="%NUGET_PAT%" />')
+    // NuGet's substitution syntax is %VAR%, never ${VAR} or $VAR — confirmed
+    // against Microsoft's own compatibility table.
+    expect(config).not.toContain('${NUGET_PAT}')
+    expect(config).not.toContain('$NUGET_PAT')
+  })
+
+  it("scopes the private feed to this workspace's own PascalScope.* packages", () => {
+    // The NuGet analogue of .npmrc's scope-only routing: an unscoped source
+    // would have every local `dotnet restore` query the private feed too.
+    const config = nugetConfigContent(azureRegistry, '@my-org')
+
+    expect(config).toContain(`<packageSource key="${NUGET_AZURE_SOURCE}">`)
+    expect(config).toContain('<package pattern="MyOrg.*" />')
+    expect(config).toContain('<packageSource key="nuget.org">')
+    expect(config).toContain('<package pattern="*" />')
+  })
+
+  it('is well-formed XML with a single root <configuration> element', () => {
+    for (const config of [nugetConfigContent({ kind: 'npm' }, '@demo'), nugetConfigContent(azureRegistry, '@demo')]) {
+      expect(config).toMatch(/^<\?xml version="1\.0" encoding="utf-8"\?>/)
+      expect(config.match(/<configuration>/g)).toHaveLength(1)
+      expect(config.match(/<\/configuration>/g)).toHaveLength(1)
+    }
   })
 })
 
@@ -412,18 +498,32 @@ describe('azurePipelinesYaml', () => {
     // Both providers share one condition across pack, publish, tag, release and
     // tag-push. Asserting the COUNT is what stops the narrowing from silently
     // reaching a step it was never meant to gate — or missing one it was.
+    // The .NET SDK install task also carries a 'condition:' — a different
+    // gate (does the workspace have any C# project) for a different reason —
+    // so this matches the release condition's exact text rather than mere
+    // presence, or the two would be indistinguishable here.
     const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
       steps: { condition?: string; displayName?: string }[]
     }
-    const gated = document_.steps.filter(step => step.condition !== undefined)
+    const releaseCondition =
+      "and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), " +
+      "eq(variables['Build.SourceBranchName'], 'main'))"
+    const gated = document_.steps.filter(step => step.condition === releaseCondition)
 
     expect(gated).toHaveLength(5)
-    for (const step of gated) {
-      expect(step.condition).toBe(
-        "and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'), " +
-          "eq(variables['Build.SourceBranchName'], 'main'))",
-      )
+  })
+
+  it('gates the .NET SDK install task on the workspace having a C# project, not on main', () => {
+    // Distinct from the release condition above: this must run on every
+    // branch and PR — a C# project needs the SDK to build/test/lint long
+    // before anything releases — so it cannot reuse onMain.
+    const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
+      steps: { task?: string; condition?: string; inputs?: { version?: string } }[]
     }
+    const install = document_.steps.find(step => step.task === 'UseDotNet@2')
+
+    expect(install?.condition).toBe("eq(variables['hasDotnetProjects'], 'true')")
+    expect(install?.inputs?.version).toBe(DOTNET_SDK_VERSION)
   })
 
   it('authenticates npm via NODE_AUTH_TOKEN (an NPM_TOKEN variable), not PAT, for the public npm registry', () => {
@@ -508,7 +608,7 @@ describe('azurePipelinesYaml', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', url)
 
     // One unified release step (npm + Python), not a separate publish step.
-    expect(pipeline).toContain('Release — version, tag and publish (npm + Python)')
+    expect(pipeline).toContain('Release — version, tag and publish (npm + Python + C#)')
     expect(pipeline).not.toContain('nx run-many -t publish')
     // The release step exports twine publish creds when there are Python packages.
     expect(pipeline).toContain(`TWINE_REPOSITORY_URL='${url}'`)
@@ -525,6 +625,27 @@ describe('azurePipelinesYaml', () => {
     // A second guarded step editable-installs every Python project so
     // cross-project imports (internal libs included) resolve at test time.
     expect(pipeline).toContain('Install Python project dependencies (editable, workspace-wide)')
+  })
+
+  it('folds NuGet publish credentials (raw PAT, no base64) into the release step for an Azure feed', () => {
+    const nugetUrl = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json'
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts', nugetUrl)
+
+    // Guarded on packages/*/*.csproj, the same detection PACK_APPS_GUARD uses.
+    expect(pipeline).toContain('hasCsharp=fs.globSync(\'packages/*/*.csproj\')')
+    // Exported only when hasCsharp — same shape as the Python fragment.
+    expect(pipeline).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+    // Unlike npm's base64 _password, NuGet's ClearTextPassword takes the RAW
+    // token, so no double-decode and no leftover base64 call for NuGet alone.
+  })
+
+  it("does not skip 'nx release' for a workspace with only C# packages", () => {
+    // Before hasCsharp existed, a workspace with a csharp-lib but no npm-lib
+    // and no python-lib would hit 'Nothing to release - skipping', silently
+    // dropping every C# release forever.
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    expect(pipeline).toContain('!hasNpm&&!hasPython&&!hasCsharp')
   })
 
   it('still versions/tags Python on public npm, but exports no twine publish creds', () => {
@@ -831,6 +952,19 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('checkout -B')
   })
 
+  it('installs the .NET SDK via actions/setup-dotnet, gated on the workspace having a C# project', () => {
+    // hashFiles(), not onMain: a C# project needs the SDK to build/test/lint
+    // on every branch and PR, long before anything releases — the opposite
+    // gate from the release-only steps above.
+    const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
+      jobs?: { ci?: { steps?: { uses?: string; if?: string; with?: Record<string, string> }[] } }
+    }
+    const install = document_.jobs?.ci?.steps?.find(step => step.uses === 'actions/setup-dotnet@v4')
+
+    expect(install?.if).toBe("${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}")
+    expect(install?.with?.['dotnet-version']).toBe(DOTNET_SDK_VERSION)
+  })
+
   it('authenticates npm via a PAT repository secret, not a variable group', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -859,7 +993,7 @@ describe('githubActionsYaml', () => {
     const url = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/'
     const workflow = githubActionsYaml('ubuntu-latest', url)
 
-    expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python)')
+    expect(workflow).toContain('Release — version, tag, publish and GitHub Release (npm + Python + C#)')
     expect(workflow).not.toContain('nx run-many -t publish')
     expect(workflow).toContain(`TWINE_REPOSITORY_URL='${url}'`)
     expect(workflow).toContain('Buffer.from(process.env.PAT,\'base64\')')
@@ -874,6 +1008,27 @@ describe('githubActionsYaml', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
     expect(workflow).toContain('globSync(\'python-packages/*/pyproject.toml\')')
     expect(workflow).not.toContain('TWINE_REPOSITORY_URL')
+  })
+
+  it('folds NuGet publish credentials (raw PAT, no base64) into the release step for an Azure feed', () => {
+    const nugetUrl = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json'
+    const workflow = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'github', nugetUrl)
+
+    expect(workflow).toContain('hasCsharp=fs.globSync(\'packages/*/*.csproj\')')
+    expect(workflow).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+  })
+
+  it('still versions/tags C# on public npm, but exports no NuGet publish creds', () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain('globSync(\'packages/*/*.csproj\')')
+    expect(workflow).not.toContain('NUGET_PAT')
+  })
+
+  it("does not skip 'nx release' for a workspace with only C# packages", () => {
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain('!hasNpm&&!hasPython&&!hasCsharp')
   })
 
   it('verifies affected projects on a PR and every project otherwise, in one step', () => {
@@ -1455,11 +1610,25 @@ describe('devcontainerJson', () => {
     )
   })
 
-  it('brings Python and Go as features rather than a hand-maintained Dockerfile', () => {
+  it('brings Python, Go and .NET as features rather than a hand-maintained Dockerfile', () => {
     expect(Object.keys(parsed().features)).toEqual([
       'ghcr.io/devcontainers/features/python:1',
       'ghcr.io/devcontainers/features/go:1',
+      'ghcr.io/devcontainers/features/dotnet:2',
     ])
+  })
+
+  it("pins the .NET feature to DOTNET_SDK_VERSION with the trailing '.x' stripped", () => {
+    // The devcontainer feature's own schema takes 'X.Y'/'X.Y.Z', never the
+    // '.x' wildcard suffix actions/setup-dotnet and UseDotNet@2 expect — so
+    // this derives from the one constant rather than hardcoding a second
+    // value that could drift from it.
+    const dotnetFeature = parsed().features['ghcr.io/devcontainers/features/dotnet:2'] as {
+      version?: string
+    }
+
+    expect(dotnetFeature.version).toBe('10.0')
+    expect(DOTNET_SDK_VERSION).toBe(`${dotnetFeature.version}.x`)
   })
 
   it("reuses the pipeline's own toolchain guards instead of a third copy", () => {
@@ -1678,6 +1847,23 @@ describe('rootScripts', () => {
     // identical and the test asserted the same thing twice — stack-independence
     // is now guaranteed by the signature rather than by assertion.
     expect(rootScripts()['python:install']).toBeDefined()
+  })
+})
+
+describe('DOTNET_SDK_VERSION', () => {
+  it('is a major.minor.x range, matching what actions/setup-dotnet and UseDotNet@2 expect', () => {
+    // Unlike NODE_VERSION (a bare major — setup-node resolves majors on its
+    // own), .NET's own install actions want the '.x' suffix explicit.
+    expect(DOTNET_SDK_VERSION).toMatch(/^\d+\.\d+\.x$/)
+  })
+
+  it('pins an even (LTS) major, not an odd short-term-support one', () => {
+    // .NET's own support policy: even-numbered majors are LTS, odd ones are
+    // 18-month STS. Pinning CI/devcontainer provisioning to an STS release
+    // would need a bump on a much tighter clock than mnci's other toolchain
+    // pins.
+    const major = Number(DOTNET_SDK_VERSION.split('.', 1)[0])
+    expect(major % 2).toBe(0)
   })
 })
 

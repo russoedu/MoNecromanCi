@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
-import { FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './overlay'
+import { DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './overlay'
 
 /**
  * This repo's own CI must actually run the pipeline mnci ships.
@@ -44,9 +44,12 @@ import { FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './overla
 const repoRoot = join(__dirname, '..', '..', '..')
 
 interface Step {
-  name?: string
-  run?:  string
-  uses?: string
+  'name'?:              string
+  'run'?:               string
+  'uses'?:              string
+  'if'?:                string
+  'with'?:              Record<string, string>
+  'continue-on-error'?: boolean
 }
 
 interface Workflow {
@@ -207,5 +210,23 @@ describe('the e2e job provisions the toolchains its own suite needs', () => {
     for (const step of networkSteps) {
       expect((step as { 'continue-on-error'?: boolean })['continue-on-error']).toBe(true)
     }
+  })
+
+  it('installs the .NET SDK unconditionally too, pinned and non-reddening the same way', () => {
+    // The C# analogue of the Go/Flutter checks above, adapted for a `uses:`
+    // step: `actions/setup-dotnet` carries no `run:` to grep for a marker
+    // check in, so "unconditionally" here means no `if:` gate at all — the
+    // ci job's own install step is gated on hashFiles('**/*.csproj'), which
+    // this job's working directory (this repo, not a generated workspace)
+    // never satisfies.
+    const dotnetStep = steps.find(step => step.uses === 'actions/setup-dotnet@v4')
+
+    expect(dotnetStep).toBeDefined()
+    expect(dotnetStep?.if).toBeUndefined()
+    expect(dotnetStep?.['continue-on-error']).toBe(true)
+    // Pinned to the same constant overlay.ts ships, so bumping DOTNET_SDK_VERSION
+    // fails this until the workflow follows — the same drift guard the Flutter
+    // version check above already has.
+    expect(dotnetStep?.with?.['dotnet-version']).toBe(DOTNET_SDK_VERSION)
   })
 })
