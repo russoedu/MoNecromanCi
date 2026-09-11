@@ -70,7 +70,7 @@ afterEach(() => {
 
 describe('resolveEcosystems', () => {
   it('defaults to every ecosystem', () => {
-    expect(resolveEcosystems(undefined)).toEqual(['npm', 'pip', 'pub', 'go'])
+    expect(resolveEcosystems(undefined)).toEqual(['npm', 'pip', 'pub', 'nuget', 'go'])
   })
 
   it('narrows to the one requested', () => {

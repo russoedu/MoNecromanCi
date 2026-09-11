@@ -347,6 +347,29 @@ describe('runUp', () => {
     expect(readFileSync(join(workspaceRoot, 'go.mod'), 'utf8')).toBe(goMod)
   })
 
+  it('reinstalls NuGet via nx run-many -t restore, never a bare dotnet restore', async () => {
+    write('nx.json', JSON.stringify({}))
+    write('package.json', JSON.stringify({ name: '@demo/source', scripts: {} }))
+    write(
+      'packages/sdk/Demo.Sdk.csproj',
+      '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup>' +
+        '<PackageReference Include="Newtonsoft.Json" Version="13.0.2" /></ItemGroup></Project>\n',
+    )
+    mockLatestVersions.mockImplementation(async ecosystem =>
+      ecosystem === 'nuget' ? new Map([['Newtonsoft.Json', '13.0.3']]) : new Map(),
+    )
+
+    await runUp(workspaceRoot, { yes: true })
+
+    expect(mockRunShell).toHaveBeenCalledWith(
+      'npx',
+      ['nx', 'run-many', '-t', 'restore'],
+      workspaceRoot,
+    )
+    const csproj = readFileSync(join(workspaceRoot, 'packages/sdk/Demo.Sdk.csproj'), 'utf8')
+    expect(csproj).toContain('Version="13.0.3"')
+  })
+
   it('warns instead of guessing when a workspace has no python:install script', async () => {
     write('nx.json', JSON.stringify({}))
     write('package.json', JSON.stringify({ name: '@demo/source', scripts: {} }))

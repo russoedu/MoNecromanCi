@@ -190,6 +190,62 @@ export async function latestPubVersions (cwd: string): Promise<LatestVersions> {
 }
 
 /**
+ * Asks NuGet for the latest published version of each package.
+ *
+ * @remarks
+ * `dotnet package search <name> --exact-match --format json` per package —
+ * the same "go through the ecosystem's own tool" reasoning as `npm view`:
+ * with no `--source` argument, it consults every source in the workspace's
+ * resolved `nuget.config` (public nuget.org, and an Azure Artifacts feed
+ * when one is configured), the same way `npm view` reads the resolved
+ * `.npmrc`. Verified against Microsoft's own `dotnet package search` docs —
+ * not assumed — including the exact JSON shape read below
+ * (`searchResult[].packages[].latestVersion`) and that the command needs SDK
+ * 8.0.2xx+, well under the SDK version mnci pins (`DOTNET_SDK_VERSION` in
+ * `overlay.ts`).
+ *
+ * `--exact-match` still returns the package under `searchResult[].packages`,
+ * so the result is matched by `id` (case-insensitively — NuGet package IDs
+ * are case-preserving but not case-sensitive) rather than assumed to be the
+ * only entry, in case a source ever returns more than one hit.
+ *
+ * @param names - The package names to look up.
+ * @param cwd - The workspace root, so `dotnet` reads the workspace `nuget.config`.
+ * @returns A promise of the latest version per package that answered.
+ * @throws Never - a package no configured source knows is simply absent.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export async function latestNugetVersions (
+  names: readonly string[],
+  cwd: string,
+): Promise<LatestVersions> {
+  const results = await pool(names, LOOKUP_CONCURRENCY, async name => {
+    const result = await runCaptureAsync(
+      'dotnet',
+      ['package', 'search', name, '--exact-match', '--format', 'json'],
+      cwd,
+    )
+    if (result.status !== 0) {
+      return
+    }
+    try {
+      const parsed = JSON.parse(result.stdout) as {
+        searchResult?: Array<{ packages?: Array<{ id?: string, latestVersion?: string }> }>
+      }
+      const packages = parsed.searchResult?.flatMap(source => source.packages ?? []) ?? []
+      const match =
+        packages.find(entry => entry.id?.toLowerCase() === name.toLowerCase()) ?? packages[0]
+
+      return match?.latestVersion ? ([name, match.latestVersion] as const) : undefined
+    } catch {
+      return
+    }
+  })
+
+  return new Map(results.filter(entry => entry !== undefined))
+}
+
+/**
  * Resolves latest versions for one ecosystem.
  *
  * @remarks
@@ -216,10 +272,17 @@ export async function latestVersions (
     case 'pip': {
       return await latestPipVersions(names, cwd)
     }
+    case 'nuget': {
+      return await latestNugetVersions(names, cwd)
+    }
     case 'go': {
       return await latestGoVersions(cwd)
     }
-    default: {
+    // 'pub' explicitly, not a default: a future ecosystem added to the union
+    // without a case here should fail to compile, not silently resolve as
+    // Dart/Flutter's whole-graph query — exactly the trap this switch would
+    // otherwise have laid for 'nuget' itself.
+    case 'pub': {
       return await latestPubVersions(cwd)
     }
   }
