@@ -107,6 +107,14 @@ describe('runAdd csharp-app', () => {
     expect(mockRunNx).toHaveBeenCalledWith(['add', '@nx/dotnet'], workspaceRoot)
   })
 
+  it('fails with a clear error when dotnet new itself exits non-zero (SDK present, scaffold failed)', async () => {
+    mockRunShell.mockImplementation((command, args) =>
+      command === 'dotnet' && args[0] === 'new' ? 1 : 0,
+    )
+
+    await expect(runAdd('csharp-app', 'api', {})).rejects.toThrow('dotnet new console failed for apps/api')
+  })
+
   it('skips the plugin install when it is already a devDependency', async () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
@@ -233,6 +241,29 @@ describe('runAdd csharp-lib', () => {
     }
     expect(project.release?.version?.versionActions).toBe('tools/csharp-version-actions.cjs')
     expect(existsSync(join(workspaceRoot, 'tools/csharp-version-actions.cjs'))).toBe(true)
+  })
+
+  it('re-adding the same lib merges into the existing project.json rather than discarding it', async () => {
+    // @nx/dotnet writes no project.json at all, so the FIRST add always
+    // creates it fresh — this is the only path that exercises a SECOND add
+    // finding one already there (e.g. a hand-added custom target) and
+    // merging into it instead of overwriting it.
+    await runAdd('csharp-lib', 'sdk', {})
+    const projectJsonPath = join(workspaceRoot, 'packages/sdk/project.json')
+    const existing = JSON.parse(readFileSync(projectJsonPath, 'utf8')) as Record<string, unknown>
+    writeFileSync(
+      projectJsonPath,
+      JSON.stringify({ ...existing, targets: { ...(existing.targets as object), custom: { executor: 'nx:noop' } } }),
+    )
+
+    await runAdd('csharp-lib', 'sdk', {})
+
+    const project = readProjectJson('packages/sdk') as unknown as {
+      targets:  Record<string, unknown>
+      release?: { version?: { versionActions?: string } }
+    }
+    expect(project.targets.custom).toEqual({ executor: 'nx:noop' })
+    expect(project.release?.version?.versionActions).toBe('tools/csharp-version-actions.cjs')
   })
 
   it('adds an nx-release-publish target that packs then pushes to the fixed NUGET_AZURE_SOURCE key', async () => {
