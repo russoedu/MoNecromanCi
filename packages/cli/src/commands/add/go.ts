@@ -49,6 +49,37 @@ function warnIfNoGolangciLint (workspaceRoot: string): void {
 }
 
 /**
+ * Warns (without failing) when `air` is not on the `PATH`.
+ *
+ * @remarks
+ * Same shape as {@link warnIfNoGolangciLint}, for the same reason: `<name>:dev`
+ * needs it, but a developer who only wants to build and test locally should
+ * not be blocked at `add` time. Unlike golangci-lint, air has no CI step
+ * provisioning it yet — `dev` is a local-only convenience, never part of the
+ * verify pipeline, so there is nothing for CI to install it FOR. Recorded in
+ * ROADMAP as a deliberate follow-up rather than done here.
+ *
+ * Go has no built-in watch-and-rebuild loop the way `dotnet watch run` or
+ * Vite's dev server do, and no `nx run` target Go's own toolchain ships
+ * covers it — verified against `@nx-go/nx-go`'s `serve` executor schema,
+ * whose `serve` target is a one-shot `go run`, not a watcher. `air` is the
+ * de facto community tool — verified with `go install github.com/air-verse/air@latest`
+ * and a real watch+rebuild+rerun loop, quoting caveat below.
+ *
+ * @param workspaceRoot - Absolute path to the workspace (cwd for the probe).
+ * @returns Nothing.
+ * @throws Never - a missing watcher only produces a warning.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function warnIfNoAir (workspaceRoot: string): void {
+  if (runShell('air', ['-v'], workspaceRoot) !== 0) {
+    logger.warn(
+      'air not found — the generated dev target needs it to watch and rebuild. Install: https://github.com/air-verse/air#installation',
+    )
+  }
+}
+
+/**
  * The `@nx-go/nx-go` package spec to install.
  *
  * @remarks
@@ -259,13 +290,63 @@ function goPackageTarget (tag: string, name: string): Record<string, unknown> {
 }
 
 /**
- * The `start` target for a Go app: `go run .`, locally.
+ * The `<name>:build:dev` command for a Go app: debugger-friendly, not optimized.
  *
  * @remarks
- * `go run` compiles and runs from source in one step — unlike
- * {@link goBuildTarget}, no separate build/`dependsOn` is needed.
- * `continuous: true` marks it as a long-running dev task, the same shape
- * every other kind's custom `start` target uses.
+ * Go has no source-map concept — the closest equivalent is
+ * `-gcflags="all=-N -l"`, which disables optimization and inlining so a
+ * debugger (Delve) can step through code and read local variables
+ * accurately. `build` stays
+ * exactly as it was — untouched, unoptimized-by-default already — this
+ * writes a SECOND target rather than changing it, since introducing a
+ * `-ldflags="-s -w"`-stripped production build was judged an unrequested
+ * behaviour change to ship alongside this.
+ *
+ * Writes to the same output path {@link goBuildTarget} does: `build:dev` and
+ * `build` are two ways to produce the one binary a project has, not two
+ * artifacts living side by side.
+ *
+ * **The embedded quotes are load-bearing, found by running it.**
+ * `@nx-go/nx-go:build`'s executor joins `flags` into one string and runs it
+ * through a shell (`execSync`, verified by reading
+ * `execute-command.js`) — an unquoted `-gcflags=all=-N -l` is split on the
+ * embedded space into two shell words, and `go build` rejects the second as
+ * an unrecognised flag. Quoting the value INSIDE the flag string (not around
+ * it) is what survives that join; the same trick {@link goDevTarget} needs
+ * for `air`'s own shelled-out build command, for the identical reason.
+ *
+ * @param name - The Go app's project name.
+ * @returns The nx target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function goBuildDevTarget (name: string): Record<string, unknown> {
+  return {
+    executor: '@nx-go/nx-go:build',
+    outputs:  [`{workspaceRoot}/dist/apps/${name}`],
+    options:  {
+      outputPath: `../../dist/apps/${name}/${name}`,
+      flags:      ['-gcflags="all=-N -l"'],
+    },
+  }
+}
+
+/**
+ * The `start` target for a Go app: run the already-built binary, no rebuild.
+ *
+ * @remarks
+ * Depends on `build` (Nx-cached if unchanged) rather than `go run .`, which
+ * always recompiles from source on every invocation regardless of Nx's own
+ * cache — the previous shape of this target. Running the binary directly
+ * respects that cache instead of bypassing it, and is the literal "run what
+ * was compiled" the uniform build/build:dev/start/dev convention asks for.
+ *
+ * The binary's exact filename is platform-dependent (`<name>` on POSIX,
+ * `<name>.exe` on Windows — `@nx-go/nx-go:build` picks the extension itself
+ * from `GOOS`/the host platform), so this reads whatever the ONE file in
+ * `dist/apps/<name>/` turns out to be, rather than hardcoding either name —
+ * the same problem {@link goPackageTarget} already solves by zipping the
+ * whole directory instead of a named file.
  *
  * @param name - The Go app's project name.
  * @returns The nx:run-commands target object.
@@ -273,10 +354,55 @@ function goPackageTarget (tag: string, name: string): Record<string, unknown> {
  * @typeParam None - this function has no generic type parameters.
  */
 function goStartTarget (name: string): Record<string, unknown> {
+  const dir = `dist/apps/${name}`
+  const command = `node -e "const{spawnSync}=require('node:child_process');const fs=require('node:fs');const path=require('node:path');const dir='${dir}';const bin=path.join(dir,fs.readdirSync(dir)[0]);const r=spawnSync(bin,[],{stdio:'inherit'});process.exit(r.status??1)"`
+
   return {
     executor:   'nx:run-commands',
     continuous: true,
-    options:    { command: 'go run .', cwd: `apps/${name}` },
+    dependsOn:  ['build'],
+    options:    { command },
+  }
+}
+
+/**
+ * The `dev` target for a Go app: `air`, watching for changes.
+ *
+ * @remarks
+ * `air` runs its own build command on every change and re-executes the
+ * resulting binary — the watch-and-rebuild loop neither `go run` nor
+ * `@nx-go/nx-go`'s `serve` executor provides (verified against its schema:
+ * a one-shot `go run`, no watch option at all). Points `air` at the same
+ * debugger-friendly build {@link goBuildDevTarget} uses and the same output
+ * path `goStartTarget` reads, so all three targets agree on where the
+ * binary lives.
+ *
+ * **The quoting is load-bearing, found by running it, not by reading air's
+ * docs.** `air` passes `build.cmd` to a shell, so an UNQUOTED
+ * `-gcflags=all=-N -l` is split on the embedded space into two args and
+ * `go build` rejects the second as an unknown flag (verified: fails with
+ * `flag provided by not defined: -l`). Single-quoting the whole value inside
+ * the command string is what keeps it together once the shell gets it.
+ *
+ * `--build.bin` is air's deprecated flag name (a runtime warning says so,
+ * verified); kept anyway over `--build.entrypoint` because it takes a plain
+ * string where the replacement wants an array-like value, and a warning is a
+ * smaller cost than a fussier syntax for no behavioural gain.
+ *
+ * @param name - The Go app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function goDevTarget (name: string): Record<string, unknown> {
+  const relativeBin = `../../dist/apps/${name}/${name}`
+  const buildCommand = `go build -gcflags="all=-N -l" -o ${relativeBin} .`
+  const command = `air --build.cmd '${buildCommand}' --build.bin '${relativeBin}'`
+
+  return {
+    executor:   'nx:run-commands',
+    continuous: true,
+    options:    { command, cwd: `apps/${name}` },
   }
 }
 
@@ -304,6 +430,9 @@ function prepareGo (workspaceRoot: string): void {
  */
 export function addGoApp (workspaceRoot: string, name: string): void {
   prepareGo(workspaceRoot)
+  // Only go-app gets a dev target, so the warning belongs here rather than
+  // in prepareGo — a go-lib add has nothing for air to watch.
+  warnIfNoAir(workspaceRoot)
   ensureAdmZip(workspaceRoot)
 
   runNx(
@@ -318,13 +447,20 @@ export function addGoApp (workspaceRoot: string, name: string): void {
     workspaceRoot,
   )
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
-    build:   goBuildTarget(name),
-    test:    goTestTarget(),
-    lint:    goLintTarget(),
-    package: goPackageTarget('go-app', name),
-    start:   goStartTarget(name),
+    'build':     goBuildTarget(name),
+    'build-dev': goBuildDevTarget(name),
+    'test':      goTestTarget(),
+    'lint':      goLintTarget(),
+    'package':   goPackageTarget('go-app', name),
+    'start':     goStartTarget(name),
+    'dev':       goDevTarget(name),
   })
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: `nx run ${name}:build-dev`,
+    start:    `nx run ${name}:start`,
+    dev:      `nx run ${name}:dev`,
+  })
 }
 
 /**

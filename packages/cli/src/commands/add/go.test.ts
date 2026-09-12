@@ -127,17 +127,24 @@ describe('runAdd go', () => {
     expect(JSON.stringify(targets.package)).toContain('dist/drop/go-app-api.zip')
   })
 
-  it('wires a local `go run .` start target and the discoverable root scripts', async () => {
+  it('wires a start target that runs the already-built binary, no rebuild', async () => {
     seedProjectJson('apps/api', 'api')
 
     await runAdd('go-app', 'api', {})
 
+    // Unlike the old `go run .` shape (always recompiles from source, bypassing
+    // Nx's own cache entirely), this depends on `build` and runs whatever ONE
+    // file ends up in dist/apps/api/ — deliberately not hardcoding `api` or
+    // `api.exe`, since @nx-go/nx-go:build picks the extension per platform.
     const { targets } = readProjectJson('apps/api')
     expect(targets.start).toMatchObject({
       executor:   'nx:run-commands',
       continuous: true,
-      options:    { command: 'go run .', cwd: 'apps/api' },
+      dependsOn:  ['build'],
     })
+    const startCommand = (targets.start.options as { command: string }).command
+    expect(startCommand).toContain('dist/apps/api')
+    expect(startCommand).toContain('readdirSync(dir)[0]')
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
@@ -145,6 +152,59 @@ describe('runAdd go', () => {
     expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
     expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+  })
+
+  it('wires build:dev (debugger-friendly, quoted so the shell join cannot split it)', async () => {
+    seedProjectJson('apps/api', 'api')
+
+    await runAdd('go-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets['build-dev']).toEqual({
+      executor: '@nx-go/nx-go:build',
+      outputs:  ['{workspaceRoot}/dist/apps/api'],
+      options:  {
+        outputPath: '../../dist/apps/api/api',
+        flags:      ['-gcflags="all=-N -l"'],
+      },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:build:dev']).toBe('nx run api:build-dev')
+  })
+
+  it('wires a dev target running air, quoted so its own shelled-out build cannot split either', async () => {
+    seedProjectJson('apps/api', 'api')
+
+    await runAdd('go-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets.dev).toEqual({
+      executor:   'nx:run-commands',
+      continuous: true,
+      options:    {
+        command: 'air --build.cmd \'go build -gcflags="all=-N -l" -o ../../dist/apps/api/api .\' ' +
+          '--build.bin \'../../dist/apps/api/api\'',
+        cwd: 'apps/api',
+      },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:dev']).toBe('nx run api:dev')
+  })
+
+  it('warns (without failing) when air is missing, only for go-app', async () => {
+    mockRunShell.mockImplementation(command => (command === 'air' ? 1 : 0))
+    const warnSpy = jest.spyOn(console, 'warn')
+    seedProjectJson('apps/api', 'api')
+
+    await runAdd('go-app', 'api', {})
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('air not found'))
   })
 
   it('builds into a dist DIRECTORY, not a bare file, so Nx can cache the output', async () => {
@@ -220,11 +280,16 @@ describe('runAdd go', () => {
     // No `start` target: there is no Azure Functions custom-handler wiring
     // for Go yet, so `func start` would just fail — a known gap, not a script.
     expect(targets.start).toBeUndefined()
+    expect(targets.dev).toBeUndefined()
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
     expect(rootManifest.scripts['handler:build']).toBe('nx run handler:build')
     expect(rootManifest.scripts['handler:start']).toBeUndefined()
+    expect(rootManifest.scripts['handler:dev']).toBeUndefined()
+    // air is a go-app-only concern (nothing else has a `dev` target to run),
+    // so a function-app add never probes for it.
+    expect(mockRunShell).not.toHaveBeenCalledWith('air', ['-v'], workspaceRoot)
   })
 
   it('adds a publishable Go lib under packages/ with test and lint but no build or publish target', async () => {

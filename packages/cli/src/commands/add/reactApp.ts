@@ -57,6 +57,14 @@ VITE_API_URL=https://api.${environment}.example.com
  * `nx build` and the CI verify step — every kind builds to its own Nx-default
  * location, no post-generation output-path redirection.
  *
+ * The `dev` environment build additionally carries `--sourcemap`, which is
+ * what `<name>:build:dev` (the uniform build/build:dev/start/dev convention
+ * every app kind now has — see `registerProjectCommands` in `shared.ts`)
+ * aliases to. Reusing the existing `dev` environment rather than adding a
+ * separate debug-build axis is a deliberate, narrower choice: `uat`/`prod`
+ * stay exactly as deployed (no maps), and a local debugger gets maps on the
+ * one build variant meant for local iteration.
+ *
  * @param name - The React app's project name.
  * @returns The Nx targets to merge into the app manifest's `nx` field.
  * @throws Never - pure object construction.
@@ -65,11 +73,12 @@ VITE_API_URL=https://api.${environment}.example.com
 export function reactAppTargets (name: string): Record<string, unknown> {
   const targets: Record<string, unknown> = {}
   for (const environment of REACT_ENVIRONMENTS) {
+    const sourcemapFlag = environment === 'dev' ? ' --sourcemap' : ''
     targets[`build-${environment}`] = {
       executor: 'nx:run-commands',
       outputs:  [`{workspaceRoot}/apps/${name}/dist-${environment}`],
       options:  {
-        command: `vite build --mode ${environment} --outDir dist-${environment}`,
+        command: `vite build --mode ${environment} --outDir dist-${environment}${sourcemapFlag}`,
         cwd:     `apps/${name}`,
       },
     }
@@ -163,7 +172,18 @@ export function addReactApp (workspaceRoot: string, name: string, stack: Workspa
   allowEnvFiles(workspaceRoot)
   addNxTargets(join(reactAppRoot, 'package.json'), reactAppTargets(name))
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
-  // Vite's inferred 'serve' target (the dev server) is what @nx/react:app
-  // already wires — no per-env variant needed for local dev, unlike build.
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
+  // Every one of these four is Vite's OWN inferred target (@nx/vite/plugin,
+  // registered by the generator) — none written here. `dev` is the current
+  // name; `serve` still exists as a deprecated alias (Nx says it is removed
+  // in Nx 22), so this reaches for the replacement rather than the alias.
+  // `preview` is what makes `start` (run the already-built output, no
+  // rebuild, no watch) meaningful for Vite at all: it serves the plain
+  // `build` target's `dist/` statically, with no dev-server transform layer
+  // — the closest Vite equivalent to "run what was compiled".
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: `nx run ${name}:build-dev`,
+    start:    `nx run ${name}:preview`,
+    dev:      `nx run ${name}:dev`,
+  })
 }

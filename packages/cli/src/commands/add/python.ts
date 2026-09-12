@@ -81,16 +81,29 @@ function ensurePythonPipPlugin (workspaceRoot: string): void {
  * standard PyPA build/publish frontends that `@mnci/nx-python-pip`'s
  * executors shell out to; `pip-audit` is the PyPA vulnerability scanner the
  * generated CI's audit step (`overlay.ts`'s `PIP_AUDIT_GUARD`) runs against
- * the shared environment. No lock file — plain pip has none, matching the
- * company's standard toolchain (no uv, no Poetry). mnci writes this file
- * (not the plugin): the plugin is a generic Nx plugin with no opinion on how
- * its own runtime dependencies get onto a machine.
+ * the shared environment. `watchdog` is what {@link pythonAppDevTarget}'s
+ * `watchmedo` CLI ships in — Python has no built-in file-watch loop, and
+ * `watchdog` is the same tool `pytest-watch`/`uvicorn --reload` build on, so
+ * it is a genuinely standard choice rather than a one-off pick. No lock
+ * file — plain pip has none, matching the company's standard toolchain (no
+ * uv, no Poetry). mnci writes this file (not the plugin): the plugin is a
+ * generic Nx plugin with no opinion on how its own runtime dependencies get
+ * onto a machine.
+ *
+ * **Only reaches a workspace that adds its first Python project after this
+ * change.** {@link ensureRequirementsDev} writes this file once and never
+ * again — a workspace that already has one (any prior Python project) keeps
+ * whatever it already has, `watchdog` included only if the file predates
+ * this addition. Same pre-existing limitation every other entry in this list
+ * already has: `ensureRequirementsDev` does not reconcile a stale file, only
+ * write a fresh one.
  */
 export const PYTHON_REQUIREMENTS_DEV = `build
 twine
 ruff
 pytest
 pip-audit
+watchdog
 `
 
 /**
@@ -182,6 +195,50 @@ function pythonAppStartTarget (name: string): Record<string, unknown> {
 }
 
 /**
+ * The `dev` target for a Python app: `watchmedo`, restarting on every change.
+ *
+ * @remarks
+ * Python has no separate build step to distinguish from `start` — there is
+ * nothing to compile — so `<name>:build:dev` is deliberately not written for
+ * this kind (see `registerProjectCommands`'s remarks: `buildDev` is only
+ * written when a kind has something to distinguish). What Python DOES lack
+ * that every other kind's `dev` needs is a watch-and-restart loop, which
+ * `watchmedo auto-restart` (from `watchdog`, added to
+ * {@link PYTHON_REQUIREMENTS_DEV}) provides.
+ *
+ * **`--no-restart-on-command-exit` is not optional, found by running it.**
+ * `watchmedo auto-restart`'s DEFAULT behaviour restarts the command whenever
+ * it exits, watched files or not — verified: a plain `main.py` that prints
+ * one line and returns busy-loops the command forever, dozens of restarts a
+ * second, with no file ever touched. This app kind's own sample `main.py`
+ * does exactly that (see {@link pythonAppMain}), so the default would have
+ * broken `dev` for the generated project on day one. The flag makes it
+ * restart on a matched file change only, which is the whole point of `dev`.
+ *
+ * @param name - The Python app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pythonAppDevTarget (name: string): Record<string, unknown> {
+  const command = [
+    'watchmedo auto-restart',
+    '--directory=.',
+    '--pattern=*.py',
+    '--recursive',
+    '--no-restart-on-command-exit',
+    '--',
+    'python3 main.py',
+  ].join(' ')
+
+  return {
+    executor:   'nx:run-commands',
+    continuous: true,
+    options:    { command, cwd: `apps/${name}` },
+  }
+}
+
+/**
  * The `start` target for a Python Azure Function: `func start`, locally.
  *
  * @remarks
@@ -191,6 +248,17 @@ function pythonAppStartTarget (name: string): Record<string, unknown> {
  * exactly as Core Tools expects. Requires Azure Functions Core Tools (and the
  * Python worker) locally — never a prerequisite for
  * `add python-function-app` itself.
+ *
+ * **No `dev` target for this kind — a known gap, stated rather than
+ * guessed.** `python-app`'s `dev` needs `watchmedo` because there is a
+ * separate process (`python3 main.py`) to restart; a Python function app has
+ * no comparable local rebuild-and-rerun step to attach a watcher to, and
+ * whether Core Tools' own Python worker picks up a source change without a
+ * full `func start` restart was not verified here (no Azure Functions Core
+ * Tools available to test against, same limitation already noted on this
+ * target's own Core Tools requirement). `go-function-app` carries the same
+ * shape of gap for `start` and says so rather than shipping a command that
+ * might just fail.
  *
  * @param name - The function app's project name.
  * @returns The nx:run-commands target object.
@@ -294,8 +362,13 @@ export function addPythonApp (workspaceRoot: string, name: string): void {
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
     package: pythonAppPackageTarget(name),
     start:   pythonAppStartTarget(name),
+    dev:     pythonAppDevTarget(name),
   })
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build: true,
+    start: `nx run ${name}:start`,
+    dev:   `nx run ${name}:dev`,
+  })
 }
 
 /**

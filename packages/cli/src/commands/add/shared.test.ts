@@ -41,6 +41,15 @@ function tasks (): Record<string, unknown>[] {
   ).tasks.tasks
 }
 
+/** Reads the .code-workspace file's launch configurations array back. */
+function launchConfigs (): Record<string, unknown>[] {
+  return (
+    JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      launch: { version: string; configurations: Record<string, unknown>[] }
+    }
+  ).launch.configurations
+}
+
 beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-shared-'))
   writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
@@ -269,6 +278,99 @@ describe('registerProjectCommands', () => {
     }
     expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
     expect(after.tasks.tasks.map(t => t.label)).toEqual(['web: qa', 'web: build', 'web: start'])
+  })
+
+  it('writes <name>:build:dev and <name>:dev only when the kind has them', () => {
+    registerProjectCommands(workspaceRoot, 'api', {
+      build:    true,
+      buildDev: 'nx run api:build:development',
+      start:    'nx run api:start',
+      dev:      'nx run api:dev',
+    })
+
+    expect(scripts()['api:build']).toBe('nx run api:build')
+    expect(scripts()['api:build:dev']).toBe('nx run api:build:development')
+    expect(scripts()['api:start']).toBe('nx run api:start')
+    expect(scripts()['api:dev']).toBe('nx run api:dev')
+
+    registerProjectCommands(workspaceRoot, 'lib', { build: true })
+    expect(scripts()['lib:build:dev']).toBeUndefined()
+    expect(scripts()['lib:dev']).toBeUndefined()
+  })
+
+  it('writes a matching VS Code task for build:dev and dev, dev marked isBackground', () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } }),
+    )
+
+    registerProjectCommands(workspaceRoot, 'api', {
+      build:    true,
+      buildDev: 'nx run api:build:development',
+      dev:      'nx run api:dev',
+    })
+
+    expect(tasks()).toContainEqual({
+      label:          'api: build:dev',
+      type:           'npm',
+      script:         'api:build:dev',
+      problemMatcher: [],
+      group:          'build:dev',
+    })
+    expect(tasks()).toContainEqual({
+      label:          'api: dev',
+      type:           'npm',
+      script:         'api:dev',
+      problemMatcher: [],
+      isBackground:   true,
+    })
+  })
+
+  it("writes a per-project 'mnci: <name> dev' launch config only when the kind has dev", () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      JSON.stringify({ folders: [{ path: '.', name: 'demo' }], tasks: { version: '2.0.0', tasks: [] } }),
+    )
+
+    registerProjectCommands(workspaceRoot, 'api', { build: true, dev: 'nx run api:dev' })
+    registerProjectCommands(workspaceRoot, 'lib', { build: true })
+
+    expect(launchConfigs()).toContainEqual({
+      type:         'node-terminal',
+      request:      'launch',
+      name:         'mnci: api dev',
+      command:      'npm run api:dev',
+      cwd:          '${workspaceFolder:demo}',
+      presentation: { group: 'mnci-dev' },
+    })
+    expect(launchConfigs().some(c => c.name === 'mnci: lib dev')).toBe(false)
+  })
+
+  it('replaces only its own dev launch config on a repeat add, leaving others untouched', () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      JSON.stringify({
+        folders: [{ path: '.', name: 'demo' }],
+        tasks:   { version: '2.0.0', tasks: [] },
+        launch:  {
+          version:        '0.2.0',
+          configurations: [
+            { type: 'node-terminal', request: 'launch', name: 'mnci: build' },
+            { type: 'node', request: 'launch', name: 'debug my thing' },
+          ],
+        },
+      }),
+    )
+
+    registerProjectCommands(workspaceRoot, 'api', { build: true, dev: 'nx run api:dev' })
+    registerProjectCommands(workspaceRoot, 'api', { build: true, dev: 'nx run api:dev --port=4000' })
+
+    const apiDevConfigs = launchConfigs().filter(c => c.name === 'mnci: api dev')
+    expect(apiDevConfigs).toHaveLength(1)
+    expect(apiDevConfigs[0].command).toBe('npm run api:dev')
+    expect(launchConfigs().map(c => c.name)).toEqual(
+      expect.arrayContaining(['mnci: build', 'debug my thing', 'mnci: api dev']),
+    )
   })
 })
 

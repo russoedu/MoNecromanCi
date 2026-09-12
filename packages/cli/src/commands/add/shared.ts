@@ -1,7 +1,7 @@
 import { existsSync, globSync, readdirSync, readFileSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { runNx, runShell } from '../../nx'
-import { dependabotConfig, reactExpressPeerOverride } from '../../overlay'
+import { dependabotConfig, LAUNCH_CONFIG_PREFIX, reactExpressPeerOverride } from '../../overlay'
 import { fileExists, readCodeWorkspace, readJson, toJson, writeFileEnsured } from '../../util/fsx'
 import { logger } from '../../util/logger'
 
@@ -881,23 +881,40 @@ export function removeGeneratedEslintConfig (workspaceRoot: string, projectRoot:
  *
  * @remarks
  * `qa` (lint then test) is unconditional — every kind has both — so it is not
- * a field here. `build` and `start` vary by kind: several (`go-lib`,
- * `python-internal-lib`, `flutter-lib`, ...) have no build target at all, and
- * only kinds with a genuine local dev-server story get `start` — never a
- * library, and not `go-function-app` (no Azure Functions custom-handler
- * wiring exists for Go yet, so a `func start` script would just fail).
+ * a field here. The other four vary by kind, and the split between `start`
+ * and `dev` is deliberate rather than two names for one thing:
+ *
+ * - `build` — the production build. Several kinds (`go-lib`,
+ *   `python-internal-lib`, `flutter-lib`, ...) have no build target at all,
+ *   so this stays a boolean rather than a command string.
+ * - `buildDev` — a build carrying whatever debug information the toolchain
+ *   can add (source maps, unstripped symbols, unoptimized codegen).
+ *   Omitted where a kind has nothing to distinguish (Python has no
+ *   separate compiled artifact to begin with).
+ * - `start` — runs the ALREADY-built production output. No rebuild, no
+ *   watch: it assumes `build` (or `buildDev`) already ran. Never a library,
+ *   and not `go-function-app` (no Azure Functions custom-handler wiring
+ *   exists for Go yet, so a `func start` script would just fail).
+ * - `dev` — builds a debug version, watches, and rebuilds/restarts on every
+ *   change. Also gets a per-project VS Code launch config (see
+ *   {@link registerProjectCommands}), since this is the one a developer
+ *   actually wants to hit F5 on.
+ *
+ * A kind can have `start` without `dev` (or vice versa) where the toolchain
+ * only cleanly supports one shape — stated in that kind's own `add/*.ts`
+ * rather than guessed here.
  *
  * @typeParam None - this interface has no generic type parameters.
  */
 export interface ProjectCommands {
   /** Whether this kind has a `build` Nx target — adds `<name>:build` when true. */
-  build:  boolean
-  /**
-   * The exact command for `<name>:start` (e.g. `nx run <name>:serve`,
-   * `nx run <name>:start`) — omitted entirely when the kind has no local
-   * dev-server story.
-   */
-  start?: string
+  build:     boolean
+  /** The exact command for `<name>:build:dev`, omitted when the kind has nothing to distinguish. */
+  buildDev?: string
+  /** The exact command for `<name>:start` — runs the existing build, no rebuild, no watch. */
+  start?:    string
+  /** The exact command for `<name>:dev` — build (debug) + watch. Also wires a VS Code launch config. */
+  dev?:      string
 }
 
 /**
@@ -924,45 +941,88 @@ function findCodeWorkspaceFile (workspaceRoot: string): string | undefined {
   }
 }
 
+/** The script-name suffixes {@link registerProjectCommands} can write, one task each. */
+type ProjectScriptKind = 'build' | 'build:dev' | 'dev' | 'qa' | 'start'
+
 /**
  * One VS Code task for a project's script, matching its root `package.json` entry.
  *
  * @remarks
- * `start` tasks run a dev server that never exits on its own, so they are
- * marked `isBackground` (VS Code won't wait for them to finish) rather than
- * given a `group` — `build`/`qa` do exit, so they get the matching group
- * VS Code's Command Palette/Tasks menu groups them under.
+ * `start` and `dev` run a process that never exits on its own (a rebuild-and-run
+ * loop, in `dev`'s case), so they are marked `isBackground` (VS Code won't wait
+ * for them to finish) rather than given a `group` — `build`/`build:dev`/`qa` do
+ * exit, so they get the matching group VS Code's Command Palette/Tasks menu
+ * groups them under.
  *
  * @param name - The project name.
- * @param kind - Which of the three commands this task runs.
+ * @param kind - Which script this task runs.
  * @returns The VS Code task object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function projectTask (name: string, kind: 'build' | 'qa' | 'start'): Record<string, unknown> {
+function projectTask (name: string, kind: ProjectScriptKind): Record<string, unknown> {
   const script = `${name}:${kind}`
   const base = { label: `${name}: ${kind}`, type: 'npm', script, problemMatcher: [] }
 
-  return kind === 'start' ? { ...base, isBackground: true } : { ...base, group: kind }
+  return kind === 'start' || kind === 'dev' ? { ...base, isBackground: true } : { ...base, group: kind }
+}
+
+/**
+ * The per-project VS Code launch config for `<name>:dev`.
+ *
+ * @remarks
+ * The four workspace-level launch configs ({@link launchConfigurations} in
+ * `overlay.ts`) cover the verify targets; this is the per-PROJECT one a
+ * developer actually hits F5 on. Same `node-terminal` reasoning as those —
+ * `dev` is a rebuild-and-restart loop running as a **child** process (the
+ * underlying `nx run <name>:dev` spawns the real toolchain), so a plain
+ * `node` launch would attach to the wrong process and never bind a
+ * breakpoint.
+ *
+ * Named `${LAUNCH_CONFIG_PREFIX}<name> dev` so a user can tell at a glance
+ * that mnci wrote it — but it is deliberately NOT one of the four names
+ * `vscodeWorkspace()` treats as its own to regenerate on `mnci upgrade`; see
+ * that function's remarks for why a prefix-based filter would have deleted
+ * this on every upgrade instead of carrying it through.
+ *
+ * @param workspaceName - The workspace name, so `cwd` can be scoped by folder
+ * name rather than a bare `${workspaceFolder}` (ambiguous once a user adds a
+ * second folder to the workspace).
+ * @param name - The project name.
+ * @returns The VS Code launch configuration object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function projectLaunchConfig (workspaceName: string, name: string): Record<string, unknown> {
+  return {
+    type:         'node-terminal',
+    request:      'launch',
+    name:         `${LAUNCH_CONFIG_PREFIX}${name} dev`,
+    command:      `npm run ${name}:dev`,
+    cwd:          `\${workspaceFolder:${workspaceName}}`,
+    presentation: { group: 'mnci-dev' },
+  }
 }
 
 /**
  * Registers a newly added project's local-dev commands: root `package.json`
- * scripts, and matching VS Code tasks in the workspace's `.code-workspace` file.
+ * scripts, matching VS Code tasks, and (for `dev`) a VS Code launch config,
+ * all in the workspace's `.code-workspace` file.
  *
  * @remarks
  * Every `add/*.ts` kind function calls this once it has finished generating
- * and target-wiring a project, so `npm run <name>:build`/`:qa`/`:start` (and
- * the equivalent VS Code Command Palette entries) work immediately — no
- * separate `mnci upgrade` needed, since these are per-project entries, not
- * one of the fixed files `applyOverlay()` regenerates.
+ * and target-wiring a project, so `npm run <name>:build`/`:build:dev`/`:qa`/
+ * `:start`/`:dev` (and the equivalent VS Code Command Palette/Run-and-Debug
+ * entries) work immediately — no separate `mnci upgrade` needed, since these
+ * are per-project entries, not one of the fixed files `applyOverlay()`
+ * regenerates.
  *
  * `<name>:qa` (`nx run <name>:lint && nx run <name>:test`) is unconditional.
- * `<name>:build`/`<name>:start` are added only when {@link ProjectCommands}
- * says the kind actually has them. Idempotent: repeat calls for the same
- * `name` (a second `add` of the same project) overwrite rather than
- * duplicate, in both the manifest scripts and the `.code-workspace` tasks
- * array. A workspace with no `.code-workspace` file (predates it, or a test
+ * The other four are added only when {@link ProjectCommands} says the kind
+ * actually has them. Idempotent: repeat calls for the same `name` (a second
+ * `add` of the same project) overwrite rather than duplicate, in the manifest
+ * scripts, the `.code-workspace` tasks array, AND its launch configurations.
+ * A workspace with no `.code-workspace` file (predates it, or a test
  * fixture) still gets the `package.json` scripts — only the VS Code half is
  * skipped.
  *
@@ -987,8 +1047,14 @@ export function registerProjectCommands (
   if (commands.build) {
     scripts[`${name}:build`] = `nx run ${name}:build`
   }
+  if (commands.buildDev) {
+    scripts[`${name}:build:dev`] = commands.buildDev
+  }
   if (commands.start) {
     scripts[`${name}:start`] = commands.start
+  }
+  if (commands.dev) {
+    scripts[`${name}:dev`] = commands.dev
   }
 
   // Re-derived after every add, because whether the pip/pub blocks belong
@@ -1028,7 +1094,8 @@ export function registerProjectCommands (
   }
   const workspaceFile =
     readCodeWorkspace<{
-      tasks?: { version?: string; tasks?: Record<string, unknown>[] }
+      tasks?:  { version?: string; tasks?: Record<string, unknown>[] }
+      launch?: { version?: string; configurations?: Record<string, unknown>[] }
     }>(codeWorkspacePath) ?? {}
   const label = (task: Record<string, unknown>): string => (task.label as string | undefined) ?? ''
   const existingTasks = (workspaceFile.tasks?.tasks ?? []).filter(
@@ -1037,8 +1104,21 @@ export function registerProjectCommands (
   const newTasks = [
     projectTask(name, 'qa'),
     ...(commands.build ? [projectTask(name, 'build')] : []),
+    ...(commands.buildDev ? [projectTask(name, 'build:dev')] : []),
     ...(commands.start ? [projectTask(name, 'start')] : []),
+    ...(commands.dev ? [projectTask(name, 'dev')] : []),
   ]
+  // `workspaceName` comes from the `.code-workspace` filename itself (ROADMAP
+  // #17 made it the persisted source of truth), so this needs no extra
+  // parameter threaded through every `add/*.ts` call site just for one launch
+  // config's `cwd`.
+  const workspaceName = basename(codeWorkspacePath, '.code-workspace')
+  const configurationName = (configuration: Record<string, unknown>): string =>
+    (configuration.name as string | undefined) ?? ''
+  const existingConfigurations = (workspaceFile.launch?.configurations ?? []).filter(
+    configuration => configurationName(configuration) !== `${LAUNCH_CONFIG_PREFIX}${name} dev`,
+  )
+  const newConfigurations = commands.dev ? [projectLaunchConfig(workspaceName, name)] : []
   writeFileEnsured(
     codeWorkspacePath,
     toJson({
@@ -1046,6 +1126,10 @@ export function registerProjectCommands (
       tasks: {
         version: workspaceFile.tasks?.version ?? '2.0.0',
         tasks:   [...existingTasks, ...newTasks],
+      },
+      launch: {
+        version:        workspaceFile.launch?.version ?? '0.2.0',
+        configurations: [...existingConfigurations, ...newConfigurations],
       },
     }),
   )

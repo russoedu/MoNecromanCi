@@ -2668,6 +2668,31 @@ describe('applyOverlay', () => {
     expect(builds[0].stale).toBeUndefined()
   })
 
+  it('keeps a per-project `mnci: <name> dev` launch config across an upgrade', () => {
+    // The trap this guards: a prefix-based filter (`startsWith('mnci: ')`) would
+    // treat registerProjectCommands' own per-project launch configs as overlay-owned
+    // and delete them on every `mnci upgrade`, since they share LAUNCH_CONFIG_PREFIX
+    // with the four workspace-level ones this function actually owns. Only an EXACT
+    // match against one of those four reserved names may be replaced.
+    const projectDev = {
+      type:    'node-terminal',
+      request: 'launch',
+      name:    'mnci: api dev',
+      command: 'npm run api:dev',
+    }
+    const workspace = JSON.parse(
+      vscodeWorkspace('demo', undefined, {
+        version:        '0.2.0',
+        configurations: [{ name: 'mnci: build', stale: true }, projectDev],
+      }),
+    ) as { launch: { configurations: Record<string, unknown>[] } }
+
+    expect(workspace.launch.configurations).toContainEqual(projectDev)
+    const builds = workspace.launch.configurations.filter((c) => c.name === 'mnci: build')
+    expect(builds).toHaveLength(1)
+    expect(builds[0].stale).toBeUndefined()
+  })
+
   it('deletes every formatter config a past mnci version could have written', () => {
     // Load-bearing, not tidying, and the reason is that these files are INERT
     // from the command line — nothing runs Prettier or oxfmt any more. That is

@@ -4,24 +4,80 @@ import { logger } from '../../util/logger'
 import { addProjectJsonTargets, ensureAdmZip, hasPlugin, registerProjectCommands } from './shared'
 
 /**
- * The `start` target for a Flutter app: `flutter run -d chrome`, locally.
+ * The `dev` target for a Flutter app: `flutter run -d chrome`, locally.
  *
  * @remarks
  * Web is the only platform this plugin builds for ({@link addFlutterApp}), so
- * `-d chrome` matches — hot-reload against the same target the `build`
- * executor produces. `continuous: true` marks it as a long-running dev-server
- * task, the same shape every other kind's custom `start` target uses.
+ * `-d chrome` matches. This already IS the uniform `dev` shape every other
+ * kind's `dev` target aims for, unmodified: `flutter run` builds a `Debug`
+ * bundle and hot-reloads on every source change natively — no extra tool,
+ * the same reason `dotnet watch run` needs none for C#. `continuous: true`
+ * marks it as a long-running dev-server task, the same shape every other
+ * kind's custom `dev`/`start` target uses.
+ *
+ * **No `start` target for this kind — a known gap, stated rather than
+ * guessed.** `start` means "serve the already-built output, no rebuild", and
+ * the Flutter SDK ships no static file server to do that with —
+ * `flutter run` always performs a fresh debug build first. Forcing in some
+ * other static-server tool (`dhttpd`, `python3 -m http.server`, ...) was
+ * rejected as a worse trade than an honest gap: it would add a dependency
+ * this codebase cannot verify without a live Flutter SDK, for a kind that
+ * already has a perfectly good `dev` command.
  *
  * @param name - The Flutter app's project name.
  * @returns The nx:run-commands target object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function flutterAppStartTarget (name: string): Record<string, unknown> {
+function flutterAppDevTarget (name: string): Record<string, unknown> {
   return {
     executor:   'nx:run-commands',
     continuous: true,
     options:    { command: 'flutter run -d chrome', cwd: `apps/${name}` },
+  }
+}
+
+/**
+ * The `build:dev` target for a Flutter app: `flutter build web --debug`, into
+ * the same output directory the plugin's own `build` target uses.
+ *
+ * @remarks
+ * The plugin's `@mnci/nx-flutter:build` executor (a real TypeScript
+ * executor, not a plain shell command) has no `--debug`/mode option in its
+ * schema at all — it is hardcoded to `flutter build web --output <path>`,
+ * which is Flutter's own release-mode default. Rather than extend that
+ * published package's schema for one debug flag, this writes a second,
+ * explicit `nx:run-commands` target here, the same choice `add/go.ts` and
+ * `add/csharp.ts` make for their own `build:dev` targets rather than
+ * reaching into `@nx-go/nx-go`/`@nx/dotnet`.
+ *
+ * **The `node -e` wrapper — and resolving an ABSOLUTE output path inside
+ * it — is not incidental, it is copying a real, documented Flutter bug fix.**
+ * The plugin's own build executor's docstring records flutter/flutter#148542:
+ * a RELATIVE `--output` breaks shader compilation, because flutter's
+ * `impellerc` subprocess resolves it against a different cwd than the
+ * parent process does. A plain shell command run from the workspace root
+ * with a bare relative path would walk straight into the same bug, so this
+ * resolves the path with Node's own `path.join(process.cwd(), …)` first,
+ * exactly mirroring what the executor does with `context.root`.
+ *
+ * Writes to the SAME `dist/apps/<name>` directory `build` does — `build` and
+ * `build:dev` are two ways to produce the one web bundle a project has, the
+ * same convention every other kind's `build`/`build:dev` pair follows.
+ *
+ * @param name - The Flutter app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function flutterAppBuildDevTarget (name: string): Record<string, unknown> {
+  const outDir = `dist/apps/${name}`
+  const command = `node -e "const path=require('node:path');const cp=require('node:child_process');const out=path.join(process.cwd(),'${outDir}');const r=cp.spawnSync('flutter',['build','web','--debug','--output',out],{stdio:'inherit',cwd:'apps/${name}'});process.exit(r.status??1)"`
+
+  return {
+    executor: 'nx:run-commands',
+    outputs:  [`{workspaceRoot}/${outDir}`],
+    options:  { command },
   }
 }
 
@@ -129,9 +185,14 @@ export function addFlutterApp (workspaceRoot: string, name: string): void {
   ensureAdmZip(workspaceRoot)
   runNx(['g', '@mnci/nx-flutter:application', name, '--no-interactive'], workspaceRoot)
   addProjectJsonTargets(join(workspaceRoot, 'apps', name, 'project.json'), {
-    start: flutterAppStartTarget(name),
+    'build-dev': flutterAppBuildDevTarget(name),
+    'dev':       flutterAppDevTarget(name),
   })
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: `nx run ${name}:build-dev`,
+    dev:      `nx run ${name}:dev`,
+  })
 }
 
 /**

@@ -43,6 +43,15 @@ afterEach(() => {
 
 describe('runAdd node-app', () => {
   it('installs @nx/node on first use, then delegates to the plain application generator', async () => {
+    // The generator is mocked, so pre-create the manifest it would have
+    // written — nodeAppStartTarget reads its scoped `name` back to build the
+    // :start target's buildTarget option.
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'apps/svc/package.json'),
+      JSON.stringify({ name: '@demo/svc' }),
+    )
+
     await runAdd('node-app', 'svc', {})
 
     expect(mockRunNx).toHaveBeenNthCalledWith(1, ['add', '@nx/node'], workspaceRoot)
@@ -67,6 +76,11 @@ describe('runAdd node-app', () => {
     writeFileSync(
       join(workspaceRoot, 'package.json'),
       JSON.stringify({ name: 'demo', devDependencies: { '@nx/node': '^23.0.0' } }),
+    )
+    mkdirSync(join(workspaceRoot, 'apps/svc'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'apps/svc/package.json'),
+      JSON.stringify({ name: '@demo/svc' }),
     )
 
     await runAdd('node-app', 'svc', {})
@@ -107,10 +121,11 @@ describe('runAdd node-app', () => {
         targets: Record<
           string,
           {
-            executor:   string
-            dependsOn?: string[]
-            outputs:    string[]
-            options:    { command: string }
+            executor:    string
+            dependsOn?:  string[]
+            continuous?: boolean
+            outputs?:    string[]
+            options:     Record<string, unknown>
           }
         >
       }
@@ -126,14 +141,30 @@ describe('runAdd node-app', () => {
       'writeZip(\'dist/drop/node-app-svc.zip\')',
     )
 
-    // The root package.json gets discoverable local-dev scripts, routed
-    // through the generator's own inferred 'serve' target for :start.
+    // :start is a NEW target mnci writes — the generator's own `serve` only
+    // ever watches. It runs the already-built PRODUCTION output (the
+    // manifest's real, scoped name is what @nx/js:node's buildTarget needs,
+    // not the bare CLI project name — verified against a real generated
+    // workspace, where the bare form throws "Cannot find build target").
+    expect(manifest.nx.targets.start).toEqual({
+      executor:   '@nx/js:node',
+      continuous: true,
+      dependsOn:  ['build'],
+      options:    { buildTarget: '@demo/svc:build', watch: false },
+    })
+
+    // The root package.json gets discoverable local-dev scripts: :start runs
+    // the new one-shot target, :dev routes through the generator's own
+    // inferred 'serve' (watch: true by executor default), and :build:dev is
+    // the generator's own `development` build configuration, named.
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
     expect(rootManifest.scripts['svc:build']).toBe('nx run svc:build')
+    expect(rootManifest.scripts['svc:build:dev']).toBe('nx run svc:build:development')
     expect(rootManifest.scripts['svc:qa']).toBe('nx run svc:lint && nx run svc:test')
-    expect(rootManifest.scripts['svc:start']).toBe('nx run svc:serve')
+    expect(rootManifest.scripts['svc:start']).toBe('nx run svc:start')
+    expect(rootManifest.scripts['svc:dev']).toBe('nx run svc:serve')
   })
 
   it('passes the vitest runner from nx.json to the node generator', async () => {
@@ -273,6 +304,8 @@ describe('runAdd node-function-app', () => {
     expect(packageCommand).toContain('writeZip(\'dist/drop/node-function-app-api.zip\')')
 
     // A local `func start`, wired through Nx so it depends on `build` first.
+    // This IS the "run what was built" shape already, so it stays :start
+    // unchanged.
     expect(manifest.nx.targets.start).toMatchObject({
       executor:   'nx:run-commands',
       dependsOn:  ['build'],
@@ -280,13 +313,34 @@ describe('runAdd node-function-app', () => {
       options:    { command: 'func start', cwd: 'apps/api' },
     })
 
-    // The root package.json gets the discoverable <name>:build/:qa/:start scripts.
+    // :dev pairs func start with a SECOND, continuously running esbuild
+    // --watch process (func start itself never rebuilds on a source change).
+    // Depending on one full `build:development` pass first closes the race
+    // between the two parallel commands: without it, func start can start
+    // before dist/main.js exists at all.
+    expect(manifest.nx.targets.dev).toMatchObject({
+      executor:   'nx:run-commands',
+      dependsOn:  ['build:development'],
+      continuous: true,
+      options:    {
+        commands: [
+          { command: 'nx run api:build:development --watch' },
+          { command: 'func start', cwd: 'apps/api' },
+        ],
+        parallel: true,
+      },
+    })
+
+    // The root package.json gets the discoverable <name>:build/:build:dev/
+    // :qa/:start/:dev scripts.
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
     expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
+    expect(rootManifest.scripts['api:build:dev']).toBe('nx run api:build:development')
     expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+    expect(rootManifest.scripts['api:dev']).toBe('nx run api:dev')
   })
 
   it('skips the @azure/functions install when it is already a dependency', async () => {

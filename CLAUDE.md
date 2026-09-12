@@ -257,7 +257,63 @@ being a squash again.
 Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
 entries describe how the project got here, not what's newest.
 
-### `npm audit` Red Again — the Same Two Traps, Recurring (Latest)
+### A Uniform `build`/`build:dev`/`start`/`dev` Convention, Plus a Launch Config Per App (Latest)
+
+Requested directly, with the exact semantics given rather than inferred: `build` is
+production; `build:dev` carries whatever debug information a toolchain distinguishes
+(source maps, unoptimized codegen, debug symbols), omitted where a language has
+nothing to distinguish; `start` runs what `build` already produced — no rebuild, no
+watch; `dev` builds a debug version and watches, rebuilding/restarting on every
+change. Every app kind now carries all four; every plain library kind deliberately
+carries none — a library has no process to start or watch. A future `cli-lib` kind
+(the one exception the user named — a publishable package that is also invoked like
+an app) would need the app treatment, explicitly deferred to ROADMAP #32 rather than
+implemented now, since it is a kind that does not exist yet.
+
+- **Every `dev` target also gets a per-project VS Code launch config, not just a
+  Task** — the user's own explicit requirement, and it shipped with the bug it exists
+  to prevent. `vscodeWorkspace()`'s four fixed workspace-level configs
+  (`mnci: build/test/lint/typecheck`) must be matched by **exact name** on every
+  regenerate, not a prefix: a `startsWith('mnci: ')` filter would delete every
+  per-project `mnci: <name> dev` entry on the next `mnci upgrade`, since they share
+  the same prefix by design. Caught and fixed before shipping, mutation-tested by
+  reverting to the prefix filter and confirming the new "survives an upgrade" test
+  fails with exactly that diff.
+- **One contract, six different mechanisms underneath — the toolchain decided the
+  shape, not the other way round.** Node's `@nx/js:node` `buildTarget` OPTION (unlike
+  the CLI's own short-name-tolerant `nx run`) needs the manifest's real scoped name,
+  found by running it, not by reading the executor's schema. Go and `air` both shell
+  out their build command via `execSync`, so an unquoted `-gcflags=all=-N -l` gets
+  word-split on the embedded space and `go build` rejects the second half — fixed by
+  quoting **inside** the flag string itself, the only form that survives the shell
+  join, and needed in two separate places (`@nx-go/nx-go:build`'s own `flags` array
+  and `air`'s `build.cmd`) for the identical reason. Python's `watchmedo
+  auto-restart` restarts on **every** subprocess exit by default, not just a file
+  change — verified live as a busy-loop against the sample `main.py`, which exits
+  right after printing — so `--no-restart-on-command-exit` is load-bearing, not
+  cosmetic. C#'s `dotnet build`/`run` default to `Debug` with no flag at all, the
+  *opposite* convention from the JS bundlers here (bare build = prod), so
+  `build`/`build:dev` are two explicit `-c Release`/`-c Debug` invocations. Flutter's
+  `flutter run -d chrome` already **is** the uniform `dev` shape unmodified, and its
+  one hand-written piece (`build-dev`) inherits the same documented upstream bug
+  (flutter/flutter#148542, a relative `--output` breaking shader compilation) the
+  plugin's own `build` executor already works around, mirrored rather than
+  reinvented. Flutter deliberately ships **no `start` target** — the SDK has no
+  static file server for a built web bundle, and reaching for one was judged a worse
+  trade than an honest, documented gap.
+- **React needed no new mechanism** — `build:dev` aliases the existing per-environment
+  `dev` build (adding the one flag, `--sourcemap`, it didn't already carry), `start`
+  is Vite's own `preview` (serves `build`'s plain output statically — the closest
+  equivalent to "run what was compiled"), and `dev` is Vite's own inferred `dev`
+  target (`serve` is documented-deprecated, removed in Nx 22).
+- **Verified by real generation and real execution** for every toolchain available in
+  this environment — Node, React/Vite, Go, Python — which is what caught all three
+  shell-quoting/race/restart-loop defects above; none would have surfaced from
+  documentation alone. C# and Flutter have no live SDK here, so their pieces are
+  implemented and unit-tested but not independently run — the e2e's `csharp`/
+  `flutter` sections carry the assertions for the next environment that has them.
+
+### `npm audit` Red Again — the Same Two Traps, Recurring
 
 CI's `npm audit` step went red with 9 high-severity findings, none of them new
 code — the entire tree was untouched, just time passing while advisory

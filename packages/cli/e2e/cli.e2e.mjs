@@ -1275,7 +1275,25 @@ section('js stack', [], () => {
       `react app (${environment}) bundle bakes in only its own VITE_API_URL`,
       bundleText.includes(ownUrl) && otherUrls.every(url => !bundleText.includes(url)),
     )
+    // Only the dev environment's build carries source maps — `build:dev`
+    // aliases to `build-dev`, and `--sourcemap` is only appended there, never
+    // for uat/prod (which stay exactly as deployed).
+    const distDirectory = path.join(workspace, `apps/web/dist-${environment}`)
+    const hasSourceMap = existsSync(distDirectory)
+      ? findFiles(distDirectory, name => name.endsWith('.js.map')).length > 0
+      : false
+    enforce(
+      `react app (${environment}) build carries a source map only for dev, matching build:dev's alias`,
+      environment === 'dev' ? hasSourceMap : !hasSourceMap,
+    )
   }
+  const webRootManifest = JSON.parse(readFileSync(rootManifestPath, 'utf8'))
+  enforce(
+    'react app registers build:dev/start/dev root scripts (build:dev -> build-dev, start -> preview)',
+    webRootManifest.scripts['web:build:dev'] === 'nx run web:build-dev' &&
+      webRootManifest.scripts['web:start'] === 'nx run web:preview' &&
+      webRootManifest.scripts['web:dev'] === 'nx run web:dev',
+  )
 
   /* ---------------------------------------------------------------------------
    * Node apps: @nx/node:application (--bundle=false) never inlines anything —
@@ -1303,6 +1321,32 @@ section('js stack', [], () => {
   enforce(
     'node app zip actually contains the runnable dist shim, not just an empty drop',
     nodeAppZipEntries.includes('main.js'),
+  )
+
+  // The uniform build/build:dev/start/dev convention: `start` runs what was
+  // already built (no rebuild), `dev` is the generator's own watch-mode `serve`.
+  const svcManifest = JSON.parse(readFileSync(path.join(workspace, 'apps/svc/package.json'), 'utf8'))
+  enforce(
+    'node app has a `start` target that runs the already-built output, no rebuild',
+    svcManifest.nx?.targets?.start?.options?.watch === false &&
+      svcManifest.nx?.targets?.start?.options?.buildTarget === `${svcManifest.name}:build`,
+    JSON.stringify(svcManifest.nx?.targets?.start),
+  )
+  const svcStart = tryRunCapture('npx nx run svc:start', workspace)
+  enforce(
+    'node app `start` actually runs the compiled dist without rebuilding it',
+    svcStart.ok && svcStart.output.includes('utils') && svcStart.output.includes('1m'),
+    svcStart.output,
+  )
+  const svcRootManifest = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
+  enforce(
+    'node app registers build:dev and dev root scripts alongside build/start',
+    svcRootManifest.scripts['svc:build:dev'] === 'nx run svc:build:development' &&
+      svcRootManifest.scripts['svc:dev'] === 'nx run svc:serve',
+    JSON.stringify({
+      'build:dev': svcRootManifest.scripts['svc:build:dev'],
+      'dev':       svcRootManifest.scripts['svc:dev'],
+    }),
   )
 
   // --framework express: a real HTTP-framework dependency was scaffolded (not
@@ -1355,6 +1399,22 @@ section('js stack', [], () => {
     nodeFunctionAppManifest.nx?.targets?.start?.options?.command === 'func start',
   )
   enforce(
+    'node function app has a `dev` target running esbuild --watch and func start together',
+    nodeFunctionAppManifest.nx?.targets?.dev?.options?.commands?.some(entry =>
+      entry.command?.includes('build:development --watch'),
+    ) &&
+      nodeFunctionAppManifest.nx?.targets?.dev?.options?.commands?.some(
+        entry => entry.command === 'func start',
+      ) &&
+      nodeFunctionAppManifest.nx?.targets?.dev?.options?.parallel === true,
+    JSON.stringify(nodeFunctionAppManifest.nx?.targets?.dev),
+  )
+  const apiRootManifest = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
+  enforce(
+    'node function app registers a `dev` root script alongside build/start',
+    apiRootManifest.scripts['api:dev'] === 'nx run api:dev',
+  )
+  enforce(
     'node function app test target runs green (sample spec passes)',
     tryRun('npx nx test api', workspace),
     'see log above',
@@ -1381,6 +1441,34 @@ section('js stack', [], () => {
       zipEntries.includes('host.json') &&
       zipEntries.includes('package.json'),
   )
+
+  /* ---------------------------------------------------------------------------
+   * Every `dev`-carrying kind gets a VS Code Run-and-Debug launch config, not
+   * just a task — the user's own requirement. web/svc/svc-express/api all
+   * have a `dev` target, so all four must be present, alongside the four
+   * fixed workspace-level configs the overlay itself owns.
+   * ------------------------------------------------------------------------- */
+  const jsStackCodeWorkspace = JSON.parse(
+    readFileSync(path.join(workspace, 'demo.code-workspace'), 'utf8'),
+  )
+  const launchNames = new Set((jsStackCodeWorkspace.launch?.configurations ?? []).map(
+    configuration => configuration.name,
+  ))
+  for (const project of ['web', 'svc', 'svc-express', 'api']) {
+    const expectedName = `mnci: ${project} dev`
+    const configuration = jsStackCodeWorkspace.launch?.configurations?.find(
+      entry => entry.name === expectedName,
+    )
+    enforce(
+      `launch config present for ${project}'s dev target (Run-and-Debug panel, not just a task)`,
+      configuration?.type === 'node-terminal' &&
+        configuration?.command === `npm run ${project}:dev`,
+      JSON.stringify(configuration),
+    )
+  }
+  for (const fixed of ['mnci: build', 'mnci: test', 'mnci: lint', 'mnci: typecheck']) {
+    enforce(`fixed workspace-level launch config survives adds (${fixed})`, launchNames.has(fixed))
+  }
 
   /* ---------------------------------------------------------------------------
    * The published-package-uses-private-lib promise, verified on the real output
@@ -1776,6 +1864,39 @@ section('python', ['alt stack'], () => {
     ) && !existsSync(path.join(altWorkspace, 'apps/pyfunc/pyproject.toml')),
   )
 
+  // `watchdog` (watchmedo) is the dev-loop watcher — added to the FIXED
+  // requirements-dev.txt so it reaches every project via the one toolchain
+  // install, the same mechanism ruff/pytest/build/twine already use.
+  const requirementsDevContents = readFileSync(
+    path.join(altWorkspace, 'requirements-dev.txt'),
+    'utf8',
+  )
+  enforce(
+    'python: requirements-dev.txt declares watchdog for the dev target watch loop',
+    /^watchdog/m.test(requirementsDevContents),
+  )
+  const pysvcProject = JSON.parse(
+    readFileSync(path.join(altWorkspace, 'apps/pysvc/project.json'), 'utf8'),
+  )
+  enforce(
+    'python: pysvc has a `dev` target running watchmedo with --no-restart-on-command-exit',
+    pysvcProject.targets?.dev?.options?.command?.includes('watchmedo auto-restart') &&
+      pysvcProject.targets?.dev?.options?.command?.includes('--no-restart-on-command-exit') &&
+      pysvcProject.targets?.dev?.options?.cwd === 'apps/pysvc',
+    pysvcProject.targets?.dev?.options?.command,
+  )
+  enforce(
+    'python: pysvc has no build:dev script — deliberately N/A, Python has no debug-vs-release build distinction',
+    !Object.hasOwn(pysvcProject.targets ?? {}, 'build:dev'),
+  )
+  const pysvcRootManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+  enforce(
+    'python: pysvc registers start/dev root scripts (no build:dev)',
+    pysvcRootManifest.scripts['pysvc:start'] === 'nx run pysvc:start' &&
+      pysvcRootManifest.scripts['pysvc:dev'] === 'nx run pysvc:dev' &&
+      pysvcRootManifest.scripts['pysvc:build:dev'] === undefined,
+  )
+
   /* ---------------------------------------------------------------------------
    * The same private-internal-lib / real-external-dependency proof as the JS
    * side, adapted to pip's mechanism: a hand-added [tool.mnci-python-pip]
@@ -2110,7 +2231,7 @@ section('go', ['alt stack'], () => {
     // writes every target explicitly. If that ever regressed, the targets would
     // silently vanish rather than fail loudly.
     for (const [project, directory, expected] of [
-      ['goapi', 'apps/goapi', ['build', 'test', 'lint', 'package', 'start']],
+      ['goapi', 'apps/goapi', ['build', 'build-dev', 'test', 'lint', 'package', 'start', 'dev']],
       ['goutil', 'libs/goutil', ['test', 'lint']],
       ['gocore', 'packages/gocore', ['test', 'lint']],
       ['gofn', 'apps/gofn', ['build', 'test', 'lint', 'package']],
@@ -2125,14 +2246,41 @@ section('go', ['alt stack'], () => {
       )
     }
 
+    // goapi's `start` runs the already-built binary (dependsOn build, no rebuild);
+    // `dev` shells out to `air` for the watch-and-rebuild loop the plugin's own
+    // `serve` executor cannot provide (verified against its schema: one-shot `go run`).
+    const goApiProject = JSON.parse(
+      readFileSync(path.join(altWorkspace, 'apps/goapi/project.json'), 'utf8'),
+    )
+    enforce(
+      'go: goapi `start` depends on build and runs the compiled binary, no rebuild',
+      goApiProject.targets?.start?.dependsOn?.includes('build') &&
+        goApiProject.targets?.start?.continuous === true,
+      JSON.stringify(goApiProject.targets?.start),
+    )
+    enforce(
+      'go: goapi `dev` shells out to air with embedded-quoted -gcflags (the shell-split bug fix)',
+      goApiProject.targets?.dev?.options?.command?.includes('air') &&
+        goApiProject.targets?.dev?.options?.command?.includes('"all=-N -l"'),
+      goApiProject.targets?.dev?.options?.command,
+    )
+    const goApiRootManifest = JSON.parse(readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'))
+    enforce(
+      'go: goapi registers build:dev/start/dev root scripts',
+      goApiRootManifest.scripts['goapi:build:dev'] === 'nx run goapi:build-dev' &&
+        goApiRootManifest.scripts['goapi:start'] === 'nx run goapi:start' &&
+        goApiRootManifest.scripts['goapi:dev'] === 'nx run goapi:dev',
+    )
+
     // A documented, deliberate gap rather than an oversight: go-function-app writes
-    // no host.json/custom-handler config, so a `:start` script would just fail.
+    // no host.json/custom-handler config, so a `:start` script would just fail —
+    // and with no `start` target there is nothing for a watch loop to restart either.
     const goFunctionAppProject = JSON.parse(
       readFileSync(path.join(altWorkspace, 'apps/gofn/project.json'), 'utf8'),
     )
     enforce(
-      'go: go-function-app deliberately has NO start target, unlike go-app',
-      !goFunctionAppProject.targets?.start,
+      'go: go-function-app deliberately has NO start or dev target, unlike go-app',
+      !goFunctionAppProject.targets?.start && !goFunctionAppProject.targets?.dev,
     )
 
     const goLibProject = JSON.parse(
@@ -2264,8 +2412,8 @@ section('csharp', ['alt stack'], () => {
     // The only things a project.json here carries are mnci's own additions,
     // so this checks exactly those rather than anything @nx/dotnet owns.
     for (const [project, directory, expected] of [
-      ['csapp', 'apps/csapp', ['package', 'start']],
-      ['csfn', 'apps/csfn', ['package', 'start']],
+      ['csapp', 'apps/csapp', ['build', 'build-dev', 'package', 'start', 'dev']],
+      ['csfn', 'apps/csfn', ['build', 'build-dev', 'package', 'start', 'dev']],
       ['cslib', 'packages/cslib', ['nx-release-publish']],
     ]) {
       const projectJson = JSON.parse(
@@ -2277,6 +2425,36 @@ section('csharp', ['alt stack'], () => {
         Object.keys(projectJson.targets ?? {}).join(', '),
       )
     }
+
+    // `build` and `build-dev` differ only in -c Release/Debug (.NET's own
+    // convention, opposite of the JS bundlers' bare-build-means-prod default);
+    // `dev` is `dotnet watch run`, native SDK tooling needing no extra package.
+    const csAppProject = JSON.parse(
+      readFileSync(path.join(altWorkspace, 'apps/csapp/project.json'), 'utf8'),
+    )
+    enforce(
+      'csharp: csapp build/build-dev differ only by configuration (Release vs Debug)',
+      csAppProject.targets?.build?.options?.command?.includes('-c Release') &&
+        csAppProject.targets?.['build-dev']?.options?.command?.includes('-c Debug'),
+      JSON.stringify({
+        'build':     csAppProject.targets?.build?.options?.command,
+        'build-dev': csAppProject.targets?.['build-dev']?.options?.command,
+      }),
+    )
+    enforce(
+      'csharp: csapp `dev` is `dotnet watch run`, scoped to the project directory',
+      csAppProject.targets?.dev?.options?.command === 'dotnet watch run' &&
+        csAppProject.targets?.dev?.options?.cwd === 'apps/csapp',
+    )
+    const csharpRootManifest = JSON.parse(
+      readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'),
+    )
+    enforce(
+      'csharp: csapp registers build:dev/start/dev root scripts',
+      csharpRootManifest.scripts['csapp:build:dev'] === 'nx run csapp:build-dev' &&
+        csharpRootManifest.scripts['csapp:start'] === 'nx run csapp:start' &&
+        csharpRootManifest.scripts['csapp:dev'] === 'nx run csapp:dev',
+    )
 
     // The one NuGet lib is scoped to the workspace's own scope, PackageId-style:
     // dotnet new classlib -n Alt.Cslib sets assembly name, namespace AND the
@@ -2524,6 +2702,52 @@ section('flutter', [], () => {
       'flutter: real flutter analyze + flutter test pass for all three projects',
       flutterVerify.ok,
       flutterVerify.output,
+    )
+
+    // `dev` is `flutter run -d chrome` unmodified — it already IS the uniform
+    // build(debug)+watch shape, natively, no extra tooling. `build-dev` is the
+    // one hand-written target: a `--debug` build resolving an ABSOLUTE
+    // --output path (flutter/flutter#148542's fix, mirrored from the
+    // plugin's own `build` executor).
+    const helloProject = JSON.parse(
+      readFileSync(path.join(altWorkspace, 'apps/hello/project.json'), 'utf8'),
+    )
+    enforce(
+      'flutter: hello `dev` runs `flutter run -d chrome`, scoped to the project directory',
+      helloProject.targets?.dev?.options?.command === 'flutter run -d chrome' &&
+        helloProject.targets?.dev?.options?.cwd === 'apps/hello',
+    )
+    enforce(
+      'flutter: hello `build-dev` builds --debug with an absolute --output path',
+      helloProject.targets?.['build-dev']?.options?.command?.includes('--debug') &&
+        helloProject.targets?.['build-dev']?.options?.command?.includes(
+          "path.join(process.cwd(),'dist/apps/hello')",
+        ),
+      helloProject.targets?.['build-dev']?.options?.command,
+    )
+    enforce(
+      'flutter: hello has NO start target — the SDK ships no static file server for the built web bundle',
+      !helloProject.targets?.start,
+    )
+    const helloRootManifest = JSON.parse(
+      readFileSync(path.join(altWorkspace, 'package.json'), 'utf8'),
+    )
+    enforce(
+      'flutter: hello registers build:dev/dev root scripts (no start)',
+      helloRootManifest.scripts['hello:build:dev'] === 'nx run hello:build-dev' &&
+        helloRootManifest.scripts['hello:dev'] === 'nx run hello:dev' &&
+        helloRootManifest.scripts['hello:start'] === undefined,
+    )
+    const altCodeWorkspaceFile = findFiles(altWorkspace, name => name.endsWith('.code-workspace'))[0]
+    const helloCodeWorkspace = JSON.parse(
+      readFileSync(path.join(altWorkspace, altCodeWorkspaceFile), 'utf8'),
+    )
+    enforce(
+      "flutter: hello's `dev` target gets a VS Code launch config, not just a task",
+      helloCodeWorkspace.launch?.configurations?.some(
+        configuration =>
+          configuration.name === 'mnci: hello dev' && configuration.command === 'npm run hello:dev',
+      ),
     )
 
     const flutterPackage = tryRunCapture('npx nx package hello', altWorkspace)

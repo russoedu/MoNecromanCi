@@ -275,28 +275,65 @@ each a single cross-platform command:
 ## Every `add` also wires local-dev commands
 
 Every `mnci add` (and the inline `internal-lib` case) finishes by calling
-`registerProjectCommands` (`commands/add/shared.ts`), which writes up to three
+`registerProjectCommands` (`commands/add/shared.ts`), which writes up to five
 root `package.json` scripts for the project just added:
 
-| Script         | Runs                                       | When it's added                                                                                                                                    |
-| -------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<name>:build` | `nx run <name>:build`                      | the kind has a `build` target (not every kind does — a private lib with nothing to publish, or a Python function app deployed as source, has none) |
-| `<name>:qa`    | `nx run <name>:lint && nx run <name>:test` | always — every kind has both                                                                                                                       |
-| `<name>:start` | the kind's real local-dev command          | only kinds with a genuine dev-server story — never a library                                                                                       |
+| Script              | Runs                                       | When it's added                                                                                                                                     |
+| ------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>:build`      | `nx run <name>:build`                      | the kind has a `build` target (not every kind does — a private lib with nothing to publish, or a Python function app deployed as source, has none) |
+| `<name>:build:dev`  | the kind's debug-build command              | app kinds where the toolchain distinguishes a debug build from production (a source map, unoptimized codegen, debug symbols) — never a library    |
+| `<name>:qa`         | `nx run <name>:lint && nx run <name>:test` | always — every kind has both                                                                                                                        |
+| `<name>:start`      | the kind's already-built-output command    | app kinds with something to run once built — **no rebuild, no watch** — never a library                                                            |
+| `<name>:dev`        | the kind's debug-build-and-watch command   | every app kind — **rebuilds/restarts on every source change**, and also gets a VS Code launch config (see below) — never a library                 |
 
-The same three (when present) are appended as VS Code Tasks into the
+The rule that decides which of `build:dev`/`start`/`dev` a kind gets is fixed
+across every language: `start` runs what `build` already produced (nothing is
+rebuilt, nothing is watched); `dev` builds a debug variant and watches,
+rebuilding/restarting on every change; `build:dev` is that debug build named on
+its own, for when you want it without the watch loop. A plain library gets
+none of the three — there is no process to start, debug-build, or watch — only
+`build`/`qa`. (A future `cli-lib` kind — a publishable package that is also
+*invoked* like an app — would need the app treatment; it doesn't exist yet,
+see ROADMAP #32.)
+
+The same scripts (when present) are appended as VS Code Tasks into the
 workspace's `<workspace-name>.code-workspace` file, so they also show up
-under **Terminal → Run Task** / the Command Palette — `build`/`qa` grouped
-accordingly, `start` marked `isBackground` since it runs a process that
-doesn't exit on its own. Re-running `add` for the same project name
-overwrites its own scripts/tasks rather than duplicating them.
+under **Terminal → Run Task** / the Command Palette — `build`/`build:dev`/`qa`
+grouped accordingly, `start`/`dev` marked `isBackground` since they run a
+process that doesn't exit on its own. Re-running `add` for the same project
+name overwrites its own scripts/tasks rather than duplicating them.
+
+`:build:dev`/`:start`/`:dev` resolve differently per kind — an existing
+generator target where one already exists, a small `nx:run-commands` target
+mnci writes where none did:
+
+| Kind(s)                    | `:build:dev`                                                                             | `:start`                                                                | `:dev`                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `node-app`                  | the generator's own `development` build configuration (source maps on)                    | `@nx/js:node`, `watch: false`, against the built output — no rebuild       | the generator's own inferred `serve` target (watch mode, native to the executor)                                             |
+| `node-function-app`         | same as `node-app`                                                                          | `func start` (Azure Functions Core Tools, install separately)              | esbuild `--watch` + `func start`, run together as `nx:run-commands` siblings                                                |
+| `react-app`                 | the existing `dev`-environment build, now also carrying `--sourcemap`                     | `nx run <name>:preview` — Vite's own static server over the plain build    | Vite's own inferred `dev` target (`serve` is deprecated, removed in Nx 22)                                                  |
+| `go-app`                    | `go build -gcflags="all=-N -l"` (unoptimized, debugger-friendly)                          | runs the compiled binary in `dist/apps/<name>/`, no rebuild                | `air`, watching and rebuilding via the same debug flags                                                                      |
+| `python-app`                | *(N/A — no build step to distinguish; omitted)*                                            | `python3 main.py` — mnci writes a runnable `main.py`                       | `watchmedo auto-restart` (from `watchdog`, added to `requirements-dev.txt`), restarting `main.py` on every `.py` change      |
+| `python-function-app`       | *(N/A — deploys as source, no build step)*                                                | `func start`                                                                | not yet implemented — see below                                                                                              |
+| `csharp-app`, `csharp-function-app` | `dotnet build -c Debug` (bare `dotnet build`/`run` default to Debug — the opposite convention from the JS bundlers here) | runs the compiled `.dll` directly, no rebuild                               | `dotnet watch run` — native SDK tooling, no extra dependency                                                                 |
+| `flutter-app`               | `flutter build web --debug`, resolving an **absolute** `--output` path (works around flutter/flutter#148542, a real upstream shader-compilation bug on a relative path) | *(N/A — the SDK ships no static file server for a built web bundle; a known, documented gap)* | `flutter run -d chrome` — already **is** the uniform `dev` shape unmodified: a debug build with native hot-reload             |
+| every library, `go-function-app` | no `:build:dev`/`:start`/`:dev` at all — see below                                    |                                                                              |                                                                                                                                |
+
+**`go-function-app` has no `:start`/`:dev`, a known gap, not an oversight**:
+unlike the Node and Python function-app kinds, it writes no
+`host.json`/custom-handler config, so there is nothing for `func start` to
+attach to, and nothing for a watch loop to restart either. Shipping a script
+that would just fail felt worse than being upfront that it doesn't exist yet.
+**`python-function-app` has no `:dev` for the same underlying reason** —
+verifying a Functions Core Tools watch loop needs a live install this
+environment cannot confirm, so it is left undone rather than guessed at.
 
 #### Run and Debug: the `launch` section
 
 Tasks are reachable **only** through Terminal → Run Task. The **Run and Debug**
 panel reads a separate `launch` section, so a workspace with tasks alone offers
-nothing in the dropdown people actually open. Every generated workspace therefore
-also gets four launch configurations, one per verify target:
+nothing in the dropdown people actually open. Every generated workspace
+therefore gets four fixed launch configurations, one per verify target:
 
 | configuration | runs |
 | --- | --- |
@@ -304,6 +341,11 @@ also gets four launch configurations, one per verify target:
 | `mnci: test` | `npm run test` |
 | `mnci: lint` | `npm run lint` |
 | `mnci: typecheck` | `npm run typecheck` |
+
+**Every project with a `:dev` script also gets its own launch config**,
+`mnci: <name> dev`, running `npm run <name>:dev` — the Run-and-Debug panel
+entry for that project, not just a Task, per the same explicit requirement
+that shaped the whole convention above.
 
 Three details are load-bearing rather than incidental:
 
@@ -321,26 +363,13 @@ Three details are load-bearing rather than incidental:
   `${workspaceFolder}` is ambiguous the moment a second folder joins the workspace,
   and VS Code then refuses to resolve it — breaking all four at once.
 
-Your own configurations are safe: `mnci upgrade` replaces only the entries named
-`mnci: *` and carries every other one through untouched.
-
-`:start` resolves differently per kind — an existing generator target where
-one already exists, a small `nx:run-commands` target mnci writes where none
-did:
-
-| Kind(s)                                    | `:start` runs                                                                                                                         |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `react-app`, `node-app`                    | `nx run <name>:serve` — the generator's own inferred dev-server target                                                                |
-| `node-function-app`, `python-function-app` | `nx run <name>:start` → `func start` (Azure Functions Core Tools, install separately — never a prerequisite for `add` itself)         |
-| `python-app`                               | `nx run <name>:start` → `python3 main.py` — mnci writes a runnable `main.py`, since the plugin's own sample module has no entry point |
-| `go-app`                                   | `nx run <name>:start` → `go run .`                                                                                                    |
-| `flutter-app`                              | `nx run <name>:start` → `flutter run -d chrome` (web is the only platform this plugin builds for)                                     |
-| every library, `go-function-app`           | no `:start` at all — see below                                                                                                        |
-
-**`go-function-app` is a known gap, not an oversight**: unlike the Node and
-Python function-app kinds, it writes no `host.json`/custom-handler config, so
-there is nothing for `func start` to attach to. Shipping a `:start` script
-that would just fail felt worse than being upfront that it doesn't exist yet.
+Your own configurations are safe on upgrade, and so is every per-project one:
+`mnci upgrade` matches by **exact name** — the four fixed configs plus every
+`mnci: <name> dev` currently in the file — and replaces only those, carrying
+every other entry (yours, or a project's whose `add` hasn't run again) through
+untouched. Matching by prefix would have deleted every per-project entry on
+the next upgrade, since they share the `mnci: ` prefix by design; this is
+tested and mutation-tested against exactly that regression.
 
 ## What `new` actually does
 

@@ -99,18 +99,18 @@ describe('runAdd flutter', () => {
     expect(shellCalls()).toContain('npm install --save-dev adm-zip --no-audit --no-fund')
   })
 
-  it('wires a local `flutter run -d chrome` start target and the discoverable root scripts', async () => {
+  it('wires a local `flutter run -d chrome` dev target and the discoverable root scripts', async () => {
     seedProjectJson('apps/web', 'web')
 
     await runAdd('flutter-app', 'web', {})
 
     const project = readProjectJson('apps/web')
-    expect(project.targets.start).toMatchObject({
+    expect(project.targets.dev).toMatchObject({
       executor:   'nx:run-commands',
       continuous: true,
       options:    { command: 'flutter run -d chrome', cwd: 'apps/web' },
     })
-    // build survives from the seeded fixture — this call only adds 'start'.
+    // build survives from the seeded fixture — this call only adds 'build-dev'/'dev'.
     expect(project.targets.build).toBeDefined()
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -118,7 +118,26 @@ describe('runAdd flutter', () => {
     }
     expect(rootManifest.scripts['web:build']).toBe('nx run web:build')
     expect(rootManifest.scripts['web:qa']).toBe('nx run web:lint && nx run web:test')
-    expect(rootManifest.scripts['web:start']).toBe('nx run web:start')
+    expect(rootManifest.scripts['web:build:dev']).toBe('nx run web:build-dev')
+    expect(rootManifest.scripts['web:dev']).toBe('nx run web:dev')
+    // No 'start' — the Flutter SDK ships no static file server for the built output.
+    expect(rootManifest.scripts['web:start']).toBeUndefined()
+  })
+
+  it('writes a `build-dev` target that resolves an absolute --output path (the flutter/flutter#148542 workaround)', async () => {
+    seedProjectJson('apps/web', 'web')
+
+    await runAdd('flutter-app', 'web', {})
+
+    const project = readProjectJson('apps/web')
+    const options = project.targets['build-dev']?.options as { command?: string } | undefined
+    expect(project.targets['build-dev']).toMatchObject({
+      executor: 'nx:run-commands',
+      outputs:  ['{workspaceRoot}/dist/apps/web'],
+    })
+    expect(options?.command).toContain("'build','web','--debug','--output',out")
+    expect(options?.command).toContain("path.join(process.cwd(),'dist/apps/web')")
+    expect(options?.command).toContain("cwd:'apps/web'")
   })
 
   it('registers only build/qa (no start) for a publishable lib — a Dart package has no dev server', async () => {

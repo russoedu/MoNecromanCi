@@ -185,25 +185,109 @@ function csharpAppPackageTarget (
 }
 
 /**
- * The `start` target for a C# app: `dotnet run`, locally.
+ * The `build`/`build:dev` target for a C# app: `dotnet build`, into the same
+ * conventional output directory {@link csharpAppPackageTarget}'s `publish`
+ * uses.
  *
  * @remarks
- * `dotnet run` builds and runs from source in one step — unlike
- * {@link csharpAppPackageTarget}'s `publish`, no separate build/`dependsOn`
- * is needed. `continuous: true` marks it as a long-running dev task, the
- * same shape every other kind's custom `start` target uses (see
- * `goStartTarget`).
+ * `-c Release`/`-c Debug` is the load-bearing choice, and it maps onto .NET
+ * the OPPOSITE way it maps onto esbuild/Vite: the .NET CLI's own default
+ * (bare `dotnet build`, no `-c` at all) is already `Debug` — unoptimized
+ * codegen, the real equivalent of a source map for a debugger to step
+ * through accurately — so `build:dev` is the SDK's ordinary behaviour, made
+ * explicit rather than left implicit; `build` (production) is the one that
+ * needs an explicit flag. Written as an EXPLICIT target rather than relying
+ * on whatever `@nx/dotnet`'s inference produces for `build`: that plugin is
+ * inference-only, and this file has no confirmed answer for whether its
+ * inferred target exposes a configuration switch at all — an explicit
+ * `project.json` entry always wins over an inferred one of the same name in
+ * Nx's own target resolution, so this simply owns the answer outright, the
+ * same way `package`/`start` already do.
+ *
+ * `-o` redirects the output to `dist/apps/<name>` — the same directory
+ * {@link csharpAppPackageTarget}'s `publish` step writes, so `build` and
+ * `package` are never fighting over two different output shapes for one
+ * project, and `start` (below) has one place to look for the compiled DLL.
+ *
+ * @param projectRoot - Workspace-relative project directory.
+ * @param name - The C# app's project name.
+ * @param configuration - `Release` for `build`, `Debug` for `build:dev`.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpAppBuildTarget (
+  projectRoot: string,
+  name: string,
+  configuration: 'Debug' | 'Release',
+): Record<string, unknown> {
+  const outDir = `dist/apps/${name}`
+
+  return {
+    executor: 'nx:run-commands',
+    outputs:  [`{workspaceRoot}/${outDir}`],
+    options:  { command: `dotnet build ${projectRoot} -c ${configuration} -o ${outDir}` },
+  }
+}
+
+/**
+ * The `start` target for a C# app: run the already-built DLL, no rebuild.
+ *
+ * @remarks
+ * Depends on `build` (the `Release` configuration above), then runs the
+ * compiled assembly directly — `dotnet <name>.dll`, not `dotnet run`, which
+ * always recompiles. The assembly's filename is deterministic:
+ * {@link pascalCase}`(name)` is the exact project/assembly name
+ * {@link scaffoldDotnetProject} passed to `dotnet new -n`, the same identity
+ * `csharpAppPackageTarget`'s `publish` step already relies on implicitly by
+ * zipping the whole output directory instead of naming a file.
+ *
+ * **Unverified without a live SDK, stated rather than assumed working.**
+ * This environment has no `dotnet` to run it against; the design follows
+ * from documented, stable .NET CLI behaviour (`dotnet build -o <dir>` emits
+ * a runnable `<assembly>.dll` + `.deps.json` + `.runtimeconfig.json` there,
+ * identically to the default `bin/<config>/<tfm>/` layout) rather than from
+ * having watched it run.
+ *
+ * @param name - The C# app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpAppStartTarget (name: string): Record<string, unknown> {
+  const dll = `dist/apps/${name}/${pascalCase(name)}.dll`
+
+  return {
+    executor:   'nx:run-commands',
+    continuous: true,
+    dependsOn:  ['build'],
+    options:    { command: `dotnet ${dll}` },
+  }
+}
+
+/**
+ * The `dev` target for a C# app: `dotnet watch run`, locally.
+ *
+ * @remarks
+ * Unlike every other language's `dev` target, this needs no extra tool and
+ * no hand-built watch loop — `dotnet watch` ships in the SDK itself
+ * (verified against Microsoft's own documented behaviour: it rebuilds and
+ * restarts the app on a source change, defaulting to the same `Debug`
+ * configuration {@link csharpAppBuildTarget}'s `build:dev` uses explicitly).
+ * `cwd: projectRoot` is what lets this stay a bare `dotnet watch run`
+ * instead of needing a `--project` flag, matching the existing `dotnet run`
+ * `start` target's own cwd-scoping before this change.
  *
  * @param projectRoot - Workspace-relative project directory.
  * @returns The nx:run-commands target object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function csharpAppStartTarget (projectRoot: string): Record<string, unknown> {
+function csharpAppDevTarget (projectRoot: string): Record<string, unknown> {
   return {
     executor:   'nx:run-commands',
     continuous: true,
-    options:    { command: 'dotnet run', cwd: projectRoot },
+    options:    { command: 'dotnet watch run', cwd: projectRoot },
   }
 }
 
@@ -238,10 +322,18 @@ export function addCsharpApp (
   const projectRoot = `apps/${name}`
   scaffoldDotnetProject(workspaceRoot, projectRoot, pascalCase(name), template)
   addProjectJsonTargets(join(workspaceRoot, projectRoot, 'project.json'), {
-    package: csharpAppPackageTarget('csharp-app', projectRoot, name),
-    start:   csharpAppStartTarget(projectRoot),
+    'build':     csharpAppBuildTarget(projectRoot, name, 'Release'),
+    'build-dev': csharpAppBuildTarget(projectRoot, name, 'Debug'),
+    'package':   csharpAppPackageTarget('csharp-app', projectRoot, name),
+    'start':     csharpAppStartTarget(name),
+    'dev':       csharpAppDevTarget(projectRoot),
   })
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: `nx run ${name}:build-dev`,
+    start:    `nx run ${name}:start`,
+    dev:      `nx run ${name}:dev`,
+  })
 }
 
 /**
@@ -761,25 +853,54 @@ public class Hello
 }
 
 /**
- * The `start` target for a C# function app: `dotnet run`, locally.
+ * The `start` target for a C# function app: run the already-built DLL, no rebuild.
  *
  * @remarks
- * `Azure.Functions.Sdk` wires `dotnet run` to start the Functions host
- * directly when Azure Functions Core Tools (`func`) is installed — the same
- * assumption `nodeFunctionAppStartTarget`'s `func start` already makes, just
- * invoked through `dotnet` rather than `func` itself, since that is what
- * the project's own tooling now integrates with.
+ * Same shape as {@link csharpAppStartTarget} and the same reasoning:
+ * `dotnet <assembly>.dll` and `dotnet run` are equivalent entry points at
+ * the .NET runtime level — both ultimately invoke the compiled assembly's
+ * `Main()`, which is where `Azure.Functions.Sdk`'s isolated-worker startup
+ * wiring (`ConfigureFunctionsWebApplication()` in `Program.cs`) actually
+ * lives — so running the DLL directly is expected to start the Functions
+ * host the same way `dotnet run` already does, verified nowhere further
+ * than that reasoning: this environment has no live SDK to run either shape
+ * against.
+ *
+ * @param name - The function app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function csharpFunctionAppStartTarget (name: string): Record<string, unknown> {
+  const dll = `dist/apps/${name}/${pascalCase(name)}.dll`
+
+  return {
+    executor:   'nx:run-commands',
+    continuous: true,
+    dependsOn:  ['build'],
+    options:    { command: `dotnet ${dll}` },
+  }
+}
+
+/**
+ * The `dev` target for a C# function app: `dotnet watch run`, locally.
+ *
+ * @remarks
+ * Identical to {@link csharpAppDevTarget} — the Functions isolated-worker
+ * host starts the same way a plain console app does (see
+ * {@link csharpFunctionAppStartTarget}'s remarks), so `dotnet watch` needs no
+ * function-app-specific handling.
  *
  * @param projectRoot - Workspace-relative project directory.
  * @returns The nx:run-commands target object.
  * @throws Never - pure object construction.
  * @typeParam None - this function has no generic type parameters.
  */
-function csharpFunctionAppStartTarget (projectRoot: string): Record<string, unknown> {
+function csharpFunctionAppDevTarget (projectRoot: string): Record<string, unknown> {
   return {
     executor:   'nx:run-commands',
     continuous: true,
-    options:    { command: 'dotnet run', cwd: projectRoot },
+    options:    { command: 'dotnet watch run', cwd: projectRoot },
   }
 }
 
@@ -816,8 +937,16 @@ export function addCsharpFunctionApp (workspaceRoot: string, name: string): void
   writeFileEnsured(join(absoluteRoot, 'host.json'), CSHARP_FUNCTION_APP_HOST_JSON)
 
   addProjectJsonTargets(join(absoluteRoot, 'project.json'), {
-    package: csharpAppPackageTarget('csharp-function-app', projectRoot, name),
-    start:   csharpFunctionAppStartTarget(projectRoot),
+    'build':     csharpAppBuildTarget(projectRoot, name, 'Release'),
+    'build-dev': csharpAppBuildTarget(projectRoot, name, 'Debug'),
+    'package':   csharpAppPackageTarget('csharp-function-app', projectRoot, name),
+    'start':     csharpFunctionAppStartTarget(name),
+    'dev':       csharpFunctionAppDevTarget(projectRoot),
   })
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: `nx run ${name}:build-dev`,
+    start:    `nx run ${name}:start`,
+    dev:      `nx run ${name}:dev`,
+  })
 }

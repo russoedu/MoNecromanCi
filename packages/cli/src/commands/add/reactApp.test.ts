@@ -114,11 +114,15 @@ describe('runAdd react-app', () => {
     const targets = manifest.nx.targets
 
     // One build target per environment: vite build --mode <env> --outDir dist-<env>.
+    // The 'dev' environment additionally carries --sourcemap — the target
+    // <name>:build:dev aliases to, in the uniform build/build:dev/start/dev
+    // convention every app kind now has.
     for (const environment of ['dev', 'uat', 'prod']) {
+      const sourcemapFlag = environment === 'dev' ? ' --sourcemap' : ''
       expect(targets[`build-${environment}`]).toMatchObject({
         executor: 'nx:run-commands',
         options:  {
-          command: `vite build --mode ${environment} --outDir dist-${environment}`,
+          command: `vite build --mode ${environment} --outDir dist-${environment}${sourcemapFlag}`,
           cwd:     'apps/web',
         },
       })
@@ -133,6 +137,17 @@ describe('runAdd react-app', () => {
       '{workspaceRoot}/dist/drop/react-app-web-prod.zip',
     ])
     expect(targets.package.options.command).toContain('writeZip(\'dist/drop/react-app-web-uat.zip\')')
+
+    // The uniform local-dev scripts: start/dev route through Vite's own
+    // inferred preview/dev targets (never serve, deprecated upstream), and
+    // build:dev aliases to the dev-environment build above.
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['web:build']).toBe('nx run web:build')
+    expect(rootManifest.scripts['web:build:dev']).toBe('nx run web:build-dev')
+    expect(rootManifest.scripts['web:start']).toBe('nx run web:preview')
+    expect(rootManifest.scripts['web:dev']).toBe('nx run web:dev')
   })
 
   it('passes the vitest runner from nx.json to the react generator', async () => {

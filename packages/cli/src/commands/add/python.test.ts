@@ -106,12 +106,32 @@ describe('runAdd python', () => {
       options:    { command: 'python3 main.py', cwd: 'apps/svc' },
     })
 
+    // dev restarts on every .py change via watchmedo — --no-restart-on-command-exit
+    // is what stops it busy-looping on this sample main.py, which exits
+    // immediately on its own.
+    expect(project.targets.dev).toMatchObject({
+      executor:   'nx:run-commands',
+      continuous: true,
+      options:    {
+        command: 'watchmedo auto-restart --directory=. --pattern=*.py --recursive ' +
+          '--no-restart-on-command-exit -- python3 main.py',
+        cwd: 'apps/svc',
+      },
+    })
+
+    // No build:dev: Python has nothing to distinguish from `start`, there is
+    // no separate compile step.
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
     expect(rootManifest.scripts['svc:build']).toBe('nx run svc:build')
     expect(rootManifest.scripts['svc:qa']).toBe('nx run svc:lint && nx run svc:test')
     expect(rootManifest.scripts['svc:start']).toBe('nx run svc:start')
+    expect(rootManifest.scripts['svc:dev']).toBe('nx run svc:dev')
+    expect(rootManifest.scripts['svc:build:dev']).toBeUndefined()
+
+    // watchdog (watchmedo's own package) joins the fixed dev toolchain.
+    expect(readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')).toContain('watchdog')
   })
 
   it('adds a Python Azure Function: delegates to @mnci/nx-python-pip:function-application, packages the source zip', async () => {
@@ -167,6 +187,10 @@ describe('runAdd python', () => {
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
     // No build script: a Python function app has no build target at all.
     expect(rootManifest.scripts['api:build']).toBeUndefined()
+    // No dev target either: a documented gap, not an oversight — see
+    // pythonFunctionAppStartTarget's own remarks for why.
+    expect(project.targets.dev).toBeUndefined()
+    expect(rootManifest.scripts['api:dev']).toBeUndefined()
   })
 
   it('adds a publishable Python lib: delegates to @mnci/nx-python-pip:library, no post-generation merge needed', async () => {

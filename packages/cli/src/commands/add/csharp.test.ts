@@ -151,14 +151,15 @@ describe('runAdd csharp-app', () => {
     expect(command).toContain('dist/drop/csharp-app-api.zip')
   })
 
-  it('wires a local `dotnet run` start target and the discoverable root scripts', async () => {
+  it('wires a start target that runs the already-built DLL, no rebuild', async () => {
     await runAdd('csharp-app', 'api', {})
 
     const { targets } = readProjectJson('apps/api')
-    expect(targets.start).toMatchObject({
+    expect(targets.start).toEqual({
       executor:   'nx:run-commands',
       continuous: true,
-      options:    { command: 'dotnet run', cwd: 'apps/api' },
+      dependsOn:  ['build'],
+      options:    { command: 'dotnet dist/apps/api/Api.dll' },
     })
 
     const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
@@ -167,6 +168,43 @@ describe('runAdd csharp-app', () => {
     expect(rootManifest.scripts['api:build']).toBe('nx run api:build')
     expect(rootManifest.scripts['api:qa']).toBe('nx run api:lint && nx run api:test')
     expect(rootManifest.scripts['api:start']).toBe('nx run api:start')
+  })
+
+  it('wires build (Release) and build:dev (Debug), both into dist/apps/<name>', async () => {
+    await runAdd('csharp-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets.build).toEqual({
+      executor: 'nx:run-commands',
+      outputs:  ['{workspaceRoot}/dist/apps/api'],
+      options:  { command: 'dotnet build apps/api -c Release -o dist/apps/api' },
+    })
+    expect(targets['build-dev']).toEqual({
+      executor: 'nx:run-commands',
+      outputs:  ['{workspaceRoot}/dist/apps/api'],
+      options:  { command: 'dotnet build apps/api -c Debug -o dist/apps/api' },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:build:dev']).toBe('nx run api:build-dev')
+  })
+
+  it('wires a dev target running `dotnet watch run`, no extra tooling needed', async () => {
+    await runAdd('csharp-app', 'api', {})
+
+    const { targets } = readProjectJson('apps/api')
+    expect(targets.dev).toEqual({
+      executor:   'nx:run-commands',
+      continuous: true,
+      options:    { command: 'dotnet watch run', cwd: 'apps/api' },
+    })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['api:dev']).toBe('nx run api:dev')
   })
 })
 
@@ -463,17 +501,26 @@ describe('runAdd csharp-function-app', () => {
     )
   })
 
-  it('adds a package target zipping the isolated-worker publish output, and a dotnet run start target', async () => {
+  it('adds a package target zipping the isolated-worker publish output, plus start/dev targets', async () => {
     await runAdd('csharp-function-app', 'api', {})
 
     const { targets } = readProjectJson('apps/api')
     expect(targets.package.executor).toBe('nx:run-commands')
     const command = String(targets.package.options?.command)
     expect(command).toContain('dist/drop/csharp-function-app-api.zip')
-    expect(targets.start).toMatchObject({
+    // Same shape as csharp-app: start runs the built DLL (no rebuild), dev is
+    // `dotnet watch run` — the isolated-worker host starts identically either
+    // way, since both invoke the compiled assembly's own Main().
+    expect(targets.start).toEqual({
       executor:   'nx:run-commands',
       continuous: true,
-      options:    { command: 'dotnet run', cwd: 'apps/api' },
+      dependsOn:  ['build'],
+      options:    { command: 'dotnet dist/apps/api/Api.dll' },
+    })
+    expect(targets.dev).toEqual({
+      executor:   'nx:run-commands',
+      continuous: true,
+      options:    { command: 'dotnet watch run', cwd: 'apps/api' },
     })
   })
 

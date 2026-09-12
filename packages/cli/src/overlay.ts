@@ -1315,12 +1315,22 @@ export function vscodeWorkspace (
   existingLaunch?: { version?: string; configurations?: Record<string, unknown>[] },
   existingSettings?: Record<string, unknown>,
 ): string {
-  // Additive, like nx.json's sharedGlobals: mnci replaces only the configurations it
-  // owns (named `mnci: *`) and carries every other one through, so a hand-written
-  // debug config survives `mnci upgrade`. Tasks are carried through wholesale
-  // instead, because `mnci add` — not the overlay — is what writes them.
+  // Additive, like nx.json's sharedGlobals: mnci replaces only the FOUR fixed
+  // configurations it owns here (matched by exact name, not by prefix) and
+  // carries every other one through untouched — a hand-written debug config
+  // survives `mnci upgrade`, and so does the per-project `mnci: <name> dev`
+  // launch config `registerProjectCommands` (`add/shared.ts`) writes. Those
+  // per-project configs share the same `LAUNCH_CONFIG_PREFIX` (so a user can
+  // tell at a glance that mnci wrote them) but are NOT one of this function's
+  // four reserved names, so a prefix-based filter would have deleted them on
+  // every upgrade — the exact `tasks`-regeneration bug #17 already fixed once,
+  // in a new costume. Tasks are carried through wholesale for the same reason
+  // `mnci add`, not the overlay, is what writes them.
+  const reservedLaunchNames = new Set(
+    LAUNCH_CONFIGURATIONS.map(script => `${LAUNCH_CONFIG_PREFIX}${script}`),
+  )
   const userConfigurations = (existingLaunch?.configurations ?? []).filter(
-    (configuration) => !String(configuration.name ?? '').startsWith(LAUNCH_CONFIG_PREFIX),
+    (configuration) => !reservedLaunchNames.has(String(configuration.name ?? '')),
   )
   // Settings are MERGED, with mnci winning on the keys it owns. Replacing them
   // wholesale destroyed every setting a workspace had added for itself — measured on

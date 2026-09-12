@@ -113,6 +113,75 @@ function nodeAppPackageTarget (name: string): Record<string, unknown> {
 }
 
 /**
+ * The `start` target for a Node app: run the already-built production output, no rebuild.
+ *
+ * @remarks
+ * `@nx/node:application` writes a `build` target whose `production`
+ * configuration is the DEFAULT (verified against a real generated
+ * workspace's `apps/<name>/package.json`) — bare `nx build` therefore
+ * already means "production, no source map", and its `development`
+ * configuration (empty, inheriting the base options' `sourcemap: true`) is
+ * exactly what {@link nodeAppBuildDevCommand} points `<name>:build:dev` at.
+ *
+ * This target reuses the same `@nx/js:node` executor the generator's own
+ * inferred `serve` target uses, but with `watch: false` — the one option
+ * that makes it "build once (cached by Nx if unchanged), then run", never
+ * "build, watch, rebuild on every change". That distinction is the whole
+ * reason `start` and `dev` are two different scripts rather than one: `dev`
+ * is the generator's own `serve` target (watch: true by executor default,
+ * left entirely alone), and this is its one-shot counterpart, which the
+ * generator does not provide on its own.
+ *
+ * **`buildTarget` needs the manifest's own `name`, not the CLI's project
+ * name.** Verified the hard way: `nx run api:build:development` resolves fine
+ * (the CLI's own argument parser tolerates the short form), but
+ * `@nx/js:node`'s `buildTarget` option does its own project-graph lookup and
+ * rejects it outright — `nx show project api` reports the real project name
+ * as the scoped package name (e.g. `@probe/api`), exactly what
+ * `@nx/node:application` itself already uses in the `serve` target it
+ * writes. This function reads that name back from the manifest
+ * {@link runNodeApp} just wrote, rather than reconstructing it from a scope
+ * the caller would have to thread through.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param name - The Node app's project name (its directory under `apps/`).
+ * @returns The `@nx/js:node` target object.
+ * @throws Propagates any `fs`/JSON error reading the project's own manifest.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nodeAppStartTarget (workspaceRoot: string, name: string): Record<string, unknown> {
+  const { name: qualifiedName } = readJson<{ name: string }>(
+    join(workspaceRoot, 'apps', name, 'package.json'),
+  )
+
+  return {
+    executor:   '@nx/js:node',
+    continuous: true,
+    dependsOn:  ['build'],
+    options:    { buildTarget: `${qualifiedName}:build`, watch: false },
+  }
+}
+
+/**
+ * The `<name>:build:dev` command for a Node app: the generator's own
+ * `development` build configuration, source maps on.
+ *
+ * @remarks
+ * Not a new target — `@nx/node:application` already writes this
+ * configuration on the `build` target (see {@link nodeAppStartTarget}'s
+ * remarks); this just gives it a name in the uniform `build`/`build:dev`/
+ * `start`/`dev` convention every app kind now carries.
+ *
+ * @param name - The Node app's project name.
+ * @returns The `nx run` invocation for `registerProjectCommands`.
+ * @throws Never - pure string formatting.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nodeAppBuildDevCommand (name: string): string {
+  return `nx run ${name}:build:development`
+}
+
+/**
  * Adds a plain Node app: `@nx/node:application` plus a packaging target.
  *
  * @remarks
@@ -140,9 +209,15 @@ export function addNodeApp (
   ensureAdmZip(workspaceRoot)
   addNxTargets(join(workspaceRoot, 'apps', name, 'package.json'), {
     package: nodeAppPackageTarget(name),
+    start:   nodeAppStartTarget(workspaceRoot, name),
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:serve` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: nodeAppBuildDevCommand(name),
+    start:    `nx run ${name}:start`,
+    dev:      `nx run ${name}:serve`,
+  })
 }
 
 /**
@@ -376,6 +451,49 @@ function nodeFunctionAppStartTarget (name: string): Record<string, unknown> {
 }
 
 /**
+ * The `dev` target for a Node Azure Function: watch-rebuild plus `func start`, together.
+ *
+ * @remarks
+ * `func start` reads `dist/main.js` once at startup and does not itself
+ * rebuild on a TypeScript source change — that needs a second, continuously
+ * running process, esbuild in its own `--watch` mode
+ * (`@nx/esbuild:esbuild`'s own `watch` option, verified against a real
+ * generated workspace's executor schema). `nx:run-commands` runs both
+ * `commands` entries as siblings under one target with `parallel: true`, so
+ * this needs no extra dependency (`concurrently` et al.) the way the
+ * equivalent Python/Go setups do.
+ *
+ * **`dependsOn: ['build:development']` closes a race, not a formality.**
+ * `parallel: true` starts both commands at once, with no ordering
+ * guarantee — a `func start` that wins the race finds no `dist/main.js` yet
+ * and fails outright. Depending on one full `development`-configuration
+ * build first (Nx-cached if already current) guarantees the file exists
+ * before either command runs; the watcher's own first pass then reproduces
+ * that exact build a moment later, which is redundant but cheap (esbuild
+ * builds in well under a second on a project this size) and the only way to
+ * remove the race without a bespoke wait-for-file step.
+ *
+ * @param name - The function app's project name.
+ * @returns The nx:run-commands target object.
+ * @throws Never - pure object construction.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function nodeFunctionAppDevTarget (name: string): Record<string, unknown> {
+  return {
+    executor:   'nx:run-commands',
+    dependsOn:  ['build:development'],
+    continuous: true,
+    options:    {
+      commands: [
+        { command: `nx run ${name}:build:development --watch` },
+        { command: 'func start', cwd: `apps/${name}` },
+      ],
+      parallel: true,
+    },
+  }
+}
+
+/**
  * Adds a Node Azure Function: `@nx/node:application` plus the Azure Functions v4 shape.
  *
  * @remarks
@@ -422,7 +540,13 @@ export function addNodeFunctionApp (
   addNxTargets(join(nodeFunctionAppRoot, 'package.json'), {
     package: nodeFunctionAppPackageTarget(name),
     start:   nodeFunctionAppStartTarget(name),
+    dev:     nodeFunctionAppDevTarget(name),
   })
   removeGeneratedEslintConfig(workspaceRoot, `apps/${name}`)
-  registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
+  registerProjectCommands(workspaceRoot, name, {
+    build:    true,
+    buildDev: nodeAppBuildDevCommand(name),
+    start:    `nx run ${name}:start`,
+    dev:      `nx run ${name}:dev`,
+  })
 }
