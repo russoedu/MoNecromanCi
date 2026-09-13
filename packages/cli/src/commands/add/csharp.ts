@@ -394,7 +394,7 @@ class CsharpVersionActions extends VersionActions {
     if (!VERSION_TAG.test(contents)) {
       throw new Error(\`Could not find a <Version> element in \${manifestPath}\`)
     }
-    tree.write(manifestPath, contents.replace(VERSION_TAG, \`<Version>\${newVersion}</Version>\`))
+    tree.write(manifestPath, contents.replace(VERSION_TAG, () => \`<Version>\${newVersion}</Version>\`))
 
     return [\`Updated \${manifestPath} to version \${newVersion}\`]
   }
