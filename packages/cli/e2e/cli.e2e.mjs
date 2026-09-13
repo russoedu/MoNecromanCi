@@ -528,8 +528,15 @@ section('js stack', [], () => {
   tryRunCapture('npx eslint standard-probe.ts --fix', workspace)
   const formatted = readFileSync(standardProbe, 'utf8')
   enforce(
-    'eslint --fix applies Standard for real (single quotes, no semicolons, no trailing comma)',
-    formatted.includes("a: 'x'") && !formatted.includes('"x"') && !formatted.includes('b: 2,'),
+    // `b: 2,` staying dangling is not a miss — it is `mnci/house-style`'s own
+    // `comma-dangle: 'always-multiline'` departure from plain Standard's
+    // `'never'` (composed AFTER `mnci/standard`, so the departure wins; see
+    // `configs/houseStyle.js`). This assertion used to require the comma
+    // GONE, which is what plain Standard does — stale from before the
+    // departure shipped, and it is exactly the kind of drift a real `--fix`
+    // run catches that a doc comment would not.
+    'eslint --fix applies Standard for real (single quotes, no semicolons, multi-line trailing comma kept per mnci/house-style)',
+    formatted.includes("a: 'x'") && !formatted.includes('"x"') && formatted.includes('b: 2,'),
     JSON.stringify(formatted),
   )
   // The rule no formatter could ever satisfy, and the headline of the whole

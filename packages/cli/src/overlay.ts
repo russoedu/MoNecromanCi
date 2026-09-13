@@ -796,6 +796,22 @@ export function reactExpressPeerOverride (
  * dogfooding drift as the missing audit step: fixed here, never shipped. That is
  * the argument for the audit step being blocking — it found this the first time
  * it ever ran somewhere that mattered.
+ *
+ * **`nx` → `smol-toml` is the same drift, recurring.** `smol-toml <=1.7.0`
+ * (GHSA-7w5x-hrqm-74c2, a parser DoS on malformed TOML) is a second instance of
+ * "nx's own transitive dependency", fixed on this repo's own tree by nesting
+ * `smol-toml` under the SAME `nx` entry already here for `brace-expansion` — and,
+ * exactly like that fix, never carried over to what `mnci new` ships. A generated
+ * workspace's own audit step caught it the moment C#/.NET support shipped an e2e
+ * failure into the `flutter` section too: the SDK-resolution crash the broken
+ * `nuget.config` XML caused (fixed separately, see `nugetConfigContent`) corrupted
+ * the whole run's project graph, but the npm audit block on a *fresh* `demo`
+ * workspace — generated **before** any C# kind ever touches `nuget.config` — was
+ * failing independently, for this reason alone. Unlike `brace-expansion`, ONE
+ * entry nested under `nx` is enough: `smol-toml` is a dependency of `nx` itself,
+ * not independently required by each `@nx/*` package the audit names, so there is
+ * no sibling edge for a per-parent override to reach — verified by running the
+ * real `NPM_AUDIT_STEP` against a workspace carrying only this one entry.
  */
 export const ESLINT_PEER_OVERRIDES = {
   'eslint-plugin-jsx-a11y': { eslint: '$eslint' },
@@ -812,7 +828,7 @@ export const ESLINT_PEER_OVERRIDES = {
   // both — and forcing those to v5 breaks them. So the blast radius is one
   // dependency edge per named parent, and a test asserts there is no top-level
   // entry.
-  'nx':                     { 'brace-expansion': '^5.0.9' },
+  'nx':                     { 'brace-expansion': '^5.0.9', 'smol-toml': '^1.7.1' },
   '@nx/js':                 { 'brace-expansion': '^5.0.9' },
   '@nx/eslint':             { 'brace-expansion': '^5.0.9' },
   '@nx/eslint-plugin':      { 'brace-expansion': '^5.0.9' },
@@ -1631,8 +1647,8 @@ export function nugetConfigContent (registry: RegistryConfig, scope: string): st
      nuget.org-issued API key, a credential mnci collects nowhere (the same
      gap Python's PyPI publish has for this same registry choice). A
      csharp-lib is still versioned and tagged; run "dotnet nuget push"
-     yourself with your own key, or regenerate with --registry
-     azure-artifacts. -->
+     yourself with your own key, or regenerate choosing the azure-artifacts
+     registry instead. -->
 <configuration>
   <packageSources>
     <clear />

@@ -295,6 +295,32 @@ describe('nugetConfigContent', () => {
       expect(config.match(/<\/configuration>/g)).toHaveLength(1)
     }
   })
+
+  // This is the rule the tag-balance check above CANNOT catch, and the one
+  // that actually broke a real nightly: the npm-registry comment once
+  // explained the escape hatch as "regenerate with --registry azure-artifacts",
+  // and the XML spec forbids '--' anywhere inside a comment body. Nothing in
+  // this file's own generation errored — the break surfaced three layers
+  // downstream, as `dotnet restore` refusing to parse the generated
+  // NuGet.Config at all ("NuGet.Config is not valid XML... An XML comment
+  // cannot contain '--'"), which then took @nx/dotnet's own SDK-resolution
+  // step down with it (a *different*, misleading error: "The SDK
+  // 'Azure.Functions.Sdk/1.0.0' specified could not be found") and from there
+  // the whole Nx project graph, breaking every later, unrelated `mnci add` in
+  // the same e2e run. A test that only balances open/close tags passed the
+  // whole time.
+  it('never emits an XML comment containing "--" or ending in "-" — both invalidate the whole document', () => {
+    for (const config of [nugetConfigContent({ kind: 'npm' }, '@demo'), nugetConfigContent(azureRegistry, '@demo')]) {
+      const comments = config.match(/<!--[\s\S]*?-->/g) ?? []
+      expect(comments.length).toBeGreaterThan(0)
+      for (const comment of comments) {
+        const body = comment.slice(4, -3)
+
+        expect(body).not.toContain('--')
+        expect(body.endsWith('-')).toBe(false)
+      }
+    }
+  })
 })
 
 describe('withReleaseConfig', () => {
@@ -2262,12 +2288,19 @@ describe('applyOverlay', () => {
     // `@nx/eslint`, `@nx/eslint-plugin` and `@nx/workspace` all inherit, and npm
     // reports the fix as semver-major, so `npm audit fix` would try to bump `nx`
     // itself. This repo had carried the same override for its own tree all along.
-    for (const parent of ['nx', '@nx/js', '@nx/eslint', '@nx/eslint-plugin', '@nx/workspace']) {
+    for (const parent of ['@nx/js', '@nx/eslint', '@nx/eslint-plugin', '@nx/workspace']) {
       expect(overrides[parent]).toEqual({ 'brace-expansion': '^5.0.9' })
     }
+    // `nx` itself also carries `smol-toml` — a second, unrelated advisory
+    // (GHSA-7w5x-hrqm-74c2) that is a dependency of `nx` alone rather than each
+    // `@nx/*` package independently, so ONE entry (not five) is the real fix. A
+    // fresh generated workspace's own audit step caught it never having shipped
+    // here, exactly the same dogfooding drift as `brace-expansion` above.
+    expect(overrides.nx).toEqual({ 'brace-expansion': '^5.0.9', 'smol-toml': '^1.7.1' })
     // NOT top-level: a tree with minimatch@3 legitimately carries
     // brace-expansion@1.x, and forcing that to v5 breaks it.
     expect(overrides['brace-expansion']).toBeUndefined()
+    expect(overrides['smol-toml']).toBeUndefined()
   })
 
   it('gives the root project a lint target, since nothing else lints root-level files', () => {
