@@ -486,6 +486,12 @@ describe('runAdd csharp-function-app', () => {
     const csproj = readFileSync(join(workspaceRoot, 'apps/api/Api.csproj'), 'utf8')
     expect(csproj).toContain('Sdk="Azure.Functions.Sdk/1.0.0"')
     expect(csproj).toContain('Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore')
+    // Without this, Hello.cs's `using Microsoft.AspNetCore.Http;`/`.Mvc;`
+    // fail to compile at all (CS0234) — those types live in the ASP.NET Core
+    // shared framework, not any NuGet package, and Azure.Functions.Sdk does
+    // not reference it implicitly the way Microsoft.NET.Sdk.Web does.
+    // Reproduced and fixed against a real .NET 10 SDK, not assumed from docs.
+    expect(csproj).toContain('<FrameworkReference Include="Microsoft.AspNetCore.App" />')
 
     const program = readFileSync(join(workspaceRoot, 'apps/api/Program.cs'), 'utf8')
     expect(program).toContain('FunctionsApplication.CreateBuilder')
@@ -529,6 +535,33 @@ describe('runAdd csharp-function-app', () => {
 
     expect(shellCalls('dotnet')).not.toContainEqual(
       expect.arrayContaining(['-n', expect.stringContaining('Demo.')]),
+    )
+  })
+
+  it('restores again after overwriting the .csproj with the Functions SDK shape', async () => {
+    // scaffoldDotnetProject's own `dotnet new` restore is against the
+    // ORIGINAL plain-console project, thrown away the moment this overwrites
+    // the .csproj — @nx/dotnet's inferred build runs `dotnet build --no-restore`,
+    // so without a second, explicit restore here the first real build has
+    // never resolved Microsoft.Azure.Functions.Worker at all. Reproduced
+    // against a real SDK: the restore call is what turns 7 CS0246 errors
+    // back into a clean build.
+    await runAdd('csharp-function-app', 'api', {})
+
+    expect(shellCalls('dotnet')).toContainEqual(['restore', 'apps/api'])
+  })
+
+  it('fails loudly when the post-overwrite restore itself fails', async () => {
+    mockRunShell.mockImplementation((command, args) => {
+      if (command === 'dotnet' && args[0] === 'restore') {
+        return 1
+      }
+
+      return fakeDotnetNew(command, args, workspaceRoot)
+    })
+
+    await expect(runAdd('csharp-function-app', 'api', {})).rejects.toThrow(
+      'dotnet restore failed for apps/api',
     )
   })
 })

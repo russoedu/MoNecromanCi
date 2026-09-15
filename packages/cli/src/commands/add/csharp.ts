@@ -775,11 +775,33 @@ const CSHARP_FUNCTION_APP_HOST_JSON = `{
  * guide moves existing projects TO — so new projects should start there
  * rather than at the thing that guide migrates away from.
  *
- * **Unverified without a real SDK — the same caveat as
- * {@link csharpAppPackageTarget}.** The package versions below are current
- * as measured against Microsoft's own docs at the time this was written; a
- * real `dotnet restore` is what the gated e2e (task tracked separately)
- * exists to confirm once it can run against a live SDK.
+ * **The `FrameworkReference` is load-bearing, not a performance nicety —
+ * found from a real `dotnet build` failure on the gated Windows e2e, then
+ * confirmed by installing a real .NET 10 SDK and reproducing the exact
+ * failure end to end (real `mnci add csharp-function-app` +
+ * `nx run-many -t build`), not reasoned out from docs alone.** Without it,
+ * `dotnet build` fails with a `CS0234` error naming the missing `AspNetCore`
+ * namespace for every `using Microsoft.AspNetCore.Http;`/
+ * `Microsoft.AspNetCore.Mvc;` line in {@link csharpFunctionAppHello} — with
+ * both package references below already present. The reason: those types
+ * live in the ASP.NET Core SHARED
+ * FRAMEWORK (`Microsoft.AspNetCore.App`), not in any NuGet package.
+ * `Microsoft.NET.Sdk.Web`-based projects reference that framework
+ * implicitly; `Azure.Functions.Sdk` does not, and neither Functions package
+ * pulls it in as a transitive dependency — confirmed against Microsoft's own
+ * docs, where the line only turns up in a separate "Performance
+ * optimizations" section, framed as a cold-start improvement, while the
+ * 4-step "To enable ASP.NET Core integration for HTTP" guide never mentions
+ * it. It is both a perf knob and, for this SDK, a compile-time requirement.
+ * Adding this line alone was not sufficient by itself — see
+ * {@link addCsharpFunctionApp}'s remarks for the second, independent defect
+ * (a stale restore) the same reproduction found.
+ *
+ * The package versions below are current as measured against Microsoft's
+ * own docs and confirmed to exist via a direct NuGet API query
+ * (`api.nuget.org/v3-flatcontainer/.../index.json`); the whole `.csproj`,
+ * `Program.cs` and `Hello.cs` combination was then built end to end against
+ * a real .NET 10.0.401 SDK, restore and all, not merely syntax-checked.
  *
  * @returns The `.csproj` XML content.
  * @throws Never - pure string formatting.
@@ -792,6 +814,7 @@ function csharpFunctionAppCsproj (): string {
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.1.0" />
   </ItemGroup>
@@ -915,10 +938,24 @@ function csharpFunctionAppDevTarget (projectRoot: string): Record<string, unknow
  * No scope/`PackageId` concept, unlike {@link addCsharpLib} — a function app
  * is never NuGet-published, matching every other `*-function-app` kind.
  *
+ * **The `dotnet restore` after overwriting `.csproj` is load-bearing, found
+ * from a real, gated-e2e `dotnet build` failure, not written defensively.**
+ * {@link scaffoldDotnetProject} restores once, but against the ORIGINAL
+ * `console` template `Microsoft.NET.Sdk` project — the restore that
+ * succeeds is for a project shape this function immediately throws away.
+ * Nothing restores again after the overwrite, and `@nx/dotnet`'s own
+ * inferred `build` target runs `dotnet build --no-restore --no-dependencies`
+ * (verified by reading its actual command from a real `nx build` run), on
+ * the assumption restore already happened for the CURRENT project content.
+ * It hadn't: `Microsoft.Azure.Functions.Worker`/`.Extensions.Http.AspNetCore`
+ * were never fetched, so the first real build failed with `CS0246`s for
+ * `Function`/`HttpTrigger`/`AuthorizationLevel` — reproduced against a real
+ * SDK installed for this fix, not assumed from the CI log alone.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
  * @returns Nothing.
- * @throws Error when the SDK is missing, or the plugin install/scaffold fails.
+ * @throws Error when the SDK is missing, or the plugin/scaffold/restore fails.
  * @typeParam None - this function has no generic type parameters.
  */
 export function addCsharpFunctionApp (workspaceRoot: string, name: string): void {
@@ -935,6 +972,10 @@ export function addCsharpFunctionApp (workspaceRoot: string, name: string): void
   writeFileEnsured(join(absoluteRoot, 'Program.cs'), CSHARP_FUNCTION_APP_PROGRAM)
   writeFileEnsured(join(absoluteRoot, 'Hello.cs'), csharpFunctionAppHello(identity))
   writeFileEnsured(join(absoluteRoot, 'host.json'), CSHARP_FUNCTION_APP_HOST_JSON)
+
+  if (runShell('dotnet', ['restore', projectRoot], workspaceRoot) !== 0) {
+    throw new Error(`dotnet restore failed for ${projectRoot}`)
+  }
 
   addProjectJsonTargets(join(absoluteRoot, 'project.json'), {
     'build':     csharpAppBuildTarget(projectRoot, name, 'Release'),
