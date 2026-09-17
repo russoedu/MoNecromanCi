@@ -83,6 +83,19 @@ export default [
       'unicorn/no-null':                                    'off',
       'unicorn/prefer-top-level-await':                     'off',
       'unicorn/no-array-reduce':                            'off',
+      // These three demand the ES2023 non-mutating array copy methods
+      // (`toSorted`/`toReversed`/`toSpliced`) — real advice on a runtime that
+      // has them, and a rule the generated workspace's own `tsconfig.base.json`
+      // cannot satisfy: its `lib` is `es2022`, which mnci does not own or
+      // patch (see "Files mnci owns" in CLAUDE.md — that file is
+      // create-nx-workspace's), so `toSorted()` is a real TS2550 in every
+      // generated project even though Node 20+ (mnci pins Node 24) supports it
+      // at runtime. Satisfying the rule breaks `typecheck`; satisfying
+      // `typecheck` fails the rule — both mnci-owned gates, contradicting each
+      // other over one line, on every project the moment it calls `.sort()`.
+      'unicorn/no-array-sort':                              'off',
+      'unicorn/no-array-reverse':                           'off',
+      'unicorn/no-array-splice':                            'off',
       // Demands `import path from 'node:path'` over `import { join } from
       // 'node:path'`. Named imports are idiomatic, tree-shake better, and are
       // what Nx's own generators emit — this is preference, not correctness.

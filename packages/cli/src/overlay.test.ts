@@ -16,6 +16,7 @@ import {
   azurePipelinesYaml,
   DEFAULT_STACK,
   devcontainerJson,
+  ensureEslintCacheIgnored,
   ESLINT_BLOCK_INVENTORY,
   DOTNET_SDK_VERSION,
   ESLINT_CONFIG_VERSION,
@@ -1893,6 +1894,42 @@ describe('DOTNET_SDK_VERSION', () => {
   })
 })
 
+describe('ensureEslintCacheIgnored', () => {
+  let workspaceRoot: string
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-eslintcache-'))
+  })
+
+  afterEach(() => {
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('is a no-op when there is no .gitignore to append to', () => {
+    ensureEslintCacheIgnored(workspaceRoot)
+
+    expect(existsSync(join(workspaceRoot, '.gitignore'))).toBe(false)
+  })
+
+  it('adds a trailing newline and a blank-line separator before the new entry', () => {
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\nnode_modules')
+
+    ensureEslintCacheIgnored(workspaceRoot)
+
+    expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe(
+      'dist\nnode_modules\n\n# Added by MoNecromanCI: `npm run format`/`lint` run `eslint --cache`.\n.eslintcache\n',
+    )
+  })
+
+  it('recognises the entry with surrounding whitespace, not just an exact line', () => {
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\n  .eslintcache  \n')
+
+    ensureEslintCacheIgnored(workspaceRoot)
+
+    expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe('dist\n  .eslintcache  \n')
+  })
+})
+
 describe('applyOverlay', () => {
   let workspaceRoot: string
 
@@ -1918,6 +1955,46 @@ describe('applyOverlay', () => {
 
   afterEach(() => {
     rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('appends .eslintcache to an existing .gitignore create-nx-workspace wrote', () => {
+    writeFileSync(
+      join(workspaceRoot, '.gitignore'),
+      ['# compiled output', 'dist', '', 'node_modules', ''].join('\n'),
+    )
+
+    overlayWith(DEFAULT_STACK)
+
+    const gitignore = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')
+    expect(gitignore.split('\n')).toContain('.eslintcache')
+    // Nothing create-nx-workspace already wrote is disturbed.
+    expect(gitignore).toContain('dist')
+    expect(gitignore).toContain('node_modules')
+  })
+
+  it('does not duplicate the entry on a second mnci upgrade', () => {
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\nnode_modules\n')
+
+    overlayWith(DEFAULT_STACK)
+    overlayWith(DEFAULT_STACK)
+
+    const gitignore = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')
+    expect(gitignore.match(/^\.eslintcache$/gm)).toHaveLength(1)
+  })
+
+  it('leaves a .gitignore that already ignores it untouched', () => {
+    const original = 'dist\nnode_modules\n.eslintcache\n'
+    writeFileSync(join(workspaceRoot, '.gitignore'), original)
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe(original)
+  })
+
+  it('does not write a .gitignore that was never there (create-nx-workspace owns it)', () => {
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, '.gitignore'))).toBe(false)
   })
 
   it('writes the five overlay files and leaves the rest of nx.json intact', () => {

@@ -177,6 +177,37 @@ describe('react-lib', () => {
     expect(scripts['ui:qa']).toBe('nx run ui:lint && nx run ui:test')
     expect(scripts['ui:start']).toBeUndefined()
   })
+
+  it('still repairs the manifest when the generator writes files then its plugin install fails', async () => {
+    // Same class as npm-lib's: @nx/react:library --bundler=rollup fetches
+    // @nx/rollup on first use too, so it shares the exact failure shape —
+    // routed through the same runGeneratorAndRepair wrapper. @nx/react itself
+    // is pre-declared so ensurePlugin's own `nx add` call (a separate, earlier
+    // runNx call this test is not about) is skipped rather than also throwing.
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: '@demo/source', devDependencies: { '@nx/react': '23.0.0' } }),
+    )
+    seedProjectManifest('packages/ui', '@demo/ui')
+    mockRunNx.mockImplementation(() => {
+      throw new Error('nx g @nx/react:library packages/ui ... failed with exit code 1')
+    })
+
+    await expect(runAdd('react-lib', 'ui', {})).rejects.toThrow(
+      /generated and mnci's own repairs were applied.*install step still failed/s,
+    )
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
+    ) as { types: string; publishConfig: { access: string } }
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.publishConfig).toEqual({ access: 'public' })
+
+    // mockRunNx is a bare jest.fn(), not a jest.spyOn() — restoreAllMocks() in
+    // afterEach does not reset its implementation, so a throwing override here
+    // would otherwise leak into every test that runs after this one.
+    mockRunNx.mockReset()
+  })
 })
 
 describe('react-internal-lib', () => {

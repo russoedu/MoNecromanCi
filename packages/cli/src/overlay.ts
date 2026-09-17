@@ -1,6 +1,13 @@
-import { existsSync, globSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, globSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { markExecutable, readCodeWorkspace, readJson, toJson, writeFileEnsured } from './util/fsx'
+import {
+  fileExists,
+  markExecutable,
+  readCodeWorkspace,
+  readJson,
+  toJson,
+  writeFileEnsured,
+} from './util/fsx'
 
 /**
  * Where a generated monorepo publishes its npm packages.
@@ -1987,8 +1994,11 @@ const DOTNET_DETECT_AZURE = 'node -e "const fs=require(\'node:fs\');const has=[.
  * not in a workspace-local `.flutter-sdk`. Two reasons, and the second is the
  * serious one:
  *
- * 1. Nothing needs adding to `.gitignore` (the overlay writes no `.gitignore`
- *    of its own; `create-nx-workspace` owns that file).
+ * 1. Nothing needs adding to `.gitignore` for it. The overlay still owns no
+ *    `.gitignore` of its own — `create-nx-workspace` does — but it does now
+ *    append the one entry a decision made here needs (see
+ *    {@link ensureEslintCacheIgnored}); this SDK path was chosen specifically
+ *    so it would never need a second one.
  * 2. The Flutter SDK ships **its own `pubspec.yaml` files** — dozens of them,
  *    across `packages/flutter`, `packages/flutter_test` and the rest. Cloning
  *    it inside the workspace would drop those into the pub workspace's own
@@ -3166,6 +3176,49 @@ export function removeIfPresent (path: string): void {
 }
 
 /**
+ * Adds `.eslintcache` to `.gitignore` if it is not already there.
+ *
+ * @remarks
+ * `mnci` never writes `.gitignore` itself — `create-nx-workspace` owns that
+ * file, and nothing here needed adding to it, historically. That stopped
+ * being true the moment the root `format`/`lint` scripts adopted
+ * `eslint --cache` (measured 3.4x faster on an unchanged re-run): the very
+ * first `npm run format` a fresh workspace runs — during `mnci new` itself —
+ * writes a root `.eslintcache` file that `create-nx-workspace`'s own
+ * `.gitignore` template has no reason to know about. Confirmed end to end: a
+ * freshly generated workspace's very first `git add -A` (the command
+ * `mnci new`'s own "Next steps" output tells the user to run) stages it.
+ *
+ * A plain string check, not a `.gitignore` parser: `.eslintcache` is written
+ * here as a single bare line, so a literal line match is exactly as correct
+ * as parsing gitignore syntax would be, without pulling in a parser for one
+ * pattern. Idempotent — `mnci upgrade` runs this on every existing workspace,
+ * and a workspace that already has the line (added by hand, or by a previous
+ * `mnci upgrade`) is left untouched.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any `fs` error reading or writing `.gitignore`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function ensureEslintCacheIgnored (workspaceRoot: string): void {
+  const gitignorePath = join(workspaceRoot, '.gitignore')
+  if (!fileExists(gitignorePath)) {
+    return
+  }
+  const current = readFileSync(gitignorePath, 'utf8')
+  if (current.split('\n').some(line => line.trim() === '.eslintcache')) {
+    return
+  }
+  const withoutTrailingBlankLines = current.replace(/\n+$/, '')
+  const separator = withoutTrailingBlankLines.length > 0 ? '\n\n' : ''
+  writeFileEnsured(
+    gitignorePath,
+    `${withoutTrailingBlankLines}${separator}# Added by MoNecromanCI: \`npm run format\`/\`lint\` run \`eslint --cache\`.\n.eslintcache\n`,
+  )
+}
+
+/**
  * Deletes every per-project ESLint config in the workspace.
  *
  * @remarks
@@ -3322,6 +3375,10 @@ export function applyOverlay (
   // `add` deletes the per-project ones Nx generators write.
   onProgress('eslint.config.mjs — the shared lint AND formatting opinion')
   writeFileEnsured(join(workspaceRoot, 'eslint.config.mjs'), ESLINT_CONFIG)
+  // `format`/`lint`'s `--cache` flag writes a root .eslintcache that
+  // create-nx-workspace's own .gitignore template has no reason to know
+  // about — see ensureEslintCacheIgnored.
+  ensureEslintCacheIgnored(workspaceRoot)
   // Every config a previous mnci version could have written for a second tool
   // has to be REMOVED, not merely left unwritten. A stale `.prettierrc.mjs` or
   // `.oxfmtrc.json` does nothing on its own now that neither binary runs, but a

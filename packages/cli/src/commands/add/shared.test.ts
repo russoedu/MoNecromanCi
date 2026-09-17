@@ -14,6 +14,7 @@ import {
   registerProjectCommands,
   relocateRootRuntimeDependencies,
   removeGeneratedEslintConfig,
+  repairDeclarationSpecifiers,
   resolveRollupConfigText,
   rootRuntimeDependencies,
   withRollupSourceMaps,
@@ -578,5 +579,160 @@ describe('resolveRollupConfigText', () => {
     writeFileSync(join(workspaceRoot, 'b.cjs'), "require('./a.cjs')")
 
     expect(() => resolveRollupConfigText(join(workspaceRoot, 'a.cjs'))).not.toThrow()
+  })
+})
+
+describe('withRollupSourceMaps: the compiler swap on a config eslint already reformatted', () => {
+  it('still swaps swc for babel when key-spacing alignment padded the colon', () => {
+    // The reported bug: a config that has never been repaired, but has been
+    // through one `eslint --fix` pass (every mnci-generated file gets one) so
+    // @stylistic/key-spacing padded every value out to the object's longest
+    // key. A plain-string match on "    compiler: 'swc'," (one space) silently
+    // stops matching the moment the padding changes that spacing - which is
+    // exactly the shape `mnci upgrade` reaches when it finishes an `add` that
+    // crashed after the generator wrote files but before mnci's own repair
+    // ran. Reproduced end to end against a real generated workspace before
+    // this test was written.
+    const aligned = [
+      "const { withNx } = require('@nx/rollup/with-nx')",
+      '',
+      'module.exports = withNx(',
+      '  {',
+      "    main:       './src/index.ts',",
+      "    outputPath: './dist',",
+      "    tsConfig:   './tsconfig.lib.json',",
+      "    compiler:   'swc',",
+      "    format:     ['esm'],",
+      '  },',
+      '  {',
+      '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+      '  },',
+      ')',
+    ].join('\n')
+
+    const after = withRollupSourceMaps(aligned)
+
+    expect(after).toContain("compiler: 'babel',")
+    expect(after).not.toMatch(/compiler:\s*'swc'/)
+    expect(after).toMatch(/sourceMap\s*:\s*true\b/)
+  })
+
+  it('preserves the original indentation when swapping an aligned compiler line', () => {
+    const deeplyIndented = [
+      "const { withNx } = require('@nx/rollup/with-nx')",
+      'module.exports = withNx(',
+      '  {',
+      '    additionalEntryPoints: [],',
+      "    compiler:              'swc',",
+      '  },',
+      '  {',
+      '  },',
+      ')',
+    ].join('\n')
+
+    const after = withRollupSourceMaps(deeplyIndented)
+
+    // The replacement's own lines (comment + compiler line) all start at the
+    // same 4-space indent the original `compiler` line had - not 0, and not
+    // whatever column the value happened to be aligned to.
+    expect(after).toContain("\n    compiler: 'babel',")
+    expect(after).not.toContain('\n babel')
+  })
+})
+
+/**
+ * Requires the rollup config `repairDeclarationSpecifiers` wrote, with a stub
+ * `@nx/rollup/with-nx` so the real plugin object underneath is reachable
+ * without pulling in the real rollup toolchain. Returns a function that
+ * invokes the config's dts-fix plugin's real `writeBundle(outputOptions)` —
+ * the actual code that runs at build time, not a description of it.
+ */
+function loadWriteBundle (projectRoot: string): (outputOptions: { dir: string }) => void {
+  const nodeModulesDir = join(projectRoot, 'node_modules', '@nx', 'rollup')
+  mkdirSync(nodeModulesDir, { recursive: true })
+  writeFileSync(
+    join(nodeModulesDir, 'with-nx.js'),
+    'module.exports.withNx = (first, second) => ({ first, second })',
+  )
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loading a real generated .cjs file is the point of this test
+  const config = require(join(projectRoot, 'rollup.config.cjs')) as {
+    second: { plugins: { writeBundle (outputOptions: { dir: string }): void }[] }
+  }
+
+  return outputOptions => config.second.plugins[0].writeBundle(outputOptions)
+}
+
+describe('repairDeclarationSpecifiers: extensionless declaration re-exports under nodenext', () => {
+  it('appends .js to a bare relative specifier in the real declarations, not just the stub', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'src', 'lib'), { recursive: true })
+    writeFileSync(join(distDir, 'index.d.ts'), 'export * from "./src/index";')
+    writeFileSync(join(distDir, 'src', 'index.d.ts'), "export * from './lib/align';\n")
+    writeFileSync(
+      join(distDir, 'src', 'lib', 'align.d.ts'),
+      'export declare function align(xs: number[]): number[];\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe('export * from "./src/index.js";')
+    expect(readFileSync(join(distDir, 'src', 'index.d.ts'), 'utf8')).toBe(
+      "export * from './lib/align.js';\n",
+    )
+    // A file with no relative export at all is left byte-for-byte alone.
+    expect(readFileSync(join(distDir, 'src', 'lib', 'align.d.ts'), 'utf8')).toBe(
+      'export declare function align(xs: number[]): number[];\n',
+    )
+  })
+
+  it('never double-appends an extension a specifier already has', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(distDir, { recursive: true })
+    const alreadyExplicit = "export * from './lib/align.js';\n"
+    writeFileSync(join(distDir, 'index.d.ts'), alreadyExplicit)
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(alreadyExplicit)
   })
 })

@@ -376,4 +376,51 @@ describe('runAdd npm-lib', () => {
 
     expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
   })
+
+  it('still repairs the manifest and registers commands when the generator writes files then its install step fails', async () => {
+    // Reproduced end to end against a real npm 10.9.7 arborist bug on the
+    // @nx/rollup/@nx/vitest peer chain: `nx g @nx/js:lib ...` prints CREATE
+    // for every scaffold file, then dies with `Command failed: npm install`,
+    // and `runNx` throws only after all of it is on disk. Before
+    // runGeneratorAndRepair existed, everything below this point in
+    // addNpmLib — the types fix, source-map/declaration repairs,
+    // registerProjectCommands — silently never ran, leaving a project
+    // `mnci doctor` could not fully diagnose.
+    seedGeneratedManifest()
+    mockRunNx.mockImplementation(() => {
+      throw new Error('nx g @nx/js:lib packages/sdk ... failed with exit code 1')
+    })
+
+    await expect(runAdd('npm-lib', 'sdk', {})).rejects.toThrow(
+      /generated and mnci's own repairs were applied.*install step still failed/s,
+    )
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/sdk/package.json'), 'utf8'),
+    ) as { types: string; publishConfig: { access: string } }
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.publishConfig).toEqual({ access: 'public' })
+
+    const rootManifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(rootManifest.scripts['sdk:build']).toBe('nx run sdk:build')
+    expect(rootManifest.scripts['sdk:qa']).toBe('nx run sdk:lint && nx run sdk:test')
+  })
+
+  it('rethrows the original error unchanged when the generator fails before writing the manifest at all', async () => {
+    // The other failure mode: an invalid generator argument, or a project
+    // name that already exists. Nothing was written, so there is nothing to
+    // repair — repairing would mean creating files over a directory the
+    // generator itself refused to touch.
+    rmSync(join(workspaceRoot, 'packages/sdk'), { recursive: true, force: true })
+    mockRunNx.mockImplementation(() => {
+      throw new Error('nx g @nx/js:lib packages/sdk ... failed with exit code 1')
+    })
+
+    await expect(runAdd('npm-lib', 'sdk', {})).rejects.toThrow(
+      'nx g @nx/js:lib packages/sdk ... failed with exit code 1',
+    )
+    expect(existsSync(join(workspaceRoot, 'packages/sdk'))).toBe(false)
+  })
 })

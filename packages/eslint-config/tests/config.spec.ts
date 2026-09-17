@@ -73,6 +73,10 @@ const FIXTURES: Record<string, string> = {
   // The exact shape `@nx/react:library --bundler=rollup` emits into the rollup
   // config it writes for every react-lib.
   'rollup.fixture.ts':           'export const options = { limit: 10000 }\n',
+  // The two mutating array methods whose ES2023 non-mutating copy a generated
+  // workspace's own `lib: es2022` cannot typecheck — see the assertion below.
+  'array-copy.ts':
+    'export function normalise (xs: number[]): number[] {\n  const sorted = [...xs].sort((a, b) => a - b)\n  return [...sorted].reverse()\n}\n',
 
   // A generated project's real layout, which is what the type-aware rules are
   // scoped to: `packages/<name>/src/**` with a tsconfig covering it. Without a
@@ -274,6 +278,25 @@ describe('@mnci/eslint-config', () => {
     // Standard's signature rule is finally reachable. This is the single most
     // visible consequence of dropping the formatter.
     expect(rulesFor('spacing.ts')).toContain('@stylistic/space-before-function-paren')
+  })
+
+  it('does not demand the ES2023 array copy methods a generated tsconfig.base.json (lib: es2022) cannot typecheck', () => {
+    // unicorn/no-array-sort and no-array-reverse both demand
+    // toSorted()/toReversed() — real advice on a runtime that has them, but a
+    // generated workspace's own tsconfig.base.json is not a file mnci owns
+    // (create-nx-workspace's, like .gitignore) and pins `lib` to es2022, one
+    // release short. Left on, `lint` and `typecheck` — both mnci-owned gates —
+    // would contradict each other on the first `.sort()` any generated
+    // project writes. `unicorn/no-array-splice` (the third ES2023-copy-method
+    // rule, demanding `toSpliced()`) is off alongside them for the same
+    // reason, but is not asserted here: it only fires on a `let`-declared
+    // array, which `prefer-const` already forbids unless the variable is
+    // genuinely reassigned elsewhere — real, but too narrow a shape for a
+    // fixture to demonstrate without asserting something contrived instead.
+    const rules = rulesFor('array-copy.ts')
+
+    expect(rules).not.toContain('unicorn/no-array-sort')
+    expect(rules).not.toContain('unicorn/no-array-reverse')
   })
 
   it('does not fail generated build config over numeric separators', () => {

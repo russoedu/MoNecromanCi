@@ -47,11 +47,13 @@ Every file above is mnci-owned — written (and, on `mnci upgrade`, rewritten) b
 until recently: it used to come from `create-nx-workspace`, which is exactly why the rich
 config this repo had never reached a single generated workspace.
 
-`applyOverlay()` also **deletes** two things `create-nx-workspace` scaffolds: its own
-`.prettierrc` (which wins Prettier's precedence over mnci's `.prettierrc.json`, silently
-discarding the entire formatting opinion) and `.vscode/` (fully covered by the
-`.code-workspace` file). Deletion is newer behaviour than overwriting, and `mnci upgrade`
-does it too — the docs already tell users to `git diff` before committing an upgrade.
+`applyOverlay()` also **deletes** things `create-nx-workspace` (or a past mnci version)
+scaffolds: `create-nx-workspace`'s own `.prettierrc`, any retired formatter config
+(`.prettierrc*`, `.oxfmtrc.json`, `oxlint.config.ts` — mnci has shipped both Prettier
+and oxlint in the past, and no longer uses either), and `.vscode/` (fully covered by
+the `.code-workspace` file). Deletion is newer behaviour than overwriting, and
+`mnci upgrade` does it too — the docs already tell users to `git diff` before
+committing an upgrade.
 
 ## Technology Stack
 
@@ -252,1692 +254,288 @@ being a squash again.
 - On push to `main`, CI runs `nx release --yes` → bumps versions → tags → publishes to npm
 - Merge strategy interacts with this directly — see "Merge Strategy" above
 
-## Current State & Recent Changes
-
-Ordered newest first. The "(Latest)" tag marks the most recent entry only — older
-entries describe how the project got here, not what's newest.
-
-### `npm audit` Red Again — the Same Two Traps, Recurring (Latest)
-
-CI's `npm audit` step went red with 9 high-severity findings, none of them new
-code — the entire tree was untouched, just time passing while advisory
-databases and `nx`'s own dependency graph moved. Both root causes are the
-**exact classes already documented** two entries below (the original "9
-vulnerabilities" writeup), recurring rather than repeating verbatim.
-
-- **The `js-yaml` pin drifted stale a second time, for the same advisory.**
-  `GHSA-2883-xcg3-v3hh` (the `maxTotalMergeKeys` DoS) originally listed its
-  fixed versions as `>=3.15.2`/`>=4.3.2`; this repo's overrides were bumped to
-  `^3.15.1`/`^4.3.1` at the time — both now confirmed to sit **one patch
-  short** of the advisory's own stated fix line, not a database re-widening.
-  Three overrides needed correcting: `@verdaccio/config` and `cosmiconfig`'s
-  `js-yaml` (`^4.3.1` → `^4.3.2`), and `@istanbuljs/load-nyc-config`'s
-  (`^3.15.1` → `^3.15.2`). Confirmed against the registry directly
-  (`npm view js-yaml versions`) that both target versions exist and are the
-  advisory's actual fix commits, not guessed.
-- **A second instance of the "nx's own transitive dependency" class**: `nx`
-  depends on `smol-toml <=1.7.0`
-  (`GHSA-7w5x-hrqm-74c2`, a parser DoS on malformed TOML), which fanned out
-  through the dependency graph to flag `@nx/js`, `@nx/eslint`,
-  `@nx/eslint-plugin`, `@nx/jest`, `@nx/rollup` and `@nx/workspace` as
-  high-severity — six findings from one root cause, all suggesting
-  `npm audit fix`'s answer of downgrading `nx` a full major (23.x → 22.6.4),
-  exactly the wrong fix for a version this repo pins deliberately. Added
-  `"smol-toml": "^1.7.1"` under the existing `nx` override block instead —
-  same shape as the earlier `axios`/`brace-expansion` entries there.
-- **The one remaining finding (`esbuild`, low) is the same documented,
-  deliberately-inert one** from two entries below — `esbuild: ^0.28.1` at the
-  override root cannot reach past `tsup`'s own `esbuild: ^0.27.0` dependency
-  declaration, low severity keeps it under the blocking threshold regardless,
-  and this is restated rather than re-investigated since nothing about it
-  changed.
-- **Verified by running the actual `NPM_AUDIT_STEP` script locally**, not by
-  reading `npm audit`'s summary — the whole point of the split is that
-  severity alone doesn't decide blocking, `fixAvailable` does. Before the fix:
-  9 high findings block, all from `nx`'s `smol-toml` and the two stale
-  `js-yaml` pins. After: exits 0, with the `esbuild` low logged as a
-  below-threshold note, matching the pre-existing baseline exactly.
-- **The standing lesson repeats itself on schedule**: a `package.json`
-  `overrides` entry pinned to "the fix" is a claim about a point in time, not
-  an invariant — advisory ranges and `npm audit fix`'s suggested target both
-  move under an unchanged tree. Nothing about this specific pin failing again
-  suggests a process fix (an automated re-check would just be another gate to
-  keep honest); it is recorded here so the next drift is diagnosed in
-  minutes rather than re-derived.
-
-### C# / .NET Support
-
-A fifth language, following the established pattern: thin delegation to the
-official tooling, an inline `VersionActions` for `nx release`, and a registry
-overlay mirroring `.npmrc`. Requested with two explicit scoping constraints —
-kinds matching Node's shape as closely as possible, and NuGet publishing
-mirroring the npm/`.npmrc` design — settled before any code was written.
-
-- **`@nx/dotnet` was researched first, and the finding decided the whole
-  architecture.** It is **inference-only** — verified by `npm pack`ing it and
-  reading the tarball, which ships no `generators.json` at all. So there is
-  no `@nx/dotnet:application`/`:library` to delegate to the way `@nx/react`
-  or `@nx-go/nx-go` are delegated to; every kind scaffolds directly via
-  `dotnet new` and writes its own `project.json`, the same posture Go already
-  takes for its single-module layout.
-- **Four kinds**: `csharp-app`, `csharp-lib` (publishable → NuGet),
-  `csharp-internal-lib`, `csharp-function-app` (Azure Functions .NET isolated
-  worker). Cross-project references are wired as real MSBuild
-  `<ProjectReference>` elements — verified in the e2e by adding one with
-  `dotnet add reference` and building the consumer.
-- **`nx release` needed no new npm package.** Nx's own
-  `resolveVersionActionsPath` (`node_modules/nx/dist/.../version-actions.js`,
-  read directly rather than assumed) tries `require.resolve` as a package
-  specifier first, then falls back to a **workspace-relative** path. So
-  `CsharpVersionActions` ships as `tools/csharp-version-actions.cjs`, written
-  into the generated workspace by `writeCsharpVersionActions()`, extending
-  Nx's real `VersionActions` and reading/writing the sole `.csproj`'s
-  `<Version>` element.
-- **The publish target is always present and self-gates at runtime, not at
-  generation time.** Nx's `nx-release-publish` requires at least one project
-  in a release group to carry that exact target name or the whole `nx
-  release publish` throws — so `csharpLibPublishTarget()` is written
-  unconditionally, and checks `process.env.NUGET_PAT` when it actually runs,
-  printing "NuGet publish is not configured for this registry choice" and
-  exiting 0 rather than being absent. Verified in the e2e: `nx run
-  cslib:nx-release-publish` on a public-registry workspace exits 0 and
-  prints exactly that.
-- **`nuget.config` mirrors `.npmrc`'s reasoning, including the same auth
-  trap already documented for Azure Artifacts.** NuGet's `%VAR%`
-  environment-variable substitution syntax (never `${VAR}`/`$VAR` — checked
-  against Microsoft's own compatibility table, which shows neither form
-  resolves on any of nuget.exe/dotnet.exe/Windows/Mac) feeds a PAT into
-  `packageSourceCredentials`, keyed on the fixed constant
-  `NUGET_AZURE_SOURCE` (`'AzureArtifacts'`) rather than the real feed name —
-  so the publish target needs no `RegistryConfig` at generation time, the
-  same design already used for Python's `TWINE_*` env vars.
-- **`mnci sync`/`mnci up` gained NuGet**, on request, closing the same gap
-  npm/pip/pub/go already had covered. `latestNugetVersions()` shells out to
-  `dotnet package search --exact-match --format json` (needs SDK 8.0.2xx+,
-  well under `DOTNET_SDK_VERSION`) rather than hitting the NuGet API
-  directly — the same "go through the ecosystem's own tool so a private feed
-  and its auth just work" reasoning `npm view`/`pip index versions` already
-  follow. `resolvedVersion` honestly returns `undefined` for NuGet: each
-  `.csproj` restores into its own `obj/project.assets.json`, so there is no
-  single workspace-wide resolved version the way pub's shared lockfile gives.
-- **`add/csharp.ts` reached 100% coverage** across all four metrics, including
-  tests that exercise the *actual written* `tools/csharp-version-actions.cjs`
-  file end-to-end against a fake Nx `Tree` (via a `node_modules` junction
-  into throwaway test workspaces), not a mock of the class.
-- **A regex and a string-replacement finding, both from ESLint rules that
-  exist for real reasons.** `csprojPackageReferences`'s tag-matching regex
-  originally paired `\s+` with an adjacent `[^>]*?`, which
-  `regexp/no-super-linear-backtracking` correctly flagged as ambiguous
-  (polynomial backtracking on crafted input); fixed by removing the
-  redundant `\s+`. `replaceNugetSpec` originally built its replacement with a
-  `` `$1${spec}$2` `` template, which `unicorn/no-unsafe-string-replacement`
-  flagged because `spec` could itself contain `$`-prefixed sequences
-  `String.replace` interprets specially; fixed with a replacer **function**
-  instead, matching the existing `replacePipSpec`/`replacePubSpec` pattern.
-- **The e2e had generated zero C# projects**, so every invariant above was
-  documented and unverified. A new `csharp` section (mirroring Go's) adds all
-  four kinds to the shared `altWorkspace`, wires a real project reference,
-  builds and packages both `csharp-app` and `csharp-function-app` — the
-  latter's `Azure.Functions.Sdk`/`Microsoft.Azure.Functions.Worker` package
-  references verified to genuinely exist via direct NuGet API queries, since
-  this environment has no `.NET SDK` to `dotnet restore` against — and runs
-  `nx release --dry-run`, confirming `cslib` is named in the output as the Go
-  section does for `go-lib`.
-- **This repo's own `e2e-windows` job would have reported the C# section
-  `SKIPPED` forever**, for the exact reason already documented for Go and
-  Flutter: its toolchain-install guards key on `existsSync('*.csproj')`
-  against the job's own working directory (this repo), which the e2e's
-  generated workspaces, living in a temp directory, never satisfy. Fixed
-  with an unconditional, pinned, `continue-on-error` `actions/setup-dotnet@v4`
-  step, plus a `pipelineDrift.test.ts` assertion pinning it to
-  `DOTNET_SDK_VERSION` — mutation-tested by bumping the pinned version in the
-  workflow and confirming the new assertion catches it before reverting.
-- **A pre-existing, unrelated gap found and deliberately not chased**:
-  writing a test against `cli.ts`'s `Argument(...).choices(PROJECT_KINDS)`
-  using the real `commander` package failed with `Cannot use import
-  statement outside a module` — commander v15 ships **no CJS entry point**
-  (its `exports` field has only a `default` condition), and this project's
-  `ts-jest`-only transform config does not cover `.js` files under
-  `node_modules`. Modifying the shared `jest.config.mjs` to fix one edge-case
-  test was judged disproportionate to the C# task's scope; the file was
-  deleted rather than left half-working, and the finding is recorded here
-  instead — the actual choices-validation logic was independently confirmed
-  correct by reading commander's source directly.
-
-### Five Deliberate Departures From Standard
-
-Requested after a side-by-side diff of a hand-written config against what
-`@mnci/eslint-config` resolves: 54 rules compared, 11 already identical, 34 set
-differently, 9 mnci had no opinion on. Five of the differences are now adopted.
-
-- **A NEW BLOCK, not edits to `mnci/standard`.** That block is a
-  programmatically extracted port of neostandard and its docblock says so;
-  editing it in place would make the claim false and would silently revert these
-  choices the next time anyone re-extracts upstream. `mnci/house-style` is
-  composed after it — the departures win, and every one of them sits in one file
-  with a reason attached.
-- **`comma-dangle` → `always-multiline`, `key-spacing` → aligned on value,
-  `quote-props` → `consistent-as-needed`, `max-statements-per-line` → 2, and a
-  required blank line before `return`.**
-- **Two of those rules are coupled, and that is the thing to know.** Aligning
-  object values needs `key-spacing`'s `align` AND an exception in
-  `no-multi-spaces` — alignment IS more than one space. Move one without the
-  other and the config contradicts itself: one rule reports what the other
-  demands and no `--fix` can satisfy both. `exceptions` also **replaces**
-  @stylistic's default object rather than merging, so `Property` and
-  `ImportAttribute` are re-listed; omitting them would switch alignment off
-  inside object literals, the place it is most wanted.
-- **`newline-before-return` was asked for and deliberately not used.** Its own
-  metadata says `availableUntil: "11.0.0"` — deprecated since ESLint 4 and
-  removed at the next major. `@stylistic/padding-line-between-statements` with
-  `{ prev: '*', next: 'return' }` was compared against it on the same fixture
-  and reports identically, including the case that matters: a `return` that is
-  the only statement in its block, which neither flags.
-- **151 files reformatted, and the reformat found two brittle assumptions.**
-  `e2eFixtures.test.ts` scanned the e2e for `@standard-clean` markers with a
-  regex that assumed no trailing comma; once `--fix` added them it matched
-  nothing, found zero fixtures, and its per-fixture assertions passed
-  **vacuously** — the exact failure mode that file exists to prevent. And the
-  `formatting.ts` fixture's multi-space sat on a `VariableDeclarator`, which is
-  now deliberately allowed, so it had stopped exercising `no-multi-spaces` while
-  still asserting it did.
-- Five tests pin the new block, including that an aligned fixture lints
-  completely clean — a `toEqual([])`, so a future rule that quarrels with the
-  alignment cannot slip through as an extra finding.
-
-### Every Generated Library Was Undebuggable
-
-Reported as "VS Code ignores my breakpoints and marks them grey" in a real
-generated workspace. Three independent causes, none of which reports an error,
-and **each one alone is sufficient** — so fixing any two would have looked like
-no progress at all.
-
-- **No source maps were emitted, at all.** `withNx` passes
-  `sourcemap: options.sourceMap` to rollup and `sourceMap` has **no default**,
-  so an unset value means no `.js.map` and no `sourceMappingURL`. Nothing to
-  bind a breakpoint to.
-- **`sourceMap` only works in `withNx`'s FIRST argument**, and the obvious
-  alternative silently does nothing: `withNx` spreads `...rollupConfig.output`
-  and *then* assigns `sourcemap: options.sourceMap`, so
-  `output: { sourcemap: true }` in the second argument — which the generator's
-  own placeholder comment suggests — is always overwritten.
-- **The compiler made the maps EMPTY, and this is the one that hides.**
-  `@nx/js:lib --bundler=rollup` passes `compiler: 'swc'` hardcoded; it never
-  uses `@nx/rollup`'s own `babel` default. `@nx/rollup`'s swc plugin calls
-  `transform()` without `sourceMaps`, so swc returns no map, the rollup chain
-  breaks, and the output map is structurally valid and semantically empty —
-  `sources: []`. Measured both ways on one package: swc 0 sources, babel 9, all
-  resolving. **I asserted the opposite while diagnosing** — that babel was the
-  default and swc "a compiler mnci never selects" — and reading
-  `library.js:61` is what corrected it. The generator's default only applies
-  when the caller omits the option, and this caller never does.
-- **The `sources` paths were wrong twice over.** Measured by instrumenting
-  `sourcemapPathTransform` rather than reasoning about it: rollup passes
-  `..\..\src\rules\shared.ts` for a map in `dist/` — one parent segment too
-  many (resolving above the project to nothing) and OS-native, when a sourcemap
-  `sources` entry is URL-style and a backslash is wrong on every platform. The
-  same bug class as the declaration stub, in the same file.
-- **Always built, never published.** `!**/*.js.map` joins `files`. A dev-build
-  flag was rejected: an env var is not portable across npm scripts without a
-  fourth runtime dependency, and a second build target is one more thing to
-  remember at exactly the moment you are already debugging.
-- **The retrofit needed a second anchor, and that is the non-obvious part.** The
-  add-time repair keys on the generator's placeholder comment, which mnci itself
-  deletes at `add` time — so a placeholder-anchored fix works for a brand-new
-  project and silently no-ops for every existing one, which is the entire
-  population `mnci upgrade` exists to reach. `withRollupSourceMaps` anchors on
-  the `},` / `{` boundary between `withNx`'s two arguments instead, present in
-  both shapes. Order is load-bearing: the declaration-stub swap must run first,
-  because the source-map insertion rewrites the same `{` line the placeholder
-  starts with.
-- **The user's Copilot had independently re-created two of these** — the
-  declaration-stub normaliser mnci already owns, and a sourcemap `sources` fix
-  hardcoding four parent segments for that workspace's depth. mnci's collapses
-  any run to one, so it cannot go stale at another depth.
-
-### `mnci sync` and `mnci up`, and What `nx sync` Does Not Do
-
-Two new commands, and the correction that motivated them. Prompted by
-`@nx/dependency-checks` flagging an `axios` that had been moved from a package's
-manifest into the root of a real generated workspace — a complaint that was
-**right**, and whose reason is sharper than a lint nitpick.
-
-- **`nx sync` does not synchronise dependency versions, and believing it does is
-  the trap.** It runs the workspace's *sync generators*; the only one a generated
-  workspace registers is `@nx/js:typescript-sync`, which reconciles TypeScript
-  project references and has no opinion at all about versions. Verified by
-  running it. npm also has no `catalog:`, so one-version-per-workspace is a
-  convention nothing enforced. `mnci sync` is both halves: converge the ranges,
-  then run `nx sync`.
-- **`@nx/dependency-checks` was KEPT, deliberately.** It is the only thing that
-  catches the axios class, and the mechanism is worth stating: `@nx/rollup`
-  externalises exactly what a project's OWN manifest declares, so hoisting a
-  dependency to the root does not share it — rollup **inlines a private copy**.
-  Measured on a real package: 14.5 KB became 832 KB, silently. `mnci sync`
-  converges towards the *installed* version specifically so it and the rule's own
-  auto-fix reach the same answer instead of overwriting each other.
-- **`mnci doctor` gained the check for the other direction.** The rule fails the
-  project whose import went undeclared; the new check fails the root that took
-  it. `devDependencies` at the root are untouched — sharing the toolchain is what
-  the root is for, and npm honours `overrides` only there.
-- **Dogfooding found two wrong answers that 500 green tests had not**, which is
-  the argument for running a new command against this repo before shipping it.
-  The first `mnci sync --check` reported six findings and **five were peer
-  ranges** — `@nx/devkit: >=21.0.0` is a compatibility declaration, and
-  converging it on the 23.x resolved here would have dropped two majors of
-  consumers of two published plugins. The first `mnci up --check` offered
-  "typescript 6.0.2 › 7.0.2", which is real TypeScript's version: the root
-  manifest pins the dual compiler as `typescript: npm:@typescript/typescript6`,
-  so the registry was being asked about a package the workspace does not have.
-  Both are now excluded, each with a test naming the run that found it.
-- **Latest versions come from each ecosystem's own tooling, never a hand-rolled
-  HTTP call.** `npm view` (so a scoped Azure Artifacts feed and its `.npmrc`
-  Basic credentials just work — hand-rolling that is how the `_authToken`-as-
-  Bearer trap below gets re-entered), `pip index versions` (the call
-  `nx-python-pip`'s `VersionActions` already makes), one `go list -m -u -json
-  all`, one `flutter pub outdated --json`.
-- **`mnci up` reproduces `npm-check -u`** — same four sections, same order, same
-  multiselect — plus the column `npm-check` cannot produce in a monorepo: every
-  project declaring the package. Selecting a row rewrites **every** declaration
-  of it, which is what stops `up` from creating the drift `sync` repairs.
-- **A Go module is upgraded with `go get`, never by editing `go.mod`**, and Go is
-  excluded from `sync` entirely with an explicit "nothing to sync" line rather
-  than a silent zero-findings pass — one root module means one version, so
-  nothing *can* disagree.
-- **`nx.ts` gained its first stdout-capturing helpers.** Every existing helper
-  used `stdio: 'inherit'` and returned only an exit code. `runCapture`,
-  `runCaptureAsync` and a bounded `pool` (8) keep the same no-shell `cross-spawn`
-  contract — a hundred concurrent `npm view` processes is how a laptop runs out
-  of file descriptors.
-- **The regexes were written twice.** The first pass drew nine
-  `regexp/no-super-linear-backtracking` errors on manifest parsers that read
-  user-controlled text; `parseRequirement`, `pyprojectDependencies` and
-  `pubspecBlockEntries` are index scans now, with a test asserting a 20 000-char
-  pathological line stays under a second.
-- **Two guards were mutation-tested**: dropping `toPosix` fails six tests (Windows
-  `globSync` backslashes make one project read as two), and letting `--check`
-  write fails the "touches nothing" test.
-- **Three test suites were red before any of this, and all three are fixed.**
-  Two were *real* Windows bugs, not test artefacts. Both plugins' release
-  `VersionActions` built their Nx **`Tree`** path with `node:path`'s `join`,
-  which emits `packages\shared\pubspec.yaml` on Windows — and a Tree path is
-  forward-slashed on every platform, so the value handed back to `nx release`
-  (and interpolated into the user-facing error) was wrong on every Windows
-  machine. `posix.join` now, deliberately not devkit's `joinPathFragments`:
-  that is a VALUE import from `@nx/devkit`, which drags Nx's whole plugin
-  runtime into a module that only ever needed a string — enough to break a spec
-  that mocks `node:child_process`, and dead weight on the release path.
-  Mutation-tested: reverting it fails four tests.
-- **`@mnci/nx-flutter`'s executor spec had stopped being a gate entirely.** It
-  mocked `node:child_process`, but `runFlutter` moved to `cross-spawn` when
-  `spawnSync` turned out to refuse `flutter.bat` outright (the CVE-2024-27980
-  fix). The mock therefore intercepted nothing: the specs were spawning the REAL
-  flutter binary into a directory that does not exist. **A mock that no longer
-  matches its subject is the quietest way for a suite to stop testing anything**
-  — it fails loudly only on machines without the SDK, and would have "passed"
-  for the wrong reason on machines with it.
-- **The rest were assertions about a platform rather than a behaviour**: the
-  `@mnci/nx-python-pip` executor specs hardcoded `python3` and POSIX `cwd`
-  strings, and now use the package's own `pythonCommand()` (whose mapping is
-  pinned independently in `pythonCommand.spec.ts`, so this is not tautological)
-  and `join()`. The `commit-msg` executable-bit test is gated to POSIX with
-  `itOnPosix`: NTFS has no executable bit, so `mode & 0o111` is always 0 there
-  and git sets `core.fileMode=false` anyway — the invariant is real on POSIX,
-  which is why it is gated rather than deleted.
-- **Still open**: pip has no lockfile, so its "resolved version" comes from
-  `pip show` and is weaker than npm's; a pub dependency expressed as a nested map
-  (`git:`, `path:`) is reported and never rewritten; `requirements-dev.txt`
-  entries are deliberately unpinned, so `up` reports them but writing a pin would
-  reverse a design decision.
-
-### A Fifth Package: `@mnci/az-durable`
-
-Typed compile-time safety across the Azure Durable Functions
-orchestrator/activity boundary. **Scaffolded with `mnci add npm-lib`**, so the
-CLI got exercised on a real package rather than a fixture — which is how the
-dangling-`types` bug two entries down came to be found on a published artefact.
-
-- **The mechanism is `yield *`, and nothing else would do.** A generator has ONE
-  `TNext` shared by every `yield`, so `const x = yield callActivity(...)` can
-  never be typed per call. `yield *` returns the *delegated* generator's
-  `TReturn`, which IS per call. Every scheduling helper is therefore a generator
-  you delegate to; getting it wrong is a compile error, not a silent `any`.
-- **Phantom members carry the types** `RegisteredActivity` forgets. `__input` is
-  written as a function *parameter* rather than a property, deliberately: that
-  makes `TInput` contravariant, and with a covariant property an activity taking
-  a wider input would be assignable where a narrower one is expected.
-- **Dogfooding found six defects that 41 green tests had not**, and three were in
-  the test harness itself — which is the argument for the exercise. `Task.any`
-  resolves to the winning TASK, not its value, so every race failed; fake timers
-  had no `cancel()`, so an orchestration doing the right thing crashed in its own
-  test; and **stub errors were thrown in the DRIVER**, outside the generator, so
-  no orchestration `try/catch` could ever see one. Every compensation path was
-  untestable while the docstring promised the opposite. The existing test passed
-  because it asserted only that `runWorkflow` throws — true either way over an
-  orchestration with no `catch`. Another gate that verified nothing.
-- **The API could not express a race at all.** `all`/`any` take `TypedTask`s and
-  only `activityTask` produced one, so "wait for approval, or time out" — the
-  most common Durable pattern there is — was unwritable. `eventTask`,
-  `timerTask`, `timerTaskUntil` and `subOrchestrationTask` close it, each
-  `call*`/`wait*` generator now delegating to its task form so there is one
-  scheduling site per kind.
-- **`continueAsNew` is a handler argument, not a free function.** It restarts
-  *this* orchestration, so its input must be this orchestration's own `TInput`;
-  a free function could only be generic on a type nothing constrains, which is
-  the unchecked cast the package exists to remove. Naming the orchestration
-  constant inside its own handler is not available either — it is not
-  initialised yet.
-- **One finding was recorded as unfixable on a reason that was simply wrong.**
-  `retryPolicy` was declined because constructing the SDK's `RetryOptions` class
-  would make `durable-functions` a value import against the zero-dependency
-  design. It would not: `activity.ts` and `orchestration.ts` already
-  value-import it, and must, to call `df.app.*`. **No runtime dependencies means
-  an empty `dependencies` block** — a peer dependency is imported at runtime by
-  design. One `grep` settled what had been asserted without one.
-- **Verified from the packed tarball, not the source tree.** Installed into a
-  fresh consumer with no reference to this repo: all three entry points resolve,
-  the ESM loads and runs, and `article.titel` is a compile error naming the real
-  type. `check:entrypoints` makes it repeatable, checking EVERY declared entry
-  point rather than a representative one — the precise gap that let a published
-  `npm-lib` ship a `types` field pointing at a file its build never emitted.
-- **`test/dogfood/` holds RECONSTRUCTIONS, not the real workflows**, which live
-  in a private project. Its README says so, because a fixture written by the
-  API's own author confirms the design by construction. Read a green run there
-  as "the API composes over these shapes", never as production validation.
-
-### A Published `npm-lib` Shipped No Types At All
-
-Found on a **real published package**, not a fixture: `@nx/js:lib --bundler=rollup`
-writes `types: './dist/index.esm.d.ts'`, and its own build never emits that file. So
-every TypeScript consumer of every `npm-lib` mnci has ever generated got `any`:
-
-```
-error TS7016: Could not find a declaration file for module '@auto/env'.
-  '…/dist/index.esm.js' implicitly has an 'any' type.
-```
-
-- **The fix already existed, three metres away.** `reactLib.ts` had
-  `repairTypesPath()` with the same `WRONG_TYPES_PATH` constant and a full write-up
-  of the same bug. `npmLib.ts` called the same generator family with the same flag
-  and had no such call. The repair now lives in `add/shared.ts` as
-  `repairPublishableManifest()` and both kinds use it — the duplication is what let
-  one path stay broken while the other was fixed.
-- **Verified against the published tarball**, downloaded from the feed (reads are
-  anonymous there): `types` names a file absent from the package, and repointing it
-  at the real declarations makes a consumer resolve — with a deliberate type error
-  then reported as `TS2322`, so the real overloads are present. `main`/`module` were
-  always fine; `index.esm.js` IS emitted.
-- **The gate that was missing is the interesting part.** The e2e already packed the
-  lib and asserted `dist/index.esm.js` was in the tarball — a check that passed while
-  `types` dangled. It now asserts that **every** entry point the manifest declares
-  (`main`, `module`, `types`, both `exports["."]` conditions) is actually present in
-  the packed files. Run against the real broken tarball, the new guard reports
-  exactly the two dangling entries.
-- **Declaration maps were half the package.** 32 of 67 files were `.d.ts.map`, every
-  one referencing `../src/<name>.ts` — a path `files: ["dist"]` never ships, so an
-  editor following one lands on nothing. `files` now carries `!**/*.d.ts.map`.
-  `declarationMap` itself stays ON: it is `create-nx-workspace`'s setting, not
-  mnci's, and it earns its keep for cross-project go-to-definition INSIDE the
-  monorepo. Only the tarball is trimmed.
-
-- **The obvious target was the wrong one, and that is the sharpest part.**
-  `@nx/rollup`'s `dts-bundle` plugin emits declarations at `dist/src/index.d.ts`, then
-  writes a stub `dist/index.d.ts` re-exporting from them. Pointing `types` at that
-  stub looks right and is not: the plugin builds the specifier with
-  `path.relative()`, which returns an **OS-native** path, so on a Windows agent the
-  stub reads ``export * from "./src\\index"``. A module specifier is URL-style
-  — `/` is correct on every platform and a backslash on none — so it resolves on
-  Windows only because the resolver normalises separators there, and the package is
-  **untyped on Linux and macOS**. `types` therefore points past the stub at
-  `./dist/src/index.d.ts`, which is correct everywhere.
-- **That path is right for BOTH library kinds, established rather than assumed:**
-  `@nx/rollup`'s configuration generator writes `main: './src/index.ts'` for every
-  project it configures, and `@nx/js:lib` and `@nx/react:library` both route through
-  it, so the declaration layout is identical.
-
-**Still open upstream (ROADMAP 7c):** the stub itself is still emitted with a
-backslash when built on Windows. mnci no longer routes `types` through it, and the
-e2e reports it as a loud `SKIPPED` rather than a failure, since nothing in this repo
-can fix it — the bug is one `path.relative()` call in `@nx/rollup`.
-
-### Generated Workspaces Get Launch Configs, Not Just Tasks
-
-The `.code-workspace` file carried a `tasks` array and no `launch` section, so the
-**Run and Debug** panel in a generated workspace was empty. A `tasks` entry is
-reachable only through *Terminal -> Run Task*; the dropdown people actually open
-reads `launch`. Four configs now cover the verify targets: `build`, `test`, `lint`,
-`typecheck`.
-
-- **`node-terminal`, not `node`, and that is the load-bearing choice.** `nx run-many`
-  runs every target in a **child** process. A plain `node` launch attaches to the Nx
-  parent alone, so a breakpoint inside a spec never binds; `node-terminal` runs in
-  VS Code's JS Debug Terminal, which instruments children as they spawn. It also
-  sidesteps a second trap: a `node` launch defaults to `internalConsole`, which
-  renders none of Nx's progress output, so a build there looks like a hang.
-- **They drive `npm run <script>`, never a path into `node_modules`.** The obvious
-  `program: node_modules/nx/bin/nx.js` is simply wrong — Nx ships its bin at
-  `dist/bin/nx.js`, and that path is version-dependent. Driving the root script
-  tracks `ROOT_SCRIPTS` for free, and a test asserts every launched script exists in
-  the generated manifest.
-- **`cwd` is scoped by folder NAME** (`${workspaceFolder:<name>}`), not a bare
-  `${workspaceFolder}`, which is ambiguous the moment a user adds a second folder —
-  VS Code then refuses to resolve it and every config breaks at once.
-- **The array is MERGED on upgrade, unlike `tasks`.** mnci replaces only entries
-  named `mnci: *` and carries every other one through, so a hand-written debug
-  config survives. `tasks` is carried through wholesale instead, because `mnci add`
-  — not the overlay — is what writes it.
-- Both non-obvious choices were mutation-tested: reverting to `node` and dropping
-  the folder-scoped `cwd` each fail their guard.
-- **This repo does not dogfood the template here.** Its own
-  `MoNecromanCi.code-workspace` is hand-written rather than mnci-generated, nests
-  `launch` inside `settings`, and still lists `mpa:serve`/`po:serve` — projects that
-  do not exist in this workspace. Left alone deliberately; it is a separate cleanup.
-
-### Azure Artifacts Rejects a PAT as a Bearer Token
-
-A generated workspace could not publish to Azure Artifacts. Three explanations were
-tried; the first two were wrong, and both were disproved by measurement rather than
-argument. **The generated `.npmrc` is unchanged as a result** - the finding is that
-its `username`/`_password` block was right all along, and this entry exists so the
-wrong fix is not attempted again.
-
-- **The failure: `E401 Incorrect or missing password` on `npm view`, then on publish.**
-- **Wrong theory 1: per-package `.npmrc`.** `nx release` was assumed to publish from
-  each project directory, which has no `.npmrc`. It does not: `@nx/js`'s
-  `runPublish` calls `npm publish` with `cwd: context.root` and passes `packageRoot`
-  only as the *directory argument*. The root `.npmrc` is always the one read.
-- **Wrong theory 2: a stale token on the agent.** npm resolves `_authToken` BEFORE
-  basic auth for a registry key (`hasAuth` in `npm-registry-fetch/lib/auth.js`), so
-  **key** precedence settles before **file** precedence applies - a leftover
-  `_authToken` in a persistent agent's user-level `.npmrc` really would outrank a
-  project-level `_password`. Confirmed reproducible against a local server echoing
-  the Authorization header. But a probe on the real agent found **no user-level
-  `.npmrc` at all**, so nothing was shadowing anything.
-- **The actual cause is the auth SCHEME.** The feed answers an unauthenticated PUT
-  to its publish endpoint with:
-
-  ```
-  www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
-                    Basic realm="...", TFS-Federated
-  ```
-
-  `authorization_uri` pointing at `login.windows.net` means the **Bearer scheme wants
-  an Entra ID access token**. A PAT is not one. npm sends `_authToken` verbatim as a
-  Bearer header, so a PAT there is rejected with "Unable to authenticate, your
-  authentication token seems to be invalid". **A PAT authenticates only through
-  Basic**, which is `username`/`_password` - exactly what `npmrcContent()` emits.
-- **The trap that produced the wrong fix, and the rule to take from it.** A PAT WAS
-  verified as a Bearer token first - against `https://feeds.dev.azure.com/.../
-  _apis/packaging/feeds`, which returned 200. That looked like proof and was not:
-  the Packaging REST API and the npm registry endpoint answer differently.
-  **Measure the endpoint the code actually calls.** A shipped `_authToken` change
-  had to be reverted because of this.
-- **Reads on that feed are anonymous, which is what made the diagnosis possible.**
-  Metadata returned 200 with no credential, with garbage, and with a wrong-but-well-
-  formed PAT (the project is public, so the feed is world-readable). A 401 therefore
-  could only come from a credential the feed *recognised and rejected* - which is
-  what pointed at the scheme rather than the token.
-- **What actually fixed the real workspace: `npmAuthenticate@0`.** It injects the
-  build service identity's token, which IS Entra-issued, so it satisfies the Bearer
-  scheme - and there is no secret to store, encode, rotate or expire. Verified end to
-  end: three packages versioned, tagged and published. `overlay.ts` still declines
-  that task, on the grounds that it would overwrite the hand-set password; that
-  reason holds for the PAT design but the trade is now known to favour the task on
-  Azure. **Not yet changed - see ROADMAP.**
-- **One kept improvement:** both feed path forms are keyed. npm matches credentials
-  by URL prefix and walks only *up* the path, so an entry on `/npm/registry/` is
-  never found for a request to `/npm/`. Azure's own "Connect to feed" instructions
-  emit both.
-- A test asserts the generated `.npmrc` carries `_password` and **no** `_authToken`
-  directive, with the `www-authenticate` evidence in the comment beside it.
-
-### Prettier Fully Retired, and Two Gates That Had Never Worked
-
-The tail of the ESLint-only migration, plus the two defects the first honest
-nightly exposed. `npm run format:check` no longer exists anywhere, and the
-Windows e2e is green: **176 enforced checks, 0 failures**, with Go, Flutter and
-Python all genuinely running rather than skipped.
-
-- **mnci recommended the extension it warns about.** Every generated
-  `.code-workspace` AND devcontainer listed `esbenp.prettier-vscode`, while
-  `applyOverlay()` deleted every Prettier config and `mnci doctor` reported a
-  survivor as a failure. The extension needs no config file to act — with none
-  present it formats against Prettier's own defaults, the exact inverse of
-  Standard — and it runs on save, so the damage lands *after* every gate. mnci
-  was installing its own hazard and then cleaning up after it.
-- **The root manifest still declared `prettier`**, and it was the last thing in
-  the whole tree that did. `mnci doctor` would have failed this repo on the check
-  this repo ships. `dogfood.test.ts` now holds mnci to the invariants it enforces
-  elsewhere — the gap existed because every gate pointed at generated workspaces
-  rather than at mnci.
-- **The shipped `eslint.config.mjs` comment said the opposite of the truth**,
-  telling users `space-before-function-paren` "cannot work". That rule is ON;
-  dropping the formatter is what made it reachable. It now carries the inverse
-  warning: do not add a formatter.
-- **`@stylistic/comma-dangle` enforced NOTHING** — `['warn', { …: 'ignore' }]`,
-  every context ignored. The programmatic extraction from neostandard picked up a
-  disable layer instead of Standard's setting. Audited: the only one of the 60
-  rules affected (`jsx-wrap-multilines`'s ignores are genuine).
-- **The Flutter internal-dep injection had never worked on Windows.** The e2e's
-  pubspec pattern was LF-only; `flutter create` writes CRLF, and
-  `String.replace` on a non-match is a silent no-op. It passed for months only
-  because the `alt` workspace was then formatted by **oxfmt**, which rewrote the
-  pubspec to LF in passing — 21 oxfmt invocations in the last passing nightly, 0
-  in the first failing one. Retiring oxfmt did not break the test; it removed the
-  accident hiding a test that never worked. `replaceInFile` now throws on a
-  non-match, and the assertion that should have caught it (which checked
-  `package_config.json` — true of *any* workspace member — and "no `path:`" —
-  trivially true of a dependency never written) now asserts the declaration.
-- **`mnci add flutter-app` shipped an inaccessible web shell.** `flutter create`
-  writes `<html>` with no `lang`, which `@html-eslint/require-lang` errors on, so
-  a generated app failed its own `npm run lint` on a file the user never opened.
-  Patched (`withHtmlLang`), not linted around — switching off an a11y rule for
-  upstream boilerplate is the worse trade.
-- **THREE wrong versions of one guard, each caught by execution, not review.**
-  `e2eFixtures.test.ts` lints the e2e's own fixtures in seconds instead of
-  leaving the contract to a 50-minute Windows run. v1 wrote its probe to
-  `os.tmpdir()`, where flat config replies `File ignored because outside of base
-path` — a *warning* with a null `ruleId`, which the `@stylistic/` filter
-  discarded, so all seven tests passed while checking nothing. v2 moved it to the
-  repo root and **raced `@mnci/source:lint`** under `nx run-many`
-  (`ENOENT` on the probe), which a warm Nx cache hid locally — use
-  `--skip-nx-cache`. v3 uses `eslint --stdin --stdin-filename`: no file, no race.
-  It reads an explicit `// @standard-clean` marker, because most fixtures are
-  *deliberately* unformatted as evidence the `add` formatter pass works — v1 of
-  that logic flagged four correct-by-design fixtures, a guard that would have
-  been "fixed" by breaking the suite.
-- **The standing lesson: a passing guard is not a working guard.** Five inert or
-  wrong gates surfaced in this stretch alone. Mutation-test every one, and never
-  report a CI verdict from the tail of a log — one such reading here reported
-  "one failure" for a run that had five.
-
-### ESLint Is the Only Tool: Quality, Types and Formatting
-
-`@mnci/oxlint-config` is deleted, Prettier is gone, the `--linter` choice is
-gone, and `@mnci/eslint-config` now carries the formatting opinion as rules.
-One tool, one config, one command — and **nothing to keep in sync**, which was
-the whole argument for collapsing rather than pairing.
-
-- **The user's own reasoning drove this, and it was right.** A formatter and a
-  linter that both hold style opinions must be kept in agreement; the previous
-  arrangement avoided that only because `eslint-config-prettier` switched every
-  stylistic rule OFF, so ESLint had no opinion at all. That is also precisely why
-  a formatting mistake produced no squiggle, no message and no Problems entry —
-  the complaint that started this.
-- **`space-before-function-paren` is ON.** Standard's signature rule was
-  unreachable for as long as a Prettier-compatible formatter owned formatting:
-  Prettier and oxfmt both rewrite `function f (a)` back to `function f(a)`, so
-  enabling it made `lint` and `format:check` mutually unsatisfiable. With no
-  formatter, nothing contradicts it. 82 files reformatted; 306 problems in
-  `@mnci/cli` alone, 99% auto-fixed.
-- **`eslint-config-prettier` is removed, and that removal is load-bearing.** It
-  exists to switch stylistic rules off so a formatter can own them. Composing it
-  after the new block would silently disable all sixty Standard rules — a
-  disabled rule reports nothing, so `lint` would pass while enforcing nothing.
-- **Rules derived from `neostandard`, which is deliberately NOT a dependency.**
-  Extracted programmatically and ported to `@stylistic` v5 so no rule or option
-  is mistyped. neostandard itself was measured and rejected: it pins `@stylistic`
-  at exactly `2.11.0`, which calls `sourceCode.isSpaceBetweenTokens` — removed in
-  ESLint 10 — so it throws on the first file; forcing it onto v5 fails
-  differently, since its config names `func-call-spacing`, which v5 dropped. Its
-  `eslint: ^9` peer is accurate, not stale. **An override made it install and it
-  still did not work** — the same shape as the audit gate that verified nothing.
-- **`jsx-indent` was the subtle one.** Dropping the deprecated rule alone would
-  have left JSX indentation checked by **nothing**, because Standard also lists
-  all sixteen JSX node types in `indent`'s `ignoredNodes`. Both halves go, so
-  `indent` genuinely covers JSX — verified on a real `.tsx`. `TemplateLiteral *`
-  stays, since it is not a JSX node and removing it false-positives inside
-  template literals.
-- **`format:check` is gone from both CI providers and from the root scripts**,
-  and the anti-drift test now asserts its ABSENCE in both — the same property as
-  asserting presence, in the other direction. `lint` reports formatting now, so a
-  second step would run the same binary twice over the same tree.
-- **Speed: `--cache` adopted, `--concurrency` REJECTED, both measured.**
-  Best-of-3 on this repo: baseline 9,546ms, `--concurrency=auto` **10,286ms (8%
-  slower)**, `--cache` on an unchanged re-run **2,835ms (3.4x)**. An earlier
-  reading showed concurrency 2.6x faster; that was entirely TypeScript's
-  type-service warm-up on a cold first run. On 4 cores with type-aware linting,
-  per-worker service startup costs more than the parallelism saves.
-- **A pre-existing defect surfaced on the way**: `@mnci/cli`, `@mnci/nx-flutter`
-  and `@mnci/nx-python-pip` each declared `eslint: ^9.39.0` while the root
-  declared `^10.8.0`, so npm nested **ESLint 9.39.5** in all three. The ESLint 10
-  migration had only ever taken effect at the ROOT — every package had been
-  linting on 9. Correcting the ranges was not enough: npm kept the stale nested
-  copies (reporting them `invalid`) until the lockfile entries were deleted, the
-  same reuse-an-existing-tree behaviour fixed for generated workspaces in #143.
-- **`mnci doctor` keeps one check where it had three.** The eslint/oxlint mode
-  checks are meaningless now; `checkNoRetiredFormatter` replaces them with the
-  failure that survives: a leftover `.prettierrc.mjs` or `.oxfmtrc.json` is inert
-  from the command line, and that is exactly what makes it dangerous — a globally
-  installed `esbenp.prettier-vscode` or `oxc.oxc-vscode` still resolves it and
-  reformats on save, quietly undoing Standard while `lint` stays green because
-  the damage lands after the check.
-- **`oxc-standard` was researched and rejected** before any of this was written:
-  it is a copied-file scaffold rather than a shareable config, peers
-  `oxfmt: ^0.48.0` (which cannot resolve to the 0.61 in use), was published in a
-  single 13-minute burst three months ago, has no
-  `space-before-function-paren` anywhere, and ships `trailingComma: "es5"` —
-  which Standard forbids and which is the exact drift that cost this repo 86
-  files once already.
-
-### Flutter Never Ran on Windows At All, and Generated Workspaces Shipped 6 CVEs
-
-Nightly #293 went 4 failures → 3, and the two that remained were both real. The
-Go `parallelism: false` fix is **confirmed** — that failure is gone.
-
-- **`--no-pub` was the wrong diagnosis, and the fixed error reporting said so.**
-  The run showed `flutter create --no-pub … failed with exit code 1` and
-  `flutter said: (no output)`. Nothing printed on either stream, which is not how
-  a command that ran and failed behaves.
-- **The real cause: `spawnSync` cannot execute a `.bat` at all.** Since the fix
-  for CVE-2024-27980 (Node 18.20.2 / 20.12.0 / 21.7.3), `child_process.spawnSync`
-  **refuses** `.bat`/`.cmd` without `shell: true`. It does not throw — it returns
-  `{ error, status: null, stdout: null }`. The code then reported
-  `status ?? 1` as "exit code 1" with empty output, and Nx's wrapper helpfully
-  suggested checking PATH. The SDK was on PATH and had printed its version
-  seconds earlier. **Every Flutter invocation on Windows failed before the process
-  started**, across all three executors as well as the generator — so
-  `@mnci/nx-flutter` has never worked on Windows in any published release.
-- **`flutterCommand()` was the bug, and its own doc comment named the fix.** It
-  returned `flutter.bat` on Windows to keep calls working "without `shell: true`
-  (which would reintroduce the argument-quoting hazard the CLI deliberately
-  avoids by using `cross-spawn`)". Correct about the hazard; wrong that naming the
-  `.bat` is sufficient. **cross-spawn resolves `.bat` shims without a shell**, so
-  the plugin now uses the same library the CLI does, and the dead helper is
-  deleted rather than left as a trap.
-- **Not reading `result.error` is what made this invisible for two nightlies.**
-  Capturing stdout/stderr was not enough: a spawn that never started and a command
-  that ran and failed produced the same message. `runFlutter()` now distinguishes
-  them, and every Flutter call in the package goes through it.
-- **Generated workspaces shipped SIX high advisories.** The audit step, running
-  inside a generated workspace for the first time, reported `brace-expansion` plus
-  the five `nx` packages that inherit it, all `fix available (semver-major)` —
-  so `npm audit fix` would try to bump `nx` itself. **This repo has carried the
-  targeted `nx` → `brace-expansion` override the whole time**, which is why its
-  own audit reads 0 while what it generates read 6. Same dogfooding drift as the
-  missing audit step: fixed here, never shipped. This is the audit gate earning
-  its keep the first time it ran somewhere that mattered.
-
-### The First Nightly With Go and Flutter Provisioned: Four Failures
-
-Exactly the informative-not-green run the previous entry predicted. All four
-provisioning steps succeeded, so both toolchains were genuinely present and the
-suite itself failed. Two of the four were regressions from this repo's own recent
-work; two were real defects that newly-enabled coverage exposed.
-
-- **Two stale e2e assertions, and they were mine.** The e2e looked the audit step
-  up by `displayName === 'npm audit (non-blocking)'` and asserted it "exits 0 even
-  when real vulnerabilities are found". Making the step blocking renamed it, so the
-  lookup returned `undefined` and the assertion failed. The unit tests were
-  updated in that change; these were missed. **The e2e caught what the unit tests
-  could not** — a string-match on the step name would have passed.
-- **`golangci-lint` self-locks, and mnci generated a workspace that trips it.**
-  `Error: parallel golangci-lint is running`. It takes a machine-global lock, Nx
-  runs `lint` across projects concurrently, so any workspace with two Go projects
-  fails `nx run-many -t lint` at random — one project printing `0 issues` while a
-  sibling dies on the lock, the victim moving between runs. Fixed with
-  `parallelism: false` on the Go lint target only. This is a **user-facing bug in
-  generated workspaces**, invisible for as long as the runner had no linter.
-- **`flutter create` fails because the generator resolves the pub workspace too
-  early — and the error was unreadable, which is why it took a nightly to see.**
-
-  The ordering, now traced through the code rather than guessed: Nx flushes the
-  Tree before any `GeneratorCallback` runs, so by the time `flutter create` is
-  invoked the ROOT `pubspec.yaml` already lists the new project in its
-  `workspace:` block. `flutter create` then writes the project's own
-  `pubspec.yaml` from its template — **without** `resolution: workspace`, which
-  the generator adds a few lines later — and finishes with an implicit
-  `flutter pub get`. Pub rejects that state outright: a package named in a
-  workspace must declare it is resolved by that workspace. The implicit resolve
-  fails and takes `flutter create` down with it.
-
-  Fixed with `--no-pub` on `flutter create`, plus one `flutter pub get` at the
-  **root** after the post-create edits — same end state, in an order pub accepts.
-  Root rather than in-project because that is what a pub workspace means: one
-  resolution for every member, one `pubspec.lock`. A failure there now throws,
-  since an `add` that leaves a project pub cannot resolve has not produced a
-  working project.
-
-  **Only reachable with a real SDK**, which is why three published releases of
-  this plugin never hit it, and why the e2e is the gate rather than a mocked unit
-  test — `generators.spec.ts` deliberately does not mock `flutter create`.
-
-  The diagnosis was only possible after fixing the error reporting. The generator used `stdio: 'inherit'` inside a
-  `GeneratorCallback`, where Nx owns the terminal and swallowed everything flutter
-  said. A whole nightly produced nothing but Nx's generic `failed with exit code
-  1. Is the Flutter SDK on your PATH?`, which was actively misleading: the SDK was
-on PATH and had printed `Flutter 3.44.8 • channel [user-branch]`two lines
-earlier. Output is now captured, echoed, and folded into the thrown error.
-**No fix is claimed for the underlying failure.** The leading hypothesis is
-ordering: the generator writes the root`pubspec.yaml`with its`workspace:`list *before*`flutter create`runs, and`flutter create`ends with an implicit`pub get`— while the new package does not carry`resolution: workspace` until
-     the post-create edit. That would make it a pub-workspace resolution failure, and
-     it would only ever appear with a real SDK. The next nightly should say.
-
-### The e2e Now Installs Go's Linter and the Flutter SDK
-
-`@mnci/nx-flutter` is a first-party, published plugin that had **never once been
-exercised in CI**, and the reason was not a missing test — the tests exist. Every
-run reported `⊘ SKIPPED the entire Flutter section` and `⊘ SKIPPED the go lint
-assertion`, because the `e2e-windows` job provisioned nothing beyond Node.
-
-- **The `ci` job's guards could not be reused, and copying them would have looked
-  like a fix.** Every Go and Flutter guard begins with `existsSync('go.mod')` /
-  `existsSync('pubspec.yaml')` **against the working directory**. The e2e job's
-  working directory is this repo, which has neither — the suite generates its
-  workspaces in a temp directory and drives them from there. So the gated guards
-  would skip every time. The e2e job needs **unconditional** provisioning, and a
-  test now asserts these steps contain no marker check.
-- **`continue-on-error` on every provisioning step, deliberately.** An SDK
-  download is a network operation on someone else's infrastructure. The e2e
-  already reports an absent toolchain as a loud `SKIPPED` in its final report, so
-  a flaky clone degrades to exactly today's behaviour instead of reddening a
-  nightly for something that is not mnci's fault — and it cannot degrade silently,
-  because the report names every skip.
-- **The hardcoded Flutter version is a drift risk, so it is guarded rather than
-  introduced and forgotten.** The workflow must hardcode `3.44.8` (the generator
-  emits no e2e job at all), so a test asserts it equals `FLUTTER_SDK_VERSION`.
-  Bumping the constant fails the suite until the workflow follows.
-- All three assertions were mutation-tested: re-adding a `pubspec.yaml` marker
-  check fails, bumping `FLUTTER_SDK_VERSION` fails, and dropping
-  `continue-on-error` fails.
-- **Still unproven: the Flutter section itself.** These steps make it _run_; what
-  it reports on Windows is unknown, because it has never run. Expect the first
-  nightly after this to be informative rather than green, and read it as new
-  coverage rather than a regression.
-
-### npm audit Now Blocks on an Actionable Advisory
-
-`npm audit` reported **9 vulnerabilities (8 high, 1 moderate)** on this repo. All
-9 are fixed, and the gate that should have caught them was already there — doing
-nothing useful.
-
-- **The step existed and was warn-only, on a justification that had inverted.**
-  `NPM_AUDIT_STEP` was `npm audit --audit-level=high || echo …`, documented as
-  non-blocking because "every flagged vulnerability traced back to `nx`'s and
-  `verdaccio`'s own bundled transitive dependencies … nothing an edit to _this_
-  workspace's manifest could fix". Measured now: **9 of 9 had `fixAvailable`**,
-  and every one was fixed by a targeted `overrides` entry — exactly the edit that
-  note called impossible. Same shape as the stale `js-yaml` pin below: a decision
-  resting on a measurement nothing re-checks.
-- **The split is actionable vs not, which npm reports per advisory
-  (`fixAvailable`) rather than a severity guess.** A published fix at moderate or
-  above exits 1; anything upstream has not fixed is printed and passes. That
-  keeps the whole of the original concern — going red for something nobody here
-  can fix only teaches people to ignore the gate — while removing the part that
-  was false.
-- **`--omit=dev` would have reported 0.** Measured on the pre-fix tree: every one
-  of the 9 arrived through a devDependency (verdaccio, ts-jest's istanbul chain,
-  `eslint-plugin-tsdoc`, commitlint, Vite). Auditing production only would have
-  been another gate that verifies nothing.
-- **The threshold is `moderate`, not `high`**, because `--audit-level=high` missed
-  the `postcss` advisory outright — moderate, and fixable.
-- **A broken audit does not fail the build.** Unparseable JSON exits 0 with the
-  reason printed; a gate that cannot read its input should say so.
-- **`pip-audit` deliberately stays report-only**, and the asymmetry is now
-  documented as a limitation rather than a preference: its output carries no
-  `fixAvailable` equivalent, so the actionable line cannot be drawn. Do not
-  "align" the two by making it blocking — that trades a weak gate for a false one.
-- **A stale pin was the concrete find.** `overrides["@verdaccio/config"]["js-yaml"]`
-  was already `^4.3.0` — a fix for this same advisory, whose range upstream later
-  extended to _include_ 4.3.0. It read as fixed and was not. `@istanbuljs/load-nyc-config`
-  needed a separate 3.x pin, since 4.x dropped `safeLoad`.
-- **This repo's own `ci.yml` never had the step at all**, which is why nothing
-  reported the 9 — and it was missing **seven** guards, not one: pip-audit, all
-  three Go steps and all three Flutter steps. Regenerating wholesale is wrong,
-  since the file legitimately carries `workflow_dispatch`, the nightly
-  `schedule`, a whole `e2e-windows` job and `checkout@v7`, none of which
-  `overlay.ts` emits (a generated workspace has no e2e suite) — a blind
-  regeneration would delete the nightly.
-- **`pipelineDrift.test.ts` now guards the class**, one-directionally: every
-  `run:` command the generator emits for the `ci` job must be present here.
-  Extras are fine, and comparing only `run:` (never `uses:`) is what lets
-  Dependabot bump action versions without tripping it. **There is deliberately no
-  exemption table** — all seven missing guards were added rather than excused,
-  since each begins with an existence check and no-ops without the toolchain, so
-  a Go or Python project landing here is covered on day one. A table of seven
-  "harmless" exemptions is precisely how the audit step stayed missing.
-  Mutation-tested both ways: deleting the audit step fails it, and so does
-  deleting the nightly `schedule` (the wrong way to "fix" drift).
-- **Verified by execution against two real dependency trees**, not by reading the
-  guard: the fixed tree exits 0, the pre-fix tree exits 1 listing all nine. Eight
-  unit tests drive the branches with a stub `npm` on PATH — the pattern the verify
-  guard established — including the mixed report where an unactionable finding
-  must not shield an actionable one.
-
-### The oxlint Path's First Real e2e Run, and Three Failures
-
-The Windows e2e had never once driven `mnci new --linter=oxlint`. Its first run
-failed three assertions, all in the `alt` section, and none of them was a flaky
-test — each was a defect that reached real generated workspaces.
-
-- **`runPrettier()` was hardcoded, and ran in oxlint workspaces too.** This is
-  the worst of the three because it fails _silently_: an oxlint workspace has no
-  `.prettierrc.mjs` (the overlay deletes it), so `npx prettier --write .` does
-  not error — it formats the whole workspace against **Prettier's own defaults**,
-  semicolons and double quotes, the exact inverse of the shared opinion, over
-  files mnci had just written correctly. `oxfmt --check` then reported **19 files
-  unformatted in a freshly generated workspace**, `eslint.config.mjs` and
-  `oxlint.config.ts` among them. Now `runFormatter(cwd, linter, target)`.
-- **`readWorkspaceStack()` never read `linter` at all**, so `mnci add` had no way
-  to know — the same mis-formatting on every add, and `WorkspaceStack` had no
-  such field to pass. It defaults to `eslint` when absent, the call `upgrade`
-  already documents, since a pre-choice workspace has no persisted value.
-- **`@mnci/oxlint-config` was STRICTER than ESLint on `.tsx`**, which is the one
-  thing the parity contract forbids. `mnci/react` switches
-  `explicit-function-return-type` **off** — a component's return type is always
-  inferred JSX — and this config's React block was derived by diffing only the
-  rules that block turns ON, so the single `'off'` was missed. A fresh
-  `mnci add react-app` failed `npm run lint` on Nx's own `app.tsx` and
-  `nx-welcome.tsx`, files the user had never opened.
-- **Enumerating the class found a second instance nobody had hit**: the `.d.ts`
-  blocks. A declaration file matches `**/*.{ts,mts,cts,tsx}`, so `no-explicit-any`,
-  `consistent-type-imports`, the promise rules and `unbound-method` all stayed on
-  where ESLint takes them off. `configs/declarations.js` mirrors it. A generated
-  workspace has no `.d.ts`, so this would have waited for the first user to add a
-  vendor declaration.
-- **The derivation method was the bug, so the guard is a property, not a
-  fixture.** `tests/parity.spec.ts` now resolves both configs and asserts that
-  every rule an ESLint block disables _after_ something enabled it is disabled in
-  a matching oxlint scope. It found a third entry on the first run —
-  `no-irregular-whitespace` for `*.yaml` — which is a legitimate exemption, since
-  oxlint has no YAML parser; that is encoded as a reachability property rather
-  than a rule-name allowlist. Both real gaps were mutation-tested (reverting
-  either fails 3 and 7 tests respectively).
-- Verified against the actual failing shape, not fixtures alone: a real `app.tsx`,
-  a real `nx-welcome.tsx` and a plain `.ts`, where oxlint reported **3 errors
-  before and 1 after** — the survivor being the plain `.ts`, so the rule was not
-  switched off wholesale.
-
-### The CLI Offers a Linter Choice
-
-`mnci new --linter=eslint|oxlint`, also a prompt and an `mnci upgrade` override,
-persisted in `nx.json`'s `mnci` block. Default stays `eslint`, so nothing changes
-for an existing workspace or a flagless run.
-
-- **The oxlint option is a HYBRID, and calling it a swap would be a lie about what
-  the workspace gets.** oxlint parses JS/TS/JSX/Vue and nothing else, so a pure
-  swap would leave a duplicate key in a CI pipeline, a malformed `pyproject.toml`
-  and a publishable package's wrong manifest all reported by nothing.
-  `@mnci/eslint-config`'s new `nonJs()` export keeps YAML/TOML/MD/CSS/HTML/JSON and
-  `@nx/dependency-checks`, composed from the same block modules `mnci()` uses so
-  the two modes cannot drift.
-- **`rootLintTarget()` is what actually runs oxlint, and the first pass forgot it.**
-  Every per-project `lint` target comes from `@nx/eslint/plugin` and runs ESLint
-  alone, so an oxlint workspace had a valid `oxlint.config.ts`, a green
-  `npm run lint`, and never invoked oxlint once. Found while writing the e2e
-  assertion that would have "passed" — the gate-that-verifies-nothing class again.
-  oxlint sweeps the WHOLE workspace (no `--ignore-pattern` scoping) precisely
-  because no per-project target covers it.
-- **Switching modes deletes the mode you left** — config files _and_ the
-  formatter's `devDependencies` entry. Two formatter configs is the `.prettierrc`
-  precedence bug in a new costume: both files valid, CLI picks one, editor picks
-  the other, gates disagree silently.
-- **Format-on-save was broken for `.ts`, and it was mnci's fault.** The
-  `.code-workspace` set a global `editor.defaultFormatter` plus `[json]`/`[jsonc]`/
-  `[yaml]` only. VS Code resolves a language-specific setting ahead of a general
-  one and does so BEFORE scope, so any user-level `[typescript]` block outranked
-  it. Reported from a real workspace where `.json` formatted and `.ts` did not.
-  `FORMATTED_LANGUAGES` pins them all.
-- **Generated workspaces never declared `prettier`** — it arrived only as a
-  transitive dependency of `@mnci/eslint-config`, so `npx prettier` worked while
-  the VS Code extension, which resolves prettier from the PROJECT's dependencies
-  and silently falls back to its bundled copy, could get a different one. `oxfmt`
-  and `oxlint` are declared for the same reason.
-- **Additive for the linter, EXCLUSIVE for the formatter**, and the asymmetry is
-  the correction to the first pass, which declared `prettier` unconditionally —
-  so an oxlint workspace declared a formatter nothing ran. The justification
-  inverts under oxlint: the declaration exists so `esbenp.prettier-vscode`
-  resolves the _project's_ prettier, and that extension is not even recommended
-  there, so declaring it is precisely what lets a globally installed copy
-  reformat on save against the opinion oxfmt is not applying — with `format:check`
-  (oxfmt) then reporting the result as unformatted. prettier stays in
-  `node_modules` regardless (`@mnci/eslint-config` depends on it), so **this is
-  about the declaration, not about pruning the tree**. Two mechanisms enforce it,
-  and mutation testing is what showed the split: the write-site ternary covers
-  `mnci new`, `withoutStaleLinterDependencies()` covers `mnci upgrade`, and only
-  the prune can fix a manifest that already declares it. `mnci doctor` checks it.
-- **`FORMATTED_LANGUAGES` claimed to be "everything the formatter handles" and
-  had never been checked against the binaries.** Measuring both found `html`
-  missing from a list that had always been able to include it, and `toml`
-  formattable by oxfmt alone — `prettier` on a `.toml` exits with `No parser
-could be inferred for file`. So `[toml]` is pinned under **oxlint only**
-  (`OXFMT_ONLY_LANGUAGES`); pinning it under eslint would route the file to a
-  formatter that errors on it. An oxlint workspace therefore gets a formatted
-  `pyproject.toml`, closing the gap `configs/toml.js` documents as unenforceable
-  — and nothing re-opens the rule that block rejected, since no linter has an
-  opinion on the file either way.
-- **The two `mnci doctor` linter checks shipped with no tests at all**, found while
-  adding the third. All three are covered now, including the default-to-`eslint`
-  path every pre-choice workspace takes, plus a latent crash the tests exposed:
-  both checks read `package.json` through `readJson`, which _throws_ on a missing
-  file, so doctor would have died on the kind of broken workspace it exists to
-  diagnose. `declaredDevDependencies()` reads it tolerantly instead.
-- **`oxc.oxc-vscode` is one extension covering oxlint AND oxfmt** (verified on the
-  Marketplace), so an oxlint workspace needs no formatter extension —
-  and `dbaeumer.vscode-eslint` stays in BOTH lists, because the hybrid still lints
-  YAML there.
-- **The e2e's `alt` workspace is now the oxlint half of the matrix**, pairing with
-  `demo` (jest + eslint) instead of adding a third workspace and another ~8 minutes
-  of real installs.
-
-### A Second Linting Package: `@mnci/oxlint-config`
-
-The same lint and style opinion on the Rust toolchain — oxlint + oxfmt — as an
-alternative to `@mnci/eslint-config`, not a replacement. **Not yet wired into the
-CLI**; that is the next conversation. This reverses the earlier "removed oxlint
-entirely" decision, deliberately and on request.
-
-- **The contract is directional, and that is what makes it testable.** Anything
-  `@mnci/eslint-config` accepts must pass oxlint. The config may be more
-  _permissive_ — it unavoidably is — but never _stricter_, because that is the case
-  where a green codebase starts failing on files nobody touched. Verified the
-  strongest way available: **0 findings across this whole ESLint-clean monorepo**.
-- **Literal rule parity is impossible, and the numbers are stated rather than
-  glossed.** Of the 452 rules the ESLint config enables for a project `.ts`, oxlint
-  implements 206; **246 do not exist in it** (169 `unicorn`, 56 `regexp`, plus a
-  tail). oxlint also parses only JS/TS/JSX/Vue, so YAML, TOML, Markdown, CSS, HTML
-  and JSON are linted by nothing here — measured, not assumed: `eslint-plugin-yml`
-  loads through the bridge and then exposes no rules, and oxlint would not parse a
-  `.yaml` even if it did.
-- **225 of the 246 are closed with oxlint's `jsPlugins`**, which runs _real_ ESLint
-  plugins. So `unicorn` and `regexp` here are not ports — they are the same
-  packages at the same versions the ESLint config uses. oxlint's own partial
-  `unicorn` is switched off so one defect is never reported twice.
-- **Three wrong turns, each found by measurement and each recorded in the file it
-  affects.** (1) `categories: { correctness: 'error' }` was measured clean on this
-  repo — but with oxlint's _default_ plugins; once `import`/`jest`/`vitest`/`react`
-  were enabled it reported 8 findings on ESLint-clean source. (2) `categories: {}`
-  changed nothing, because the plugins are what enable rules, which is why
-  `configs/leaks.js` disables 111 of them. (3) TypeScript rules applied
-  workspace-wide made `typescript/no-require-imports` fire on a `.cjs` file the
-  ESLint config lints clean, so they are TS-scoped like the ESLint block they
-  mirror.
-- **Two genuine divergences, off with evidence** in `configs/divergences.js`. The
-  worrying one is `unicorn/no-array-sort`: an _option_ (`allowExpressionStatement`)
-  that ESLint honours and the alpha bridge appears not to — a rule stricter than
-  configured everywhere it runs, not just in one file.
-- **A fixture that asserted the opposite of the truth was caught and removed.** The
-  minimal repro written for `consistent-function-scoping` is reported by _both_
-  linters, so as a "clean" fixture it was simply wrong. The divergence only appears
-  on the real 400-line module. **A fake fixture is worse than no fixture.**
-- **oxfmt replaces Prettier, verified rather than assumed**: byte-identical on
-  JSON/YAML/MD/CSS/TS samples and on 60 of 61 real files, diverging only on how a
-  multi-line union after `as` wraps. A test diffs the two binaries and asserts the
-  option set `toEqual` the ESLint package's, so the two halves cannot drift.
-  **The speed claim was later restated at the right scale**: 46ms against ~1.5s is
-  a _single file_; checking this whole monorepo is 2.3s against 14.6s, about 6x.
-  Quote the whole-repo number — it is the one a contributor waits on.
-- **#24's guard earned its keep again**: it failed the moment the package appeared,
-  because a new project had no `build` target and no recorded reason.
-
-### `@mnci/eslint-config` Owns Prettier, and Every Block Has a Name
-
-The package held the whole linting opinion while the formatting opinion was a literal
-in `overlay.ts` — two halves of one decision, in two places, reachable by two different
-upgrade paths (`npm update` for one, `mnci upgrade` for the other). And the cost of
-having moved the rules into a package had gone unpaid: a three-line root config gives no
-hint that twenty tools are behind it.
-
-- **`prettier.js` is the new source of truth**, exported as
-  `@mnci/eslint-config/prettier`, with `prettier` moved into the package's own
-  dependencies so a workspace need not declare a formatter to be formatted correctly.
-  Generated workspaces get a `.prettierrc.mjs` that re-exports it, and `.prettierrc.json`
-  joins the files `applyOverlay()` **deletes** — mnci used to write that name, and it
-  outranks `.mjs`, so an upgrade that left it behind would do nothing at all.
-- **The 86-file reformat was a drift this uncovered, not a style change.** This repo's
-  `.prettierrc.json` said `trailingComma: "es5"` while the `PRETTIER_CONFIG` it ships
-  says `"none"`. Nothing reported it, because the check and the shipped opinion were
-  different files. `tests/prettier.spec.ts` pins every option now, through the real
-  binary, loading the config **by its bare specifier** via a node_modules symlink — the
-  spelling is the subject, since a missing `exports` entry resolves fine in-repo and
-  fails only once published.
-- **Every one of the 29 resolved blocks now has a unique `name`.** ESLint 9 added it and
-  `eslint --inspect-config` reports it, so it is the only handle a user has on "which
-  block turned this on". `configs/named.js` covers the presets that ship anonymous
-  (`eslint-plugin-yml`, `eslint-plugin-toml`, `eslint-config-prettier`) while keeping any
-  name upstream does provide — `typescript-eslint/recommended` stays itself. Asserted as
-  a property, not a list: a new block without a name fails.
-- **The generated config now carries the inventory and the override recipe**, and the
-  inventory is checked against the real config in both directions. Mutation-tested both
-  ways: renaming `mnci/import-graph` fails, and dropping `mnci/css` from the table fails.
-- The one override that cannot work — `space-before-function-paren` — is stated in the
-  generated file itself, where someone would try it, rather than only in a README.
-
-**Verified by running the emitted files, not by reading them.** A probe workspace got
-the real `ESLINT_CONFIG` and `PRETTIER_CONFIG` output plus a node_modules symlink to the
-package: the config parses with its comment block intact and resolves **29 blocks, 0
-unnamed**; a real `.ts` lints clean; Prettier resolves through `.prettierrc.mjs` and
-applies Standard (`"double";` → `'double'`, and `function f (a)` → `function f(a)`,
-which is the `space-before-function-paren` conflict demonstrating itself); and the
-override recipe **copied verbatim out of the generated comment** silences
-`no-explicit-any` for one directory. What that still does not cover is
-`create-nx-workspace` itself — a full `mnci new` + `mnci add react-app` remains the
-stronger check, and is what the e2e does.
-
-### Generated Workspaces Ship a Devcontainer
-
-ROADMAP #11. The toolchain matrix is Node + Python + Go + Flutter, and only **CI** had
-all four: the pipeline installs the Flutter SDK and assumes CPython and Go on the
-agent, while locally a contributor was on their own.
-
-- **`NODE_VERSION` is now one constant** feeding both the workflow's `setup-node` and
-  the container's base image. Hardcoding it twice is the drift the file exists to
-  remove, and a test fails if the image tag stops reading it.
-- **`postCreateCommand` reuses the pipeline's own guards** — `npm ci`, the
-  `python:install` root script, then the same `golangci-lint` and Flutter SDK
-  one-liners CI runs. All are idempotent and no-op without a `go.mod`/`pubspec.yaml`,
-  so a JS-only workspace pays almost nothing. A third copy would be the thing that
-  drifts, so there isn't one.
-- **Python and Go are devcontainer features; Flutter cannot be** — no maintained one
-  exists, the same reason `@mnci/nx-flutter` was written — so the SDK comes from the
-  pinned clone, matching CI by construction. A Dockerfile was rejected as a second
-  thing to maintain against upstream.
-- The VS Code extension list became a shared constant, so the `.code-workspace` file
-  and the container cannot recommend different toolsets.
-- **The limit is stated rather than glossed: the container was never built.** This
-  environment has the Docker client but no daemon. What _was_ verified: all three
-  registry refs resolve, the JSON parses, a real generated workspace gets the file,
-  and that workspace's own `format:check` and root `lint` accept it — the latter only
-  because #28's root lint target, shipped one change earlier, is what covers
-  `.devcontainer/` at all. Booting it once on a machine with Docker is the check this
-  still deserves.
-
-### The e2e No Longer Cascades on One Failure
-
-ROADMAP #21's structural half, which closes #21. `run()` throws and the e2e was one
-linear file, so a crash anywhere silently removed all coverage below it — which had
-happened twice, and is how the suite once reported nothing at all about Go because
-_Python's_ toolchain could not install.
-
-- **A `section(label, needs, body)` helper wraps five blocks**: `js stack`,
-  `alt stack`, `python`, `go`, `flutter`. A section that throws is recorded and the
-  run continues; a section whose prerequisite failed is **skipped**, so its assertions
-  do not become a wall of failures all tracing to one cause. Skipping is transitive.
-- **A crashed section is `enforce`d, not `skip`ped** — the run still exits non-zero.
-  The goal was never to tolerate the failure, only to stop it being a silent one.
-- **The roadmap's own sizing was wrong, and measuring beat estimating.** It predicted
-  "94 top-level bindings, many crossing section boundaries". Exactly **one** does:
-  `altWorkspace`, which `python` and `go` both drive. ESLint's `no-undef` proved it —
-  wrapping reported 93 references to that one name and nothing else — so the hoist is
-  one line. Reach for static analysis before assuming a refactor is large.
-- **Validated by injecting failures into real runs**, one per half: a `throw` atop
-  `js stack` was recorded and the run still generated the alt workspace, asserted
-  against it, and entered `python`; throws atop _both_ early sections made `python`
-  and `go` report `⊘ SKIPPED … its prerequisite section "alt stack" failed`, with the
-  report printed and exit 1 carrying exactly the two crashes. Before the change the
-  first throw alone produced no report at all.
-- Go's and Flutter's toolchain gates are deliberately a _different_ mechanism: absent
-  tooling is `SKIPPED` and does not fail the run; a crash is a failure that is
-  reported.
-
-### Root-Level Files Now Have a Lint Target
-
-ROADMAP #28, found by #24's guard: `npm run lint` is `nx run-many -t lint`, and every
-`lint` target belongs to a package and runs `eslint .` in its own directory. Nothing
-ran ESLint at the workspace root, so `.github/workflows`, root JSON/Markdown and the
-root config files were covered by no target at all.
-
-- **Fixed with an explicit `lint` target on the root project**, scoped by **CLI**
-  ignore patterns (`--ignore-pattern "packages/**"` and friends) rather than config
-  `ignores`. That distinction is load-bearing: flat-config `ignores` are relative to
-  the config file, and every package's `lint` resolves that same root config, so
-  ignoring `packages/**` there would have switched linting off _inside_ the packages.
-- 19 files, zero problems, and none of the 158 inside packages are re-linted.
-- **Proven to gate**: a planted `var` in a root `.mjs` fails `@mnci/source:lint`.
-  #24's `ABSENT_BY_DESIGN` entry for it is gone, so the stub guard now covers it too.
-- **It ships to generated workspaces too**, via `ROOT_LINT_TARGET` in `overlay.ts`,
-  written alongside `includedScripts: []` — load-bearing, since the root scripts are
-  the `nx run-many` aggregators and inferring targets from them would make `lint`
-  invoke `nx run-many -t lint`, itself. Merged, not replaced, so a workspace's own
-  root targets survive an upgrade.
-- **It nearly did not ship, on a measurement that was wrong.** The first pass reported
-  46 errors in a generated workspace, 45 in `.agents/`, `.github/skills/` and
-  `.opencode/` — read as Nx's agent scaffolding. They are not: `SANDBOX_INJECTED` in
-  `cli.e2e.mjs` names those three directories as artifacts **this coding-agent sandbox
-  injects into every cwd**, which is why the e2e deletes them before any
-  whole-workspace assertion. **Measure workspace-wide claims outside the sandbox**, or
-  subtract `SANDBOX_INJECTED` first.
-- The real blocker was **one** rule: `unicorn/no-anonymous-default-export` on the root
-  `jest.config.ts` Nx generates (`export default async () => ({ projects: … })`). It
-  is now off for the `jest.*`/`vitest.*` config family, pinned in both directions so
-  it cannot quietly go off for ordinary modules.
-- **Verified on a real generated workspace**: target present, `nx run <scope>/source:lint`
-  exits 0 out of the box, `npm run lint` runs it without recursing, and a planted `var`
-  in the generated `commitlint.config.mjs` fails it. The e2e pins all four.
-
-### The Stack Is on ESLint 10
-
-ROADMAP #26, closed. ESLint **10.8.0**, `eslint-plugin-unicorn` **72**, `@eslint/js`
-**10** — the content of Dependabot #86 and #83, both closed with reasons at the time.
-Neither holdout survived measurement.
-
-- **`jsx-a11y`'s peer cap was stale, not real.** Its latest release peers at
-  `^3 … ^9`, so `npm install` ERESOLVEs on 10 — but with one override the plugin
-  installs and its rules still fire. `ESLINT_PEER_OVERRIDES` in `overlay.ts` writes
-  `"overrides": { "eslint-plugin-jsx-a11y": { "eslint": "$eslint" } }` into every
-  generated root manifest, because **npm honours `overrides` only at the root**,
-  which is why a config package cannot fix this for itself. Merged rather than
-  replaced, so a workspace's own overrides survive `mnci upgrade`. State the trade
-  when touching it: mnci deleted `legacy-peer-deps` for weakening dependency
-  resolution, and this is the same kind of decision, only far narrower — remove it
-  the moment jsx-a11y declares ESLint 10.
-- **The bump surfaced 92 problems and zero defects.** The three rules
-  `configs/base.js` predicted on v61 were the top three by count —
-  `name-replacements` (35), `no-top-level-assignment-in-function` (19),
-  `consistent-boolean-name` (13) — and the prediction was right about why. A fourth
-  joins them: `no-incorrect-template-string-interpolation` (10) reads Nx's own
-  `{workspaceRoot}` tokens as forgotten `${...}`, so it cannot be right about any
-  code that writes Nx config.
-- **The other 25 were fixed, not silenced** — the difference between adopting a rule
-  and neutering it. One was a genuine defect: core ESLint 10's `no-useless-assignment`
-  found a dead initialiser in `doctor.ts`.
-- **`--fix` was run _after_ the four disables, deliberately.** The naming rules
-  rewrite identifiers, so fixing first renames code that is about to stop being
-  linted — a 350-line diff of pointless churn, which is exactly what happened on the
-  first attempt before it was reverted.
-- **Verified on a real generated workspace**: `npm install` succeeds on ESLint 10
-  (the override's whole purpose), and the resolved tree is eslint 10.8.0 + unicorn 72
-  - jsx-a11y 6.10.2.
-- `mnci doctor`'s eslint-major check needed no code change — it derives from
-  `ESLINT_VERSION`, so only its test fixtures moved.
-
-### React Rules Now Come From `@eslint-react`
-
-ROADMAP #26 step 2, taken first on purpose: it is the one step of the ESLint 10
-upgrade that is independently useful and reversible, and isolating it keeps the
-expensive real-react-app verification about React rather than about ESLint 10.
-
-- **`eslint-plugin-react` is gone.** Its latest release peers on `eslint: ^3 … ^9.7`
-  with no ESLint 10 build at all, so it — not ESLint — is what pinned this config to 9. `@eslint-react/eslint-plugin` is a maintained rewrite peering on `eslint: "*"`.
-  Every rule it has no equivalent for is a class-component or `propTypes` rule; this
-  project generates neither, and two of them were already switched off here.
-- **`recommended-typescript`, and it needs no type services.** Only
-  `recommended-type-checked` does, so this block carries none of `typeAware.js`'s
-  scoping hazard, where a file outside a tsconfig becomes a fatal parse error. In
-  5.18.1 `recommended` and `recommended-typescript` resolve to an identical rule set.
-- **Hooks stay with the React team's plugin.** `@eslint-react` reimplements them and
-  ships a config to switch `eslint-plugin-react-hooks` off in favour of its own; this
-  config does the reverse and switches off the two `@eslint-react` rules that
-  duplicate it, so one defect is never reported twice with two different messages.
-  Its other hook-adjacent rules (`purity`, `set-state-in-effect`, `use-memo`) are new
-  coverage and stay on. A test pins both halves, so flipping the pair cannot pass.
-- **Verified on a real generated workspace with a real `react-app`**, not on fixtures
-  — the exact step #107 skipped. `npm run lint` exits 0 on the fresh workspace, and a
-  planted keyless list reports `@eslint-react/no-missing-key` as an error.
-- **It found one new warning on a file the user never wrote**:
-  `dom-no-dangerously-set-innerhtml` on Nx's `nx-welcome.tsx`. **Kept deliberately** —
-  it is a `warning`, nothing sets `--max-warnings`, so lint still exits 0, unlike the
-  react-lib rollup and `prefer-regex-literals` precedents which were hard failures.
-  Switching off a security-relevant rule to quiet one piece of Nx boilerplate is the
-  worse trade.
-
-### `nx affected` Was Blind to Every Root Config File
-
-ROADMAP #25, filed as "blind to `@mnci/eslint-config`". Measuring it showed the
-problem was far wider: `nx affected` walks the **project graph**, and a root config
-file lives in no project — so changing one marked only the root pseudo-project, which
-has **no verify target at all**.
-
-Measured one file at a time with `nx show projects --affected --uncommitted`:
-`eslint.config.mjs`, `tsconfig.base.json` and the root `package.json` each marked
-`@mnci/source` **and nothing else**, so the affected-scoped verify step on such a PR
-ran nothing and reported green. `nx.json` and `package-lock.json` already marked
-everything (Nx special-cases both).
-
-- **Fixed by filling in `namedInputs.sharedGlobals`**, which the preset's `default`
-  input already references and `production` extends — one list reaches every target.
-- **The fix ships to users, not just this repo.** `SHARED_GLOBAL_INPUTS` and
-  `withSharedGlobals()` in `overlay.ts` write the same three root files into every
-  generated workspace's `nx.json`, and `mnci upgrade` back-fills existing ones. The
-  merge is additive and idempotent, so a workspace's own entries survive.
-- **This repo carries three entries the generated list cannot**:
-  `packages/eslint-config/{package.json,index.js,configs/**/*.js}`. Here the lint
-  config is a workspace member; in a generated workspace it is a registry dependency,
-  so its changes arrive through `package-lock.json`, which Nx already tracks.
-- **`.prettierrc.json` is deliberately absent.** Prettier is not a project target —
-  `format:check` runs `prettier --check .` over the whole tree every run — so listing
-  it would bust every cache and verify nothing new.
-- **The e2e asserts it behaviourally**, touching each of the three files in a real
-  generated workspace and requiring real projects to be marked; the nx.json entries
-  alone would not catch Nx changing how `sharedGlobals` is consumed. Both unit
-  assertions were mutation-tested.
-
-### A Guard Against Verify Targets That Verify Nothing
-
-ROADMAP #24, the loose end from #20 — closed as the _class_ rather than the two
-instances. `packages/cli/src/verifyTargets.test.ts` reads the real Nx project graph,
-resolves every verify target down to the shell command it ultimately runs, and fails
-when that command is a no-op (`echo`, `:`, `true`, `exit 0`).
-
-- **This is the only kind of check that can catch it.** Nx _disables_ an inferred
-  target rather than dropping it: with `noEmit: true` in a tsconfig, `typecheck`
-  survives in the graph with its command replaced by `echo "The 'typecheck' target
-is disabled because …"`, so **running** it passes. CI is structurally blind to it.
-- **The target list is read from the root `affected` script**, not duplicated, so the
-  guard can never cover a narrower set than CI actually runs.
-- **It follows `npm run <script> [-w <pkg>]`**, because most targets here are one hop
-  from a `package.json` script — a `"typecheck": "echo skip"` hides in the script, not
-  in the target, and is caught identically.
-- **A missing target is the weaker gate, not the stronger one.** `nx run-many -t X`
-  skips every project without an `X` and exits 0, so absence must be a recorded
-  decision in `ABSENT_BY_DESIGN` with a reason. Mutation-tested in all three shapes:
-  Nx's real stub, an `echo` script, and an unexplained absence.
-- **Writing that exemption table found another live instance**, which is the argument
-  for the rule. The reason drafted for `@mnci/eslint-config` having no `typecheck` —
-  "ts-jest type-checks the specs as it runs" — is **false**: `tsconfig.base.json` sets
-  `isolatedModules: true`, which puts ts-jest in transpile-only mode, so
-  `const x: number = 'y'` in a spec passes jest. Its `tests/config.spec.ts` was
-  type-checked by nothing. Fixed with #20's pattern (`tsconfig.typecheck.json` + a
-  `typecheck` script), clean on the first run, and verified real by planting a type
-  error. **No project is exempt from `typecheck` now** — and none should be, since a
-  project's specs are type-checked only by that target's tsconfig.
-- Also recorded, not fixed (ROADMAP #28): no `lint` target covers root-level files.
-  Every `lint` target runs `eslint .` inside its own package, so `.github/workflows`,
-  root JSON/Markdown and the root config files are linted by nothing. Measured —
-  `eslint .` at the root is clean over 177 files — so it is a gate hole, not a bug.
-
-### Regex and TOML Linting, and One Preset Measured and Rejected
-
-The rest of ROADMAP #19e, which closes #19 entirely.
-
-- **`eslint-plugin-regexp`** (`flat/recommended` minus four) for
-  `no-super-linear-backtracking` — a regex that is correct but exponential on a
-  crafted input. Three real findings here, all unused capturing groups.
-- **The four exclusions are a crash, not taste.** `no-legacy-features`,
-  `no-missing-g-flag`, `no-useless-dollar-replacements` and `no-useless-flag` reach
-  for type information and **throw** when the TS parser has no type-aware services —
-  normal for any `.ts` outside `{apps,libs,packages}/<name>/src`. A crash kills
-  linting for the whole file. An isolated test of the preset passes, because in
-  isolation there are no services to be missing; all four had to be found by
-  iterating the real lint.
-- **TOML is `flat/base`, parser only.** `flat/standard` reports **six**
-  `array-bracket-spacing` errors on the `pyproject.toml` `nx-python-pip` itself
-  generates — every Python workspace would have failed lint on a file the user never
-  wrote. A test pins the real generated content as clean. TOML formatting is
-  therefore unenforced: Prettier has no TOML support, and the alternative measured
-  worse than nothing.
-- **`eslint-plugin-n`'s fuller `recommended` set was rejected.** `no-missing-import`
-  alone gave **189** false positives — the same unbuilt-`dist` problem that forced
-  `no-unresolved` off in #19d — and a narrow subset's four findings were _all_
-  legitimate patterns (a test runner exiting non-zero, shebangs on `node` scripts).
-  Zero real bugs, so it fails the same "earns its keep" test three unicorn rules
-  already fail. Recording a rejection matters as much as recording an addition.
-- Verified on a real generated **Python** workspace: clean out of the box, a
-  malformed `pyproject.toml` caught as a parse error. Both decisions mutation-tested.
-
-### Release Steps Fired on Any Non-PR Event, and the e2e Now Runs Nightly
-
-ROADMAP #22 and half of #21. Found while trying to add a nightly schedule for the
-e2e: doing that to the workflow _as it stood_ would have started publishing packages
-every night.
-
-- **Every release-only step was gated on `event_name != 'pull_request' && ref_name
-== 'main'`.** "Anything that is not a PR" also means _any trigger anyone adds
-  later_. Generated workspaces were safe only **by construction** — their workflow
-  has exactly two triggers — while mnci's own workflow was already exposed, having
-  hand-added `workflow_dispatch` for the Windows e2e job: clicking _Run workflow_ to
-  get that job also satisfied the release condition and would have run
-  `nx release --yes`.
-- **Fixed to the positive form** in both, `event_name == 'push' && ref_name ==
-'main'`. Behaviour-identical for existing generated workspaces (provable — no third
-  trigger exists), a real fix here. A test asserts the positive form is present _and_
-  the negative one is gone, so it cannot come back; mutation-tested.
-- **Azure is deliberately untouched.** `ne(Build.Reason, 'PullRequest')` has the same
-  shape, and a manually queued run on `main` would satisfy it. The precise fix is
-  `in(Build.Reason, 'IndividualCI', 'BatchedCI')`, but no Azure run has ever
-  exercised this project's release path, and changing an untested release trigger to
-  guard a hypothesis is the worse trade. Documented instead — decide it with evidence.
-- **The e2e now also runs on a nightly `schedule`** (`0 3 * * *`), which is safe
-  _because_ of the gating fix. It had been red since #92 — eight PRs — since a manual
-  trigger was the only thing that ever ran it. Still open (#21): a failure in one e2e
-  section destroys every later section, which is how one bad `pip install` reported
-  nothing at all about Go or Flutter.
-
-### Go Finally Has e2e Coverage
-
-ROADMAP §6's oldest gap. All four Go kinds had real unit tests and real CI wiring,
-but nothing had ever driven them end to end, so every Go invariant in these docs was
-**documented and unverified**. The e2e now drives them, gated on the Go toolchain and
-reported as `SKIPPED` when absent — the Flutter pattern, and the point of it: Go went
-uncovered for so long precisely because it was silently _dropped_ rather than loudly
-skipped.
-
-What it enforces, each one an invariant that previously rested on documentation
-alone: one root `go.mod` with **no** `go.work` and zero per-project manifests; every
-target written explicitly (nothing is inferred in single-module mode, because
-`@nx-go/nx-go`'s inference keys on a per-project `go.mod`); `go-app` having a `start`
-target while `go-function-app` deliberately does not; a cross-project import
-resolving with **no** vendoring or `replace` directive; real `go build`/`go test`;
-`golangci-lint` rather than the plugin's `go fmt` default; a genuinely compiled
-binary in `dist/drop/go-app-*.zip`; and `nx release` surviving a `go-lib`.
-
-- **`golangci-lint` is gated separately from `go`.** Hosted CI images ship Go but
-  not the linter (this repo's pipeline `go install`s it), so tying the whole section
-  to it would skip the structural, build, test, package and release checks on most
-  machines. Only the lint assertion is gated.
-- **The release assertion needs a non-Go releasable package present**, which is why
-  it lives in `altWorkspace` (it already has `npm-lib sdk`). Found while verifying:
-  in a **Go-only** workspace `nx release` errors with "Release group `__default__`
-  matches no projects", because `!tag:type:go-lib` empties the scope — a different
-  failure entirely, which would have made the assertion prove nothing. The generated
-  CI's release guard already skips that case correctly.
-- The module path is **read from `go.mod`**, not hardcoded: it derives from the
-  workspace scope, so hardcoding would make the section quietly wrong on a rename.
-
-### Intra-Project Import Cycles, and Two Silent Failures
-
-Roadmap #19d, which completes #19. `configs/importGraph.js` adds
-`import-x/no-cycle` and `no-self-import`, scoped to project source — the
-**intra-project** gap, since `@nx/enforce-module-boundaries` only sees edges
-_between_ projects.
-
-Three things here are load-bearing, and all three were found by running it:
-
-- **`settings['import-x/parsers']` is what makes `no-cycle` work at all.**
-  `languageOptions.parser` tells ESLint how to parse the file being linted; it says
-  nothing about how import-x parses the files it _follows_. Without the mapping,
-  every `.ts` dependency is unparseable, traversal stops at depth one, and the rule
-  reports **nothing, ever** — enabled and inert. `no-unresolved` does _not_ need it,
-  which is precisely why the gap is easy to miss: one rule works while the other is
-  dead. `@typescript-eslint/parser` is an explicit dependency so this never relies
-  on hoisting.
-- **The Node resolver is unusable.** With import-x's default resolver this reported
-  **179** errors on this repo, all false — Node cannot resolve an extensionless
-  relative TypeScript import. `createTypeScriptImportResolver` gets **no `project`
-  option**, so it discovers each file's nearest tsconfig itself, the same reason
-  `projectService: true` works for the type-aware block.
-- **`no-unresolved` is off, structurally rather than by preference.** A project
-  consumes an internal lib by scoped name; npm workspaces symlinks it, but the
-  manifest points at `./dist`, which does not exist until that dependency is
-  **built** — and `lint` does not depend on `build`. The `ts` preset has no tsconfig
-  `paths` either. Verified on a real generated workspace: a lib re-exporting
-  `@scope/core` reported it unresolved, a false positive on the internal-lib feature
-  central to the scaffold. Switched off explicitly with a test pinning it, so nobody
-  re-enables it in good faith. `tsc` already covers unresolved _typed_ imports.
-
-Verified on a real generated workspace after the change: cross-project import clean,
-planted intra-project cycle reported. Both traps mutation-tested.
-
-### JSX Accessibility, Vitest Globals, and Comments in `tsconfig.json`
-
-Roadmap #19b, #19c and #19e — the rest of `@mnci/eslint-config`'s coverage gaps
-except #19d (import-graph rules).
-
-- **`eslint-plugin-jsx-a11y` (`recommended`) now covers every `.jsx`/`.tsx`.** There
-  were two React kinds and **zero** a11y rules touching JSX:
-  `@html-eslint/require-img-alt` applies to `**/*.html` only, so an `<img>` in a
-  component was checked by nothing. Verified on a real generated workspace, because
-  the risk was `recommended` failing a fresh `react-app` — Nx's `NxWelcome` is a
-  large slab of markup. It lints clean out of the box, and planted violations report
-  `alt-text`, `anchor-is-valid`, `click-events-have-key-events` and
-  `no-static-element-interactions`. This also corrects the docs' "HTML + a11y"
-  claim, which held for `.html` and not for JSX.
-- **Vitest's `vi`/`vitest` globals are declared**, and `vitest.*` config files join
-  the `jest.*` entry. Narrow — the vitest stack generates `.ts` specs and `no-undef`
-  is off for TS — but `vi.fn()` in a `.js` spec really did report `'vi' is not
-defined`.
-- **`jsonc/no-comments` is now explicitly off for the JSONC family**, and the reason
-  is worth remembering: `tsconfig*.json` was **already** listed as JSONC, yet a
-  commented one still failed. Those files also match `**/*.json`, whose block enables
-  the rule, and the JSONC preset only _omits_ it rather than setting `'off'` — so in
-  flat config the earlier `'error'` wins. Spreading a preset does not undo an earlier
-  block; only an explicit `'off'` does. `.vscode/*.json` joined the same block.
-- Both new rule blocks were mutation-tested, and the JSON relaxation is tested in
-  both directions so it cannot quietly loosen real `.json` files.
-
-### Two Plugins Had a Fake `typecheck` Target
-
-Nx **disables** an inferred `typecheck` target when a project's tsconfig sets
-`noEmit: true`, replacing the command with an `echo` that exits 0.
-`@mnci/nx-flutter` and `@mnci/nx-python-pip` both set it, so their typecheck passed
-by printing a message — #18's gate was theatre for two of four projects, both
-published.
-
-- **Fixed with the pattern `@mnci/cli` already used**: a `tsconfig.typecheck.json`
-  plus a `typecheck` package script, rather than touching the build. `noEmit: true`
-  and the contradictory `emitDeclarationOnly: true` are gone from the base tsconfig
-  — `tsconfig.lib.json` overrode both, so they were dead config that only set the
-  trap.
-- **Turning the gate on found real pre-existing errors**, which is the proof it
-  mattered: `tsconfig.lib.json` excludes `*.spec.ts`, so every spec in both plugins
-  was type-checked by nothing. `toSorted`/`Object.hasOwn` against `lib: es2021`, and
-  five stale `as unknown as Buffer` casts (now
-  `as unknown as ReturnType<typeof readFileSync>`, so they track `@types/node`).
-- **The newer `lib` is in `tsconfig.typecheck.json` only, never the base.** Bumping
-  the base to `es2023` was tried and **changed published output** — class property
-  initializers become native class fields, a `[[Set]]` → `[[Define]]` change in a
-  class that `extends` Nx's `VersionActions`. Confined to the typecheck config,
-  `dist/` is byte-identical (verified by diffing). Never raise `target`/`lib` in
-  these packages' base tsconfig for the sake of a spec file.
-- **Verified by planting a type error, watching typecheck fail, removing it** — the
-  only verification that means anything here, since a green typecheck was the
-  symptom.
-- **No `mnci doctor` check**, deliberately: the trap cannot occur in a generated
-  workspace (neither mnci nor any `@nx/*` generator writes `noEmit` — checked), and
-  doctor's bar is invariants that have actually been violated somewhere it runs.
-  Still missing: an automated guard that a `typecheck` target is not a stub. CI
-  cannot catch this class by running the target, because the stub passes.
-
-### Type-Aware Lint Rules in `@mnci/eslint-config`
-
-`configs/typeAware.js` adds the rules that read **types** — most importantly
-`no-floating-promises`, which catches a dropped `await` that `tsc`, Prettier and
-every other rule are silent about. The blocker recorded in `configs/typescript.js`
-("a generated monorepo cannot know its tsconfigs up front") was obsolete:
-`projectService: true` discovers each file's tsconfig itself.
-
-- **Curated, not `recommendedTypeChecked`.** That preset reported 67 problems on
-  this repo, mostly not bugs — `require-await` fires on every `nx-python-pip`
-  executor, which must be `async` to satisfy Nx's contract. The curated set
-  reported 10, all real, including a genuine floating promise in `cli.ts`.
-- **Scoped to `{apps,libs,packages}/*/src/**`, and that is a safety decision.** A
-  `.ts` file in no tsconfig is a **fatal parse error**, which suppresses every
-  other rule for that file _and_ fails the build. Applying the rules workspace-wide
-  made four of this package's own tests report `FATAL`. `allowDefaultProject` is
-  fatal in the other direction too (`*.config.ts` broke `packages/cli/tsup.config.ts`),
-  so scoping to directories guaranteed to have a tsconfig is the only choice that
-  cannot misfire. Widen it only with that guarantee.
-- **`no-misused-promises` sets `checksVoidReturn: { attributes: false }`.** A
-  freshly generated `react-app` with `onClick={async () => { await save() }}` — the
-  universal React idiom — failed `npm run lint` on a file the user wrote normally.
-  Found by generating a real workspace and adding a real react-app. Only that
-  sub-check is off; `Array.filter(async …)` still errors, and a test pins each half
-  so relaxing the rule wholesale cannot pass.
-- **Verified on a real generated workspace**, not just fixtures: green out of the
-  box across `npm-lib`, `internal-lib` and `react-app`, and a planted floating
-  promise reported in **both** `packages/*/src` and `libs/*/src`. Both new
-  assertions were mutation-tested in both directions.
-- **Found a separate P1 while doing this** (ROADMAP #20): `nx-flutter` and
-  `nx-python-pip` have a `typecheck` target Nx has **disabled** because their
-  tsconfigs set `noEmit: true` — it passes by printing a message. So #18's
-  `typecheck` gate is theatre for two of four projects. Deliberately not fixed here
-  (it changes two published packages' emit config), but recorded rather than left
-  for someone to rediscover.
-
-### Generated CI Verifies Affected Projects on a PR, Everything Otherwise
-
-Both providers now share one verify step (`AFFECTED_OR_ALL_GUARD` in `overlay.ts`),
-byte-identical between them and asserted so by the anti-drift test — which matters
-more for this guard than the others, since the two providers detect a pull request
-through **different** environment variables (`GITHUB_BASE_REF` vs
-`SYSTEM_PULLREQUEST_TARGETBRANCH`), so a provider-specific copy would change _what
-CI verifies_ rather than only how it is spelled.
-
-- **Every fallback path verifies everything, never nothing.** A missing target ref,
-  an unresolvable merge-base, any non-PR run → full `run-many`. Getting the base
-  too wide costs minutes; too narrow means CI runs almost nothing, reports green,
-  and has verified nothing. `main` therefore needs no special case — neither
-  provider sets a PR target branch on a push, so a release run always verifies in
-  full as a consequence of the fallback rather than a second condition.
-- **`git merge-base`, not `nrwl/nx-set-shas`** (GitHub-only): one mechanism for both
-  providers, correct in each by construction. Azure's `refs/heads/` prefix is
-  stripped, since Azure sends a full ref where GitHub sends a bare name.
-- **The standalone `npm run lint` step is gone** — it was `nx run-many -t lint`, a
-  strict subset of the verify target list, and on an affected-scoped PR it would
-  have re-linted every project. `format:check` deliberately stays workspace-wide:
-  `prettier --check .` is one invocation over the tree, not a per-project target.
-- **Verified by executing the guard, not by reading it.** Six tests run the real
-  emitted command against a real git repo with a stub `npx` on PATH recording which
-  Nx command it chose (not-a-PR, GitHub PR, Azure's full ref resolving to the _same_
-  base, unresolvable branch, exit-status propagation, and surviving YAML parsing
-  unchanged in both providers). Both branches were mutation-tested to confirm the
-  tests fail when the guard breaks. Affected _selection_ was checked separately on a
-  real workspace: changing a depended-on internal lib marks it and its consumer.
-  This is the practice `mnci-details.md` §9 already prescribes for guards.
-
-### One Root ESLint Config, One Prettier Config, in Generated Workspaces
-
-Eight reported problems with real generated workspaces, all traced to one pattern:
-**this repo's own root had been hand-upgraded while `overlay.ts` was never updated**, so
-mnci worked while everything it produced did not.
-
-- **`@mnci/eslint-config`** is the fourth package: the whole linting opinion (JS/TS,
-  React, JSON/JSONC/JSON5, YAML, Markdown, CSS, HTML+a11y, tests), no build step, tested
-  against the real `eslint` binary. A generated workspace gets a three-line root config
-  importing it and **no per-project configs** — every generator writes one, and
-  `removeGeneratedEslintConfig()` deletes it after each `add`.
-- **`@nx/dependency-checks` moved to that root config**, retiring npmLib's hand-written
-  `NPM_LIB_ESLINT_CONFIG`. Verified: a project with no config of its own still gets its
-  inferred `lint` target and still reports real violations. The e2e enforces both halves
-  permanently, since a future Nx change there would silently disable linting workspace-wide.
-- **Prettier was dead in every generated workspace.** `create-nx-workspace` writes
-  `.prettierrc`, mnci wrote `.prettierrc.json`, and `.prettierrc` wins Prettier's
-  precedence — so mnci's whole formatting opinion was discarded. The overlay now deletes
-  it, and `trailingComma` is corrected from `"es5"` to `"none"` (Standard forbids them).
-  Nx's `.vscode/` goes too.
-- **`runPrettier()` runs at the end of `new` and every `add`.** Nx's generators emit
-  semicolons and double quotes, so a fresh workspace failed its own `format:check` before
-  the user wrote a line. Non-fatal: the project is already generated by then.
-- **`space-before-function-paren` cannot be enabled alongside Prettier** — see the ESLint
-  section under Design Decisions. This reversed an earlier decision; it was verified by
-  round-tripping a real file through both binaries rather than argued from docs.
-- **Nx's generators run with `--linter=none`, and mnci registers
-  `@nx/eslint/plugin` in `nx.json` itself.** Found by real end-to-end
-  generation, not by reading code: `@nx/react` pins `eslint-plugin-import@2.31.0`,
-  whose peer range caps at ESLint 9, so `mnci add react-app` failed its npm
-  install outright. `--linter=none` is the right
-  answer regardless — mnci deletes the config those generators write — but it
-  removes the side effect that used to register the plugin, so the overlay now
-  owns that too. A latent oddity goes with it: `npm run lint` previously worked
-  in a fresh workspace only by accident.
-- **The stack is ESLint 9, not 10** — decided by the plugins, not the version
-  number. So: `eslint ^9.39` and `eslint-plugin-unicorn` pinned to `^61`, the
-  last line supporting 9. Three unicorn rules this config would want off don't
-  exist in v61 and so aren't listed — ESLint rejects a config naming a rule its
-  plugin lacks. `configs/base.js` records which ones, for whoever upgrades next.
-  The plugin that originally decided it, `eslint-plugin-react`, has since been
-  replaced by `@eslint-react/eslint-plugin` (see the entry at the top of this
-  section); what remains is `jsx-a11y`'s stale peer cap and unicorn 72's
-  `>=10.4` floor, both written up in ROADMAP #26.
-- **This repo now lints itself with the config it ships** (`eslint.config.mjs` is the same
-  three-line import), which is what makes the original drift impossible to reintroduce.
-  TSDoc enforcement stays a root-only extra block — an mnci-authoring standard, not
-  something to impose on a user's workspace.
-
-### Local-Dev Commands: `:build`/`:qa`/`:start` Scripts and VS Code Tasks
-
-- Every `mnci add` now finishes by calling `registerProjectCommands`
-  (`commands/add/shared.ts`) on the project it just generated: `<name>:build`
-  (when the kind has a build target), `<name>:qa` (`lint && test`, always),
-  and `<name>:start` (only kinds with a real local dev-server story — never a
-  library) get written as root `package.json` scripts, and mirrored as VS
-  Code Tasks in the workspace's `.code-workspace` file. Idempotent — a repeat
-  `add` of the same name overwrites its own entries rather than duplicating.
-- `:start` routes through an existing generator target where one already
-  exists (`nx run <name>:serve` for `react-app`/`node-app`) or a small
-  `nx:run-commands` target mnci writes where none did: `go run .` (`go-app`),
-  `flutter run -d chrome` (`flutter-app`), `python3 main.py` (`python-app` —
-  mnci writes a runnable `main.py` too, since the plugin's own sample module
-  has none), and `func start` for `node-function-app`/`python-function-app`.
-- **Fixed a real bug found while wiring this up**: `node-function-app`'s
-  manifest `main` field was `main.js`, correct only for the _deployed_ (zip,
-  flattened) layout, never for local dev — `apps/<name>/main.js` never exists
-  before a build, and the build only ever writes `apps/<name>/dist/main.js`.
-  Local `func start` would have failed outright. Fixed by pointing `main` at
-  `dist/main.js` and changing the `package` target to nest `dist/` inside the
-  zip (`addLocalFolder(..., 'dist')`) instead of flattening it — one `main`
-  value now resolves correctly both locally and once deployed.
-- `go-function-app` deliberately gets **no** `:start` script: unlike the Node
-  and Python function-app kinds, it writes no `host.json`/custom-handler
-  config, so there is nothing for `func start` to attach to. A known gap,
-  stated plainly rather than shipping a script that would just fail.
-- Also fixed a pre-existing, unrelated bug found in the same file:
-  `vscodeWorkspace()`'s `folders` array was hardcoded to _this repo's own_
-  packages (`packages/cli`, `packages/nx-python-pip`, and a stale
-  `libs/monecromanci-v2` path that no longer exists) instead of being
-  generic — every fresh `mnci new` workspace was getting nonsense folder
-  entries. Now just `[{ path: '.', name: workspaceName }]`.
-
-### Go and Flutter Support, Plus Four Pre-existing Bug Fixes
-
-- **Go**: four kinds (`go-app`, `go-lib`, `go-internal-lib`, `go-function-app`) via
-  `@nx-go/nx-go`, one root `go.mod`. No e2e coverage yet (needs Go on the CI machine) —
-  see "Known Invariants" and the Go section of `packages/cli/README.md`.
-- **Flutter**: three kinds (`flutter-app`, `flutter-lib`, `flutter-internal-lib`) via
-  a new first-party plugin, `@mnci/nx-flutter`, built on **Dart pub workspaces** —
-  one root `pubspec.yaml`, so internal deps resolve with a plain version constraint
-  and no `path:`. Web-only builds; git-tag-only publishing (no pub registry on
-  Azure Artifacts). Has real e2e coverage, gated to run only when the Flutter SDK
-  is present (`SKIPPED` otherwise) — the pattern Go should eventually adopt.
-- **`GitHub Releases` changelogs**: on `--ci=github`-only workspaces, `nx release`
-  now posts a per-project changelog (from conventional commits) to a GitHub
-  Release instead of writing an unpushable `CHANGELOG.md`. `--ci=azure`/`both`
-  are unchanged.
-- **Four pre-existing bugs fixed**, found while building the above:
-  1. `go-lib` had no per-project manifest, so Nx's default `versionActions`
-     aborted the whole release graph — fixed by excluding `type:go-lib` from
-     `release.projects` (see the Go section above).
-  2. The e2e suite crashed partway through on a removed `--linter oxlint` flag,
-     so everything after it (Python, and now Go/Flutter) had never actually run.
-  3. The e2e's oxlint/oxfmt assertions described a stack mnci can no longer
-     produce; rewritten for ESLint + Prettier.
-  4. A fresh `vitest`-stack `npm-lib` failed `npm run lint` out of the box —
-     `@nx/dependency-checks` flagged the generated `*.spec.ts`/`vitest.config.*`
-     imports. Fixed via `ignoredFiles` in `add/npmLib.ts`.
-
-### Stack Simplification
-
-- **Removed oxlint entirely** — was an alternative linter, but:
-  - Not essential (ESLint + Prettier handles the same job)
-  - Reduced configuration surface
-  - Simpler for users to understand
-- **Unified on ESLint + Prettier** everywhere
-  - ESLint for code quality (correctness, not style)
-  - Prettier for all formatting (JavaScript Standard Style)
-- **Stack now has one choice**: test runner (`jest` / `vitest`), not linter
-
-### VS Code Workspace File
-
-- Generated as `<workspace-name>.code-workspace` on `mnci new`
-- Single file to open in VS Code (`File > Open Workspace from File`)
-- Includes:
-  - Folder structure (root, packages/_, libs/_)
-  - ESLint validation settings
-  - Prettier as default formatter
-  - Recommended extensions (ESLint, Prettier, Angular Console, Jest Runner)
-- Replaces the old per-folder `.vscode/extensions.json`
-
-### Python Plugin (Completed)
-
-- Dropped `@nxlv/python` (uv-only, not maintained for pip)
-- Built in-house: `@mnci/nx-python-pip` with generators + executors
-- Pip + Ruff + pytest + PyPA `build`/`twine` — no uv, no Poetry
-- Unified release with npm via `nx release` → `twine upload`
-- Vendoring via `mnci add python-vendor` for internal-lib dependencies
-
-### CI Provider Choice
-
-- **`--ci` flag**: `azure` (default) | `github` | `both`
-- Azure Pipelines: `azure-pipelines.yml`
-- GitHub Actions: `.github/workflows/ci.yml`
-- Dependabot: `.github/dependabot.yml` (for `github`/`both` only)
-- Same logic, different syntax — no drift
-
-### Nx Cloud (Optional)
-
-- `--nx-cloud` flag opts in (default off)
-- Named provider values (`azure` or `github`) avoid non-interactive hang in `create-nx-workspace`
-- Requires browser setup after generation
+## Current State
+
+What the project actually does today, by subsystem. For history — why a decision was
+made, what was tried and rejected, which commit fixed what — read the git log; commit
+messages and PR descriptions carry that narrative now, not this file. For open work,
+see [`ROADMAP.md`](ROADMAP.md), which is the live source of truth for known gaps and
+planned features.
+
+### Five language toolchains, one shape
+
+Every kind scaffolds through the ecosystem's own tooling wherever an official Nx
+generator exists (`@nx/react`, `@nx/node`, `@nx/js`), and through a thin first-party
+Nx plugin where none does:
+
+- **Node/TypeScript** — official `@nx/react` (Vite) and `@nx/node`/`@nx/js` generators.
+  `npm-lib`, `internal-lib`, `react-app`, `node-app`, `node-function-app`.
+- **Python** — `@mnci/nx-python-pip`, a real first-party `@nx/devkit` plugin (pip, Ruff,
+  pytest, PyPA `build`/`twine`; no uv, no Poetry). Kinds: `python-app`, `python-lib`,
+  `python-internal-lib`, `python-function-app`. Vendoring via `mnci add python-vendor`.
+- **Go** — `@nx-go/nx-go` (third-party), one root `go.mod`, **no** `go.work` and no
+  per-project manifests. Kinds: `go-app`, `go-lib`, `go-internal-lib`,
+  `go-function-app`. Every target is written explicitly by `add/go.ts` — the plugin's
+  inference needs a per-project `go.mod`, which the single-module layout doesn't have.
+  `go-lib` is excluded from `release.projects` (`!tag:type:go-lib`): it has no
+  per-project manifest, so Nx's default `versionActions` would abort the whole release
+  graph. `golangci-lint`, not the plugin's `go fmt` default.
+- **Flutter** — `@mnci/nx-flutter`, a first-party plugin built on a **Dart pub
+  workspace**: one root `pubspec.yaml`, every member with `resolution: workspace` and
+  an entry in the root `workspace:` list (miss either and pub silently resolves that
+  project standalone). Kinds: `flutter-app`, `flutter-lib`, `flutter-internal-lib`.
+  Web-only builds (keeps the Android SDK off build agents); git-tag-only publishing
+  (no pub registry on Azure Artifacts). A publishable `flutter-lib` must keep its
+  `release.version.versionActions` override, or `nx release` fails workspace-wide.
+- **C#/.NET** — `@nx/dotnet` is **inference-only** (verified by packing and reading
+  the tarball — no `generators.json`), so all four kinds scaffold via `dotnet new`
+  directly and write their own targets, the same posture as Go. Kinds: `csharp-app`,
+  `csharp-lib` (NuGet), `csharp-internal-lib`, `csharp-function-app` (isolated
+  worker). `nx release` needed no new npm package — `tools/csharp-version-actions.cjs`
+  is written into the generated workspace and resolved via Nx's workspace-relative
+  fallback in `resolveVersionActionsPath`. The publish target
+  (`csharpLibPublishTarget()`) is always present and self-gates at runtime on
+  `NUGET_PAT`, since Nx throws if zero projects in a release group carry the
+  `nx-release-publish` target name. `csharp-function-app`'s `.csproj` needs an
+  explicit `<FrameworkReference Include="Microsoft.AspNetCore.App" />` — ASP.NET
+  Core's shared framework is not referenced implicitly by `Azure.Functions.Sdk` — and
+  `addCsharpFunctionApp()` runs `dotnet restore` again after overwriting the
+  generator's placeholder `.csproj`, since the only restore that ran targeted the
+  discarded plain-console project and `@nx/dotnet`'s inferred build passes
+  `--no-restore --no-dependencies`.
+- The e2e (`packages/cli/e2e/cli.e2e.mjs`) drives all five toolchains end to end,
+  isolated per section (`section(label, needs, body)`): a crash in one section is
+  recorded and the run continues rather than silently dropping every section after
+  it, and a section is reported as a loud `SKIPPED` (never silently dropped) when its
+  toolchain is absent. Go, Flutter and C# are each gated on their SDK. The
+  `e2e-windows` job's toolchain-install steps are **unconditional**
+  (`continue-on-error`) rather than reusing the `ci` job's `existsSync('go.mod')`-style
+  guards, which key on the job's own working directory and would never fire against
+  the e2e's temp-directory workspaces.
+
+### Uniform `build` / `build:dev` / `start` / `dev` scripts, plus per-project launch configs
+
+Every app kind (never a plain library) carries all four npm scripts and a matching
+VS Code `launch` entry, written by `registerProjectCommands`
+(`commands/add/shared.ts`) at the end of every `mnci add`:
+
+- **`build`** — production.
+- **`build:dev`** — carries whatever debug info the toolchain distinguishes (source
+  maps, unoptimized codegen, debug symbols); omitted where a language has nothing to
+  distinguish (e.g. Flutter's `build-dev` still exists because of an upstream bug
+  workaround, but Flutter ships no `start` — no static file server for a built web
+  bundle).
+- **`start`** — runs what `build` already produced. No rebuild, no watch.
+- **`dev`** — builds a debug version and watches, rebuilding/restarting on change.
+- Each toolchain needed a different underlying mechanism: Node's `@nx/js:node`
+  `buildTarget` needs the manifest's real scoped name (found by running it, not by
+  reading the executor's schema); Go and `air` shell out via `execSync`, so
+  `-gcflags=all=-N -l` needs the space quoted **inside** the flag string to survive
+  the shell join; Python's `watchmedo auto-restart` restarts on every subprocess
+  exit by default, so `--no-restart-on-command-exit` is load-bearing; C#'s
+  `dotnet build`/`run` default to `Debug` (opposite of the JS convention here), so
+  `build`/`build:dev` are explicit `-c Release`/`-c Debug`.
+- `.code-workspace` launch configs use `node-terminal` (not `node`) so breakpoints
+  bind inside `nx run-many`'s child processes, drive `npm run <script>` (never a
+  path into `node_modules`, which is version-dependent), and scope `cwd` by folder
+  **name** (`${workspaceFolder:<name>}`). The launch array is merged on upgrade by
+  exact name match (`mnci: <name> dev`, not a `startsWith` prefix, which would
+  delete every per-project entry on the next `mnci upgrade`).
+- A future `cli-lib` kind (publishable package that is also invoked like an app)
+  would need the app treatment; deferred, since the kind doesn't exist yet.
+
+### Rollup npm libraries: source maps and declaration files
+
+`@nx/js:lib --bundler=rollup` needed several post-generation repairs, all applied by
+`overlay.ts`/`add/shared.ts` and re-applied on `mnci upgrade`:
+
+- **Source maps**: `withRollupSourceMaps` sets `sourcemap: true` in `withNx`'s FIRST
+  argument only (the second argument's `output.sourcemap` is always overwritten), and
+  forces `compiler: 'babel'` — `@nx/js:lib`'s hardcoded `compiler: 'swc'` produces
+  structurally valid but semantically empty maps (`sources: []`) through
+  `@nx/rollup`'s swc plugin. `sourcemapPathTransform` also normalizes the emitted
+  `sources` path (rollup's OS-native, one-parent-too-many path is wrong on every
+  platform for a URL-style specifier).
+- **`types`**: the generator writes `types: './dist/index.esm.d.ts'`, a file its own
+  build never emits. `repairPublishableManifest()` (`add/shared.ts`) repoints it at
+  `./dist/src/index.d.ts` — not the intermediate re-export stub, which
+  `@nx/rollup`'s `dts-bundle` plugin builds with `path.relative()`, an OS-native
+  separator that is wrong (backslash) on Windows and breaks module resolution
+  there. Applies identically to `npm-lib` and `react-lib`. Still open upstream: the
+  stub itself remains backslash-broken on Windows; the e2e reports it `SKIPPED`.
+- **Packaging**: `files` excludes `!**/*.d.ts.map` (declaration maps reference
+  `../src/*.ts`, which `dist`-only packaging never ships) but keeps `.js.map` files,
+  since debugging a published package needs them.
+- A CI verify-target guard (`verifyTargets.test.ts`) resolves every declared verify
+  target to its real shell command and fails on a no-op (`echo`, stub) — Nx disables
+  an inferred target (e.g. `typecheck` when `noEmit: true`) by replacing its command
+  with a passing `echo`, which is otherwise invisible to CI. Absences must be
+  recorded in `ABSENT_BY_DESIGN` with a reason.
+
+### Linting and formatting: ESLint only
+
+There is no Prettier and no oxfmt. `@mnci/eslint-config` is the whole opinion — code
+quality, type-aware rules, and JavaScript Standard Style formatting (including
+`space-before-function-paren`, unreachable under any Prettier-compatible formatter
+since Prettier rewrites `function f (a)` back to `function f(a)` on every run).
+`eslint --fix` is the formatter; `npm run format` runs it.
+
+- Rules are ported programmatically from `neostandard` onto `@stylistic` v5 (never a
+  runtime dependency on neostandard, which pins an incompatible `@stylistic` version).
+  Every block has a unique `name`, checked against `ESLINT_BLOCK_INVENTORY` in
+  `overlay.ts` in both directions.
+- `mnci/house-style` is a **separate block composed after** the ported `mnci/standard`
+  block, holding five deliberate departures from plain Standard:
+  `comma-dangle: 'always-multiline'`, `key-spacing` aligned on value (coupled with a
+  `no-multi-spaces` exception — moving one without the other makes the config
+  self-contradictory), `quote-props: 'consistent-as-needed'`,
+  `max-statements-per-line: 2`, and a required blank line before `return`
+  (`@stylistic/padding-line-between-statements`, not the removed
+  `newline-before-return`).
+- Coverage beyond core JS/TS: React (`@eslint-react/eslint-plugin`, ESLint-10-
+  compatible, replacing the abandoned `eslint-plugin-react`; hooks rules stay with
+  `eslint-plugin-react-hooks`), JSX a11y (`jsx-a11y/recommended`), type-aware rules
+  (`configs/typeAware.js`, curated rather than `recommendedTypeChecked`, scoped to
+  `{apps,libs,packages}/*/src/**` — a file outside a tsconfig is a fatal parse
+  error), intra-project import cycles (`import-x/no-cycle`, `no-self-import`; cross-
+  project `no-unresolved` is deliberately off — an internal lib's manifest points at
+  an unbuilt `./dist`), regex safety (`eslint-plugin-regexp`), and a root-level
+  `lint` target (`ROOT_LINT_TARGET`) covering CI/config/Markdown files that no
+  per-project target reaches.
+- `nx.json`'s `namedInputs.sharedGlobals` includes every root config file
+  (`eslint.config.mjs`, `tsconfig.base.json`, root `package.json`) so `nx affected`
+  doesn't treat a change to any of them as invisible — a root config file lives in
+  no project, so without this a PR touching only `eslint.config.mjs` verified
+  nothing and reported green.
+- `mnci doctor`'s `checkNoRetiredFormatter` fails on a leftover `.prettierrc*` /
+  `.oxfmtrc.json` / `oxlint.config.ts` — inert from the CLI but still picked up by a
+  globally installed formatter extension, silently undoing Standard on save while
+  `lint` stays green.
+
+### CI: dual provider, affected-scoped, audited
+
+Both providers (`azure-pipelines.yml`, `.github/workflows/ci.yml`) share
+byte-identical guard logic (`overlay.ts`, asserted by an anti-drift test), so a fix
+to one is mirrored in the other by construction:
+
+- **`AFFECTED_OR_ALL_GUARD`**: verifies affected projects on a PR (via
+  `git merge-base`, not `nrwl/nx-set-shas`), everything otherwise. Every fallback
+  path (missing ref, unresolvable merge-base, non-PR run) verifies **everything**,
+  never nothing.
+- **Release steps** fire only on `event_name == 'push' && ref_name == 'main'` — the
+  positive form, not `!= 'pull_request'`, which would also match any trigger added
+  later (this bit mnci's own workflow once, via a hand-added `workflow_dispatch`).
+  Azure's equivalent trigger fix (`in(Build.Reason, 'IndividualCI', 'BatchedCI')`)
+  is still open — see ROADMAP #23.
+- **`npm audit`** blocks on `fixAvailable` findings at `moderate` or above (not a
+  severity guess), non-blocking only for advisories with no published fix; a
+  malformed report exits 0 with the reason printed rather than failing silently.
+  `pip-audit` stays report-only — its output carries no `fixAvailable` equivalent.
+  This gate has gone stale twice on the same advisory class (a `js-yaml`/
+  `smol-toml` pin drifting one patch behind the advisory's actual fix line); treat
+  an `overrides` pin as a claim about a point in time, not an invariant.
+- The nightly Windows e2e (`schedule: '0 3 * * *'`) provisions Go's linter and the
+  Flutter SDK unconditionally, and is the only thing that has ever exercised
+  `@mnci/nx-flutter` on Windows for real — which is how a `spawnSync`-cannot-run-
+  `.bat` bug (the CVE-2024-27980 hardening) went unnoticed through several releases;
+  fixed by routing every Flutter invocation through `cross-spawn` (`runFlutter()`),
+  which resolves `.bat` shims without `shell: true`.
+- `.devcontainer/devcontainer.json` mirrors CI's toolchain (Node/Python/Go via
+  devcontainer features; Flutter from the same pinned SDK clone CI uses, since no
+  maintained Flutter feature exists). Never built against a real Docker daemon in
+  this environment — booting it once is still an open verification step.
+
+### Release model and publish auth
+
+- `nx release` is **tag-only**: it never commits, so versions resolve from git tags.
+  **A tagless clone makes a dry run silently wrong** (falls back to
+  `fallbackCurrentVersionResolver: "disk"`, which reads stale manifest versions) —
+  always `git fetch --tags` before trusting `nx release --dry-run` output.
+  Versioning is driven entirely by Conventional Commits (commitlint via husky).
+- **Merge PRs with a merge commit** — never squash or rebase-merge. Both replace the
+  branch tip's SHA, permanently breaking `git branch --merged`'s ancestry check;
+  this repo already squash-merged ~90 PRs and lost the ability to tell a finished
+  branch from an abandoned one that way.
+- `.npmrc`: Azure Artifacts gets real `@scope:registry` routing (npm prefers a
+  scope's registry over the global default on publish) plus `username`/`_password`
+  Basic auth; public npm gets auth only, no routing (npmjs.org is already the
+  default, so "routing" would be a false claim of protection).
+- **Azure Artifacts rejects a PAT sent as a Bearer token.** The feed's publish
+  endpoint answers with `www-authenticate: Bearer authorization_uri=https://
+  login.windows.net/...`, meaning the Bearer scheme wants an **Entra ID** token,
+  not a PAT — npm sends `_authToken` verbatim as Bearer and gets rejected. **A PAT
+  only authenticates via Basic** (`username`/`_password`), which is what
+  `npmrcContent()` already emits; do not "fix" this by switching to `_authToken`.
+  The actual fix for a real Azure Pipelines run is the `npmAuthenticate@0` task
+  (injects an Entra-issued token) — not yet adopted in `overlay.ts`, since it would
+  overwrite a hand-set password; see ROADMAP for the open trade-off.
+  Both feed path forms (`/npm/` and `/npm/registry/`) are keyed in the generated
+  file, since npm matches credentials by URL prefix and walks only upward.
+- XML config files (`NuGet.Config`) reject `<!-- -->` comments containing `--`
+  anywhere in the body — a real trap hit once (a `--registry` substring inside a
+  comment invalidated the whole document, cascading into an unrelated Flutter e2e
+  failure via a corrupted Nx project graph). `overlay.test.ts` has a permanent
+  regression test for this.
+
+### Workspace tooling: `mnci sync`, `mnci up`, `mnci doctor`
+
+- `nx sync` reconciles **TypeScript project references only** — it has no opinion
+  on dependency versions, and npm has no `catalog:` mechanism, so nothing else
+  enforces one-version-per-workspace.
+- `mnci sync` closes that gap: converges every externally-declared dependency range
+  to the installed version across npm/pip/pub/go/nuget, then runs `nx sync`. Go is
+  excluded (one root module, nothing to converge) with an explicit message, not a
+  silent no-op. Peer ranges (`>=` compatibility declarations) are excluded from
+  convergence — narrowing one drops consumers of a published plugin.
+  `resolvedVersion` is honestly `undefined` for pip (no lockfile) and NuGet (each
+  `.csproj` restores independently, no workspace-wide resolution).
+- `mnci up` reproduces `npm-check -u`'s grouped report and multiselect across all
+  five ecosystems, plus a "which projects declare this" column no single-project
+  tool can produce; selecting a row rewrites every declaration, which is what stops
+  `up` from creating the drift `sync` repairs. Each ecosystem's own tool answers the
+  "what's latest" question (`npm view`, `pip index versions`, `go list -m -u -json
+  all`, `flutter pub outdated --json`, `dotnet package search`) rather than a
+  hand-rolled registry call, so private feeds and their auth just work.
+- `mnci doctor` is a read-only invariant checker: exits non-zero on any finding,
+  and every finding names its remedy (retired formatter files, undeclared root
+  dependency hoisted into a rollup-bundled project via `@nx/dependency-checks`,
+  linter-mode consistency, etc.).
+
+### `@mnci/az-durable`
+
+A fifth package: typed compile-time safety across the Azure Durable Functions
+orchestrator/activity boundary, scaffolded via `mnci add npm-lib` (dogfooding the
+CLI on a real published package). Every scheduling helper (`callActivity`,
+`eventTask`, `timerTask`, `timerTaskUntil`, `subOrchestrationTask`) is a generator
+delegated to via `yield *`, which is the only mechanism that gives each call its own
+per-call return type (a plain generator has one `TNext` shared by every `yield`).
+`continueAsNew` is a handler argument, not a free function, since it must be typed
+to *that* orchestration's own input. Peer dependency only (`durable-functions` is
+imported by value in `activity.ts`/`orchestration.ts` to call `df.app.*`, but that's
+still zero runtime `dependencies`). `test/dogfood/` holds reconstructions of real
+workflows for API-shape validation, not production verification — its README says
+so.
+
+## Known Issues & Future Plans
+
+[`ROADMAP.md`](ROADMAP.md) is the live, actively-maintained tracker for open work —
+read its top summary section first; it states what's done, what's open, and at what
+priority, with file:line citations for anything found by measurement rather than
+assumed. As of the last rollup there: **no P1 is open**. Open work is:
+
+- **New capability (P2):** a container/Docker project kind; e2e test projects
+  (Playwright, measured as needing no rule relaxation against the current lint
+  config); multi-project `dev up`; `--preset` composition for scaffolding several
+  kinds at once.
+- **A gate that still doesn't gate:** Azure Pipelines' release trigger has the same
+  "any non-PR event" over-fire shape already fixed for GitHub Actions, but the
+  precise fix is unverified — no Azure pipeline run has ever exercised this
+  project's actual release path, so there's nothing to check a change against.
+- **Deliberately deferred upgrade:** TypeScript 7 for the compile step, pending a
+  proper compatibility pass.
+- Two P3 items, otherwise closed.
+- A `cli-lib` project kind (publishable package that's also invoked like an app) is
+  named but not yet built — noted under the build/dev script convention above.
 
 ## Design Decisions & Reasoning
 
@@ -1964,51 +562,38 @@ to Nx generators. There are **no** per-project ESLint configs: every `@nx/*` gen
 writes one, and `removeGeneratedEslintConfig()` (`add/shared.ts`) deletes it after every
 `add`, so the config cannot re-fragment as a workspace grows.
 
-### ESLint _and_ Prettier: one opinion, in one package
+### ESLint is the whole opinion: quality, types, and formatting, in one package
 
 `@mnci/eslint-config` is a real package with no build step, whose ~20 plugins are its
 own dependencies rather than ~20 devDependencies in every generated workspace. An
 upgrade therefore reaches existing workspaces through `npm update`, and the config is
-independently testable (it is, against the real `eslint` and `prettier` binaries).
+independently testable against the real `eslint` binary.
 
-**It owns the formatting opinion too**, exported as `@mnci/eslint-config/prettier` and
-consumed by a generated `.prettierrc.mjs` that re-exports it. Linting and formatting are
-one decision — `eslint-config-prettier` is composed last precisely so every rule defers
-to Prettier's settings — so splitting them across two packages creates a version pair
-free to drift until `lint` and `format:check` contradict each other. Two consequences
-worth remembering:
+There is deliberately **no formatter, and no second tool to keep in sync.** Prettier
+and oxfmt were both tried and retired — a formatter and a linter that each hold style
+opinions must be kept in agreement, and the only way that ever worked was
+`eslint-config-prettier` switching every stylistic ESLint rule off, meaning ESLint had
+no opinion of its own. With no formatter, `space-before-function-paren` — Standard's
+signature rule, previously unreachable because Prettier and oxfmt both rewrite
+`function f (a)` back to `function f(a)` — is finally ON. `eslint --fix` **is** the
+formatter; `npm run format` runs it.
 
-- **Precedence is a trap, and mnci has fallen into it twice.** Prettier resolves
-  `.prettierrc` → `.prettierrc.json` → … → `.prettierrc.mjs`, so `applyOverlay()`
-  deletes the first two: `.prettierrc` because `create-nx-workspace` writes it,
-  `.prettierrc.json` because **mnci itself used to**. Leave either behind and the
-  shared opinion is silently ignored.
-- **`trailingComma` is `none`, not `es5`.** This repo's own `.prettierrc.json` said
-  `es5` while `overlay.ts` shipped `none`, so mnci was formatted against an opinion it
-  did not publish — 86 files' worth, reported by nothing. `tests/prettier.spec.ts` pins
-  every option now by running the real binary.
-
-**Every config block carries a `name`** (`mnci/base`, `mnci/react`,
-`mnci/prettier-compat`, …), including ones spread from upstream presets that ship
-anonymous — `configs/named.js` fills those in while keeping any name upstream provides.
-The names are what `eslint --inspect-config` reports and what a user's override targets,
-and they are the whole reason a three-line root config is navigable at all. The
-generated `eslint.config.mjs` ships the same list as a comment plus an override recipe;
+**Every config block carries a `name`** (`mnci/base`, `mnci/react`, `mnci/house-style`,
+…), including ones spread from upstream presets that ship anonymous — `configs/named.js`
+fills those in while keeping any name upstream provides. The names are what
+`eslint --inspect-config` reports and what a user's override targets, and they are the
+whole reason a three-line root config is navigable at all. The generated
+`eslint.config.mjs` ships the same list as a comment plus an override recipe;
 `ESLINT_BLOCK_INVENTORY` in `overlay.ts` holds it, and an `overlay.test.ts` test fails
 in **both** directions if it and the real config disagree — a stale inventory points the
 reader at a block that does not exist, and nothing about generating a workspace would
 notice.
 
-Two more things are load-bearing and easy to undo by accident:
-
-- **`eslint-config-prettier` is composed LAST**, then the stylistic block after it.
-  That block holds only rules Prettier never touches (`spaced-comment`,
-  `lines-between-class-members`, `unicode-bom`).
-- **`space-before-function-paren` must stay off.** Standard's signature rule, and the
-  obvious thing to add back — but `eslint-config-prettier` disables it because it
-  _conflicts_ with Prettier, not because it is redundant. Prettier rewrites
-  `function f (a)` to `function f(a)` on every run, so enabling it makes `npm run lint`
-  and `npm run format:check` mutually unsatisfiable. A regression test asserts it is off.
+`mnci/house-style` (composed **after** the ported `mnci/standard` block) is where this
+repo's five deliberate departures from plain Standard live — see "Linting and
+formatting: ESLint only" under Current State for the list. Editing the ported block in
+place instead of adding to `house-style` would silently revert those choices the next
+time it's re-extracted from upstream.
 
 ### `.npmrc`: the two registry kinds get deliberately different files
 
@@ -2072,9 +657,9 @@ guard decodes. Check which before wiring a third protocol.
 
 ### Linting & Formatting
 
-- `npm run lint` → ESLint (code quality)
-- `npm run format:check` → Prettier (formatting in CI)
-- `npm run format` → Prettier --write (local use)
+- `npm run lint` → ESLint (code quality, types, **and** formatting — there is no
+  separate formatter or `format:check` step)
+- `npm run format` → `eslint . --fix --cache` (local use, also auto-fixes formatting)
 - ESLint config exception for `overlay.ts` (TSDoc rules off since `rootScripts()` has no params)
 
 ## Debugging & Troubleshooting
