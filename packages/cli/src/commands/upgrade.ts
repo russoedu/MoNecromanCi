@@ -1,7 +1,11 @@
 import { readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { runFormatter } from '../nx'
-import { repairRollupSourceMaps } from './add/shared'
+import {
+  repairPublishableManifests,
+  repairRollupSourceMaps,
+  upgradeDeclarationSpecifierPlugins,
+} from './add/shared'
 import {
   applyOverlay,
   readMnciConfig,
@@ -252,6 +256,28 @@ export function runUpgrade (workspaceRoot: string, options: UpgradeOptions): voi
   if (repaired.length > 0) {
     logger.step('Enabling source maps in rollup configs (breakpoints in .ts files)')
     for (const path of repaired) {
+      logger.detail(`updated ${path}`)
+    }
+  }
+
+  // Same reasoning as the source-map sweep above, for the two OTHER
+  // publishable-project repairs that only used to run once, at `add` time:
+  // the `types` path fix (a project `add`ed before it existed stayed
+  // `any` for every TypeScript consumer forever) and the declaration
+  // specifiers' `.js`-extension fix (stayed unresolvable for every
+  // `nodenext` consumer forever). Both are idempotent for the same reason
+  // the source-map sweep is.
+  const repairedManifests = repairPublishableManifests(workspaceRoot)
+  if (repairedManifests.length > 0) {
+    logger.step('Repointing `types` at the real declaration file')
+    for (const path of repairedManifests) {
+      logger.detail(`updated ${path}`)
+    }
+  }
+  const upgradedDtsPlugins = upgradeDeclarationSpecifierPlugins(workspaceRoot)
+  if (upgradedDtsPlugins.length > 0) {
+    logger.step('Upgrading declaration specifiers to resolve under nodenext')
+    for (const path of upgradedDtsPlugins) {
       logger.detail(`updated ${path}`)
     }
   }

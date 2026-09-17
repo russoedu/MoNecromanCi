@@ -15,9 +15,12 @@ import {
   relocateRootRuntimeDependencies,
   removeGeneratedEslintConfig,
   repairDeclarationSpecifiers,
+  repairPublishableManifests,
   resolveRollupConfigText,
   rootRuntimeDependencies,
+  upgradeDeclarationSpecifierPlugins,
   withRollupSourceMaps,
+  withUpgradedDeclarationSpecifierPlugin,
 } from './shared'
 
 const mockRunShell = jest.mocked(runShell)
@@ -734,5 +737,150 @@ describe('repairDeclarationSpecifiers: extensionless declaration re-exports unde
     loadWriteBundle(projectRoot)({ dir: distDir })
 
     expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(alreadyExplicit)
+  })
+})
+
+/**
+ * A real rollup config carrying the declaration-specifier plugin exactly as
+ * it was written before the `.js`-extension capability existed — the shape
+ * `mnci upgrade` needs to find and upgrade in place — genuinely older text
+ * (fewer lines, no extension-fix code at all), not a byte-identical copy of
+ * the current plugin body. That is the property
+ * {@link withUpgradedDeclarationSpecifierPlugin} must hold regardless of
+ * exactly how an old body reads: it locates the plugin by brace-counting
+ * from its unique, mnci-owned `name` string (kept single-quoted here, as
+ * `eslint --fix` would leave it — Standard prefers single quotes, which is
+ * what mnci already writes), not by matching the old body's full text.
+ */
+const OLD_DTS_PLUGIN_CONFIG = [
+  'const { withNx } = require("@nx/rollup/with-nx");',
+  '',
+  'module.exports = withNx(',
+  '  {',
+  '    main: "./src/index.ts",',
+  '    outputPath: "./dist",',
+  '    tsConfig: "./tsconfig.lib.json",',
+  '    compiler: "babel",',
+  '    format: ["esm"],',
+  '    sourceMap: true',
+  '  },',
+  '  {',
+  '    output: {',
+  '      sourcemapPathTransform: (relativeSourcePath) =>',
+  String.raw`        relativeSourcePath.replaceAll(String.fromCodePoint(92), "/").replace(/^(\.\.\/)+/, "../")`,
+  '    },',
+  '    plugins: [',
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle(outputOptions) {',
+  '          const { readFileSync, writeFileSync } = require("node:fs");',
+  '          const { join } = require("node:path");',
+  '          const stub = join(outputOptions.dir ?? "./dist", "index.d.ts");',
+  '          let source;',
+  '          try {',
+  '            source = readFileSync(stub, "utf8");',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          const separator = String.fromCodePoint(92, 92);',
+  '          const normalised = source.replaceAll(separator, "/");',
+  '          if (normalised !== source) writeFileSync(stub, normalised);',
+  '        }',
+  '      }',
+  '    ]',
+  '  }',
+  ');',
+].join('\n')
+
+describe('withUpgradedDeclarationSpecifierPlugin', () => {
+  it('upgrades an old plugin body to the current one, regardless of its exact prior text', () => {
+    const after = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
+
+    expect(after).toContain('bareRelativeSpecifier')
+    expect(after).toContain("name: 'mnci-normalise-declaration-specifiers'")
+    // Nothing outside the plugin object moved.
+    expect(after).toContain('sourcemapPathTransform')
+    expect(after).toContain('compiler: "babel"')
+  })
+
+  it('is idempotent — a config already carrying the marker is untouched', () => {
+    const current = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
+
+    expect(withUpgradedDeclarationSpecifierPlugin(current)).toBe(current)
+  })
+
+  it('leaves a config with no declaration-specifier plugin at all unchanged', () => {
+    const config = "module.exports = withNx({ main: './src/index.ts' }, {})\n"
+
+    expect(withUpgradedDeclarationSpecifierPlugin(config)).toBe(config)
+  })
+})
+
+describe('upgradeDeclarationSpecifierPlugins', () => {
+  it('upgrades every old plugin under packages/ and libs/, and reports what changed', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'libs/design'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+    writeFileSync(join(workspaceRoot, 'libs/design/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+
+    const changed = upgradeDeclarationSpecifierPlugins(workspaceRoot)
+
+    expect(changed).toHaveLength(2)
+    expect(changed).toEqual(
+      expect.arrayContaining(['libs/design/rollup.config.cjs', 'packages/align/rollup.config.cjs']),
+    )
+    expect(readFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), 'utf8')).toContain(
+      'bareRelativeSpecifier',
+    )
+  })
+
+  it('reports nothing changed on a repeat run', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+    upgradeDeclarationSpecifierPlugins(workspaceRoot)
+
+    expect(upgradeDeclarationSpecifierPlugins(workspaceRoot)).toEqual([])
+  })
+})
+
+describe('repairPublishableManifests', () => {
+  it('repoints a stale types path in every packages/*/libs/* manifest, and reports what changed', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'libs/design'), { recursive: true })
+    const staleManifest = JSON.stringify({
+      name:    '@demo/align',
+      types:   './dist/index.esm.d.ts',
+      exports: { '.': { types: './dist/index.esm.d.ts' } },
+      files:   ['dist'],
+    })
+    writeFileSync(join(workspaceRoot, 'packages/align/package.json'), staleManifest)
+    // Already correct, and written in mnci's own toJson format (2-space,
+    // trailing newline) — the realistic shape of a manifest nothing is
+    // wrong with, so the sweep must round-trip it byte-identical and not
+    // report it as changed.
+    writeFileSync(
+      join(workspaceRoot, 'libs/design/package.json'),
+      `${JSON.stringify({ name: '@demo/design', types: './dist/src/index.d.ts' }, undefined, 2)}\n`,
+    )
+
+    const changed = repairPublishableManifests(workspaceRoot)
+
+    expect(changed).toEqual(['packages/align/package.json'])
+    const repaired = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/align/package.json'), 'utf8'),
+    ) as { types: string; exports: { '.': { types: string } } }
+    expect(repaired.types).toBe('./dist/src/index.d.ts')
+    expect(repaired.exports['.'].types).toBe('./dist/src/index.d.ts')
+  })
+
+  it('reports nothing changed on a repeat run', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/align/package.json'),
+      JSON.stringify({ name: '@demo/align', types: './dist/index.esm.d.ts' }),
+    )
+    repairPublishableManifests(workspaceRoot)
+
+    expect(repairPublishableManifests(workspaceRoot)).toEqual([])
   })
 })
