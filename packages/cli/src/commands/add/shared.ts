@@ -591,6 +591,81 @@ const SOURCEMAP_PATH_TRANSFORM = [
   '',
 ].join('\n')
 
+/**
+ * A unique substring of {@link DECLARATION_SPECIFIER_PLUGIN}'s `name`,
+ * present whenever the plugin exists in a rollup config at all — including a
+ * version written before the `.js`-extension capability below existed.
+ */
+const DECLARATION_SPECIFIER_PLUGIN_MARKER = "name: 'mnci-normalise-declaration-specifiers'"
+
+/**
+ * A unique identifier {@link DECLARATION_SPECIFIER_PLUGIN} only contains once
+ * it also appends `.js` to bare relative specifiers — absent from the
+ * earlier version that only normalised the stub's backslashes.
+ */
+const DECLARATION_SPECIFIER_EXTENSION_MARKER = 'bareRelativeSpecifier'
+
+/**
+ * The declaration-specifier plugin object, exactly as written into
+ * `plugins: [ … ]`.
+ *
+ * @remarks
+ * Its own text is the source of truth for both call sites that need it:
+ * {@link ROLLUP_CONFIG_WITH_DTS_FIX} (a fresh `add`) and
+ * {@link withUpgradedDeclarationSpecifierPlugin} (upgrading an existing one
+ * in place), so the two can never drift into writing different plugin
+ * bodies for the same generator version.
+ */
+const DECLARATION_SPECIFIER_PLUGIN = [
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle (outputOptions) {',
+  "          const { readdirSync, readFileSync, writeFileSync } = require('node:fs')",
+  "          const { join } = require('node:path')",
+  "          const dir = outputOptions.dir ?? './dist'",
+  "          const stub = join(dir, 'index.d.ts')",
+  '          let source',
+  '          try {',
+  "            source = readFileSync(stub, 'utf8')",
+  '          } catch {',
+  '            return',
+  '          }',
+  '          // The stub carries a TWO-character escape (JSON.stringify escaped one',
+  '          // backslash), so this must not match a single one - that would turn',
+  String.raw`          // "./src\index" into "./src//index". Built from char codes so there is`,
+  '          // no escaping in this file to get wrong.',
+  '          const separator = String.fromCodePoint(92, 92)',
+  "          const normalised = source.replaceAll(separator, '/')",
+  '          if (normalised !== source) writeFileSync(stub, normalised)',
+  '',
+  String.raw`          const ${DECLARATION_SPECIFIER_EXTENSION_MARKER} = /from(\s+)(['"])(\.[^'"]+?)\2/g`,
+  String.raw`          const hasExtension = /\.(?:mjs|cjs|jsx?|json)$/`,
+  '          let entries',
+  '          try {',
+  '            entries = readdirSync(dir, { recursive: true, withFileTypes: true })',
+  '          } catch {',
+  '            return',
+  '          }',
+  '          for (const entry of entries) {',
+  "            if (!entry.name.endsWith('.d.ts')) continue",
+  '            const filePath = join(entry.parentPath ?? entry.path, entry.name)',
+  '            let declaration',
+  '            try {',
+  "              declaration = readFileSync(filePath, 'utf8')",
+  '            } catch {',
+  '              continue',
+  '            }',
+  '            const withExtensions = declaration.replace(',
+  `              ${DECLARATION_SPECIFIER_EXTENSION_MARKER},`,
+  '              (match, space, quote, specifier) =>',
+  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
+  '            )',
+  '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions)',
+  '          }',
+  '        }',
+  '      }',
+].join('\n')
+
 /** The same slot, carrying a plugin that repairs the declaration stub. */
 const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '  {',
@@ -617,56 +692,135 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '    // extensions are left untouched; only a bare relative specifier gets .js',
   '    // appended, matching what tsc itself emits under node16/nodenext.',
   '    plugins: [',
-  '      {',
-  "        name: 'mnci-normalise-declaration-specifiers',",
-  '        writeBundle (outputOptions) {',
-  "          const { readdirSync, readFileSync, writeFileSync } = require('node:fs')",
-  "          const { join } = require('node:path')",
-  "          const dir = outputOptions.dir ?? './dist'",
-  "          const stub = join(dir, 'index.d.ts')",
-  '          let source',
-  '          try {',
-  "            source = readFileSync(stub, 'utf8')",
-  '          } catch {',
-  '            return',
-  '          }',
-  '          // The stub carries a TWO-character escape (JSON.stringify escaped one',
-  '          // backslash), so this must not match a single one - that would turn',
-  String.raw`          // "./src\index" into "./src//index". Built from char codes so there is`,
-  '          // no escaping in this file to get wrong.',
-  '          const separator = String.fromCodePoint(92, 92)',
-  "          const normalised = source.replaceAll(separator, '/')",
-  '          if (normalised !== source) writeFileSync(stub, normalised)',
-  '',
-  String.raw`          const bareRelativeSpecifier = /from(\s+)(['"])(\.[^'"]+?)\2/g`,
-  String.raw`          const hasExtension = /\.(?:mjs|cjs|jsx?|json)$/`,
-  '          let entries',
-  '          try {',
-  '            entries = readdirSync(dir, { recursive: true, withFileTypes: true })',
-  '          } catch {',
-  '            return',
-  '          }',
-  '          for (const entry of entries) {',
-  "            if (!entry.name.endsWith('.d.ts')) continue",
-  '            const filePath = join(entry.parentPath ?? entry.path, entry.name)',
-  '            let declaration',
-  '            try {',
-  "              declaration = readFileSync(filePath, 'utf8')",
-  '            } catch {',
-  '              continue',
-  '            }',
-  '            const withExtensions = declaration.replace(',
-  '              bareRelativeSpecifier,',
-  '              (match, space, quote, specifier) =>',
-  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
-  '            )',
-  '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions)',
-  '          }',
-  '        }',
-  '      }',
+  DECLARATION_SPECIFIER_PLUGIN,
   '    ]',
   '  }',
 ].join('\n')
+
+/**
+ * Finds the `{ … }` span enclosing the first occurrence of `needle`, by
+ * brace-counting rather than parsing.
+ *
+ * @remarks
+ * Safe here specifically because {@link DECLARATION_SPECIFIER_PLUGIN} is
+ * mnci's own generated content and contains no string or regex literal with
+ * an unmatched `{`/`}` — checked by hand, and any future addition to that
+ * plugin body must preserve it. `needle` is found first, then the span's
+ * start is the nearest `{` before it (by construction, nothing but that
+ * brace and whitespace can sit between them in a `{ name: … }` object
+ * literal), and the end is wherever forward brace-counting from there first
+ * returns to depth zero.
+ *
+ * @param text - The text to search.
+ * @param needle - A substring known to appear inside the object to find.
+ * @returns The `[start, end)` character span, `end` exclusive of nothing
+ * (it points just past the closing `}`), or `undefined` when `needle` is
+ * absent, has no preceding `{`, or the braces never balance.
+ * @throws Never.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function findEnclosingBraceSpan (text: string, needle: string): [number, number] | undefined {
+  const needleIndex = text.indexOf(needle)
+  if (needleIndex === -1) {
+    return undefined
+  }
+  const start = text.lastIndexOf('{', needleIndex)
+  if (start === -1) {
+    return undefined
+  }
+  let depth = 0
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === '{') {
+      depth += 1
+    } else if (text[index] === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return [start, index + 1]
+      }
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * Upgrades an already-written declaration-specifier plugin in place, so a
+ * project `add`ed before the `.js`-extension capability existed picks it up.
+ *
+ * @remarks
+ * {@link repairDeclarationSpecifiers} writes this plugin exactly once,
+ * anchored on the generator's own placeholder — so a project `add`ed before
+ * a later capability shipped keeps running the OLD plugin body forever, and
+ * `mnci upgrade` never revisited it (unlike the source-map flag, which
+ * {@link withRollupSourceMaps} does sweep). This closes that gap.
+ *
+ * Deliberately NOT a literal full-body text match: the plugin's own body is
+ * ordinary JS in a `.cjs` file, so `eslint --fix` is free to reformat it
+ * (quotes, semicolons, spacing) between when `add` wrote it and when
+ * `upgrade` next runs — matching an exact prior version's text is exactly
+ * the class of bug the compiler-swap fix above exists to prevent. Instead
+ * this locates the plugin object by brace-counting from its own unique
+ * `name` ({@link findEnclosingBraceSpan}) and replaces the WHOLE object with
+ * the current version whenever {@link DECLARATION_SPECIFIER_EXTENSION_MARKER}
+ * is missing from it — regardless of what the old body's text actually was.
+ *
+ * Idempotent: a plugin that already carries the marker is left untouched.
+ *
+ * @param config - The rollup config's text.
+ * @returns The config with the plugin upgraded in place, or unchanged when
+ * there is no plugin to upgrade, it is already current, or its span could
+ * not be found.
+ * @throws Never — an unrecognised shape is returned unchanged.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withUpgradedDeclarationSpecifierPlugin (config: string): string {
+  if (
+    !config.includes(DECLARATION_SPECIFIER_PLUGIN_MARKER) ||
+    config.includes(DECLARATION_SPECIFIER_EXTENSION_MARKER)
+  ) {
+    return config
+  }
+  const span = findEnclosingBraceSpan(config, DECLARATION_SPECIFIER_PLUGIN_MARKER)
+  if (!span) {
+    return config
+  }
+  const [start, end] = span
+
+  return `${config.slice(0, start)}${DECLARATION_SPECIFIER_PLUGIN}${config.slice(end)}`
+}
+
+/**
+ * Sweeps every publishable project's rollup config, upgrading an existing
+ * declaration-specifier plugin to the current version.
+ *
+ * @remarks
+ * Called by `mnci upgrade`, the same way {@link repairRollupSourceMaps} is —
+ * scoped to `packages/*` and `libs/*` for the same reason: those are the
+ * only places mnci puts a rollup-built project.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The workspace-relative paths that changed.
+ * @throws Propagates any `fs` write error.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function upgradeDeclarationSpecifierPlugins (workspaceRoot: string): string[] {
+  const changed: string[] = []
+  const configs = globSync(['packages/*/rollup.config.cjs', 'libs/*/rollup.config.cjs'], {
+    cwd: workspaceRoot,
+  })
+
+  for (const relativePath of configs) {
+    const configPath = join(workspaceRoot, relativePath)
+    const before = readFileSync(configPath, 'utf8')
+    const after = withUpgradedDeclarationSpecifierPlugin(before)
+    if (after !== before) {
+      writeFileEnsured(configPath, after)
+      changed.push(relativePath.replaceAll('\\', '/'))
+    }
+  }
+
+  return changed
+}
 
 /**
  * Adds a rollup plugin that repairs the declaration stub the build emits.
@@ -852,6 +1006,48 @@ export function repairPublishableManifest (manifestPath: string): void {
     }
   }
   writeFileEnsured(manifestPath, toJson(manifest))
+}
+
+/**
+ * Sweeps every project's manifest through {@link repairPublishableManifest}.
+ *
+ * @remarks
+ * Called by `mnci upgrade`. `repairPublishableManifest` itself only runs at
+ * `add` time (from `addNpmLib`/`addReactLib`/`addReactInternalLib`), so a
+ * project `add`ed before this repair existed — or one whose manifest was
+ * later hand-edited back to the wrong `types` path — never gets revisited.
+ * `repairPublishableManifest` is already unconditional and idempotent (it
+ * only changes a field that is actually wrong, and only adds a `files`
+ * exclusion that is actually missing), so it is safe to call on every
+ * project's manifest regardless of kind: a manifest with none of the wrong
+ * values is read and re-serialised unchanged.
+ *
+ * Scoped to `packages/*` and `libs/*` for the same reason
+ * {@link repairRollupSourceMaps} is: those are the only places a JS/TS
+ * project's `package.json` lives.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns The workspace-relative paths that changed.
+ * @throws Propagates any `fs`/JSON error.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function repairPublishableManifests (workspaceRoot: string): string[] {
+  const changed: string[] = []
+  const manifests = globSync(['packages/*/package.json', 'libs/*/package.json'], {
+    cwd: workspaceRoot,
+  })
+
+  for (const relativePath of manifests) {
+    const manifestPath = join(workspaceRoot, relativePath)
+    const before = readFileSync(manifestPath, 'utf8')
+    repairPublishableManifest(manifestPath)
+    const after = readFileSync(manifestPath, 'utf8')
+    if (after !== before) {
+      changed.push(relativePath.replaceAll('\\', '/'))
+    }
+  }
+
+  return changed
 }
 
 /**
