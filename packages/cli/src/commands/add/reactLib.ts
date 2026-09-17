@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { runNx } from '../../nx'
 import { promptText } from '../../prompts'
 import {
   defaultScope,
@@ -10,6 +9,7 @@ import {
   removeGeneratedEslintConfig,
   repairDeclarationSpecifiers,
   repairPublishableManifest,
+  runGeneratorAndRepair,
   writeProjectReadme,
   type AddOptions,
   type WorkspaceStack,
@@ -65,7 +65,9 @@ const REACT_LIB_BUNDLER = 'rollup'
  * gates whether the scope is prompted for or silently defaulted.
  * @param stack - The workspace's chosen test runner.
  * @returns A promise that resolves when the generator has finished.
- * @throws Error when the generator or the plugin install exits non-zero.
+ * @throws Error when the generator's own scaffolding step fails, or a
+ * clearer wrapped error when the scaffold was written but its plugin install
+ * step failed anyway — see {@link runGeneratorAndRepair}.
  * @typeParam None - this function has no generic type parameters.
  */
 export async function addReactLib (
@@ -81,7 +83,10 @@ export async function addReactLib (
     (kindProvided
       ? defaultScope(workspaceRoot)
       : await promptText('npm scope for the published package', defaultScope(workspaceRoot)))
-  runNx(
+  const projectRoot = join(workspaceRoot, 'packages', name)
+  const publishableManifest = join(projectRoot, 'package.json')
+  runGeneratorAndRepair(
+    workspaceRoot,
     [
       'g',
       '@nx/react:library',
@@ -94,15 +99,16 @@ export async function addReactLib (
       '--linter=none',
       '--no-interactive',
     ],
-    workspaceRoot,
+    publishableManifest,
+    () => {
+      markPublic(publishableManifest)
+      repairPublishableManifest(publishableManifest)
+      repairDeclarationSpecifiers(projectRoot)
+      writeProjectReadme(projectRoot, `${scope}/${name}`, stack.testRunner)
+      removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
+      registerProjectCommands(workspaceRoot, name, { build: true })
+    },
   )
-  const publishableManifest = join(workspaceRoot, 'packages', name, 'package.json')
-  markPublic(publishableManifest)
-  repairPublishableManifest(publishableManifest)
-  repairDeclarationSpecifiers(join(workspaceRoot, 'packages', name))
-  writeProjectReadme(join(workspaceRoot, 'packages', name), `${scope}/${name}`, stack.testRunner)
-  removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
-  registerProjectCommands(workspaceRoot, name, { build: true })
 }
 
 /**
@@ -125,7 +131,9 @@ export async function addReactLib (
  * @param name - The project name (already validated).
  * @param stack - The workspace's chosen test runner.
  * @returns Nothing.
- * @throws Error when the generator or the plugin install exits non-zero.
+ * @throws Error when the generator's own scaffolding step fails, or a
+ * clearer wrapped error when the scaffold was written but its plugin install
+ * step failed anyway — see {@link runGeneratorAndRepair}.
  * @typeParam None - this function has no generic type parameters.
  */
 export function addReactInternalLib (
@@ -134,7 +142,10 @@ export function addReactInternalLib (
   stack: WorkspaceStack,
 ): void {
   ensurePlugin(workspaceRoot, '@nx/react')
-  runNx(
+  const projectRoot = join(workspaceRoot, 'libs', name)
+  const privateManifest = join(projectRoot, 'package.json')
+  runGeneratorAndRepair(
+    workspaceRoot,
     [
       'g',
       '@nx/react:library',
@@ -145,13 +156,14 @@ export function addReactInternalLib (
       '--linter=none',
       '--no-interactive',
     ],
-    workspaceRoot,
+    privateManifest,
+    () => {
+      markPrivate(privateManifest)
+      repairPublishableManifest(privateManifest)
+      repairDeclarationSpecifiers(projectRoot)
+      writeProjectReadme(projectRoot, name, stack.testRunner)
+      removeGeneratedEslintConfig(workspaceRoot, `libs/${name}`)
+      registerProjectCommands(workspaceRoot, name, { build: true })
+    },
   )
-  const privateManifest = join(workspaceRoot, 'libs', name, 'package.json')
-  markPrivate(privateManifest)
-  repairPublishableManifest(privateManifest)
-  repairDeclarationSpecifiers(join(workspaceRoot, 'libs', name))
-  writeProjectReadme(join(workspaceRoot, 'libs', name), name, stack.testRunner)
-  removeGeneratedEslintConfig(workspaceRoot, `libs/${name}`)
-  registerProjectCommands(workspaceRoot, name, { build: true })
 }

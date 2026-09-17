@@ -135,6 +135,32 @@ chain breaks, and the map comes out valid-looking and **empty** — `sources: []
 Measured on a real package: swc gave 0 sources, babel gave 9. Revert the swap
 once Nx passes `sourceMaps` through; ROADMAP 7d has the one-line upstream fix.
 
+Re-measured against the exact toolchain `mnci new` pins today (Nx 23.2.0,
+`@swc/core` 1.15.8): `@nx/rollup`'s swc plugin still does **not** pass
+`sourceMaps` to `transform()` — read straight from the installed package, not
+assumed — yet a real build with `compiler: 'swc'` left unmodified now emits a
+map with real `sources`/`sourcesContent`, and tracing a generated position
+through it with `@jridgewell/trace-mapping` resolves to the correct original
+line and column. So the empty-map failure this section exists to route around
+did not reproduce on the current pinned versions, even though the documented
+root cause (the plugin's own missing `sourceMaps` option) is still there
+verbatim. That is not the revert condition stated above — nothing upstream
+changed the call this section is about — so the swap stays in place as a
+safety net rather than being removed on an unexplained, unpinned-by-upstream
+behavior change that a future `@swc/core` patch could revert without notice.
+**A real, separate bug in the swap itself was found and fixed**, independent
+of the above: it matched `compiler: 'swc'` with a plain string, one space
+after the colon. `@stylistic/key-spacing` (aligned on value) — which
+`eslint --fix` applies to every mnci-generated file — pads that column out to
+whatever the object's longest key is, so on any config reached after even one
+lint pass (most concretely: `mnci upgrade` repairing a project whose `add`
+partially failed) the literal silently stopped matching and the swap
+silently no-op'd, while `sourceMap: true` and `sourcemapPathTransform` — added
+by separate, whitespace-tolerant repairs — went in regardless. `mnci doctor`'s
+check did not catch it either, since it only verifies the flag, not the
+compiler. Confirmed end to end and fixed with the same whitespace-tolerant
+approach `sourceMap: true`'s own guard already used.
+
 **The paths are wrong twice over.** rollup hands `sourcemapPathTransform` a
 path like `..\..\src\index.ts` for a map in `dist/` — one parent segment too
 many, so it resolves above the project to a file that does not exist, and

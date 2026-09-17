@@ -101,6 +101,79 @@ export function ensurePlugin (workspaceRoot: string, packageName: string): void 
 }
 
 /**
+ * Runs an Nx generator, then applies mnci's own post-generation repairs even
+ * when the generator's underlying install step failed.
+ *
+ * @remarks
+ * `@nx/js:lib --bundler=rollup`/`@nx/react:library` both fetch and install a
+ * plugin package (`@nx/rollup`, `@nx/vitest`, …) as part of the generator run
+ * the FIRST time a workspace uses that bundler or test runner, via Nx's own
+ * `installPackagesTask`. That install can fail for reasons that have nothing
+ * to do with the generator's own correctness — reproduced end to end with a
+ * real npm 10.9.7 arborist bug on this exact dependency tree
+ * (`Cannot read properties of null (reading 'edgesOut')`, gone on npm 11) —
+ * and when it does, `runNx` throws AFTER the generator has already written
+ * every scaffold file to disk. Without this wrapper, every caller's own
+ * post-generation repairs (`repairPublishableManifest`,
+ * `repairDeclarationSpecifiers`, `registerProjectCommands`, …) never run,
+ * silently, because the exception unwinds straight out of `addNpmLib`/
+ * `addReactLib` — leaving a project with the broken `types` path and the
+ * unrepaired source-map/declaration-extension defects those repairs exist to
+ * fix, and `mnci doctor` had nothing that could point at it: the target
+ * files exist, they are just wrong. Reproduced and fixed together.
+ *
+ * The distinguishing signal is `markerPath`: a file the generator itself
+ * writes (its manifest) as one of its very first acts, well before the
+ * install step runs. If it is missing, the generator failed before writing
+ * anything repairable, and this rethrows the original error unchanged rather
+ * than running repairs against a directory that does not exist. If it is
+ * present, the scaffold is real regardless of whether install succeeded, so
+ * `repair` runs unconditionally — and if install did fail, the original
+ * error is rethrown afterwards, with a clearer, actionable message, so the
+ * command still exits non-zero rather than reporting a false success.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param nxArguments - The Nx CLI arguments, exactly as `runNx` would take them.
+ * @param markerPath - Absolute path to a file the generator writes early,
+ * used to tell "failed before writing anything" apart from "failed after".
+ * @param repair - Every post-generation repair this kind normally runs on
+ * success; now run whenever the scaffold exists, success or not.
+ * @returns Nothing.
+ * @throws The original `runNx` error, unchanged, when `markerPath` was never
+ * written. A new, clearer error wrapping it, after `repair` has still run,
+ * when `markerPath` exists but the generator's install step failed anyway.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function runGeneratorAndRepair (
+  workspaceRoot: string,
+  nxArguments: string[],
+  markerPath: string,
+  repair: () => void,
+): void {
+  let installFailure: Error | undefined
+  try {
+    runNx(nxArguments, workspaceRoot)
+  } catch (error) {
+    installFailure = error instanceof Error ? error : new Error(String(error))
+  }
+
+  if (!fileExists(markerPath)) {
+    throw installFailure ?? new Error(`unreachable: runNx did not throw and ${markerPath} is missing`)
+  }
+
+  repair()
+
+  if (installFailure) {
+    throw new Error(
+      'The project was generated and mnci\'s own repairs were applied, but the ' +
+        `underlying Nx generator's install step still failed (${installFailure.message}). ` +
+        "Fix the install error above (commonly resolved by 'npm install' with a newer " +
+        "npm major), then verify with 'mnci doctor'.",
+    )
+  }
+}
+
+/**
  * Sets `"private": true` in a package manifest.
  *
  * @remarks
@@ -235,16 +308,37 @@ const ROLLUP_CONFIG_PLACEHOLDER = [
  * source and the second would see the first's output. Revert this the moment
  * `@nx/rollup` passes `sourceMaps` through - the upstream fix is one option in
  * `plugins/swc.js`.
+ *
+ * A regex, not a plain string, for the same reason {@link hasRollupSourceMaps}
+ * is one: `@stylistic/key-spacing` (aligned on value) pads every property in
+ * this object out to the longest key's column the moment `eslint --fix` runs
+ * over it - which every mnci-generated file gets, and `outputPath`/`tsConfig`
+ * both outrun `compiler`, so the padding fires on effectively every real
+ * config. A literal `"    compiler: 'swc',"` only matches the pristine,
+ * never-formatted generator output; on a workspace where the repair is
+ * reached late (a failed `add` finished by a later `mnci upgrade`, or an
+ * older mnci version's already-formatted output) the line reads
+ * `compiler:   'swc',` and the literal silently fails to match, leaving swc's
+ * empty source maps in place while `mnci upgrade` reports success. Confirmed
+ * end to end: a real crashed `add npm-lib` left `rollup.config.cjs`
+ * unrepaired, one `npm run format` key-spacing-aligned it, and the literal
+ * swap then no-op'd on the following `mnci upgrade`.
  */
-const GENERATED_COMPILER = "    compiler: 'swc',"
+const GENERATED_COMPILER_PATTERN = /^( {4})compiler\s*:\s*'swc',$/m
 
-/** The same line, on the compiler that actually emits usable source maps. */
-const SOURCE_MAP_CAPABLE_COMPILER = [
-  '    // Swapped from swc by MoNecromanCI. @nx/rollup runs swc without',
-  "    // sourceMaps, so it returns no map and the bundle's map comes out empty -",
-  '    // valid-looking, and useless for debugging. See ROADMAP.',
-  "    compiler: 'babel',",
-].join('\n')
+/**
+ * Builds the source-map-capable compiler line (plus its explaining comment)
+ * at the given indent, matched from {@link GENERATED_COMPILER_PATTERN}'s
+ * capture so the replacement lines up whatever the original indentation was.
+ */
+function sourceMapCapableCompiler (indent: string): string {
+  return [
+    `${indent}// Swapped from swc by MoNecromanCI. @nx/rollup runs swc without`,
+    `${indent}// sourceMaps, so it returns no map and the bundle's map comes out empty -`,
+    `${indent}// valid-looking, and useless for debugging. See ROADMAP.`,
+    `${indent}compiler: 'babel',`,
+  ].join('\n')
+}
 
 /**
  * The end of `withNx`'s FIRST argument, with source maps switched on.
@@ -353,7 +447,9 @@ export function withRollupSourceMaps (config: string): string {
   if (hasRollupSourceMaps(config) || !canRepairRollupConfig(config)) {
     return config
   }
-  const withCompiler = config.replace(GENERATED_COMPILER, () => SOURCE_MAP_CAPABLE_COMPILER)
+  const withCompiler = config.replace(GENERATED_COMPILER_PATTERN, (_match, indent: string) =>
+    sourceMapCapableCompiler(indent),
+  )
   const withFlag = withCompiler.replace(
     ROLLUP_ARG_ONE_BOUNDARY,
     () => ROLLUP_ARG_ONE_WITH_SOURCE_MAPS,
@@ -510,13 +606,24 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '    // mnci also points `types` past this stub, so nothing depends on it being',
   '    // correct; this makes the emitted file correct too. Remove once Nx fixes the',
   '    // plugin - its own devkit already exports normalizePath for exactly this.',
+  '    //',
+  '    // The second half fixes a separate defect in the REAL declarations `types`',
+  '    // points at: tsconfig.lib.json declares under moduleResolution "bundler",',
+  '    // where a bare relative specifier ("./lib/align") is valid, so every emitted',
+  '    // .d.ts keeps the source\'s own extensionless imports verbatim. A consumer on',
+  '    // "moduleResolution": "nodenext" - the workspace root default - requires an',
+  '    // explicit extension on every relative specifier and gets TS2834 (or,',
+  '    // combined with skipLibCheck, a silent zero-export module) instead. Declared',
+  '    // extensions are left untouched; only a bare relative specifier gets .js',
+  '    // appended, matching what tsc itself emits under node16/nodenext.',
   '    plugins: [',
   '      {',
   "        name: 'mnci-normalise-declaration-specifiers',",
   '        writeBundle (outputOptions) {',
-  "          const { readFileSync, writeFileSync } = require('node:fs')",
+  "          const { readdirSync, readFileSync, writeFileSync } = require('node:fs')",
   "          const { join } = require('node:path')",
-  "          const stub = join(outputOptions.dir ?? './dist', 'index.d.ts')",
+  "          const dir = outputOptions.dir ?? './dist'",
+  "          const stub = join(dir, 'index.d.ts')",
   '          let source',
   '          try {',
   "            source = readFileSync(stub, 'utf8')",
@@ -530,6 +637,31 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
   '          const separator = String.fromCodePoint(92, 92)',
   "          const normalised = source.replaceAll(separator, '/')",
   '          if (normalised !== source) writeFileSync(stub, normalised)',
+  '',
+  String.raw`          const bareRelativeSpecifier = /from(\s+)(['"])(\.[^'"]+?)\2/g`,
+  String.raw`          const hasExtension = /\.(?:mjs|cjs|jsx?|json)$/`,
+  '          let entries',
+  '          try {',
+  '            entries = readdirSync(dir, { recursive: true, withFileTypes: true })',
+  '          } catch {',
+  '            return',
+  '          }',
+  '          for (const entry of entries) {',
+  "            if (!entry.name.endsWith('.d.ts')) continue",
+  '            const filePath = join(entry.parentPath ?? entry.path, entry.name)',
+  '            let declaration',
+  '            try {',
+  "              declaration = readFileSync(filePath, 'utf8')",
+  '            } catch {',
+  '              continue',
+  '            }',
+  '            const withExtensions = declaration.replace(',
+  '              bareRelativeSpecifier,',
+  '              (match, space, quote, specifier) =>',
+  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
+  '            )',
+  '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions)',
+  '          }',
   '        }',
   '      }',
   '    ]',
@@ -552,6 +684,17 @@ const ROLLUP_CONFIG_WITH_DTS_FIX = [
  * nothing depends on it — this makes the emitted artifact correct rather than merely
  * bypassed. The two repairs are deliberately independent: the manifest one keeps
  * consumers working even if this config is later hand-edited.
+ *
+ * The same plugin also appends `.js` to every bare relative specifier across
+ * `dist/**\/*.d.ts` — not just the stub. `tsconfig.lib.json` declares under
+ * `moduleResolution: "bundler"`, where an extensionless relative import is
+ * valid, so the REAL declarations (what `types` points at) carry the same bare
+ * specifiers as the source. A consumer resolving under the workspace default,
+ * `nodenext`, requires an explicit extension on every relative specifier;
+ * without it `tsc` reports `TS2834`, and with `skipLibCheck` masking that, the
+ * entry point's re-export fails to resolve at all and the package appears to
+ * export nothing. Confirmed against a real packed tarball: zero exports
+ * visible under `nodenext` before this, correct resolution after.
  *
  * Guarded on the exact placeholder the generators write, so a change to their
  * template makes this a no-op rather than corrupting the config.
