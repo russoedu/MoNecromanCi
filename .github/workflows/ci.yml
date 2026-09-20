@@ -291,7 +291,7 @@ jobs:
       # workspace) never satisfies — so without this, the e2e's C# section
       # would report `SKIPPED the entire C# section` on every run, the exact
       # gap Go and Flutter already had before the block above existed.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         name: Install the .NET SDK (10.0.x, so the e2e's C# section runs)
         continue-on-error: true
         with:
