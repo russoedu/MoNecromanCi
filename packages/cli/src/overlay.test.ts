@@ -462,6 +462,18 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain("eq(variables['Build.SourceBranchName'], 'main')")
   })
 
+  it('declares RELEASE_SPECIFIER as a pipeline variable defaulting to empty, and reads it in the release step', () => {
+    // Azure's $(NAME) macro stays UNEXPANDED literal text when the named
+    // variable does not exist at all, rather than expanding to empty — so the
+    // variable must be declared with a default, not left for the user to
+    // define from scratch, or an unconfigured workspace would feed the
+    // literal string '$(RELEASE_SPECIFIER)' into the release guard's regex.
+    const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+    expect(pipeline).toContain("- name: RELEASE_SPECIFIER\n    value: ''")
+    expect(pipeline).toContain('RELEASE_SPECIFIER: $(RELEASE_SPECIFIER)')
+  })
+
   it('overrides @nx/react\'s express peer ONLY when the workspace has express', () => {
     // @nx/react@23.1.2 added `express: ^4.21.2` as an optional peer in a PATCH
     // release; 23.1.1 declares none. mnci's own `node-app --framework express`
@@ -659,7 +671,7 @@ describe('azurePipelinesYaml', () => {
     const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts', nugetUrl)
 
     // Guarded on packages/*/*.csproj, the same detection PACK_APPS_GUARD uses.
-    expect(pipeline).toContain('hasCsharp=fs.globSync(\'packages/*/*.csproj\')')
+    expect(pipeline).toContain('csharpCount=fs.globSync(\'packages/*/*.csproj\').length')
     // Exported only when hasCsharp — same shape as the Python fragment.
     expect(pipeline).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
     // Unlike npm's base64 _password, NuGet's ClearTextPassword takes the RAW
@@ -1008,6 +1020,30 @@ describe('githubActionsYaml', () => {
     expect(workflow).not.toContain('secrets.PAT')
   })
 
+  it('reads RELEASE_SPECIFIER from a repository variable, not a secret', () => {
+    // A repository variable, not a secret: RELEASE_SPECIFIER overrides a
+    // computed bump, so it belongs where anyone can see and edit it without
+    // "secret" write access.
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain('RELEASE_SPECIFIER: ${{ vars.RELEASE_SPECIFIER }}')
+  })
+
+  it('validates RELEASE_SPECIFIER against keywords or an exact semver, and refuses a keyword once more than one package is releasable', () => {
+    // The regex and the two-pass-versioning guard both live inside the
+    // 'node -e' one-liner — see releaseSpecifierExecution.test.ts for the
+    // real bash+node execution test of this exact text (backslash escaping
+    // through YAML -> shell -> node, and the actual fail-fast behaviour).
+    // This only pins the source text against silent edits.
+    const workflow = githubActionsYaml('ubuntu-latest')
+
+    expect(workflow).toContain(
+      String.raw`/^(major|minor|patch|\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$/`,
+    )
+    expect(workflow).toContain('releaseProjectCount=npmCount+csharpCount+pythonCount')
+    expect(workflow).toContain('/^(major|minor|patch)$/.test(specifier)&&releaseProjectCount>1')
+  })
+
   it('does not reference any custom CI engine — the workflow is plain Nx', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
@@ -1041,7 +1077,7 @@ describe('githubActionsYaml', () => {
     const nugetUrl = 'https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json'
     const workflow = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'github', nugetUrl)
 
-    expect(workflow).toContain('hasCsharp=fs.globSync(\'packages/*/*.csproj\')')
+    expect(workflow).toContain('csharpCount=fs.globSync(\'packages/*/*.csproj\').length')
     expect(workflow).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
   })
 

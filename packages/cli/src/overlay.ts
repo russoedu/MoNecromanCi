@@ -2245,7 +2245,7 @@ const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'d
  * @typeParam None - this function has no generic type parameters.
  */
 function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): string {
-  return `node -e "const fs=require('node:fs'),cp=require('node:child_process');const hasNpm=fs.globSync('packages/*/package.json').length>0;const hasPython=fs.globSync('python-packages/*/pyproject.toml').length>0;const hasCsharp=fs.globSync('packages/*/*.csproj').length>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync('npx nx release --yes',{stdio:'inherit',shell:true,env}).status ?? 1)"`
+  return String.raw`node -e "const fs=require('node:fs'),cp=require('node:child_process');const npmCount=fs.globSync('packages/*/package.json').length;const csharpCount=fs.globSync('packages/*/*.csproj').length;const pythonCount=fs.globSync('python-packages/*/pyproject.toml').length;const hasNpm=npmCount>0;const hasPython=pythonCount>0;const hasCsharp=csharpCount>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const specifier=process.env.RELEASE_SPECIFIER||'';let releaseCmd='npx nx release --yes';if(specifier){if(!/^(major|minor|patch|\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$/.test(specifier)){console.error('RELEASE_SPECIFIER value \''+specifier+'\' is invalid - use major, minor, patch, or an exact version like 1.2.3.');process.exit(1)}const releaseProjectCount=npmCount+csharpCount+pythonCount;if(/^(major|minor|patch)$/.test(specifier)&&releaseProjectCount>1){console.error('RELEASE_SPECIFIER is a keyword (\''+specifier+'\') but this workspace has '+releaseProjectCount+' releasable packages - a keyword under-bumps interdependent packages, because nx computes the dependency-bump pass from a stale cached version. Set RELEASE_SPECIFIER to an exact version instead, or clear it.');process.exit(1)}releaseCmd='npx nx release '+specifier+' --yes'}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync(releaseCmd,{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
 /**
@@ -2491,6 +2491,18 @@ variables:
   # agent OS.
   - name: npm_config_cache
     value: $(Pipeline.Workspace)/.npm
+  # Overrides the bump nx would compute from conventional commits for one
+  # release run — 'major', 'minor', 'patch', or an exact version ('1.2.3').
+  # Defined here (rather than left unset) so $(RELEASE_SPECIFIER) always
+  # expands: an Azure Pipelines macro that names an undefined variable is
+  # left as the literal, unexpanded text '$(RELEASE_SPECIFIER)' rather than
+  # empty, which would otherwise reach the release guard below as a bogus
+  # value. Override it per run in Pipelines -> Run pipeline -> Variables, or
+  # set a repo-level default in Pipeline -> Edit -> Variables. See the
+  # release step below for why a bare keyword is unreliable once more than
+  # one package is releasable.
+  - name: RELEASE_SPECIFIER
+    value: ''
 
 steps:
   - checkout: self
@@ -2654,11 +2666,24 @@ steps:
   # skip cleanly when there is nothing to release. When there are Python or
   # C# packages and an Azure feed, twine/NuGet publish credentials are
   # exported (raw PAT, decoded from the base64 variable).
+  #
+  # RELEASE_SPECIFIER (the pipeline variable above) overrides the bump nx
+  # would compute from conventional commits for THIS run. In a workspace with
+  # more than one releasable package, a bare keyword ('major'/'minor'/'patch')
+  # is unreliable — nx versions interdependent packages in two passes (a
+  # dependency-bump pass, then the specifier pass), and the second pass
+  # computes from a version cached before the first pass ran, silently
+  # landing back on the same patch bump either way. An exact version ('1.2.3')
+  # does not have this problem, since both passes apply it verbatim — prefer
+  # it whenever more than one package is releasable. The guard below fails
+  # the run rather than under-bumping silently: clear the variable back to
+  # '' once the override is no longer needed.
   - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
     displayName: Release — version, tag and publish (npm + Python + C#)
     condition: ${onMain}
     env:
       ${npmAuthName}: ${npmAuthValue}
+      RELEASE_SPECIFIER: $(RELEASE_SPECIFIER)
 
   # nx release's own git push (release.git.push) is deliberately left off: it
   # only runs when a remote GitHub/GitLab Release is configured, which this
@@ -2919,7 +2944,21 @@ jobs:
       # commits, tag-only push. Portable guard: nx release errors on an empty
       # scope, so skip cleanly when there is nothing to release. When there
       # are Python or C# packages and an Azure feed, twine/NuGet publish
-      # credentials are exported (raw PAT, decoded from the base64 secret).${
+      # credentials are exported (raw PAT, decoded from the base64 secret).
+      #
+      # RELEASE_SPECIFIER (repository variable, Settings -> Secrets and
+      # variables -> Actions -> Variables) overrides the bump nx would compute
+      # from conventional commits for THIS run: 'major', 'minor', 'patch', or
+      # an exact version ('1.2.3'). In a workspace with more than one
+      # releasable package, a bare keyword is unreliable — nx versions
+      # interdependent packages in two passes (a dependency-bump pass, then
+      # the specifier pass), and the second pass computes from a version
+      # cached before the first pass ran, silently landing back on the same
+      # patch bump either way. An exact version does not have this problem,
+      # since both passes apply it verbatim — prefer it whenever more than one
+      # package is releasable. The guard below fails the run rather than
+      # under-bumping silently: unset or clear the variable once the override
+      # is no longer needed.${
         githubReleases
           ? `
       # This provider also creates a per-project GitHub Release (changelog
@@ -2933,7 +2972,8 @@ jobs:
         name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python + C#)
         if: \${{ ${onMain} }}
         env:
-          ${npmAuthName}: ${npmAuthValue}${
+          ${npmAuthName}: ${npmAuthValue}
+          RELEASE_SPECIFIER: \${{ vars.RELEASE_SPECIFIER }}${
             githubReleases
               ? `
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}`
