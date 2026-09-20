@@ -2875,7 +2875,7 @@ jobs:
       # directly rather than a hand-rolled 'node -e' guard — see
       # DOTNET_DETECT_AZURE's remarks for the full reasoning. hashFiles()
       # gates it inline, so a JS-only workspace pays nothing.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         if: \${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}
         with:
           dotnet-version: ${DOTNET_SDK_VERSION}

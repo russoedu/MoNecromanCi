@@ -219,7 +219,16 @@ describe('the e2e job provisions the toolchains its own suite needs', () => {
     // ci job's own install step is gated on hashFiles('**/*.csproj'), which
     // this job's working directory (this repo, not a generated workspace)
     // never satisfies.
-    const dotnetStep = steps.find(step => step.uses === 'actions/setup-dotnet@v4')
+    //
+    // Matched by action name only, not a pinned major (`@v4`, `@v6`, …): per
+    // this file's own header comment, a newer `uses:` version is expected to
+    // "fall out for free" via Dependabot and is never this guard's concern —
+    // a literal version match here would re-break on every future bump for
+    // no reason connected to real drift, exactly what broke when Dependabot
+    // carried this repo's own workflow from v4 to v6 in one PR while
+    // overlay.ts (bumped alongside it, deliberately) still had to be edited
+    // by hand.
+    const dotnetStep = steps.find(step => step.uses?.startsWith('actions/setup-dotnet@'))
 
     expect(dotnetStep).toBeDefined()
     expect(dotnetStep?.if).toBeUndefined()
