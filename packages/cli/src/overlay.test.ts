@@ -986,7 +986,7 @@ describe('githubActionsYaml', () => {
     const document_ = yaml.load(githubActionsYaml('ubuntu-latest')) as {
       jobs?: { ci?: { steps?: { uses?: string; if?: string; with?: Record<string, string> }[] } }
     }
-    const install = document_.jobs?.ci?.steps?.find(step => step.uses === 'actions/setup-dotnet@v4')
+    const install = document_.jobs?.ci?.steps?.find(step => step.uses === 'actions/setup-dotnet@v6')
 
     expect(install?.if).toBe("${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}")
     expect(install?.with?.['dotnet-version']).toBe(DOTNET_SDK_VERSION)
