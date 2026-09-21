@@ -533,14 +533,15 @@ describe('azurePipelinesYaml', () => {
     expect(pipeline).toContain('batch: true')
   })
 
-  it('gates exactly the five release-only steps, the same set as GitHub', () => {
-    // Both providers share one condition across pack, publish, tag, release and
-    // tag-push. Asserting the COUNT is what stops the narrowing from silently
-    // reaching a step it was never meant to gate — or missing one it was.
-    // The .NET SDK install task also carries a 'condition:' — a different
-    // gate (does the workspace have any C# project) for a different reason —
-    // so this matches the release condition's exact text rather than mere
-    // presence, or the two would be indistinguishable here.
+  it('gates exactly the six release-only steps, the same set as GitHub', () => {
+    // Both providers share one condition across pack, publish, tag, the
+    // shallow-clone guard, release and tag-push. Asserting the COUNT is what
+    // stops the narrowing from silently reaching a step it was never meant
+    // to gate — or missing one it was. The .NET SDK install task also
+    // carries a 'condition:' — a different gate (does the workspace have
+    // any C# project) for a different reason — so this matches the release
+    // condition's exact text rather than mere presence, or the two would be
+    // indistinguishable here.
     const document_ = yaml.load(azurePipelinesYaml('ubuntu-latest', 'Build')) as {
       steps: { condition?: string; displayName?: string }[]
     }
@@ -549,7 +550,7 @@ describe('azurePipelinesYaml', () => {
       "eq(variables['Build.SourceBranchName'], 'main'))"
     const gated = document_.steps.filter(step => step.condition === releaseCondition)
 
-    expect(gated).toHaveLength(5)
+    expect(gated).toHaveLength(6)
   })
 
   it('gates the .NET SDK install task on the workspace having a C# project, not on main', () => {

@@ -606,6 +606,21 @@ const DECLARATION_SPECIFIER_PLUGIN_MARKER = "name: 'mnci-normalise-declaration-s
 const DECLARATION_SPECIFIER_EXTENSION_MARKER = 'bareRelativeSpecifier'
 
 /**
+ * A unique identifier {@link DECLARATION_SPECIFIER_PLUGIN} only contains once
+ * it resolves a bare specifier's suffix against what rollup actually emitted
+ * — absent from the earlier version that appended `.js` unconditionally.
+ *
+ * @remarks
+ * That earlier version could not tell a file specifier from a directory
+ * barrel: `./scan-session` needs `/index.js`, not `.js` (a file that was
+ * never emitted), and ESM resolution has no directory-index fallback — so an
+ * affected import silently degraded the whole module to `any` under
+ * `skipLibCheck`, the default in most consumers. Confirmed against a real
+ * published tarball.
+ */
+const DECLARATION_SPECIFIER_DIRECTORY_MARKER = 'resolveSpecifierSuffix'
+
+/**
  * The declaration-specifier plugin object, exactly as written into
  * `plugins: [ … ]`.
  *
@@ -620,7 +635,7 @@ const DECLARATION_SPECIFIER_PLUGIN = [
   '      {',
   "        name: 'mnci-normalise-declaration-specifiers',",
   '        writeBundle (outputOptions) {',
-  "          const { readdirSync, readFileSync, writeFileSync } = require('node:fs')",
+  "          const { existsSync, readdirSync, readFileSync, writeFileSync } = require('node:fs')",
   "          const { join } = require('node:path')",
   "          const dir = outputOptions.dir ?? './dist'",
   "          const stub = join(dir, 'index.d.ts')",
@@ -648,17 +663,31 @@ const DECLARATION_SPECIFIER_PLUGIN = [
   '          }',
   '          for (const entry of entries) {',
   "            if (!entry.name.endsWith('.d.ts')) continue",
-  '            const filePath = join(entry.parentPath ?? entry.path, entry.name)',
+  '            const from = entry.parentPath ?? entry.path',
+  '            const filePath = join(from, entry.name)',
   '            let declaration',
   '            try {',
   "              declaration = readFileSync(filePath, 'utf8')",
   '            } catch {',
   '              continue',
   '            }',
+  '            // A bare specifier may name a FILE or a DIRECTORY BARREL - resolved',
+  '            // against what rollup actually emitted next to this file, never',
+  '            // guessed. A directory needs /index.js, not .js (a file that was',
+  '            // never written); anything neither form matches is left alone rather',
+  '            // than rewritten to a specifier that cannot resolve.',
+  `            const ${DECLARATION_SPECIFIER_DIRECTORY_MARKER} = (specifier) => {`,
+  '              if (hasExtension.test(specifier)) return null',
+  "              if (existsSync(join(from, specifier + '.d.ts'))) return specifier + '.js'",
+  "              if (existsSync(join(from, specifier, 'index.d.ts'))) return specifier + '/index.js'",
+  '              return null',
+  '            }',
   '            const withExtensions = declaration.replace(',
   `              ${DECLARATION_SPECIFIER_EXTENSION_MARKER},`,
-  '              (match, space, quote, specifier) =>',
-  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
+  '              (match, space, quote, specifier) => {',
+  `                const resolved = ${DECLARATION_SPECIFIER_DIRECTORY_MARKER}(specifier)`,
+  '                return resolved === null ? match : `from${space}${quote}${resolved}${quote}`',
+  '              },',
   '            )',
   '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions)',
   '          }',
@@ -761,8 +790,13 @@ function findEnclosingBraceSpan (text: string, needle: string): [number, number]
  * the class of bug the compiler-swap fix above exists to prevent. Instead
  * this locates the plugin object by brace-counting from its own unique
  * `name` ({@link findEnclosingBraceSpan}) and replaces the WHOLE object with
- * the current version whenever {@link DECLARATION_SPECIFIER_EXTENSION_MARKER}
+ * the current version whenever {@link DECLARATION_SPECIFIER_DIRECTORY_MARKER}
  * is missing from it — regardless of what the old body's text actually was.
+ * Checking the directory-aware marker rather than
+ * {@link DECLARATION_SPECIFIER_EXTENSION_MARKER} is load-bearing: a project
+ * `add`ed after the `.js`-extension capability shipped but before the
+ * directory-barrel fix already carries the extension marker, so checking
+ * that one would leave it stuck silently publishing untyped packages forever.
  *
  * Idempotent: a plugin that already carries the marker is left untouched.
  *
@@ -776,7 +810,7 @@ function findEnclosingBraceSpan (text: string, needle: string): [number, number]
 export function withUpgradedDeclarationSpecifierPlugin (config: string): string {
   if (
     !config.includes(DECLARATION_SPECIFIER_PLUGIN_MARKER) ||
-    config.includes(DECLARATION_SPECIFIER_EXTENSION_MARKER)
+    config.includes(DECLARATION_SPECIFIER_DIRECTORY_MARKER)
   ) {
     return config
   }
