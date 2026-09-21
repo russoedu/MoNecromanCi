@@ -184,6 +184,18 @@ jobs:
           path: dist/drop
           if-no-files-found: ignore
 
+      # nx release resolves each package's current version from its git tag,
+      # and falls back to the (permanently stale, since git.commit is false)
+      # on-disk version when a tag cannot be resolved — which happens
+      # whenever this checkout lacks full history. This is currently
+      # guaranteed by fetch-depth 0 above plus the explicit fetch below, but
+      # neither is expressed as a dependency anywhere else, so this makes it
+      # a hard, loud precondition instead of a silently wrong version
+      # discovered after release.
+      - run: node -e "const r=require('node:child_process').spawnSync('git',['rev-parse','--is-shallow-repository'],{encoding:'utf8'});if(r.status!==0){console.error('Could not determine whether this checkout has full history (git rev-parse --is-shallow-repository failed) - refusing to release. '+(r.stderr||'').trim());process.exit(1)}if(r.stdout.trim()==='true'){console.error('This checkout is a shallow clone. nx release resolves the current version of each package from its git tag, and silently falls back to the permanently-stale on-disk version when a tag cannot be found - which can propose, and publish, a version DOWNGRADE. Fetch full history before releasing - set fetchDepth (Azure) or fetch-depth (GitHub) to 0.');process.exit(1)}"
+        name: Verify this is a full checkout (nx release needs the real tag history)
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
       # Version + tag + publish, in one release, for npm (packages/*), Python
       # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
       # commits, tag-only push. Portable guard: nx release errors on an empty

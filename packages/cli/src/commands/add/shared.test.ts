@@ -708,6 +708,84 @@ describe('repairDeclarationSpecifiers: extensionless declaration re-exports unde
     )
   })
 
+  it('resolves a bare specifier naming a directory barrel to /index.js, not .js', () => {
+    // The actual bug: a directory barrel has no <name>.d.ts sibling, only
+    // <name>/index.d.ts. Appending .js unconditionally names a file rollup
+    // never emitted; ESM resolution has no directory-index fallback, so
+    // TypeScript cannot resolve it and (with skipLibCheck, the default in
+    // most consumers) silently degrades the whole module to `any` instead
+    // of erroring. Confirmed against a real published tarball.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'scan-session'), { recursive: true })
+    // Root barrel re-exports a directory, not a file.
+    writeFileSync(join(distDir, 'index.d.ts'), "export * from './scan-session';\n")
+    writeFileSync(
+      join(distDir, 'scan-session', 'index.d.ts'),
+      'export declare function scan(): void;\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(
+      "export * from './scan-session/index.js';\n",
+    )
+  })
+
+  it('leaves a bare specifier alone when neither a file nor a directory barrel exists for it', () => {
+    // Nothing was emitted under this name at all (a type-only export, a
+    // build that hasn't run for this entry yet, …) — rewriting it to a
+    // guessed suffix would produce a specifier that resolves to nothing,
+    // strictly worse than leaving the original text in place.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(distDir, { recursive: true })
+    const unresolvable = "export * from './nothing-here';\n"
+    writeFileSync(join(distDir, 'index.d.ts'), unresolvable)
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(unresolvable)
+  })
+
   it('never double-appends an extension a specifier already has', () => {
     const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
     writeFileSync(
@@ -792,6 +870,73 @@ const OLD_DTS_PLUGIN_CONFIG = [
   ');',
 ].join('\n')
 
+/**
+ * A rollup config carrying the plugin body exactly as it read after the
+ * `.js`-extension capability shipped but BEFORE the directory-barrel fix —
+ * i.e. it already contains {@link DECLARATION_SPECIFIER_EXTENSION_MARKER}
+ * but not {@link DECLARATION_SPECIFIER_DIRECTORY_MARKER}. This is the real
+ * regression a bug report against a consuming workspace found: nine of
+ * eleven packages carried this exact generation, silently publishing
+ * untyped declarations for any directory barrel, and nothing ever revisited
+ * them because the old upgrade check only looked for the extension marker,
+ * which they already had.
+ */
+const EXTENSION_ONLY_DTS_PLUGIN_CONFIG = [
+  'const { withNx } = require("@nx/rollup/with-nx");',
+  '',
+  'module.exports = withNx(',
+  '  {',
+  '    main: "./src/index.ts",',
+  '  },',
+  '  {',
+  '    plugins: [',
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle(outputOptions) {',
+  '          const { readdirSync, readFileSync, writeFileSync } = require("node:fs");',
+  '          const { join } = require("node:path");',
+  '          const dir = outputOptions.dir ?? "./dist";',
+  '          const stub = join(dir, "index.d.ts");',
+  '          let source;',
+  '          try {',
+  '            source = readFileSync(stub, "utf8");',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          const separator = String.fromCodePoint(92, 92);',
+  '          const normalised = source.replaceAll(separator, "/");',
+  '          if (normalised !== source) writeFileSync(stub, normalised);',
+  String.raw`          const bareRelativeSpecifier = /from(\s+)(['"])(\.[^'"]+?)\2/g;`,
+  String.raw`          const hasExtension = /\.(?:mjs|cjs|jsx?|json)$/;`,
+  '          let entries;',
+  '          try {',
+  '            entries = readdirSync(dir, { recursive: true, withFileTypes: true });',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          for (const entry of entries) {',
+  '            if (!entry.name.endsWith(".d.ts")) continue;',
+  '            const filePath = join(entry.parentPath ?? entry.path, entry.name);',
+  '            let declaration;',
+  '            try {',
+  '              declaration = readFileSync(filePath, "utf8");',
+  '            } catch {',
+  '              continue;',
+  '            }',
+  '            const withExtensions = declaration.replace(',
+  '              bareRelativeSpecifier,',
+  '              (match, space, quote, specifier) =>',
+  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
+  '            );',
+  '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions);',
+  '          }',
+  '        }',
+  '      }',
+  '    ]',
+  '  }',
+  ');',
+].join('\n')
+
 describe('withUpgradedDeclarationSpecifierPlugin', () => {
   it('upgrades an old plugin body to the current one, regardless of its exact prior text', () => {
     const after = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
@@ -807,6 +952,41 @@ describe('withUpgradedDeclarationSpecifierPlugin', () => {
     const current = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
 
     expect(withUpgradedDeclarationSpecifierPlugin(current)).toBe(current)
+  })
+
+  it('upgrades a config that already has the extension fix but not the directory-barrel fix', () => {
+    // The real regression: this generation already contains
+    // DECLARATION_SPECIFIER_EXTENSION_MARKER, so the OLD upgrade check
+    // (extension marker present => "already current") left it untouched
+    // forever. It must be recognised as stale and upgraded here too.
+    const after = withUpgradedDeclarationSpecifierPlugin(EXTENSION_ONLY_DTS_PLUGIN_CONFIG)
+
+    expect(after).toContain('resolveSpecifierSuffix')
+    expect(after).not.toBe(EXTENSION_ONLY_DTS_PLUGIN_CONFIG)
+  })
+
+  it('an upgraded extension-only config actually resolves a directory barrel correctly', () => {
+    // Not just "the marker is present" - the upgraded body must really run
+    // and really fix the bug, proven by loading and executing it for real.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-upgrade-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      withUpgradedDeclarationSpecifierPlugin(EXTENSION_ONLY_DTS_PLUGIN_CONFIG),
+    )
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'scan-session'), { recursive: true })
+    writeFileSync(join(distDir, 'index.d.ts'), "export * from './scan-session';\n")
+    writeFileSync(
+      join(distDir, 'scan-session', 'index.d.ts'),
+      'export declare function scan(): void;\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(
+      "export * from './scan-session/index.js';\n",
+    )
   })
 
   it('leaves a config with no declaration-specifier plugin at all unchanged', () => {

@@ -452,6 +452,17 @@ to one is mirrored in the other by construction:
   `fallbackCurrentVersionResolver: "disk"`, which reads stale manifest versions) —
   always `git fetch --tags` before trusting `nx release --dry-run` output.
   Versioning is driven entirely by Conventional Commits (commitlint via husky).
+  The disk fallback is a real hazard, not just a local dry-run footgun: it exists so a
+  brand-new package's first release doesn't hard-error the whole release graph (nx's
+  own `--first-release` is a one-shot CLI flag, not something a fixed CI command can
+  scope to only the projects that need it), but for an already-published project it
+  means an unresolvable tag silently proposes — and can publish — a version
+  **downgrade**, reproduced against a real multi-package workspace (`0.2.0` proposed
+  against a published `0.7.0`). The generated CI is safe only because it always fetches
+  full history and releases only from `main`; `SHALLOW_CLONE_GUARD` in `overlay.ts`
+  makes that an explicit, enforced precondition (fails loudly on a shallow checkout)
+  rather than leaving it as an unstated assumption one `fetchDepth`/`fetch-depth` edit
+  away from silently breaking.
 - **Merge PRs with a merge commit** — never squash or rebase-merge. Both replace the
   branch tip's SHA, permanently breaking `git branch --merged`'s ancestry check;
   this repo already squash-merged ~90 PRs and lost the ability to tell a finished

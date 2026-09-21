@@ -2226,6 +2226,44 @@ const AFFECTED_OR_ALL_GUARD = `node -e "const cp=require('node:child_process');c
 const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'dist/drop\',{recursive:true});const hasProjectJson=fs.globSync(\'apps/*/project.json\').length>0;const hasInlineNx=fs.globSync(\'apps/*/package.json\').some((f)=>{try{return Boolean(JSON.parse(fs.readFileSync(f,\'utf8\')).nx)}catch{return false}});const hasCsproj=fs.globSync(\'apps/*/*.csproj\').length>0;if(!hasProjectJson&&!hasInlineNx&&!hasCsproj){console.log(\'No apps to pack - skipping.\');process.exit(0)}process.exit(require(\'node:child_process\').spawnSync(\'npx nx run-many -t package\',{stdio:\'inherit\',shell:true}).status ?? 1)"'
 
 /**
+ * The portable `node -e` one-liner that fails the run when the checkout is a
+ * shallow clone, before `nx release` ever gets to run.
+ *
+ * @remarks
+ * `release.version.fallbackCurrentVersionResolver: 'disk'` ({@link releaseConfig})
+ * exists so a brand-new, never-tagged package's first release does not hard-error
+ * the whole release graph — nx's own recommended mechanism for that case
+ * (`--first-release`) is a one-shot CLI flag, not something a fixed, non-interactive
+ * CI command can apply selectively to only the projects that actually need it, so
+ * the config-level fallback is the only option that keeps `mnci add npm-lib` (or
+ * `python-lib`, `flutter-lib`, `csharp-lib`) followed by an ordinary release working
+ * out of the box.
+ *
+ * That fallback is dangerous for every OTHER project, the ones already published:
+ * with `git.commit: false`, a manifest's on-disk version is permanently whatever the
+ * generator scaffolded (`0.0.1`/`1.0.0`), so if nx cannot resolve a project's tag for
+ * ANY reason it silently falls back to that stale disk value and proposes a version
+ * relative to it — which reads as a normal release and can propose (and, if nothing
+ * stops it, publish) a downgrade. Reproduced against a real multi-package workspace:
+ * a dry run with the release tags unreachable from the current branch proposed
+ * `0.2.0` against a published `0.7.0`.
+ *
+ * The generated CI is safe today ONLY because both providers unconditionally fetch
+ * full history and tags before releasing, and release only ever runs from `main` —
+ * but nothing in `nx.json` expresses that this is load-bearing, so a well-meaning
+ * future edit to the checkout step (shallower fetch, a cache shortcut) would
+ * silently reintroduce the downgrade path with no error, anywhere. This guard turns
+ * that implicit dependency into an explicit, checked precondition: `nx release`
+ * NEVER runs against a shallow checkout, full stop — a hard, loud, immediate failure
+ * naming the fix, instead of a quiet wrong version discovered after the fact.
+ *
+ * @returns The full `node -e` shallow-clone guard one-liner.
+ * @throws Never - pure string building.
+ * @typeParam None - this function has no generic type parameters.
+ */
+const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').spawnSync(\'git\',[\'rev-parse\',\'--is-shallow-repository\'],{encoding:\'utf8\'});if(r.status!==0){console.error(\'Could not determine whether this checkout has full history (git rev-parse --is-shallow-repository failed) - refusing to release. \'+(r.stderr||\'\').trim());process.exit(1)}if(r.stdout.trim()===\'true\'){console.error(\'This checkout is a shallow clone. nx release resolves the current version of each package from its git tag, and silently falls back to the permanently-stale on-disk version when a tag cannot be found - which can propose, and publish, a version DOWNGRADE. Fetch full history before releasing - set fetchDepth (Azure) or fetch-depth (GitHub) to 0.\');process.exit(1)}"'
+
+/**
  * Builds the portable `node -e` one-liner that versions, tags and publishes
  * both `packages/*` (npm) and `python-packages/*` (Python) via `nx release`.
  *
@@ -2660,6 +2698,17 @@ steps:
     displayName: Tag the run per app (type-name)
     condition: ${onMain}
 
+  # nx release resolves each package's current version from its git tag, and
+  # falls back to the (permanently stale, since git.commit is false) on-disk
+  # version when a tag cannot be resolved — which happens whenever this
+  # checkout lacks full history. This is currently guaranteed by fetchDepth 0
+  # above plus the explicit fetch below, but neither is expressed as a
+  # dependency anywhere else, so this makes it a hard, loud precondition
+  # instead of a silently wrong version discovered after release.
+  - script: ${SHALLOW_CLONE_GUARD}
+    displayName: Verify this is a full checkout (nx release needs the real tag history)
+    condition: ${onMain}
+
   # Version + tag + publish, in one release, for npm (packages/*), Python
   # (python-packages/*) AND C# (packages/*/*.csproj) — conventional commits,
   # tag-only push. Portable guard: nx release errors on an empty scope, so
@@ -2938,6 +2987,18 @@ jobs:
           name: drop
           path: dist/drop
           if-no-files-found: ignore
+
+      # nx release resolves each package's current version from its git tag,
+      # and falls back to the (permanently stale, since git.commit is false)
+      # on-disk version when a tag cannot be resolved — which happens
+      # whenever this checkout lacks full history. This is currently
+      # guaranteed by fetch-depth 0 above plus the explicit fetch below, but
+      # neither is expressed as a dependency anywhere else, so this makes it
+      # a hard, loud precondition instead of a silently wrong version
+      # discovered after release.
+      - run: ${SHALLOW_CLONE_GUARD}
+        name: Verify this is a full checkout (nx release needs the real tag history)
+        if: \${{ ${onMain} }}
 
       # Version + tag + publish, in one release, for npm (packages/*), Python
       # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
