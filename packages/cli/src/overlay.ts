@@ -2265,7 +2265,8 @@ const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').sp
 
 /**
  * Builds the portable `node -e` one-liner that versions, tags and publishes
- * both `packages/*` (npm) and `python-packages/*` (Python) via `nx release`.
+ * every releasable project — `packages/*` (npm, C#, Dart) and
+ * `python-packages/*` (Python) — via `nx release`.
  *
  * @remarks
  * Shared bit-for-bit by {@link azurePipelinesYaml} and {@link githubActionsYaml}
@@ -2273,6 +2274,23 @@ const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').sp
  * decode the same base64 `PAT` env var, so the fragment itself is identical
  * too; only the caller decides whether to inject it). Skips cleanly when
  * there is nothing to release (`nx release` hard-errors on an empty scope).
+ *
+ * **Every manifest shape `release.projects` can match must be counted here**,
+ * and a Dart one is the reason that is stated rather than assumed. The four
+ * globs mirror `releaseConfig`'s `['packages/*', 'python-packages/*']`: npm
+ * (`package.json`), C# (`*.csproj`), Python (`pyproject.toml`) and Dart
+ * (`pubspec.yaml`). A publishable `flutter-lib` lands in `packages/` with a
+ * `pubspec.yaml` and **no `package.json`** (see `@mnci/nx-flutter`'s library
+ * generator), so while it was missing here a Flutter-only workspace logged
+ * "Nothing to release - skipping" and exited 0 on every single release run —
+ * green, and never releasing. Dart is also the one kind with no publish step
+ * at all (Azure Artifacts has no pub feed, so publishing IS the git tag),
+ * which is exactly why nothing downstream would ever have surfaced the miss.
+ *
+ * The same count also feeds the `RELEASE_SPECIFIER` keyword check below, so
+ * under-counting weakened that guard too: one npm lib plus one flutter lib
+ * counted as 1, and a bare keyword — the input that silently under-bumps
+ * interdependent packages — was accepted for a workspace with 2.
  *
  * @param pythonPublishEnv - A `node -e`-fragment that exports `TWINE_*` when
  * there are Python packages and a configured feed, or `''` to export nothing.
@@ -2283,7 +2301,7 @@ const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').sp
  * @typeParam None - this function has no generic type parameters.
  */
 function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): string {
-  return String.raw`node -e "const fs=require('node:fs'),cp=require('node:child_process');const npmCount=fs.globSync('packages/*/package.json').length;const csharpCount=fs.globSync('packages/*/*.csproj').length;const pythonCount=fs.globSync('python-packages/*/pyproject.toml').length;const hasNpm=npmCount>0;const hasPython=pythonCount>0;const hasCsharp=csharpCount>0;if(!hasNpm&&!hasPython&&!hasCsharp){console.log('Nothing to release - skipping.');process.exit(0)}const specifier=process.env.RELEASE_SPECIFIER||'';let releaseCmd='npx nx release --yes';if(specifier){if(!/^(major|minor|patch|\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$/.test(specifier)){console.error('RELEASE_SPECIFIER value \''+specifier+'\' is invalid - use major, minor, patch, or an exact version like 1.2.3.');process.exit(1)}const releaseProjectCount=npmCount+csharpCount+pythonCount;if(/^(major|minor|patch)$/.test(specifier)&&releaseProjectCount>1){console.error('RELEASE_SPECIFIER is a keyword (\''+specifier+'\') but this workspace has '+releaseProjectCount+' releasable packages - a keyword under-bumps interdependent packages, because nx computes the dependency-bump pass from a stale cached version. Set RELEASE_SPECIFIER to an exact version instead, or clear it.');process.exit(1)}releaseCmd='npx nx release '+specifier+' --yes'}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync(releaseCmd,{stdio:'inherit',shell:true,env}).status ?? 1)"`
+  return String.raw`node -e "const fs=require('node:fs'),cp=require('node:child_process');const npmCount=fs.globSync('packages/*/package.json').length;const csharpCount=fs.globSync('packages/*/*.csproj').length;const pythonCount=fs.globSync('python-packages/*/pyproject.toml').length;const dartCount=fs.globSync('packages/*/pubspec.yaml').length;const hasNpm=npmCount>0;const hasPython=pythonCount>0;const hasCsharp=csharpCount>0;const hasDart=dartCount>0;if(!hasNpm&&!hasPython&&!hasCsharp&&!hasDart){console.log('Nothing to release - skipping.');process.exit(0)}const specifier=process.env.RELEASE_SPECIFIER||'';let releaseCmd='npx nx release --yes';if(specifier){if(!/^(major|minor|patch|\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)$/.test(specifier)){console.error('RELEASE_SPECIFIER value \''+specifier+'\' is invalid - use major, minor, patch, or an exact version like 1.2.3.');process.exit(1)}const releaseProjectCount=npmCount+csharpCount+pythonCount+dartCount;if(/^(major|minor|patch)$/.test(specifier)&&releaseProjectCount>1){console.error('RELEASE_SPECIFIER is a keyword (\''+specifier+'\') but this workspace has '+releaseProjectCount+' releasable packages - a keyword under-bumps interdependent packages, because nx computes the dependency-bump pass from a stale cached version. Set RELEASE_SPECIFIER to an exact version instead, or clear it.');process.exit(1)}releaseCmd='npx nx release '+specifier+' --yes'}const env={...process.env};${pythonPublishEnv}${nugetPublishEnv}process.exit(cp.spawnSync(releaseCmd,{stdio:'inherit',shell:true,env}).status ?? 1)"`
 }
 
 /**
