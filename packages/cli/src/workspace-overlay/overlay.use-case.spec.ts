@@ -988,7 +988,7 @@ describe('githubActionsYaml', () => {
 
   it('does not attach HEAD to a branch (actions/checkout is never detached on a push-triggered run)', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
-    expect(workflow).toContain('actions/checkout@v4')
+    expect(workflow).toContain('actions/checkout@v7')
     expect(workflow).not.toContain('checkout -B')
   })
 
@@ -1202,7 +1202,7 @@ describe('githubActionsYaml', () => {
     const workflow = githubActionsYaml('ubuntu-latest')
 
     const packIndex = workflow.indexOf('nx run-many -t package')
-    const uploadIndex = workflow.indexOf('actions/upload-artifact@v4')
+    const uploadIndex = workflow.indexOf('actions/upload-artifact@v7')
     const releaseIndex = workflow.indexOf('nx release --yes')
 
     expect(packIndex).toBeGreaterThan(-1)

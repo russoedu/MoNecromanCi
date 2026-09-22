@@ -787,12 +787,12 @@ section('js stack', [], () => {
   )
   enforce(
     'workflow does not attach HEAD to a branch (actions/checkout is never detached on push)',
-    workflowYaml.includes('actions/checkout@v4') && !workflowYaml.includes('checkout -B'),
+    workflowYaml.includes('actions/checkout@v7') && !workflowYaml.includes('checkout -B'),
   )
   enforce(
     'workflow packs apps to a drop artifact (no Azure build-tag mechanism)',
     workflowYaml.includes('nx run-many -t package') &&
-      workflowYaml.includes('actions/upload-artifact@v4') &&
+      workflowYaml.includes('actions/upload-artifact@v7') &&
       !workflowYaml.includes('addbuildtag'),
   )
   let workflowParsed = null

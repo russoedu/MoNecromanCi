@@ -1909,6 +1909,32 @@ export const FLUTTER_SDK_VERSION = '3.44.8'
 export const NODE_VERSION = '24'
 
 /**
+ * The major of each GitHub Action the generated workflow pins.
+ *
+ * @remarks
+ * Pinned here, in one place, because Dependabot cannot see them anywhere else.
+ * It keeps THIS repo's `.github/workflows/ci.yml` current — that file is real
+ * YAML it can parse — but these are string literals inside a TypeScript
+ * generator, invisible to it. So every bump it lands here has to be carried
+ * across by hand, and three of the four had not been: this repo ran
+ * `checkout@v7`, `setup-node@v7` and `upload-artifact@v7` while every workspace
+ * mnci generated still got `@v4`. Only `setup-dotnet` matched, because someone
+ * noticed once and ported it (PR #189).
+ *
+ * The v7 majors are not a guess: they are exactly what this repo's own CI runs
+ * green today, on a pipeline whose `run:` steps are asserted to be a superset of
+ * the generated one's. `pipeline-drift.integration.spec.ts` now fails when this
+ * map falls behind that workflow, so the carry-across is enforced rather than
+ * remembered.
+ */
+export const ACTION_VERSIONS = {
+  'actions/checkout':        'v7',
+  'actions/setup-node':      'v7',
+  'actions/setup-dotnet':    'v6',
+  'actions/upload-artifact': 'v7',
+} as const
+
+/**
  * The npm major a generated workspace is built and tested against.
  *
  * @remarks
@@ -2870,7 +2896,7 @@ jobs:
   ci:
     runs-on: ${agent}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@${ACTION_VERSIONS['actions/checkout']}
         with:
           fetch-depth: 0
 
@@ -2881,7 +2907,7 @@ jobs:
       - run: git config user.name "github-actions[bot]" && git config user.email "github-actions[bot]@users.noreply.github.com"
         name: Set the git identity used for release tags
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@${ACTION_VERSIONS['actions/setup-node']}
         with:
           node-version: ${NODE_VERSION}
           # Caches ~/.npm keyed on package-lock.json, so \`npm ci\` restores from
@@ -2967,7 +2993,7 @@ jobs:
       # directly rather than a hand-rolled 'node -e' guard — see
       # DOTNET_DETECT_AZURE's remarks for the full reasoning. hashFiles()
       # gates it inline, so a JS-only workspace pays nothing.
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@${ACTION_VERSIONS['actions/setup-dotnet']}
         if: \${{ hashFiles('apps/*/*.csproj', 'packages/*/*.csproj', 'libs/*/*.csproj') != '' }}
         with:
           dotnet-version: ${DOTNET_SDK_VERSION}
@@ -2999,7 +3025,7 @@ jobs:
         name: Pack all apps (one zip per app -> dist/drop)
         if: \${{ ${onMain} }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@${ACTION_VERSIONS['actions/upload-artifact']}
         if: \${{ ${onMain} }}
         with:
           name: drop
