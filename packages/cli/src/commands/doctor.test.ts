@@ -3,10 +3,11 @@
 // asserted through the mock's return code instead.
 jest.mock('../nx', () => ({ runShell: jest.fn(() => 0) }))
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runShell } from '../nx'
+import { repairDeclarationSpecifiers, upgradeDeclarationSpecifierPlugins } from './add/shared'
 import { collectFindings, runDoctor, type Finding } from './doctor'
 
 const mockRunShell = jest.mocked(runShell)
@@ -237,6 +238,36 @@ describe('collectFindings', () => {
     expect(findingFor(collectFindings(workspaceRoot), 'packages/shared')?.ok).toBe(true)
   })
 
+  it('catches a publishable C# package missing its versionActions override', () => {
+    // csharp-lib is the only C# kind that lands in packages/, so it sits
+    // inside release.projects and carries the same whole-workspace failure
+    // mode as a Dart or Python one — it just resolves its override to a
+    // workspace-relative .cjs rather than to a plugin.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/cslib'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/cslib/cslib.csproj'), '<Project />\n')
+    writeFileSync(join(workspaceRoot, 'packages/cslib/project.json'), JSON.stringify({}))
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'packages/cslib')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('ENTIRE workspace')
+  })
+
+  it('passes a C# package that keeps the override', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/cslib'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/cslib/cslib.csproj'), '<Project />\n')
+    writeFileSync(
+      join(workspaceRoot, 'packages/cslib/project.json'),
+      JSON.stringify({
+        release: { version: { versionActions: './tools/csharp-version-actions.cjs' } },
+      }),
+    )
+
+    expect(findingFor(collectFindings(workspaceRoot), 'packages/cslib')?.ok).toBe(true)
+  })
+
   it('catches a build target whose main names a file that was never written', () => {
     seedHealthyWorkspace()
     mkdirSync(join(workspaceRoot, 'apps/api/src'), { recursive: true })
@@ -446,6 +477,137 @@ describe('the rollup source-map check', () => {
 
     expect(finding?.ok).toBe(false)
     expect(finding?.remedy).toContain('mnci upgrade')
+  })
+})
+
+/** The rollup config `@nx/js:lib --bundler=rollup` writes, before any repair. */
+const GENERATED_ROLLUP_CONFIG = [
+  "const { withNx } = require('@nx/rollup/with-nx')",
+  'module.exports = withNx(',
+  '  {',
+  "    main: './src/index.ts',",
+  '  },',
+  '  {',
+  '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+  '    // e.g.',
+  '    // output: { sourcemap: true },',
+  '  }',
+  ')',
+].join('\n')
+
+describe('the declaration-specifier check', () => {
+  it('passes a project carrying the current, directory-aware plugin', () => {
+    // Built by the real generator rather than hand-written, so this cannot
+    // drift from what `mnci add npm-lib` actually produces.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+    repairDeclarationSpecifiers(join(workspaceRoot, 'packages/sdk'))
+
+    const findings = collectFindings(workspaceRoot)
+
+    expect(findingFor(findings, 'normalises declaration specifiers')?.ok).not.toBe(false)
+    expect(findingFor(findings, 'resolves directory barrels')?.ok).toBe(true)
+  })
+
+  it('catches the stale plugin that appends .js to a directory barrel', () => {
+    // The dangerous state, and the reason this check exists: the plugin IS
+    // there, the build succeeds, the package publishes, and every export
+    // behind a directory barrel is `any` for every consumer. Nothing fails.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {},',
+        '  {',
+        '    plugins: [',
+        '      {',
+        "        name: 'mnci-normalise-declaration-specifiers',",
+        '        writeBundle(outputOptions) {',
+        String.raw`          const bareRelativeSpecifier = /from(\s+)(['"])(\.[^'"]+?)\2/g;`,
+        '          // appends .js unconditionally — no directory-barrel resolution',
+        '        }',
+        '      }',
+        '    ]',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'resolves directory barrels')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('/index.js')
+    expect(finding?.remedy).toContain('mnci upgrade')
+  })
+
+  it('catches a rollup project with no declaration-specifier plugin at all', () => {
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'normalises declaration specifiers')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('nodenext')
+    // The remedy must NOT be a bare "run mnci upgrade": that command only
+    // rewrites a plugin that is already present, so on this shape it no-ops
+    // and the same finding comes back forever. Verified against the real
+    // command. Asserted because the wrong remedy is easy to reintroduce and
+    // impossible to notice from the code alone.
+    expect(finding?.remedy).toContain('by hand')
+    expect(finding?.remedy).toContain('cannot restore a missing one')
+  })
+
+  it('does recommend mnci upgrade for the stale plugin, because there it genuinely repairs', () => {
+    // The other half of the same contract: upgrade IS the right answer when
+    // there is a plugin body to replace, so this pins that the two findings
+    // do not get collapsed into one generic message.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+    repairDeclarationSpecifiers(join(workspaceRoot, 'packages/sdk'))
+    const configPath = join(workspaceRoot, 'packages/sdk/rollup.config.cjs')
+    writeFileSync(
+      configPath,
+      readFileSync(configPath, 'utf8').replaceAll('resolveSpecifierSuffix', 'appendJs'),
+    )
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'resolves directory barrels')
+    expect(finding?.ok).toBe(false)
+    expect(finding?.remedy).toContain('mnci upgrade')
+
+    // And it is true: the sweep upgrade runs really does clear the finding.
+    upgradeDeclarationSpecifierPlugins(workspaceRoot)
+    expect(findingFor(collectFindings(workspaceRoot), 'resolves directory barrels')?.ok).toBe(true)
+  })
+
+  it('reads through a require() delegation to a shared base, like the source-map check', () => {
+    // A workspace that hoists withNx() into one root base file leaves each
+    // project a one-line delegation, so the plugin lives a file away — a
+    // text-only check of the project's own file would report every project
+    // broken when none of them are.
+    seedHealthyWorkspace()
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    // The base carries the real repaired plugin: generated into a scratch
+    // project, then hoisted to the root as the shared base would be.
+    const scratch = mkdtempSync(join(tmpdir(), 'mnci-base-'))
+    writeFileSync(join(scratch, 'rollup.config.cjs'), GENERATED_ROLLUP_CONFIG)
+    repairDeclarationSpecifiers(scratch)
+    writeFileSync(
+      join(workspaceRoot, 'rollup.base.cjs'),
+      readFileSync(join(scratch, 'rollup.config.cjs'), 'utf8'),
+    )
+    rmSync(scratch, { recursive: true, force: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      "module.exports = require('../../rollup.base.cjs')\n",
+    )
+
+    expect(findingFor(collectFindings(workspaceRoot), 'resolves directory barrels')?.ok).toBe(true)
   })
 })
 

@@ -621,6 +621,52 @@ const DECLARATION_SPECIFIER_EXTENSION_MARKER = 'bareRelativeSpecifier'
 const DECLARATION_SPECIFIER_DIRECTORY_MARKER = 'resolveSpecifierSuffix'
 
 /**
+ * Whether a rollup config carries the declaration-specifier plugin at all.
+ *
+ * @remarks
+ * Exported as a predicate rather than exporting the marker string itself, so
+ * `mnci doctor` asks this module the question instead of re-implementing the
+ * detection and drifting from it — the same contract
+ * {@link hasRollupSourceMaps} already has with that caller.
+ *
+ * @param config - The config file's text, resolved through any shared base.
+ * @returns `true` when the plugin is present, current or not.
+ * @throws Never - performs a substring test.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function hasDeclarationSpecifierPlugin (config: string): boolean {
+  return config.includes(DECLARATION_SPECIFIER_PLUGIN_MARKER)
+}
+
+/**
+ * Whether that plugin resolves a bare specifier against what was emitted,
+ * rather than appending `.js` unconditionally.
+ *
+ * @remarks
+ * The distinction is the whole point of checking: a config carrying the
+ * EARLIER plugin looks healthy by every other measure — the plugin is there,
+ * the build succeeds, the package publishes — and still ships `any` for every
+ * export behind a directory barrel, because `./scan-session` was rewritten to
+ * `./scan-session.js`, a file rollup never emitted. Nothing reports it:
+ * `skipLibCheck` (the default in most consumers) swallows the unresolved
+ * import, and runtime is unaffected because the bundle never goes through
+ * those specifiers. Measured in a real consuming workspace, 9 of 11 published
+ * packages carried exactly that generation.
+ *
+ * Separate from {@link hasDeclarationSpecifierPlugin} so a missing plugin and
+ * a stale one can be reported as the different findings they are, even though
+ * `mnci upgrade` is the remedy for both.
+ *
+ * @param config - The config file's text, resolved through any shared base.
+ * @returns `true` when the plugin is the current, directory-aware version.
+ * @throws Never - performs a substring test.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function hasDirectoryAwareDeclarationSpecifiers (config: string): boolean {
+  return config.includes(DECLARATION_SPECIFIER_DIRECTORY_MARKER)
+}
+
+/**
  * The declaration-specifier plugin object, exactly as written into
  * `plugins: [ … ]`.
  *
