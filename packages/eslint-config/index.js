@@ -13,6 +13,7 @@ import standard from './configs/standard.js'
 import toml from './configs/toml.js'
 import typeAware from './configs/typeAware.js'
 import typescript from './configs/typescript.js'
+import verticalSlices from './configs/verticalSlices.js'
 import yaml from './configs/yaml.js'
 
 export { default as base } from './configs/base.js'
@@ -30,6 +31,7 @@ export { default as standard } from './configs/standard.js'
 export { default as toml } from './configs/toml.js'
 export { default as typeAware } from './configs/typeAware.js'
 export { default as typescript } from './configs/typescript.js'
+export { default as verticalSlices } from './configs/verticalSlices.js'
 export { default as yaml } from './configs/yaml.js'
 
 /** Paths never worth linting, in any generated workspace. */
@@ -75,11 +77,14 @@ export const ignores = [
  * @param options - Composition options. Pass `workspaceRoot` (normally
  * `import.meta.dirname` from the root config) to enable the
  * `@nx/dependency-checks` block, which scans for `private: true` manifests.
- * Omit it in a workspace with no publishable npm packages.
+ * Omit it in a workspace with no publishable npm packages. Pass
+ * `verticalSlices: true` - or the globs of the projects that follow it - to
+ * enforce the vertical-slice rules (see `configs/verticalSlices.js`); they are
+ * off by default, because they are an architecture, not a style.
  * @returns The flat config array.
  */
 export default function mnci (options = {}) {
-  const { workspaceRoot } = options
+  const { workspaceRoot, verticalSlices: slices } = options
 
   return [
     { name: 'mnci/ignores', ignores },
@@ -97,6 +102,7 @@ export default function mnci (options = {}) {
     ...html,
     ...jest,
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
+    ...(slices ? verticalSlices(slices === true ? undefined : slices) : []),
     // LAST, and nothing may follow that disables it: this block IS the
     // formatting opinion now. `eslint-config-prettier` used to sit here to
     // switch every stylistic rule off for a formatter to own; with no
