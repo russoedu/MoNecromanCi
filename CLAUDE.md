@@ -43,7 +43,7 @@ package.json              # Root scripts (build, lint, test, format, release:pre
 ```
 
 Every file above is mnci-owned — written (and, on `mnci upgrade`, rewritten) by
-`applyOverlay()` in `overlay.ts`. That includes `eslint.config.mjs`, which it did **not**
+`applyOverlay()` in `workspace-overlay/overlay.use-case.ts`. That includes `eslint.config.mjs`, which it did **not**
 until recently: it used to come from `create-nx-workspace`, which is exactly why the rich
 config this repo had never reached a single generated workspace.
 
@@ -76,35 +76,35 @@ committing an upgrade.
 
 ### Entry Points
 
-- **`packages/cli/src/cli.ts`** — CLI argument dispatcher (`mnci new`, `mnci add`, `mnci upgrade`)
-- **`packages/cli/src/commands/new.ts`** — workspace generation (calls `applyOverlay`)
-- **`packages/cli/src/commands/add.ts`** — per-project scaffolding (delegates to Nx generators)
-- **`packages/cli/src/commands/upgrade.ts`** — re-apply overlay to existing workspace
-- **`packages/cli/src/commands/doctor.ts`** — read-only invariant check (`mnci doctor`); exits non-zero on any finding, and every finding names its remedy
-- **`packages/cli/src/commands/sync.ts`** — `mnci sync`: converge every external dependency range declared at more than one version, then run `nx sync` for TypeScript project references. Owns the one call to `nx sync` (`mnci add` imports it from here)
-- **`packages/cli/src/commands/up.ts`** — `mnci up`: `npm-check -u`'s grouped report and multiselect, plus the projects column, across npm/pip/pub/nuget/go
-- **`packages/cli/src/deps/`** — the cross-language machinery both commands share: `inventory.ts` (read and minimally rewrite every manifest shape), `semver.ts` (parse, compare, bucket), `registry.ts` (latest version per ecosystem)
+- **`packages/cli/src/cli.handler.ts`** — CLI argument dispatcher (`mnci new`, `mnci add`, `mnci upgrade`)
+- **`packages/cli/src/workspace-creation/create-workspace.use-case.ts`** — workspace generation (calls `applyOverlay`)
+- **`packages/cli/src/project-scaffolding/add-project.use-case.ts`** — per-project scaffolding (delegates to Nx generators)
+- **`packages/cli/src/workspace-upgrade/upgrade-workspace.use-case.ts`** — re-apply overlay to existing workspace
+- **`packages/cli/src/workspace-diagnostics/check-invariants.use-case.ts`** — read-only invariant check (`mnci doctor`); exits non-zero on any finding, and every finding names its remedy
+- **`packages/cli/src/dependency-management/sync-dependencies.use-case.ts`** — `mnci sync`: converge every external dependency range declared at more than one version, then run `nx sync` for TypeScript project references. Owns the one call to `nx sync` (`mnci add` imports it from here)
+- **`packages/cli/src/dependency-management/update-dependencies.use-case.ts`** — `mnci up`: `npm-check -u`'s grouped report and multiselect, plus the projects column, across npm/pip/pub/nuget/go
+- **`packages/cli/src/dependency-management/`** — the cross-language machinery both commands share: `manifest.repository.ts` (read and minimally rewrite every manifest shape), `semver.algorithm.ts` (parse, compare, bucket), `registry.client.ts` (latest version per ecosystem)
 
 ### Core Implementation
 
-- **`packages/cli/src/overlay.ts`** — the config files mnci owns (see "Files `mnci` owns" below):
+- **`packages/cli/src/workspace-overlay/overlay.use-case.ts`** — the config files mnci owns (see "Files `mnci` owns" below):
   - Exports `applyOverlay()` (pure file writer, deterministic)
   - Exports config constants: `ROOT_SCRIPTS`, `RELEASE_CONFIG`, `RETIRED_FORMATTER_FILES`, etc.
   - Exports VS Code workspace file template (`vscodeWorkspace()`)
   - Exports CI YAML generators: `azurePipelinesYaml()`, `githubActionsYaml()`
   - Exports shared guard scripts (Python install, pack, release) used by both CI providers
 
-- **`packages/cli/src/overlay.test.ts`** — comprehensive overlay fixture tests (330+ assertions), including six that execute the CI verify guard against a real git repo
+- **`packages/cli/src/workspace-overlay/overlay.use-case.spec.ts`** — comprehensive overlay fixture tests (330+ assertions), including six that execute the CI verify guard against a real git repo
 
 ### CLI Plumbing
 
-- **`packages/cli/src/prompts.ts`** — interactive prompts for workspace/app names, stack choices, CI provider
-- **`packages/cli/src/nx.ts`** — cross-spawn wrappers for `nx`, `npm`, shell commands (safe from injection)
-- **`packages/cli/src/util/logger.ts`** — colored console output
+- **`packages/cli/src/terminal/prompts.client.ts`** — interactive prompts for workspace/app names, stack choices, CI provider
+- **`packages/cli/src/nx-workspace/nx.client.ts`** — cross-spawn wrappers for `nx`, `npm`, shell commands (safe from injection)
+- **`packages/cli/src/terminal/logger.client.ts`** — colored console output
 
 ### Go (third-party plugin)
 
-- **`packages/cli/src/commands/add/go.ts`** — the four Go kinds, delegating to
+- **`packages/cli/src/project-scaffolding/go.use-case.ts`** — the four Go kinds, delegating to
   `@nx-go/nx-go` (validated on Nx 23 despite its declared `< 23` devkit range).
   Bootstraps one root `go.mod` via the plugin's `init` + `convert-to-one-mod`,
   then writes build/test/lint targets explicitly. Lint is pinned to
@@ -119,7 +119,7 @@ committing an upgrade.
 
 ### C# (third-party plugin, inference-only)
 
-- **`packages/cli/src/commands/add/csharp.ts`** — the four C# kinds
+- **`packages/cli/src/project-scaffolding/csharp.use-case.ts`** — the four C# kinds
   (`csharp-app`, `csharp-lib`, `csharp-internal-lib`, `csharp-function-app`),
   scaffolded directly via `dotnet new` rather than through `@nx/dotnet`
   generators — `@nx/dotnet` is **inference-only** (confirmed by `npm pack`ing
@@ -141,7 +141,7 @@ committing an upgrade.
   and self-gates at *runtime* on `process.env.NUGET_PAT`, printing "NuGet
   publish is not configured" and exiting 0 when absent. Mirrors how the
   Python publish target carries no registry specifics at generation time.
-- **`nugetConfigContent()`** (`overlay.ts`) mirrors `.npmrc`'s design for the
+- **`nugetConfigContent()`** (`workspace-overlay/overlay.use-case.ts`) mirrors `.npmrc`'s design for the
   same reason: `nuget.org` needs no credentials, and an Azure Artifacts feed
   is registered under the fixed key `NUGET_AZURE_SOURCE` (`'AzureArtifacts'`)
   with `packageSourceCredentials` referencing `%NUGET_PAT%` — NuGet's
@@ -149,8 +149,8 @@ committing an upgrade.
   against Microsoft's own docs (never `${VAR}` or `$VAR`). The key is fixed
   rather than derived from the real feed name so the publish target needs no
   `RegistryConfig` of its own at generation time.
-- `mnci sync`/`mnci up` gained a `nuget` ecosystem in `deps/inventory.ts` and
-  `deps/registry.ts`: NuGet references are read from `<PackageReference>`
+- `mnci sync`/`mnci up` gained a `nuget` ecosystem in `dependency-management/manifest.repository.ts` and
+  `dependency-management/registry.client.ts`: NuGet references are read from `<PackageReference>`
   elements in every `.csproj`, and `latestNugetVersions()` shells out to
   `dotnet package search --exact-match --format json` — the same
   "ask the ecosystem's own tool, never hand-roll the registry call" rule
@@ -191,10 +191,10 @@ committing an upgrade.
 
 ### Testing & E2E
 
-- **`packages/cli/src/commands/*.test.ts`** — unit tests for each command
+- **`packages/cli/src/*/*.use-case.spec.ts`** — unit tests for each command
 - **`packages/cli/e2e/cli.e2e.mjs`** — real generation → lint/test/build/package for all kinds (JS, Python, **Go**, Flutter, **C#**). Gated as an Nx `e2e` target, and run in CI by a nightly-scheduled, Windows-only job (it takes ~25-30 min). Go, Flutter and C# are each gated on their toolchain and reported as **SKIPPED** when absent — never silently dropped, which is exactly how Go went uncovered for so long. The `e2e-windows` job's own toolchain-install steps are unconditional (`continue-on-error`, network operations on someone else's infrastructure) rather than reusing the `ci` job's `existsSync('go.mod')`-style guards, which key on the working directory and would never fire in a job whose generated workspaces live in a temp directory.
 - **ESLint config exception** (root `eslint.config.mjs`) — `tsdoc-require-2/require-param` and
-  `require-type-param` are off for `overlay.ts`, since `rootScripts()` takes no parameters
+  `require-type-param` are off for `workspace-overlay/overlay.use-case.ts`, since `rootScripts()` takes no parameters
 
 ## Development Workflow
 
@@ -275,7 +275,7 @@ Nx plugin where none does:
   `python-internal-lib`, `python-function-app`. Vendoring via `mnci add python-vendor`.
 - **Go** — `@nx-go/nx-go` (third-party), one root `go.mod`, **no** `go.work` and no
   per-project manifests. Kinds: `go-app`, `go-lib`, `go-internal-lib`,
-  `go-function-app`. Every target is written explicitly by `add/go.ts` — the plugin's
+  `go-function-app`. Every target is written explicitly by `project-scaffolding/go.use-case.ts` — the plugin's
   inference needs a per-project `go.mod`, which the single-module layout doesn't have.
   `go-lib` is excluded from `release.projects` (`!tag:type:go-lib`): it has no
   per-project manifest, so Nx's default `versionActions` would abort the whole release
@@ -317,7 +317,7 @@ Nx plugin where none does:
 
 Every app kind (never a plain library) carries all four npm scripts and a matching
 VS Code `launch` entry, written by `registerProjectCommands`
-(`commands/add/shared.ts`) at the end of every `mnci add`:
+(`project-scaffolding/post-generation.use-case.ts`) at the end of every `mnci add`:
 
 - **`build`** — production.
 - **`build:dev`** — carries whatever debug info the toolchain distinguishes (source
@@ -347,7 +347,7 @@ VS Code `launch` entry, written by `registerProjectCommands`
 ### Rollup npm libraries: source maps and declaration files
 
 `@nx/js:lib --bundler=rollup` needed several post-generation repairs, all applied by
-`overlay.ts`/`add/shared.ts` and re-applied on `mnci upgrade`:
+`workspace-overlay/overlay.use-case.ts`/`project-scaffolding/post-generation.use-case.ts` and re-applied on `mnci upgrade`:
 
 - **Source maps**: `withRollupSourceMaps` sets `sourcemap: true` in `withNx`'s FIRST
   argument only (the second argument's `output.sourcemap` is always overwritten), and
@@ -357,7 +357,7 @@ VS Code `launch` entry, written by `registerProjectCommands`
   `sources` path (rollup's OS-native, one-parent-too-many path is wrong on every
   platform for a URL-style specifier).
 - **`types`**: the generator writes `types: './dist/index.esm.d.ts'`, a file its own
-  build never emits. `repairPublishableManifest()` (`add/shared.ts`) repoints it at
+  build never emits. `repairPublishableManifest()` (`project-scaffolding/post-generation.use-case.ts`) repoints it at
   `./dist/src/index.d.ts` — not the intermediate re-export stub, which
   `@nx/rollup`'s `dts-bundle` plugin builds with `path.relative()`, an OS-native
   separator that is wrong (backslash) on Windows and breaks module resolution
@@ -366,7 +366,7 @@ VS Code `launch` entry, written by `registerProjectCommands`
 - **Packaging**: `files` excludes `!**/*.d.ts.map` (declaration maps reference
   `../src/*.ts`, which `dist`-only packaging never ships) but keeps `.js.map` files,
   since debugging a published package needs them.
-- A CI verify-target guard (`verifyTargets.test.ts`) resolves every declared verify
+- A CI verify-target guard (`verify-targets.integration.spec.ts`) resolves every declared verify
   target to its real shell command and fails on a no-op (`echo`, stub) — Nx disables
   an inferred target (e.g. `typecheck` when `noEmit: true`) by replacing its command
   with a passing `echo`, which is otherwise invisible to CI. Absences must be
@@ -383,7 +383,7 @@ since Prettier rewrites `function f (a)` back to `function f(a)` on every run).
 - Rules are ported programmatically from `neostandard` onto `@stylistic` v5 (never a
   runtime dependency on neostandard, which pins an incompatible `@stylistic` version).
   Every block has a unique `name`, checked against `ESLINT_BLOCK_INVENTORY` in
-  `overlay.ts` in both directions.
+  `workspace-overlay/overlay.use-case.ts` in both directions.
 - `mnci/house-style` is a **separate block composed after** the ported `mnci/standard`
   block, holding five deliberate departures from plain Standard:
   `comma-dangle: 'always-multiline'`, `key-spacing` aligned on value (coupled with a
@@ -415,7 +415,7 @@ since Prettier rewrites `function f (a)` back to `function f(a)` on every run).
 ### CI: dual provider, affected-scoped, audited
 
 Both providers (`azure-pipelines.yml`, `.github/workflows/ci.yml`) share
-byte-identical guard logic (`overlay.ts`, asserted by an anti-drift test), so a fix
+byte-identical guard logic (`workspace-overlay/overlay.use-case.ts`, asserted by an anti-drift test), so a fix
 to one is mirrored in the other by construction:
 
 - **`AFFECTED_OR_ALL_GUARD`**: verifies affected projects on a PR (via
@@ -459,7 +459,7 @@ to one is mirrored in the other by construction:
   means an unresolvable tag silently proposes — and can publish — a version
   **downgrade**, reproduced against a real multi-package workspace (`0.2.0` proposed
   against a published `0.7.0`). The generated CI is safe only because it always fetches
-  full history and releases only from `main`; `SHALLOW_CLONE_GUARD` in `overlay.ts`
+  full history and releases only from `main`; `SHALLOW_CLONE_GUARD` in `workspace-overlay/overlay.use-case.ts`
   makes that an explicit, enforced precondition (fails loudly on a shallow checkout)
   rather than leaving it as an unstated assumption one `fetchDepth`/`fetch-depth` edit
   away from silently breaking.
@@ -478,14 +478,14 @@ to one is mirrored in the other by construction:
   only authenticates via Basic** (`username`/`_password`), which is what
   `npmrcContent()` already emits; do not "fix" this by switching to `_authToken`.
   The actual fix for a real Azure Pipelines run is the `npmAuthenticate@0` task
-  (injects an Entra-issued token) — not yet adopted in `overlay.ts`, since it would
+  (injects an Entra-issued token) — not yet adopted in `workspace-overlay/overlay.use-case.ts`, since it would
   overwrite a hand-set password; see ROADMAP for the open trade-off.
   Both feed path forms (`/npm/` and `/npm/registry/`) are keyed in the generated
   file, since npm matches credentials by URL prefix and walks only upward.
 - XML config files (`NuGet.Config`) reject `<!-- -->` comments containing `--`
   anywhere in the body — a real trap hit once (a `--registry` substring inside a
   comment invalidated the whole document, cascading into an unrelated Flutter e2e
-  failure via a corrupted Nx project graph). `overlay.test.ts` has a permanent
+  failure via a corrupted Nx project graph). `workspace-overlay/overlay.use-case.spec.ts` has a permanent
   regression test for this.
 
 ### Workspace tooling: `mnci sync`, `mnci up`, `mnci doctor`
@@ -570,7 +570,7 @@ assumed. As of the last rollup there: **no P1 is open**. Open work is:
 
 Everything else — source, tests, `project.json` targets — is auto-generated by delegating
 to Nx generators. There are **no** per-project ESLint configs: every `@nx/*` generator
-writes one, and `removeGeneratedEslintConfig()` (`add/shared.ts`) deletes it after every
+writes one, and `removeGeneratedEslintConfig()` (`project-scaffolding/post-generation.use-case.ts`) deletes it after every
 `add`, so the config cannot re-fragment as a workspace grows.
 
 ### ESLint is the whole opinion: quality, types, and formatting, in one package
@@ -595,7 +595,7 @@ fills those in while keeping any name upstream provides. The names are what
 `eslint --inspect-config` reports and what a user's override targets, and they are the
 whole reason a three-line root config is navigable at all. The generated
 `eslint.config.mjs` ships the same list as a comment plus an override recipe;
-`ESLINT_BLOCK_INVENTORY` in `overlay.ts` holds it, and an `overlay.test.ts` test fails
+`ESLINT_BLOCK_INVENTORY` in `workspace-overlay/overlay.use-case.ts` holds it, and an `workspace-overlay/overlay.use-case.spec.ts` test fails
 in **both** directions if it and the real config disagree — a stale inventory points the
 reader at a block that does not exist, and nothing about generating a workspace would
 notice.
@@ -623,7 +623,7 @@ routing the scope there changes nothing, and calling it protection would be fals
 public registry _is_ the intended target. This matters because the old file made exactly
 that false claim: `packages/cli/README.md` asserted scope routing made accidental public
 publishes impossible while no `@scope:registry` line was ever emitted, and
-`overlay.test.ts` asserted the line's absence. **Do not reintroduce a protection the
+`workspace-overlay/overlay.use-case.spec.ts` asserted the line's absence. **Do not reintroduce a protection the
 configuration cannot provide** — the generated file now says why it is absent.
 
 One trap: the same `PAT` is consumed in **two encodings**. npm's `_password` takes the
@@ -671,7 +671,7 @@ guard decodes. Check which before wiring a third protocol.
 - `npm run lint` → ESLint (code quality, types, **and** formatting — there is no
   separate formatter or `format:check` step)
 - `npm run format` → `eslint . --fix --cache` (local use, also auto-fixes formatting)
-- ESLint config exception for `overlay.ts` (TSDoc rules off since `rootScripts()` has no params)
+- ESLint config exception for `workspace-overlay/overlay.use-case.ts` (TSDoc rules off since `rootScripts()` has no params)
 
 ## Debugging & Troubleshooting
 
@@ -705,11 +705,11 @@ guard decodes. Check which before wiring a third protocol.
 - `nx sync` reconciles TypeScript project references ONLY — it has no opinion about dependency versions
 - Python toolchain is invoked as `python3 -m <tool>` (not venv paths, works cross-platform)
 - Go uses a SINGLE root `go.mod`; never reintroduce `go.work` (a stale `use` entry breaks the whole Nx graph)
-- Go targets are written explicitly by `add/go.ts` — `@nx-go/nx-go`'s inference needs a per-project `go.mod`, which the single-module layout has not
+- Go targets are written explicitly by `project-scaffolding/go.use-case.ts` — `@nx-go/nx-go`'s inference needs a per-project `go.mod`, which the single-module layout has not
 - Flutter uses a SINGLE root `pubspec.yaml` pub workspace; every member needs `resolution: workspace` **and** an entry in the root `workspace:` list. Miss either and pub silently resolves that project standalone, giving it its own lockfile and dropping it out of the shared resolution
 - A publishable `flutter-lib` MUST keep its `release.version.versionActions` override — without it `nx release` fails for the entire workspace, not just that project (same failure mode as the `go-lib` exclusion above)
 - The Flutter SDK is installed **outside** the workspace by CI; never clone it inside, as it ships its own nested `pubspec.yaml` files that pollute pub resolution and the Nx graph
-- Any change to a CI guard must be mirrored in BOTH providers — `overlay.test.ts`'s anti-drift test asserts the guard bodies are byte-identical (only the PATH-publishing step legitimately differs)
+- Any change to a CI guard must be mirrored in BOTH providers — `workspace-overlay/overlay.use-case.spec.ts`'s anti-drift test asserts the guard bodies are byte-identical (only the PATH-publishing step legitimately differs)
 
 ## See Also
 
@@ -718,4 +718,4 @@ guard decodes. Check which before wiring a third protocol.
 - [`packages/cli/README.md`](packages/cli/README.md) — detailed CLI & workflow docs
 - [`packages/nx-python-pip/README.md`](packages/nx-python-pip/README.md) — Python plugin reference
 - [`packages/nx-flutter/README.md`](packages/nx-flutter/README.md) — Flutter plugin reference
-- [`packages/cli/src/overlay.ts:1–100`](packages/cli/src/overlay.ts) — config constants & VSCode workspace template
+- [`packages/cli/src/workspace-overlay/overlay.use-case.ts:1–100`](packages/cli/src/workspace-overlay/overlay.use-case.ts) — config constants & VSCode workspace template

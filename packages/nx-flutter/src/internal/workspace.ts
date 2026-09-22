@@ -187,7 +187,7 @@ export function addWorkspaceMember (tree: Tree, projectRoot: string): void {
   // `sort` rather than `toSorted`: this package compiles against the es2021 lib
   // (matching @mnci/nx-python-pip), where `toSorted` does not exist. Sorting in
   // place is safe regardless — the spread above already made a fresh array.
-  // eslint-disable-next-line unicorn/no-array-sort -- es2021 lib has no toSorted
+
   const members = [...existing, projectRoot].sort((a, b) => a.localeCompare(b))
   const rebuilt = `workspace:\n${members.map(member => `  - ${member}\n`).join('')}`
   // Function replacement so a `$` in a project path cannot be read as a

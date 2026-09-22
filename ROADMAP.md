@@ -242,7 +242,7 @@ stays grey with nothing anywhere saying why.
 `compiler: 'swc'` gave 0 sources; `compiler: 'babel'` gave 9, all resolving,
 with `sourcesContent`.
 
-**What mnci does about it.** `withRollupSourceMaps` in `add/shared.ts` swaps the
+**What mnci does about it.** `withRollupSourceMaps` in `project-scaffolding/post-generation.use-case.ts` swaps the
 compiler to `babel` in the generated config, with the reason in a comment beside
 it. A plugin that re-ran swc with maps on was rejected: two transform hooks would
 both compile the same source, and the second would see the first's output.
@@ -304,7 +304,7 @@ What makes it a real change rather than a one-line swap:
 - **Local development regresses.** Today a developer with `PAT` set can publish and
   install; with no credentials in the file they need `vsts-npm-auth` or a hand-added
   entry. Worth stating in the generated file rather than discovering.
-- **`overlay.ts` currently documents the opposite** ("No `npmAuthenticate@0` — it
+- **`workspace-overlay/overlay.use-case.ts` currently documents the opposite** ("No `npmAuthenticate@0` — it
   would overwrite the hand-set password"). True for the PAT design; the trade simply
   favours the task once there is no password to overwrite.
 - **`mnci doctor` and the anti-drift test both need to follow**, and the drift test
@@ -318,7 +318,7 @@ workspace over, in `packages/cli/README.md`.
 
 Both providers now verify **only the affected projects on a pull request, and
 every project on anything else** — one step, one shared guard
-(`AFFECTED_OR_ALL_GUARD` in `overlay.ts`), byte-identical in
+(`AFFECTED_OR_ALL_GUARD` in `workspace-overlay/overlay.use-case.ts`), byte-identical in
 `azure-pipelines.yml` and `.github/workflows/ci.yml`.
 
 Three decisions are load-bearing:
@@ -553,7 +553,7 @@ itself (pinned, shallow clone, outside the workspace) and assumes CPython and Go
 on the agent; **locally the user was on their own**. `.devcontainer/devcontainer.json`
 is now part of the overlay, so a local environment matches the one CI verifies.
 
-- **Node comes from one constant.** `NODE_VERSION` in `overlay.ts` feeds both the
+- **Node comes from one constant.** `NODE_VERSION` in `workspace-overlay/overlay.use-case.ts` feeds both the
   workflow's `setup-node` step and the devcontainer's base image
   (`typescript-node:24-bookworm`). Hardcoding it twice would reintroduce exactly the
   drift this file exists to remove — a test asserts both read the same value, and
@@ -664,7 +664,7 @@ three-project workspace lost all five). The `tasks` array is per-project state,
 not overlay-owned, so `applyOverlay` now reads it back and carries it through
 while still regenerating the folders/settings/extensions it does own. The
 JSONC-tolerant reader both layers need moved to `util/fsx.ts` as
-`readCodeWorkspace`, replacing the private copy in `add/shared.ts`.
+`readCodeWorkspace`, replacing the private copy in `project-scaffolding/post-generation.use-case.ts`.
 
 Verified on a real workspace generated before the fix (so it exercised the
 filename fallback and carried genuine junk): the junk file is gone, the real file
@@ -977,7 +977,7 @@ carried a fake one for months and why #18's gate was theatre for half the worksp
 **CI structurally cannot catch that by running the target** — the stub exits 0. The
 only thing that can is an assertion about the target's _command_.
 
-`packages/cli/src/verifyTargets.test.ts` now reads the real Nx project graph, resolves
+`packages/cli/src/verify-targets.integration.spec.ts` now reads the real Nx project graph, resolves
 every verify target down to the shell command it ultimately runs, and fails when that
 command is a no-op (`echo`, `:`, `true`, `exit 0`).
 
@@ -1034,7 +1034,7 @@ Fixed by filling in `namedInputs.sharedGlobals`, which the preset's `default` in
 already references and `production` extends, so one list reaches every target.
 
 - **The fix ships to users too**, not just this repo. `SHARED_GLOBAL_INPUTS` and
-  `withSharedGlobals()` in `overlay.ts` put the same three root files into every
+  `withSharedGlobals()` in `workspace-overlay/overlay.use-case.ts` put the same three root files into every
   generated workspace's `nx.json`, and `mnci upgrade` back-fills existing ones. The
   merge is additive and idempotent, so a workspace's own shared globals survive.
 - **This repo adds three entries the generated list cannot have**:
@@ -1107,7 +1107,7 @@ config and `prefer-regex-literals` both failed. Pinned in **both** directions, s
 cannot quietly go off for ordinary modules: a plain `anon-default.ts` with the same
 anonymous default export still reports it.
 
-With that gone, `ROOT_LINT_TARGET` in `overlay.ts` writes the target into every
+With that gone, `ROOT_LINT_TARGET` in `workspace-overlay/overlay.use-case.ts` writes the target into every
 generated root manifest, alongside `includedScripts: []`. That second part is
 load-bearing rather than tidy: the root manifest's scripts are the `nx run-many`
 aggregators, so letting Nx infer targets from them would make `lint` invoke
@@ -1192,7 +1192,7 @@ workspace. It also notes ESLint 10 tracks JSX references natively, making
    that is independently useful and reversible, and isolating it keeps the expensive
    real-react-app verification about React rather than about ESLint 10. Details below.
 3. ✅ `jsx-a11y` kept, on the measured `overrides` entry —
-   `ESLINT_PEER_OVERRIDES` in `overlay.ts` writes it into every generated root
+   `ESLINT_PEER_OVERRIDES` in `workspace-overlay/overlay.use-case.ts` writes it into every generated root
    manifest (npm honours `overrides` only there, which is why a config package
    cannot fix this for itself), and this repo's own root manifest carries it too.
    Merged rather than replaced, so a workspace's own overrides survive an upgrade.
@@ -1338,7 +1338,7 @@ Not `recommendedTypeChecked`: measured against this monorepo it reported 67
 problems, mostly not bugs (`require-await` fires on every `nx-python-pip`
 executor, which must be `async` to satisfy Nx's contract; `no-unsafe-*` fires
 throughout the generator specs). The curated set reported 10, all real — including
-a genuine floating promise at `packages/cli/src/cli.ts`.
+a genuine floating promise at `packages/cli/src/cli.handler.ts`.
 
 Two decisions came out of verification rather than design:
 

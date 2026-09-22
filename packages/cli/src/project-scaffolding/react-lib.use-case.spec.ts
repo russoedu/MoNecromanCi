@@ -1,0 +1,258 @@
+jest.mock('../nx-workspace', () => ({
+  runNx:        jest.fn(),
+  runFormatter: jest.fn(),
+  runShell:     jest.fn(() => 0),
+}))
+jest.mock('../terminal', () => ({
+  ...jest.requireActual('../terminal'),
+  promptText: jest.fn(),
+}))
+jest.mock('@inquirer/prompts', () => ({ select: jest.fn(), input: jest.fn() }))
+
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { runNx, runShell } from '../nx-workspace'
+import { promptText } from '../terminal'
+import { runAdd } from './add-project.use-case'
+
+const mockRunNx = jest.mocked(runNx)
+const mockRunShell = jest.mocked(runShell)
+const mockPromptText = jest.mocked(promptText)
+
+let workspaceRoot: string
+
+/**
+ * The generator is mocked, so pre-create the manifest it would have written —
+ * including the broken `types` paths `@nx/react:library --bundler=rollup`
+ * actually emits, so the repair has something real to fix.
+ */
+function seedProjectManifest (projectRoot: string, name: string): void {
+  mkdirSync(join(workspaceRoot, projectRoot), { recursive: true })
+  writeFileSync(
+    join(workspaceRoot, projectRoot, 'package.json'),
+    JSON.stringify({
+      name,
+      main:    './dist/index.esm.js',
+      module:  './dist/index.esm.js',
+      types:   './dist/index.esm.d.ts',
+      exports: {
+        './package.json': './package.json',
+        '.':              {
+          types:   './dist/index.esm.d.ts',
+          import:  './dist/index.esm.js',
+          default: './dist/index.esm.js',
+        },
+      },
+    }),
+  )
+}
+
+beforeEach(() => {
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-add-react-lib-'))
+  mockRunShell.mockImplementation(() => 0)
+  jest.spyOn(process, 'cwd').mockReturnValue(workspaceRoot)
+  jest.spyOn(console, 'log').mockImplementation(() => {})
+  writeFileSync(join(workspaceRoot, 'nx.json'), '{}')
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', devDependencies: {} }),
+  )
+})
+
+afterEach(() => {
+  rmSync(workspaceRoot, { recursive: true, force: true })
+  jest.restoreAllMocks()
+})
+
+/** Every `nx g` invocation, flattened to one string per call. */
+const generatorCalls = (): string[] =>
+  mockRunNx.mock.calls.filter(([arguments_]) => arguments_[0] === 'g').map(([a]) => a.join(' '))
+
+describe('react-lib', () => {
+  it('delegates to @nx/react:library as a publishable rollup bundle under packages/', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', {})
+
+    const generate = generatorCalls().find(call => call.includes('@nx/react:library'))
+    expect(generate).toContain('packages/ui')
+    expect(generate).toContain('--publishable')
+    expect(generate).toContain('--importPath=@demo/ui')
+    // rollup, not the generator's own `none` default: it is what lets a
+    // published package compile a private internal lib INTO its bundle without
+    // the private name reaching the published manifest.
+    expect(generate).toContain('--bundler=rollup')
+    expect(generate).toContain('--linter=none')
+  })
+
+  it('marks the package public, or the first npm publish 402s on a scoped name', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
+    ) as { publishConfig?: { access?: string } }
+    expect(manifest.publishConfig?.access).toBe('public')
+  })
+
+  it('honours an explicit --scope over the workspace default', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', { scope: '@acme' })
+
+    expect(generatorCalls().find(c => c.includes('@nx/react:library'))).toContain(
+      '--importPath=@acme/ui',
+    )
+    expect(mockPromptText).not.toHaveBeenCalled()
+  })
+
+  it('installs @nx/react on first use', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', {})
+
+    expect(mockRunNx.mock.calls.some(([a]) => a[0] === 'add' && a[1] === '@nx/react')).toBe(true)
+  })
+
+  it('deletes the per-project ESLint config the generator writes', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+    writeFileSync(join(workspaceRoot, 'packages/ui/eslint.config.mjs'), 'export default []')
+
+    await runAdd('react-lib', 'ui', {})
+
+    // An mnci workspace has exactly one ESLint config, at the root.
+    expect(existsSync(join(workspaceRoot, 'packages/ui/eslint.config.mjs'))).toBe(false)
+  })
+
+  it('repoints types at the declaration the rollup build actually emits', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', {})
+
+    // @nx/react:library --bundler=rollup writes types: './dist/index.esm.d.ts',
+    // but its build emits declarations at dist/src/index.d.ts — so the referenced
+    // file never exists. The stub dist/index.d.ts that re-exports from them is NOT
+    // the target: @nx/rollup builds its specifier with path.relative(), so on a
+    // Windows agent it reads `export * from "./src\index"`, which is not a valid
+    // module specifier anywhere. Point at the real file instead.
+    // and every consumer fails with TS7016 "Could not find a declaration file".
+    // Verified against a real generated pair: typecheck fails before this, passes
+    // after.
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
+    ) as { types?: string; main?: string; exports?: { '.': { types?: string } } }
+
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.exports?.['.'].types).toBe('./dist/src/index.d.ts')
+    // main/module are correct as generated — index.esm.js IS emitted. Only the
+    // declaration paths were wrong, so only those are touched.
+    expect(manifest.main).toBe('./dist/index.esm.js')
+  })
+
+  it('leaves an already-correct types path alone, so an upstream fix is not overwritten', async () => {
+    mkdirSync(join(workspaceRoot, 'packages/ui'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/ui/package.json'),
+      JSON.stringify({ name: '@demo/ui', types: './dist/custom.d.ts' }),
+    )
+
+    await runAdd('react-lib', 'ui', {})
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
+    ) as { types?: string }
+    expect(manifest.types).toBe('./dist/custom.d.ts')
+  })
+
+  it('registers build and qa commands, but never start (a library has no dev server)', async () => {
+    seedProjectManifest('packages/ui', '@demo/ui')
+
+    await runAdd('react-lib', 'ui', {})
+
+    const scripts = (
+      JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+        scripts: Record<string, string>
+      }
+    ).scripts
+    expect(scripts['ui:build']).toBe('nx run ui:build')
+    expect(scripts['ui:qa']).toBe('nx run ui:lint && nx run ui:test')
+    expect(scripts['ui:start']).toBeUndefined()
+  })
+
+  it('still repairs the manifest when the generator writes files then its plugin install fails', async () => {
+    // Same class as npm-lib's: @nx/react:library --bundler=rollup fetches
+    // @nx/rollup on first use too, so it shares the exact failure shape —
+    // routed through the same runGeneratorAndRepair wrapper. @nx/react itself
+    // is pre-declared so ensurePlugin's own `nx add` call (a separate, earlier
+    // runNx call this test is not about) is skipped rather than also throwing.
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({ name: '@demo/source', devDependencies: { '@nx/react': '23.0.0' } }),
+    )
+    seedProjectManifest('packages/ui', '@demo/ui')
+    mockRunNx.mockImplementation(() => {
+      throw new Error('nx g @nx/react:library packages/ui ... failed with exit code 1')
+    })
+
+    await expect(runAdd('react-lib', 'ui', {})).rejects.toThrow(
+      /generated and mnci's own repairs were applied.*install step still failed/s,
+    )
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/ui/package.json'), 'utf8'),
+    ) as { types: string; publishConfig: { access: string } }
+    expect(manifest.types).toBe('./dist/src/index.d.ts')
+    expect(manifest.publishConfig).toEqual({ access: 'public' })
+
+    // mockRunNx is a bare jest.fn(), not a jest.spyOn() — restoreAllMocks() in
+    // afterEach does not reset its implementation, so a throwing override here
+    // would otherwise leak into every test that runs after this one.
+    mockRunNx.mockReset()
+  })
+})
+
+describe('react-internal-lib', () => {
+  it('lands in libs/ and is marked private, so it is structurally unpublishable', async () => {
+    seedProjectManifest('libs/design', '@demo/design')
+
+    await runAdd('react-internal-lib', 'design', {})
+
+    const privateManifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8'),
+    ) as { types?: string }
+    // The types repair applies to the private kind too — it is the one a
+    // react-lib consumes, so a wrong declaration path breaks the consumer.
+    expect(privateManifest.types).toBe('./dist/src/index.d.ts')
+
+    const generate = generatorCalls().find(call => call.includes('@nx/react:library'))
+    expect(generate).toContain('libs/design')
+    expect(generate).not.toContain('--publishable')
+
+    const manifest = JSON.parse(
+      readFileSync(join(workspaceRoot, 'libs/design/package.json'), 'utf8'),
+    ) as { private?: boolean }
+    expect(manifest.private).toBe(true)
+  })
+
+  it('is still buildable — enforce-module-boundaries forbids a buildable lib importing a non-buildable one', async () => {
+    seedProjectManifest('libs/design', '@demo/design')
+
+    await runAdd('react-internal-lib', 'design', {})
+
+    // The generator's own default is `none`, which would make this lib
+    // unimportable from any react-lib/npm-lib in the same workspace.
+    expect(generatorCalls().find(c => c.includes('@nx/react:library'))).toContain(
+      '--bundler=rollup',
+    )
+  })
+
+  it('never prompts for a scope — a private lib is not published', async () => {
+    seedProjectManifest('libs/design', '@demo/design')
+
+    await runAdd('react-internal-lib', 'design', {})
+
+    expect(mockPromptText).not.toHaveBeenCalled()
+  })
+})

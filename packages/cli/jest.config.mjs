@@ -7,9 +7,9 @@ export default {
   testEnvironment:     'node',
   rootDir:             '.',
   roots:               ['<rootDir>/src'],
-  testMatch:           ['**/*.test.ts'],
+  testMatch:           ['**/*.spec.ts'],
   transform:           { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../../tsconfig.jest.json' }] },
-  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.test.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts'],
   coverageReporters:   ['text', 'json-summary'],
   coverageThreshold:   {
     global: { statements: 85, branches: 85, functions: 85, lines: 85 },

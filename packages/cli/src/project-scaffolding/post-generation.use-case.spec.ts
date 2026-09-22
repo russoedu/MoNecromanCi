@@ -1,0 +1,1071 @@
+// Mocked because this spec reaches a sibling slice through its barrel, which
+// transitively loads @inquirer/prompts — ESM-only, and unparseable by jest
+// as CJS. Nothing here exercises a prompt; every other spec that touches
+// this module mocks it the same way.
+jest.mock('@inquirer/prompts', () => ({ confirm: jest.fn(), input: jest.fn(), select: jest.fn(), checkbox: jest.fn(), Separator: class {} }))
+jest.mock('../nx-workspace', () => ({
+  runNx:        jest.fn(),
+  runFormatter: jest.fn(),
+  runShell:     jest.fn(() => 0),
+}))
+
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { runShell } from '../nx-workspace'
+import {
+  canRepairRollupConfig,
+  hasRollupSourceMaps,
+  registerProjectCommands,
+  relocateRootRuntimeDependencies,
+  removeGeneratedEslintConfig,
+  repairDeclarationSpecifiers,
+  repairPublishableManifests,
+  resolveRollupConfigText,
+  rootRuntimeDependencies,
+  upgradeDeclarationSpecifierPlugins,
+  withRollupSourceMaps,
+  withUpgradedDeclarationSpecifierPlugin,
+} from './post-generation.use-case'
+
+const mockRunShell = jest.mocked(runShell)
+
+let workspaceRoot: string
+
+/** Reads the root package.json's scripts back. */
+function scripts (): Record<string, string> {
+  return (
+    JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+  ).scripts
+}
+
+/** Reads the .code-workspace file's tasks array back. */
+function tasks (): Record<string, unknown>[] {
+  return (
+    JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      tasks: { version: string; tasks: Record<string, unknown>[] }
+    }
+  ).tasks.tasks
+}
+
+beforeEach(() => {
+  workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-shared-'))
+  writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: '@demo/source' }))
+  mockRunShell.mockImplementation(() => 0)
+})
+
+afterEach(() => {
+  rmSync(workspaceRoot, { recursive: true, force: true })
+})
+
+describe('registerProjectCommands', () => {
+  it('always writes <name>:qa, and <name>:build/:start only when the kind has them', () => {
+    registerProjectCommands(workspaceRoot, 'lib', { build: true })
+    expect(scripts()['lib:qa']).toBe('nx run lib:lint && nx run lib:test')
+    expect(scripts()['lib:build']).toBe('nx run lib:build')
+    expect(scripts()['lib:start']).toBeUndefined()
+
+    registerProjectCommands(workspaceRoot, 'internal', { build: false })
+    expect(scripts()['internal:qa']).toBe('nx run internal:lint && nx run internal:test')
+    expect(scripts()['internal:build']).toBeUndefined()
+    expect(scripts()['internal:start']).toBeUndefined()
+
+    registerProjectCommands(workspaceRoot, 'app', { build: true, start: 'nx run app:serve' })
+    expect(scripts()['app:build']).toBe('nx run app:build')
+    expect(scripts()['app:start']).toBe('nx run app:serve')
+  })
+
+  it('preserves scripts already in package.json (both mnci-owned and hand-added)', () => {
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({
+        name:    '@demo/source',
+        scripts: { lint: 'nx run-many -t lint', mine: 'echo hi' },
+      }),
+    )
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true })
+
+    expect(scripts().lint).toBe('nx run-many -t lint')
+    expect(scripts().mine).toBe('echo hi')
+    expect(scripts()['web:build']).toBe('nx run web:build')
+  })
+
+  it('overwrites rather than duplicates on a repeat call for the same project', () => {
+    registerProjectCommands(workspaceRoot, 'web', { build: false })
+    expect(scripts()['web:build']).toBeUndefined()
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+    expect(Object.keys(scripts()).filter(key => key.startsWith('web:'))).toHaveLength(3)
+    expect(scripts()['web:build']).toBe('nx run web:build')
+    expect(scripts()['web:start']).toBe('nx run web:serve')
+  })
+
+  it('skips the VS Code half entirely when no .code-workspace file exists', () => {
+    expect(() => registerProjectCommands(workspaceRoot, 'web', { build: true })).not.toThrow()
+  })
+
+  it('tolerates a .code-workspace file Prettier has reformatted with trailing commas (its own JSONC dialect)', () => {
+    // Verified empirically: Prettier 3.9 has native .code-workspace support
+    // and reformats a single-entry array with a trailing comma, which
+    // strict JSON.parse rejects. `npm run format` is part of mnci's own
+    // documented pre-commit routine, so this must not break the next `add`.
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      '{\n  "folders": [\n    {\n      "path": ".",\n      "name": "demo",\n    },\n  ],\n  "tasks": { "version": "2.0.0", "tasks": [] },\n}\n',
+    )
+
+    expect(() => registerProjectCommands(workspaceRoot, 'web', { build: true })).not.toThrow()
+    expect(tasks()).toEqual([
+      { label: 'web: qa', type: 'npm', script: 'web:qa', problemMatcher: [], group: 'qa' },
+      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' },
+    ])
+  })
+
+  it('appends matching VS Code tasks, grouped by build/test and isBackground for start', () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } }),
+    )
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    expect(tasks()).toEqual([
+      { label: 'web: qa', type: 'npm', script: 'web:qa', problemMatcher: [], group: 'qa' },
+      { label: 'web: build', type: 'npm', script: 'web:build', problemMatcher: [], group: 'build' },
+      {
+        label:          'web: start',
+        type:           'npm',
+        script:         'web:start',
+        problemMatcher: [],
+        isBackground:   true,
+      },
+    ])
+  })
+
+  it("replaces a project's own tasks on a repeat call without touching another project's", () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      JSON.stringify({ folders: [], tasks: { version: '2.0.0', tasks: [] } }),
+    )
+    registerProjectCommands(workspaceRoot, 'lib', { build: true })
+    registerProjectCommands(workspaceRoot, 'web', { build: false })
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    const labels = tasks().map(task => task.label)
+    expect(labels).toEqual(['lib: qa', 'lib: build', 'web: qa', 'web: build', 'web: start'])
+  })
+
+  it('defaults a .code-workspace file with no tasks block to version 2.0.0', () => {
+    writeFileSync(join(workspaceRoot, 'demo.code-workspace'), JSON.stringify({ folders: [] }))
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true })
+
+    const workspaceFile = JSON.parse(
+      readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8'),
+    ) as { tasks: { version: string } }
+    expect(workspaceFile.tasks.version).toBe('2.0.0')
+  })
+
+  it('touches nothing outside its own tasks entries — a full-workspace regression test', () => {
+    // Reproduces the reported bug: a hand-maintained .code-workspace carrying
+    // all five top-level keys, non-empty tasks/launch, AND a comment — the
+    // realistic shape of a file VS Code itself has been used to edit, and the
+    // exact ingredient (one comment) that used to make readCodeWorkspace
+    // throw, discard everything via `?? {}`, and leave only `tasks` behind.
+    const before = {
+      folders:  [{ path: '.', name: 'demo' }],
+      settings: {
+        'eslint.validate':         ['javascript', 'typescript'],
+        'editor.formatOnSave':     true,
+        'editor.defaultFormatter': 'dbaeumer.vscode-eslint',
+        'cSpell.words':            ['monecromanci', 'rollup', 'esbuild'],
+      },
+      extensions: {
+        recommendations: [
+          'dbaeumer.vscode-eslint',
+          'nrwl.angular-console',
+          'firsttris.vscode-jest-runner',
+        ],
+      },
+      tasks: {
+        version: '2.0.0',
+        tasks:   [
+          { label: 'lib: qa', type: 'npm', script: 'lib:qa', problemMatcher: [], group: 'qa' },
+          {
+            label:          'lib: build',
+            type:           'npm',
+            script:         'lib:build',
+            problemMatcher: [],
+            group:          'build',
+          },
+        ],
+      },
+      launch: {
+        version:        '0.2.0',
+        configurations: [
+          { type: 'node-terminal', request: 'launch', name: 'mnci: build', command: 'npm run build' },
+          {
+            type:    'node',
+            request: 'launch',
+            name:    'debug my thing',
+            program: '${workspaceFolder:demo}/apps/lib/dist/main.js',
+          },
+        ],
+      },
+    }
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      [
+        '{',
+        '  // eslint.validate lists every language ESLint now formats',
+        `  "settings": ${JSON.stringify(before.settings)},`,
+        `  "folders": ${JSON.stringify(before.folders)},`,
+        `  "extensions": ${JSON.stringify(before.extensions)},`,
+        `  "tasks": ${JSON.stringify(before.tasks)},`,
+        `  "launch": ${JSON.stringify(before.launch)}`,
+        '}',
+      ].join('\n'),
+    )
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    const after = JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      folders:    unknown
+      settings:   unknown
+      extensions: unknown
+      launch:     unknown
+      tasks:      { version: string; tasks: { label: string }[] }
+    }
+    // Untouched byte-for-byte (through a parse/re-stringify round trip):
+    // `add` owns none of these keys.
+    expect(after.folders).toEqual(before.folders)
+    expect(after.settings).toEqual(before.settings)
+    expect(after.extensions).toEqual(before.extensions)
+    expect(after.launch).toEqual(before.launch)
+    // The one key `add` does own: the existing project's tasks survive, and
+    // the new project's are appended, not substituted for them.
+    expect(after.tasks.tasks.map(t => t.label)).toEqual([
+      'lib: qa',
+      'lib: build',
+      'web: qa',
+      'web: build',
+      'web: start',
+    ])
+  })
+
+  it('replaces only its own entries on a second add for the same project, matching by label', () => {
+    writeFileSync(
+      join(workspaceRoot, 'demo.code-workspace'),
+      [
+        '{',
+        '  // hand-added note',
+        '  "folders": [{ "path": ".", "name": "demo" }],',
+        '  "tasks": { "version": "2.0.0", "tasks": [] }',
+        '}',
+      ].join('\n'),
+    )
+    registerProjectCommands(workspaceRoot, 'web', { build: false })
+
+    registerProjectCommands(workspaceRoot, 'web', { build: true, start: 'nx run web:serve' })
+
+    const after = JSON.parse(readFileSync(join(workspaceRoot, 'demo.code-workspace'), 'utf8')) as {
+      folders: unknown
+      tasks:   { tasks: { label: string }[] }
+    }
+    expect(after.folders).toEqual([{ path: '.', name: 'demo' }])
+    expect(after.tasks.tasks.map(t => t.label)).toEqual(['web: qa', 'web: build', 'web: start'])
+  })
+})
+
+describe('removeGeneratedEslintConfig', () => {
+  /** Every extension Nx can pick, driven off the module type of the project. */
+  const EXTENSIONS = ['js', 'mjs', 'cjs', 'ts', 'mts', 'cts']
+
+  it('removes a generated config whatever extension Nx chose for it', () => {
+    // Nx picks the extension from the project's module type, so a helper that
+    // only knew about `.mjs` would silently leave a second config behind for
+    // some kinds — exactly the fragmentation this exists to prevent.
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    for (const extension of EXTENSIONS) {
+      writeFileSync(join(workspaceRoot, `apps/web/eslint.config.${extension}`), 'export default []')
+    }
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    for (const extension of EXTENSIONS) {
+      expect(existsSync(join(workspaceRoot, `apps/web/eslint.config.${extension}`))).toBe(false)
+    }
+  })
+
+  it('removes the .vscode directory @nx/node re-creates, which the .code-workspace file replaces', () => {
+    // `mnci new` deletes this once, but @nx/node writes a launch.json on every
+    // add — so cleaning up only at creation time would not hold.
+    mkdirSync(join(workspaceRoot, '.vscode'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.vscode/launch.json'), '{}')
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
+  })
+
+  it('is a no-op when the generator wrote neither, rather than throwing', () => {
+    // Not every kind's generator emits an eslint config; the call site is
+    // unconditional, so a missing path must not fail the whole add.
+    expect(() => {
+      removeGeneratedEslintConfig(workspaceRoot, 'apps/nothing-here')
+    }).not.toThrow()
+  })
+
+  it('leaves the root config alone — that is the one config an mnci workspace keeps', () => {
+    writeFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'export default []')
+    mkdirSync(join(workspaceRoot, 'apps/web'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'apps/web/eslint.config.mjs'), 'export default []')
+
+    removeGeneratedEslintConfig(workspaceRoot, 'apps/web')
+
+    expect(existsSync(join(workspaceRoot, 'eslint.config.mjs'))).toBe(true)
+  })
+})
+
+/** Writes a root manifest with the given runtime dependencies. */
+function writeRoot (dependencies: Record<string, string> | undefined): void {
+  writeFileSync(
+    join(workspaceRoot, 'package.json'),
+    JSON.stringify({ name: '@demo/source', private: true, ...(dependencies && { dependencies }) }),
+  )
+}
+
+/** Creates a project manifest under the given root directory. */
+function writeProject (
+  root: string,
+  name: string,
+  manifest: Record<string, unknown> = {},
+): string {
+  mkdirSync(join(workspaceRoot, root, name), { recursive: true })
+  const path = join(workspaceRoot, root, name, 'package.json')
+  writeFileSync(path, JSON.stringify({ name: `@demo/${name}`, ...manifest }))
+
+  return path
+}
+
+/** Reads a manifest's dependencies back. */
+function deps (path: string): Record<string, string> | undefined {
+  return (
+    JSON.parse(readFileSync(path, 'utf8')) as { dependencies?: Record<string, string> }
+  ).dependencies
+}
+
+describe('relocateRootRuntimeDependencies', () => {
+  it('moves what the generator added into the project, leaving the root with none', () => {
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ 'react': '^19.0.0', 'react-dom': '^19.0.0' })
+    const project = writeProject('apps', 'web')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'web', before)
+
+    expect(deps(project)).toEqual({ 'react': '^19.0.0', 'react-dom': '^19.0.0' })
+    // The doctor check this exists to satisfy reads `dependencies` and requires
+    // it empty, so the key is dropped rather than left as {}.
+    expect(deps(join(workspaceRoot, 'package.json'))).toBeUndefined()
+  })
+
+  it('leaves dependencies that were already there before the generator ran', () => {
+    writeRoot({ ms: '^2.1.3' })
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3', express: '^5.0.0' })
+    const project = writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(deps(project)).toEqual({ express: '^5.0.0' })
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+  })
+
+  it("keeps the project's own version when it already declares the package", () => {
+    // `add node-function-app` stamps the exact installed version into the app
+    // manifest; the root's range is looser, so the root must not win.
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ '@azure/functions': '^4.0.0' })
+    const project = writeProject('apps', 'api', {
+      dependencies: { '@azure/functions': '^4.16.2' },
+    })
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'api', before)
+
+    expect(deps(project)).toEqual({ '@azure/functions': '^4.16.2' })
+    expect(deps(join(workspaceRoot, 'package.json'))).toBeUndefined()
+  })
+
+  it('finds the project under packages/ and libs/ too', () => {
+    for (const [root, name] of [['packages', 'sdk'], ['libs', 'utils']] as const) {
+      const before = rootRuntimeDependencies(workspaceRoot)
+      writeRoot({ ms: '^2.1.3' })
+      const project = writeProject(root, name)
+      relocateRootRuntimeDependencies(workspaceRoot, name, before)
+      expect(deps(project)).toEqual({ ms: '^2.1.3' })
+    }
+  })
+
+  it('leaves the root alone when the project has no npm manifest', () => {
+    // A Python, Go or Dart project has nothing to move them into. Dropping the
+    // declaration would break resolution for whatever does need it.
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    mkdirSync(join(workspaceRoot, 'apps/pysvc'), { recursive: true })
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'pysvc', before)
+
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+  })
+
+  it('refreshes the lockfile, because moving a dependency leaves it stale', () => {
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(mockRunShell).toHaveBeenCalledWith(
+      'npm',
+      ['install', '--package-lock-only', '--no-audit', '--no-fund'],
+      workspaceRoot,
+    )
+  })
+
+  it('does nothing at all when the generator added no runtime dependency', () => {
+    writeRoot({ ms: '^2.1.3' })
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeProject('apps', 'svc')
+
+    relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+
+    expect(deps(join(workspaceRoot, 'package.json'))).toEqual({ ms: '^2.1.3' })
+    expect(mockRunShell).not.toHaveBeenCalled()
+  })
+
+  it('warns rather than throwing when the lockfile refresh fails', () => {
+    mockRunShell.mockImplementation(() => 1)
+    const before = rootRuntimeDependencies(workspaceRoot)
+    writeRoot({ ms: '^2.1.3' })
+    const project = writeProject('apps', 'svc')
+
+    expect(() => {
+      relocateRootRuntimeDependencies(workspaceRoot, 'svc', before)
+    }).not.toThrow()
+    // The move still stands — the project is already generated by this point.
+    expect(deps(project)).toEqual({ ms: '^2.1.3' })
+  })
+})
+
+describe('hasRollupSourceMaps', () => {
+  it('matches the flag exactly as mnci writes it', () => {
+    expect(hasRollupSourceMaps('    sourceMap: true,')).toBe(true)
+  })
+
+  it('tolerates the whitespace @stylistic/key-spacing (aligned on value) is entitled to add', () => {
+    // The reproduction: an object whose longest key is `additionalEntryPoints`
+    // gets every value column-aligned, so `sourceMap: true,` becomes
+    // `sourceMap:             true,` - still the same flag, only reformatted.
+    expect(hasRollupSourceMaps('    sourceMap:             true,')).toBe(true)
+    expect(hasRollupSourceMaps('    sourceMap :   true')).toBe(true)
+  })
+
+  it('does not match the unrelated lowercase key in the placeholder comment', () => {
+    // `// output: { sourcemap: true },` is Nx's own generated comment, and it
+    // is genuinely a different key (rollup's own `sourcemap`, all lowercase) -
+    // this must stay case-sensitive or every fresh project would read as
+    // already fixed before mnci ever touches it.
+    expect(hasRollupSourceMaps('    // output: { sourcemap: true },')).toBe(false)
+  })
+
+  it('reports false when the flag is genuinely absent', () => {
+    expect(hasRollupSourceMaps("    compiler: 'swc',")).toBe(false)
+  })
+})
+
+describe('canRepairRollupConfig', () => {
+  it('is true for a config with the withNx two-argument boundary', () => {
+    expect(canRepairRollupConfig('  },\n  {\n\n    format: ["esm"],\n  }\n)')).toBe(true)
+  })
+
+  it('is false for a one-line delegation to a shared base, which has no such boundary', () => {
+    expect(canRepairRollupConfig("module.exports = require('../../rollup.base.cjs')()\n")).toBe(
+      false,
+    )
+  })
+})
+
+describe('withRollupSourceMaps: idempotence after a lint reformat', () => {
+  it('does not insert a second sourceMap: true into a config eslint has only reformatted', () => {
+    // Reproduces the reported bug end to end: a config that already has source
+    // maps on, reformatted by @stylistic/key-spacing (aligned on value) so the
+    // flag now carries extra whitespace. A literal-string idempotence guard
+    // would fail to recognise it and insert a duplicate flag; the fix is that
+    // withRollupSourceMaps and its guard share the same whitespace-tolerant
+    // check.
+    const reformatted = [
+      "const { withNx } = require('@nx/rollup/with-nx');",
+      '',
+      'module.exports = withNx(',
+      '  {',
+      "    main:                  './src/index.ts',",
+      '    additionalEntryPoints: [],',
+      "    outputPath:            './dist',",
+      "    tsConfig:              './tsconfig.lib.json',",
+      "    compiler:              'babel',",
+      '    format:                ["esm"],',
+      '    // Added by MoNecromanCI: without this rollup emits no .js.map at all, so',
+      '    // a breakpoint in a .ts file can never bind. Not published - see `files`.',
+      '    sourceMap:             true',
+      '  },',
+      '  {',
+      '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+      '  }',
+      ');',
+    ].join('\n')
+
+    const after = withRollupSourceMaps(reformatted)
+
+    expect(after).toBe(reformatted)
+    expect(after.match(/sourceMap/g)).toHaveLength(1)
+  })
+})
+
+describe('resolveRollupConfigText', () => {
+  it('returns the config text unchanged when it has no local require() at all', () => {
+    const config = 'module.exports = withNx({ sourceMap: true }, {})\n'
+    writeFileSync(join(workspaceRoot, 'rollup.config.cjs'), config)
+
+    expect(resolveRollupConfigText(join(workspaceRoot, 'rollup.config.cjs'))).toBe(config)
+  })
+
+  it('follows a local require() and appends the target file, so the flag one file away is still seen', () => {
+    // The other shape from the report: a workspace that hoists the shared
+    // withNx() call into one root rollup.base.cjs and leaves each project as
+    // a one-line delegation. hasRollupSourceMaps reading only the project's
+    // own text finds nothing; reading the resolved text finds it.
+    mkdirSync(join(workspaceRoot, 'packages/sdk'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'rollup.base.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx');",
+        '',
+        'module.exports = () => withNx(',
+        '  {',
+        "    compiler: 'babel',",
+        '    sourceMap: true',
+        '  },',
+        '  {}',
+        ');',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(workspaceRoot, 'packages/sdk/rollup.config.cjs'),
+      "module.exports = require('../../rollup.base.cjs')()\n",
+    )
+
+    const resolved = resolveRollupConfigText(join(workspaceRoot, 'packages/sdk/rollup.config.cjs'))
+
+    expect(hasRollupSourceMaps(resolved)).toBe(true)
+  })
+
+  it('does not follow a require() of an npm package, only a local relative path', () => {
+    const config = "const { withNx } = require('@nx/rollup/with-nx');\nmodule.exports = withNx({}, {})\n"
+    writeFileSync(join(workspaceRoot, 'rollup.config.cjs'), config)
+
+    // Nothing is appended: the only require() here is a package specifier,
+    // which does not start with a dot, so there is nothing local to follow.
+    expect(resolveRollupConfigText(join(workspaceRoot, 'rollup.config.cjs'))).toBe(config)
+  })
+
+  it('terminates on a require() cycle rather than recursing forever', () => {
+    writeFileSync(join(workspaceRoot, 'a.cjs'), "require('./b.cjs')")
+    writeFileSync(join(workspaceRoot, 'b.cjs'), "require('./a.cjs')")
+
+    expect(() => resolveRollupConfigText(join(workspaceRoot, 'a.cjs'))).not.toThrow()
+  })
+})
+
+describe('withRollupSourceMaps: the compiler swap on a config eslint already reformatted', () => {
+  it('still swaps swc for babel when key-spacing alignment padded the colon', () => {
+    // The reported bug: a config that has never been repaired, but has been
+    // through one `eslint --fix` pass (every mnci-generated file gets one) so
+    // @stylistic/key-spacing padded every value out to the object's longest
+    // key. A plain-string match on "    compiler: 'swc'," (one space) silently
+    // stops matching the moment the padding changes that spacing - which is
+    // exactly the shape `mnci upgrade` reaches when it finishes an `add` that
+    // crashed after the generator wrote files but before mnci's own repair
+    // ran. Reproduced end to end against a real generated workspace before
+    // this test was written.
+    const aligned = [
+      "const { withNx } = require('@nx/rollup/with-nx')",
+      '',
+      'module.exports = withNx(',
+      '  {',
+      "    main:       './src/index.ts',",
+      "    outputPath: './dist',",
+      "    tsConfig:   './tsconfig.lib.json',",
+      "    compiler:   'swc',",
+      "    format:     ['esm'],",
+      '  },',
+      '  {',
+      '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+      '  },',
+      ')',
+    ].join('\n')
+
+    const after = withRollupSourceMaps(aligned)
+
+    expect(after).toContain("compiler: 'babel',")
+    expect(after).not.toMatch(/compiler:\s*'swc'/)
+    expect(after).toMatch(/sourceMap\s*:\s*true\b/)
+  })
+
+  it('preserves the original indentation when swapping an aligned compiler line', () => {
+    const deeplyIndented = [
+      "const { withNx } = require('@nx/rollup/with-nx')",
+      'module.exports = withNx(',
+      '  {',
+      '    additionalEntryPoints: [],',
+      "    compiler:              'swc',",
+      '  },',
+      '  {',
+      '  },',
+      ')',
+    ].join('\n')
+
+    const after = withRollupSourceMaps(deeplyIndented)
+
+    // The replacement's own lines (comment + compiler line) all start at the
+    // same 4-space indent the original `compiler` line had - not 0, and not
+    // whatever column the value happened to be aligned to.
+    expect(after).toContain("\n    compiler: 'babel',")
+    expect(after).not.toContain('\n babel')
+  })
+})
+
+/**
+ * Requires the rollup config `repairDeclarationSpecifiers` wrote, with a stub
+ * `@nx/rollup/with-nx` so the real plugin object underneath is reachable
+ * without pulling in the real rollup toolchain. Returns a function that
+ * invokes the config's dts-fix plugin's real `writeBundle(outputOptions)` —
+ * the actual code that runs at build time, not a description of it.
+ */
+function loadWriteBundle (projectRoot: string): (outputOptions: { dir: string }) => void {
+  const nodeModulesDir = join(projectRoot, 'node_modules', '@nx', 'rollup')
+  mkdirSync(nodeModulesDir, { recursive: true })
+  writeFileSync(
+    join(nodeModulesDir, 'with-nx.js'),
+    'module.exports.withNx = (first, second) => ({ first, second })',
+  )
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loading a real generated .cjs file is the point of this test
+  const config = require(join(projectRoot, 'rollup.config.cjs')) as {
+    second: { plugins: { writeBundle (outputOptions: { dir: string }): void }[] }
+  }
+
+  return outputOptions => config.second.plugins[0].writeBundle(outputOptions)
+}
+
+describe('repairDeclarationSpecifiers: extensionless declaration re-exports under nodenext', () => {
+  it('appends .js to a bare relative specifier in the real declarations, not just the stub', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'src', 'lib'), { recursive: true })
+    writeFileSync(join(distDir, 'index.d.ts'), 'export * from "./src/index";')
+    writeFileSync(join(distDir, 'src', 'index.d.ts'), "export * from './lib/align';\n")
+    writeFileSync(
+      join(distDir, 'src', 'lib', 'align.d.ts'),
+      'export declare function align(xs: number[]): number[];\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe('export * from "./src/index.js";')
+    expect(readFileSync(join(distDir, 'src', 'index.d.ts'), 'utf8')).toBe(
+      "export * from './lib/align.js';\n",
+    )
+    // A file with no relative export at all is left byte-for-byte alone.
+    expect(readFileSync(join(distDir, 'src', 'lib', 'align.d.ts'), 'utf8')).toBe(
+      'export declare function align(xs: number[]): number[];\n',
+    )
+  })
+
+  it('resolves a bare specifier naming a directory barrel to /index.js, not .js', () => {
+    // The actual bug: a directory barrel has no <name>.d.ts sibling, only
+    // <name>/index.d.ts. Appending .js unconditionally names a file rollup
+    // never emitted; ESM resolution has no directory-index fallback, so
+    // TypeScript cannot resolve it and (with skipLibCheck, the default in
+    // most consumers) silently degrades the whole module to `any` instead
+    // of erroring. Confirmed against a real published tarball.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'scan-session'), { recursive: true })
+    // Root barrel re-exports a directory, not a file.
+    writeFileSync(join(distDir, 'index.d.ts'), "export * from './scan-session';\n")
+    writeFileSync(
+      join(distDir, 'scan-session', 'index.d.ts'),
+      'export declare function scan(): void;\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(
+      "export * from './scan-session/index.js';\n",
+    )
+  })
+
+  it('leaves a bare specifier alone when neither a file nor a directory barrel exists for it', () => {
+    // Nothing was emitted under this name at all (a type-only export, a
+    // build that hasn't run for this entry yet, …) — rewriting it to a
+    // guessed suffix would produce a specifier that resolves to nothing,
+    // strictly worse than leaving the original text in place.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(distDir, { recursive: true })
+    const unresolvable = "export * from './nothing-here';\n"
+    writeFileSync(join(distDir, 'index.d.ts'), unresolvable)
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(unresolvable)
+  })
+
+  it('never double-appends an extension a specifier already has', () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-fix-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      [
+        "const { withNx } = require('@nx/rollup/with-nx')",
+        'module.exports = withNx(',
+        '  {',
+        "    main: './src/index.ts',",
+        '  },',
+        '  {',
+        '    // Provide additional rollup configuration here. See: https://rollupjs.org/configuration-options',
+        '    // e.g.',
+        '    // output: { sourcemap: true },',
+        '  }',
+        ')',
+      ].join('\n'),
+    )
+
+    repairDeclarationSpecifiers(projectRoot)
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(distDir, { recursive: true })
+    const alreadyExplicit = "export * from './lib/align.js';\n"
+    writeFileSync(join(distDir, 'index.d.ts'), alreadyExplicit)
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(alreadyExplicit)
+  })
+})
+
+/**
+ * A real rollup config carrying the declaration-specifier plugin exactly as
+ * it was written before the `.js`-extension capability existed — the shape
+ * `mnci upgrade` needs to find and upgrade in place — genuinely older text
+ * (fewer lines, no extension-fix code at all), not a byte-identical copy of
+ * the current plugin body. That is the property
+ * {@link withUpgradedDeclarationSpecifierPlugin} must hold regardless of
+ * exactly how an old body reads: it locates the plugin by brace-counting
+ * from its unique, mnci-owned `name` string (kept single-quoted here, as
+ * `eslint --fix` would leave it — Standard prefers single quotes, which is
+ * what mnci already writes), not by matching the old body's full text.
+ */
+const OLD_DTS_PLUGIN_CONFIG = [
+  'const { withNx } = require("@nx/rollup/with-nx");',
+  '',
+  'module.exports = withNx(',
+  '  {',
+  '    main: "./src/index.ts",',
+  '    outputPath: "./dist",',
+  '    tsConfig: "./tsconfig.lib.json",',
+  '    compiler: "babel",',
+  '    format: ["esm"],',
+  '    sourceMap: true',
+  '  },',
+  '  {',
+  '    output: {',
+  '      sourcemapPathTransform: (relativeSourcePath) =>',
+  String.raw`        relativeSourcePath.replaceAll(String.fromCodePoint(92), "/").replace(/^(\.\.\/)+/, "../")`,
+  '    },',
+  '    plugins: [',
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle(outputOptions) {',
+  '          const { readFileSync, writeFileSync } = require("node:fs");',
+  '          const { join } = require("node:path");',
+  '          const stub = join(outputOptions.dir ?? "./dist", "index.d.ts");',
+  '          let source;',
+  '          try {',
+  '            source = readFileSync(stub, "utf8");',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          const separator = String.fromCodePoint(92, 92);',
+  '          const normalised = source.replaceAll(separator, "/");',
+  '          if (normalised !== source) writeFileSync(stub, normalised);',
+  '        }',
+  '      }',
+  '    ]',
+  '  }',
+  ');',
+].join('\n')
+
+/**
+ * A rollup config carrying the plugin body exactly as it read after the
+ * `.js`-extension capability shipped but BEFORE the directory-barrel fix —
+ * i.e. it already contains {@link DECLARATION_SPECIFIER_EXTENSION_MARKER}
+ * but not {@link DECLARATION_SPECIFIER_DIRECTORY_MARKER}. This is the real
+ * regression a bug report against a consuming workspace found: nine of
+ * eleven packages carried this exact generation, silently publishing
+ * untyped declarations for any directory barrel, and nothing ever revisited
+ * them because the old upgrade check only looked for the extension marker,
+ * which they already had.
+ */
+const EXTENSION_ONLY_DTS_PLUGIN_CONFIG = [
+  'const { withNx } = require("@nx/rollup/with-nx");',
+  '',
+  'module.exports = withNx(',
+  '  {',
+  '    main: "./src/index.ts",',
+  '  },',
+  '  {',
+  '    plugins: [',
+  '      {',
+  "        name: 'mnci-normalise-declaration-specifiers',",
+  '        writeBundle(outputOptions) {',
+  '          const { readdirSync, readFileSync, writeFileSync } = require("node:fs");',
+  '          const { join } = require("node:path");',
+  '          const dir = outputOptions.dir ?? "./dist";',
+  '          const stub = join(dir, "index.d.ts");',
+  '          let source;',
+  '          try {',
+  '            source = readFileSync(stub, "utf8");',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          const separator = String.fromCodePoint(92, 92);',
+  '          const normalised = source.replaceAll(separator, "/");',
+  '          if (normalised !== source) writeFileSync(stub, normalised);',
+  String.raw`          const bareRelativeSpecifier = /from(\s+)(['"])(\.[^'"]+?)\2/g;`,
+  String.raw`          const hasExtension = /\.(?:mjs|cjs|jsx?|json)$/;`,
+  '          let entries;',
+  '          try {',
+  '            entries = readdirSync(dir, { recursive: true, withFileTypes: true });',
+  '          } catch {',
+  '            return;',
+  '          }',
+  '          for (const entry of entries) {',
+  '            if (!entry.name.endsWith(".d.ts")) continue;',
+  '            const filePath = join(entry.parentPath ?? entry.path, entry.name);',
+  '            let declaration;',
+  '            try {',
+  '              declaration = readFileSync(filePath, "utf8");',
+  '            } catch {',
+  '              continue;',
+  '            }',
+  '            const withExtensions = declaration.replace(',
+  '              bareRelativeSpecifier,',
+  '              (match, space, quote, specifier) =>',
+  '                hasExtension.test(specifier) ? match : `from${space}${quote}${specifier}.js${quote}`,',
+  '            );',
+  '            if (withExtensions !== declaration) writeFileSync(filePath, withExtensions);',
+  '          }',
+  '        }',
+  '      }',
+  '    ]',
+  '  }',
+  ');',
+].join('\n')
+
+describe('withUpgradedDeclarationSpecifierPlugin', () => {
+  it('upgrades an old plugin body to the current one, regardless of its exact prior text', () => {
+    const after = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
+
+    expect(after).toContain('bareRelativeSpecifier')
+    expect(after).toContain("name: 'mnci-normalise-declaration-specifiers'")
+    // Nothing outside the plugin object moved.
+    expect(after).toContain('sourcemapPathTransform')
+    expect(after).toContain('compiler: "babel"')
+  })
+
+  it('is idempotent — a config already carrying the marker is untouched', () => {
+    const current = withUpgradedDeclarationSpecifierPlugin(OLD_DTS_PLUGIN_CONFIG)
+
+    expect(withUpgradedDeclarationSpecifierPlugin(current)).toBe(current)
+  })
+
+  it('upgrades a config that already has the extension fix but not the directory-barrel fix', () => {
+    // The real regression: this generation already contains
+    // DECLARATION_SPECIFIER_EXTENSION_MARKER, so the OLD upgrade check
+    // (extension marker present => "already current") left it untouched
+    // forever. It must be recognised as stale and upgraded here too.
+    const after = withUpgradedDeclarationSpecifierPlugin(EXTENSION_ONLY_DTS_PLUGIN_CONFIG)
+
+    expect(after).toContain('resolveSpecifierSuffix')
+    expect(after).not.toBe(EXTENSION_ONLY_DTS_PLUGIN_CONFIG)
+  })
+
+  it('an upgraded extension-only config actually resolves a directory barrel correctly', () => {
+    // Not just "the marker is present" - the upgraded body must really run
+    // and really fix the bug, proven by loading and executing it for real.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'mnci-dts-upgrade-'))
+    writeFileSync(
+      join(projectRoot, 'rollup.config.cjs'),
+      withUpgradedDeclarationSpecifierPlugin(EXTENSION_ONLY_DTS_PLUGIN_CONFIG),
+    )
+
+    const distDir = join(projectRoot, 'dist')
+    mkdirSync(join(distDir, 'scan-session'), { recursive: true })
+    writeFileSync(join(distDir, 'index.d.ts'), "export * from './scan-session';\n")
+    writeFileSync(
+      join(distDir, 'scan-session', 'index.d.ts'),
+      'export declare function scan(): void;\n',
+    )
+
+    loadWriteBundle(projectRoot)({ dir: distDir })
+
+    expect(readFileSync(join(distDir, 'index.d.ts'), 'utf8')).toBe(
+      "export * from './scan-session/index.js';\n",
+    )
+  })
+
+  it('leaves a config with no declaration-specifier plugin at all unchanged', () => {
+    const config = "module.exports = withNx({ main: './src/index.ts' }, {})\n"
+
+    expect(withUpgradedDeclarationSpecifierPlugin(config)).toBe(config)
+  })
+})
+
+describe('upgradeDeclarationSpecifierPlugins', () => {
+  it('upgrades every old plugin under packages/ and libs/, and reports what changed', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'libs/design'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+    writeFileSync(join(workspaceRoot, 'libs/design/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+
+    const changed = upgradeDeclarationSpecifierPlugins(workspaceRoot)
+
+    expect(changed).toHaveLength(2)
+    expect(changed).toEqual(
+      expect.arrayContaining(['libs/design/rollup.config.cjs', 'packages/align/rollup.config.cjs']),
+    )
+    expect(readFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), 'utf8')).toContain(
+      'bareRelativeSpecifier',
+    )
+  })
+
+  it('reports nothing changed on a repeat run', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'packages/align/rollup.config.cjs'), OLD_DTS_PLUGIN_CONFIG)
+    upgradeDeclarationSpecifierPlugins(workspaceRoot)
+
+    expect(upgradeDeclarationSpecifierPlugins(workspaceRoot)).toEqual([])
+  })
+})
+
+describe('repairPublishableManifests', () => {
+  it('repoints a stale types path in every packages/*/libs/* manifest, and reports what changed', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    mkdirSync(join(workspaceRoot, 'libs/design'), { recursive: true })
+    const staleManifest = JSON.stringify({
+      name:    '@demo/align',
+      types:   './dist/index.esm.d.ts',
+      exports: { '.': { types: './dist/index.esm.d.ts' } },
+      files:   ['dist'],
+    })
+    writeFileSync(join(workspaceRoot, 'packages/align/package.json'), staleManifest)
+    // Already correct, and written in mnci's own toJson format (2-space,
+    // trailing newline) — the realistic shape of a manifest nothing is
+    // wrong with, so the sweep must round-trip it byte-identical and not
+    // report it as changed.
+    writeFileSync(
+      join(workspaceRoot, 'libs/design/package.json'),
+      `${JSON.stringify({ name: '@demo/design', types: './dist/src/index.d.ts' }, undefined, 2)}\n`,
+    )
+
+    const changed = repairPublishableManifests(workspaceRoot)
+
+    expect(changed).toEqual(['packages/align/package.json'])
+    const repaired = JSON.parse(
+      readFileSync(join(workspaceRoot, 'packages/align/package.json'), 'utf8'),
+    ) as { types: string; exports: { '.': { types: string } } }
+    expect(repaired.types).toBe('./dist/src/index.d.ts')
+    expect(repaired.exports['.'].types).toBe('./dist/src/index.d.ts')
+  })
+
+  it('reports nothing changed on a repeat run', () => {
+    mkdirSync(join(workspaceRoot, 'packages/align'), { recursive: true })
+    writeFileSync(
+      join(workspaceRoot, 'packages/align/package.json'),
+      JSON.stringify({ name: '@demo/align', types: './dist/index.esm.d.ts' }),
+    )
+    repairPublishableManifests(workspaceRoot)
+
+    expect(repairPublishableManifests(workspaceRoot)).toEqual([])
+  })
+})

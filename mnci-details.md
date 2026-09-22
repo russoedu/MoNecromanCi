@@ -93,7 +93,7 @@ only mnci-owned files — never project source or `project.json` targets.
 ## 3. The 19 project kinds
 
 `mnci add <kind> <name>`. The kind list is the union type `ProjectKind` in
-`packages/cli/src/commands/add.ts`; `PROJECT_KINDS` drives both the CLI
+`packages/cli/src/project-scaffolding/add-project.use-case.ts`; `PROJECT_KINDS` drives both the CLI
 `choices()` validation and the interactive picker.
 
 | Kind                   | Lands in                 | Generator                               | Targets written                           |
@@ -128,7 +128,7 @@ only mnci-owned files — never project source or `project.json` targets.
 
 **Every `add` also registers local-dev commands.** After generating and
 target-wiring a project, every `add/*.ts` kind function calls
-`registerProjectCommands` (`commands/add/shared.ts`), which writes root
+`registerProjectCommands` (`project-scaffolding/post-generation.use-case.ts`), which writes root
 `package.json` scripts — `<name>:build` (when the kind has a build target),
 `<name>:qa` (`nx run <name>:lint && nx run <name>:test`, always), and
 `<name>:start` (only kinds with a real dev-server story — never a library) —
@@ -263,7 +263,7 @@ version: { conventionalCommits: true, fallbackCurrentVersionResolver: 'disk' },
 ## 7. The generated CI pipeline
 
 Both providers are kept in **lockstep** and are asserted byte-identical by an
-anti-drift test in `overlay.test.ts`. Only PATH-publishing differs, because the
+anti-drift test in `workspace-overlay/overlay.use-case.spec.ts`. Only PATH-publishing differs, because the
 mechanisms genuinely differ (`##vso[task.prependpath]` vs `$GITHUB_PATH`).
 
 Step order (Azure; GitHub is the same minus "Attach HEAD" and the per-app build
@@ -450,7 +450,7 @@ generators or the user.
 **`mnci` owns the root ESLint config**, and it is the only one in the workspace.
 This is a reversal: it used to come from `create-nx-workspace`, and each `nx g`
 generator dropped another into its own project. `removeGeneratedEslintConfig()`
-(`add/shared.ts`) deletes those after every `add`; the rules that used to live
+(`project-scaffolding/post-generation.use-case.ts`) deletes those after every `add`; the rules that used to live
 in the per-npm-lib config (`NPM_LIB_ESLINT_CONFIG`, now gone) moved into
 `@mnci/eslint-config`'s `dependencyChecks` block.
 
@@ -550,28 +550,28 @@ touch this block.
 
 | I need to change…                                              | Go to                                           |
 | -------------------------------------------------------------- | ----------------------------------------------- |
-| A CLI flag or command                                          | `packages/cli/src/cli.ts`                       |
-| The kind list / dispatch                                       | `packages/cli/src/commands/add.ts`              |
-| How one kind generates                                         | `packages/cli/src/commands/add/<stack>.ts`      |
-| Shared add helpers (`AddOptions`, `ensureAdmZip`, `hasPlugin`) | `packages/cli/src/commands/add/shared.ts`       |
-| Workspace creation                                             | `packages/cli/src/commands/new.ts`              |
-| **Anything mnci writes into a workspace**                      | `packages/cli/src/overlay.ts`                   |
-| CI YAML, guard scripts, release config                         | `packages/cli/src/overlay.ts`                   |
-| Interactive prompts                                            | `packages/cli/src/prompts.ts`                   |
-| Shell execution (cross-spawn wrappers)                         | `packages/cli/src/nx.ts`                        |
-| Name validation                                                | `packages/cli/src/util/names.ts`                |
+| A CLI flag or command                                          | `packages/cli/src/cli.handler.ts`                       |
+| The kind list / dispatch                                       | `packages/cli/src/project-scaffolding/add-project.use-case.ts`              |
+| How one kind generates                                         | `packages/cli/src/project-scaffolding/<stack>.use-case.ts`      |
+| Shared add helpers (`AddOptions`, `ensureAdmZip`, `hasPlugin`) | `packages/cli/src/project-scaffolding/post-generation.use-case.ts`       |
+| Workspace creation                                             | `packages/cli/src/workspace-creation/create-workspace.use-case.ts`              |
+| **Anything mnci writes into a workspace**                      | `packages/cli/src/workspace-overlay/overlay.use-case.ts`                   |
+| CI YAML, guard scripts, release config                         | `packages/cli/src/workspace-overlay/overlay.use-case.ts`                   |
+| Interactive prompts                                            | `packages/cli/src/terminal/prompts.client.ts`                   |
+| Shell execution (cross-spawn wrappers)                         | `packages/cli/src/nx-workspace/nx.client.ts`                        |
+| Name validation                                                | `packages/cli/src/project-name/project-name.validator.ts`                |
 | Python generation/executors                                    | `packages/nx-python-pip/src/`                   |
 | Flutter generation/executors                                   | `packages/nx-flutter/src/`                      |
 | Pub workspace wiring                                           | `packages/nx-flutter/src/internal/workspace.ts` |
 | E2E                                                            | `packages/cli/e2e/cli.e2e.mjs`                  |
 
-`overlay.ts` is the highest-leverage and highest-risk file: it is the sole writer
+`workspace-overlay/overlay.use-case.ts` is the highest-leverage and highest-risk file: it is the sole writer
 of every generated workspace's config, and both `new` and `upgrade` call it.
 
 ### Common task recipes
 
 - **Add a project kind** → §3's checklist, then a `add/<kind>.test.ts` mirroring
-  `go.test.ts`, then docs. If it needs a toolchain, add guards in `overlay.ts`
+  `go.test.ts`, then docs. If it needs a toolchain, add guards in `workspace-overlay/overlay.use-case.ts`
   (both providers) keyed on a sentinel file.
 - **Change a CI step** → edit the guard constant _and_ both `azurePipelinesYaml()`
   and `githubActionsYaml()`; the anti-drift test will fail otherwise.

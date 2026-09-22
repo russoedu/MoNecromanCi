@@ -44,7 +44,7 @@ export default [
   // overlay.ts's `rootScripts()` takes no parameters and has no type
   // parameters, so the require-* rules have nothing to match against.
   {
-    files: ['packages/cli/src/overlay.ts'],
+    files: ['packages/cli/src/workspace-overlay/overlay.use-case.ts'],
     rules: {
       'tsdoc-require-2/require-param':      'off',
       'tsdoc-require-2/require-type-param': 'off',

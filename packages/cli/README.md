@@ -24,6 +24,52 @@ first-party (or established community) Nx equivalent:
 | Hand-written Azure Function templates      | `@nx/node:application` (plain Node app) + a thin Azure Functions v4 overlay   |
 | doctor/drift sync of tool-owned files      | Nothing to drift: this CLI owns 5 small files, Nx owns the rest               |
 
+## How this package is organised
+
+Source is arranged in **vertical slices**: one folder per outcome, each with an
+`index.ts` that is its whole public API. A sibling is reached only through that
+barrel, never by a path into its files, and a file's suffix says what role it
+plays (`.use-case`, `.client`, `.repository`, `.algorithm`, `.validator`,
+`.handler`). Tests sit beside what they test.
+
+```
+src/
+  cli.handler.ts              the CLI transport — decodes argv, calls one use case
+  workspace-overlay/          the config files mnci owns and rewrites
+  workspace-creation/         mnci new, and the interactive wizard
+  workspace-upgrade/          mnci upgrade
+  workspace-diagnostics/      mnci doctor
+  project-scaffolding/        mnci add — one use case per kind, plus post-generation repairs
+  dependency-management/      mnci sync / mnci up, and the manifest + registry + semver machinery
+  nx-workspace/               runs the Nx and npm CLIs, always via an argv array
+  terminal/                   prompts in, coloured status out
+  file-system/                JSON, JSONC workspace files, ensured writes
+  project-name/               name validation
+  cli-version/                the update check
+```
+
+The dependency graph is acyclic and flows one way: `cli.handler` → the command
+slices → the infrastructure slices → `file-system` as a leaf. That is checked,
+not assumed.
+
+### Exceptions, and when they go away
+
+Two files hold more than the one responsibility their suffix claims, and are
+named here because the next reader deserves to know before opening them:
+
+| Path | Rule waived | Why, and removal condition |
+|---|---|---|
+| `workspace-overlay/overlay.use-case.ts` | one responsibility per file | ~3.5k lines covering CI YAML for two providers, `.npmrc`, `nuget.config`, the VS Code workspace, release config and the CI guard scripts. Splitting it is a decomposition, not a move, so it was deliberately kept out of the change that created these slices. **Temporary** — removed when that decomposition lands. |
+| `project-scaffolding/post-generation.use-case.ts` | one responsibility per file | ~1.6k lines holding both scaffolding-time helpers and the rollup-config repair/inspection helpers. Same reason, same condition. |
+
+The second one has a visible consequence worth recording: `workspace-diagnostics`
+and `workspace-upgrade` depend on `project-scaffolding` **only** to reach those
+repair helpers — they have no interest in adding a project. Under the
+own-the-concept rule those helpers belong in their own slice that depends on
+nothing above it, which is what the decomposition should create. Until then the
+dependency stands, and it is the reason two specs mock `@inquirer/prompts`
+purely to stop a barrel transitively loading an ESM-only module.
+
 ## Commands (deliberately just six)
 
 ```sh
@@ -301,7 +347,7 @@ each a single cross-platform command:
 ## Every `add` also wires local-dev commands
 
 Every `mnci add` (and the inline `internal-lib` case) finishes by calling
-`registerProjectCommands` (`commands/add/shared.ts`), which writes up to three
+`registerProjectCommands` (`project-scaffolding/post-generation.use-case.ts`), which writes up to three
 root `package.json` scripts for the project just added:
 
 | Script         | Runs                                       | When it's added                                                                                                                                    |
@@ -401,7 +447,7 @@ from File`), and the curated root scripts.
 
 ## `mnci upgrade`: re-applying the overlay to an existing workspace
 
-Every fix to `overlay.ts` — a release-config correction, a CI guard rewritten,
+Every fix to `workspace-overlay/overlay.use-case.ts` — a release-config correction, a CI guard rewritten,
 a new Windows code path — only ever reached _future_ `mnci new` calls until
 this existed; nothing let an already-generated workspace pick one up.
 `mnci upgrade`, run from the workspace root, closes that gap: it resolves the
@@ -611,7 +657,7 @@ default `azure`): `azure` writes `azure-pipelines.yml`, `github` writes
 `.github/workflows/ci.yml`, `both` writes both — pick `github` for a
 GitHub-hosted repo, or `both` while migrating between the two. Whichever
 provider(s), the pipeline does the **exact same thing**: both files are built
-from the same shared guard scripts (`overlay.ts`'s `PYTHON_INSTALL_GUARD`,
+from the same shared guard scripts (`workspace-overlay/overlay.use-case.ts`'s `PYTHON_INSTALL_GUARD`,
 `PACK_APPS_GUARD`, `releaseGuard`, `AFFECTED_OR_ALL_GUARD`), so they can never
 drift on what CI actually runs — only the provider's own syntax differs. That
 matters most for the last of those: the two providers detect a pull request
@@ -855,7 +901,7 @@ is base64-encoded throughout — that's the raw value Azure Artifacts' "Connect
 to feed" instructions give you. npm's `.npmrc` `_password` field expects
 exactly that pre-encoded form, so it's used as-is. `twine`/pypi basic auth, by
 contrast, wants the **raw** token — so the shared `releaseGuard` fragment
-(`overlay.ts`, used by both `azurePipelinesYaml` and `githubActionsYaml`)
+(`workspace-overlay/overlay.use-case.ts`, used by both `azurePipelinesYaml` and `githubActionsYaml`)
 explicitly _decodes_ the same `PAT`
 (`Buffer.from(process.env.PAT, 'base64').toString()`) before handing it to
 `TWINE_PASSWORD`. Both are correct for their protocol today, but it's an easy
@@ -1185,7 +1231,7 @@ pipeline installs `golangci-lint` itself (see below).
 | `go-internal-lib` | `libs/<name>`     | private shared code, lint + test only — a non-`main` package produces no binary                                                                                                                               |
 
 - **One root `go.mod`**, matching how TS uses one root `package.json` and
-  Python one root `requirements-dev.txt`. `add/go.ts` bootstraps it on the
+  Python one root `requirements-dev.txt`. `project-scaffolding/go.use-case.ts` bootstraps it on the
   first Go `add` by running the plugin's `init` then `convert-to-one-mod`
   generators, in that order — `convert-to-one-mod` refuses once `go.work`
   lists any module, so it has to happen before the first Go project exists.
