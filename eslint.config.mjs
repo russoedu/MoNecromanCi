@@ -20,7 +20,22 @@ import mnci from '@mnci/eslint-config'
 const tests = ['**/*.{test,spec}.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', '**/e2e/**']
 
 export default [
-  ...mnci({ workspaceRoot: import.meta.dirname }),
+  // `verticalSlices` is scoped to the CLI rather than passed as `true`, and the
+  // scope is measured, not assumed — every other package was linted under the
+  // rules first:
+  //
+  //   @mnci/cli            1 finding (the entry point's name, fixed by this change)
+  //   @mnci/nx-python-pip  every generator and executor, because Nx MANDATES the
+  //   @mnci/nx-flutter     nested `generators/<name>/{generator.ts,schema.json}`
+  //                        layout its manifests resolve — flattening it breaks
+  //                        the published plugin
+  //   @mnci/az-durable     every file, being a small flat library rather than a
+  //                        sliced app
+  //   @mnci/eslint-config  none: its code lives in `configs/`, not `src/`
+  //
+  // Turning it on workspace-wide would therefore fail four packages for reasons
+  // that are not architectural drift, which is exactly how a gate gets disabled.
+  ...mnci({ workspaceRoot: import.meta.dirname, verticalSlices: ['packages/cli/src/**/*.ts'] }),
 
   // Repo-specific ignores, beyond the build output the shared config lists.
   { ignores: ['.azurite/**', '.build-templates/**', 'doc/**', 'tools/**', '**/assets/**'] },

@@ -76,7 +76,7 @@ committing an upgrade.
 
 ### Entry Points
 
-- **`packages/cli/src/cli.handler.ts`** — CLI argument dispatcher (`mnci new`, `mnci add`, `mnci upgrade`)
+- **`packages/cli/src/main.ts`** — CLI argument dispatcher (the transport entry; named `main` because the vertical-slice rules allow only `index`/`main` at the root of `src`) (`mnci new`, `mnci add`, `mnci upgrade`)
 - **`packages/cli/src/workspace-creation/create-workspace.use-case.ts`** — workspace generation (calls `applyOverlay`)
 - **`packages/cli/src/project-scaffolding/add-project.use-case.ts`** — per-project scaffolding (delegates to Nx generators)
 - **`packages/cli/src/workspace-upgrade/upgrade-workspace.use-case.ts`** — re-apply overlay to existing workspace

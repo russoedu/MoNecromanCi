@@ -1339,7 +1339,7 @@ Not `recommendedTypeChecked`: measured against this monorepo it reported 67
 problems, mostly not bugs (`require-await` fires on every `nx-python-pip`
 executor, which must be `async` to satisfy Nx's contract; `no-unsafe-*` fires
 throughout the generator specs). The curated set reported 10, all real — including
-a genuine floating promise at `packages/cli/src/cli.handler.ts`.
+a genuine floating promise at `packages/cli/src/main.ts` (then `cli.handler.ts`).
 
 Two decisions came out of verification rather than design:
 

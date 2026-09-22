@@ -34,7 +34,7 @@ plays (`.use-case`, `.client`, `.repository`, `.algorithm`, `.validator`,
 
 ```
 src/
-  cli.handler.ts              the CLI transport — decodes argv, calls one use case
+  main.ts                     the CLI transport — decodes argv, calls one use case
   workspace-overlay/          the config files mnci owns and rewrites
   workspace-creation/         mnci new, and the interactive wizard
   workspace-upgrade/          mnci upgrade
@@ -49,9 +49,14 @@ src/
   cli-version/                the update check
 ```
 
-The dependency graph is acyclic and flows one way: `cli.handler` → the command
+The dependency graph is acyclic and flows one way: `main` → the command
 slices → the infrastructure slices → `file-system` as a leaf. That is checked,
-not assumed.
+not assumed — and now enforced: the root `eslint.config.mjs` turns on
+`@mnci/eslint-config`'s `verticalSlices` rules for `packages/cli/src`, so a
+deep sibling import, a file without a role suffix, a nested subfeature or a
+cycle between slices fails `npm run lint` rather than needing someone to
+re-run the checks by hand. It is scoped to this package deliberately; the
+config file says which packages were measured and why they are excluded.
 
 ### Exceptions, and when they go away
 
