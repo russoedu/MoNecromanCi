@@ -1,5 +1,5 @@
 import type { GeneratorCallback, Tree } from '@nx/devkit'
-import { formatFiles, generateFlutterProject } from '../../internal/generateProject'
+import { formatFiles, generateFlutterProject } from '../../internal/generate-project.use-case'
 import type { AppGeneratorSchema } from './schema.d'
 
 /**

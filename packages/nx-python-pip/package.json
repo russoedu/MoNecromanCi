@@ -1,7 +1,7 @@
 {
   "name": "@mnci/nx-python-pip",
   "version": "0.1.0",
-  "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) — no uv, no Poetry, no lock file.",
+  "description": "An Nx plugin for pip-native Python projects (Ruff + pytest + the standard PyPA build/twine tools) \u2014 no uv, no Poetry, no lock file.",
   "publishConfig": {
     "access": "public"
   },
@@ -28,7 +28,7 @@
     "executors.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
+    "build": "node -e \"const fs=require('node:fs');for(const t of ['dist','tsconfig.lib.tsbuildinfo'])fs.rmSync(t,{recursive:true,force:true})\" && tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint ."
@@ -50,5 +50,15 @@
   "peerDependencies": {
     "@nx/devkit": ">=21.0.0",
     "nx": ">=21.0.0"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "dependsOn": [
+          "^build",
+          "build"
+        ]
+      }
+    }
   }
 }

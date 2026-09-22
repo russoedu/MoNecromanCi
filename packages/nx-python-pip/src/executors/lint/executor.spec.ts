@@ -13,7 +13,7 @@
 import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
-import { pythonCommand } from '../../internal/pythonCommand'
+import { pythonCommand } from '../../internal/python-command.algorithm'
 import lintExecutor from './executor'
 
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))

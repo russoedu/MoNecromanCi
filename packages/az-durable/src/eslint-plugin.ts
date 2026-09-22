@@ -1,6 +1,6 @@
-import { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator.js'
-import { noUntypedActivityHandler } from './rules/noUntypedActivityHandler.js'
-import { requireYieldStar } from './rules/requireYieldStar.js'
+import { noNondeterministicOrchestrator } from './rules/no-nondeterministic-orchestrator.policy.js'
+import { noUntypedActivityHandler } from './rules/no-untyped-activity-handler.policy.js'
+import { requireYieldStar } from './rules/require-yield-star.policy.js'
 import type { Rule } from './rules/shared.js'
 
 export type { Rule } from './rules/shared.js'
@@ -46,6 +46,6 @@ export const recommended = {
   },
 } as const
 
-export { noNondeterministicOrchestrator } from './rules/noNondeterministicOrchestrator.js'
-export { requireYieldStar } from './rules/requireYieldStar.js'
-export { noUntypedActivityHandler } from './rules/noUntypedActivityHandler.js'
+export { noNondeterministicOrchestrator } from './rules/no-nondeterministic-orchestrator.policy.js'
+export { requireYieldStar } from './rules/require-yield-star.policy.js'
+export { noUntypedActivityHandler } from './rules/no-untyped-activity-handler.policy.js'

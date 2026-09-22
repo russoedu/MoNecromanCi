@@ -1,8 +1,8 @@
 import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
-import { projectRootFrom } from '../../internal/executorContext'
-import { pythonCommand } from '../../internal/pythonCommand'
+import { projectRootFrom } from '../../internal/executor-context.mapper'
+import { pythonCommand } from '../../internal/python-command.algorithm'
 import type { TestExecutorSchema } from './schema.d'
 
 /**

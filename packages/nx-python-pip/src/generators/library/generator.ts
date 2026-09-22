@@ -1,5 +1,5 @@
 import type { Tree } from '@nx/devkit'
-import { formatFiles, generateBuildableProject } from '../../internal/generateProject'
+import { formatFiles, generateBuildableProject } from '../../internal/generate-project.use-case'
 import type { LibraryGeneratorSchema } from './schema.d'
 
 /**

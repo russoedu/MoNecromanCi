@@ -12,8 +12,8 @@
       "description": "Create a publishable Flutter/Dart package (adds a project-level versionActions override so nx release versions pubspec.yaml)."
     },
     "internal-library": {
-      "factory": "./dist/generators/internalLibrary/generator",
-      "schema": "./dist/generators/internalLibrary/schema.json",
+      "factory": "./dist/generators/internal-library/generator",
+      "schema": "./dist/generators/internal-library/schema.json",
       "description": "Create a private, never-published Flutter/Dart package (lint/test only)."
     }
   }
