@@ -555,6 +555,7 @@ touch this block.
 | How one kind generates                                         | `packages/cli/src/project-scaffolding/<stack>.use-case.ts`      |
 | Shared add helpers (`AddOptions`, `ensureAdmZip`, `hasPlugin`) | `packages/cli/src/project-scaffolding/post-generation.use-case.ts`       |
 | Workspace creation                                             | `packages/cli/src/workspace-creation/create-workspace.use-case.ts`              |
+| Rollup library repairs (source maps, `types`, .d.ts specifiers) | `packages/cli/src/rollup-library/`                |
 | **Anything mnci writes into a workspace**                      | `packages/cli/src/workspace-overlay/overlay.use-case.ts`                   |
 | CI YAML, guard scripts, release config                         | `packages/cli/src/workspace-overlay/overlay.use-case.ts`                   |
 | Interactive prompts                                            | `packages/cli/src/terminal/prompts.client.ts`                   |

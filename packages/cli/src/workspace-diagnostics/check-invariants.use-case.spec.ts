@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runShell } from '../nx-workspace'
-import { repairDeclarationSpecifiers, upgradeDeclarationSpecifierPlugins } from '../project-scaffolding'
+import { repairDeclarationSpecifiers, upgradeDeclarationSpecifierPlugins } from '../rollup-library'
 import { collectFindings, runDoctor, type Finding } from './check-invariants.use-case'
 
 const mockRunShell = jest.mocked(runShell)

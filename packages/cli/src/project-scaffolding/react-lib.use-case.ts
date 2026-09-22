@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { promptText } from '../terminal'
+import { repairDeclarationSpecifiers, repairPublishableManifest } from '../rollup-library'
 import {
   defaultScope,
   ensurePlugin,
@@ -7,8 +8,6 @@ import {
   markPublic,
   registerProjectCommands,
   removeGeneratedEslintConfig,
-  repairDeclarationSpecifiers,
-  repairPublishableManifest,
   runGeneratorAndRepair,
   writeProjectReadme,
   type AddOptions,

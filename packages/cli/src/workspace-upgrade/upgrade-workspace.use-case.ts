@@ -5,7 +5,7 @@ import {
   repairPublishableManifests,
   repairRollupSourceMaps,
   upgradeDeclarationSpecifierPlugins,
-} from '../project-scaffolding'
+} from '../rollup-library'
 import {
   applyOverlay,
   readMnciConfig,

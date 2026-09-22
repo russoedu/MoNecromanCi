@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runFormatter } from '../nx-workspace'
-import { repairRollupSourceMaps } from '../project-scaffolding'
+import { repairRollupSourceMaps } from '../rollup-library'
 import { applyOverlay, DEFAULT_STACK, type OverlayOptions } from '../workspace-overlay'
 import { runUpgrade } from './upgrade-workspace.use-case'
 

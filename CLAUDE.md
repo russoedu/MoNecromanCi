@@ -347,7 +347,8 @@ VS Code `launch` entry, written by `registerProjectCommands`
 ### Rollup npm libraries: source maps and declaration files
 
 `@nx/js:lib --bundler=rollup` needed several post-generation repairs, all applied by
-`workspace-overlay/overlay.use-case.ts`/`project-scaffolding/post-generation.use-case.ts` and re-applied on `mnci upgrade`:
+`rollup-library/` (its own slice, so `mnci add`, `mnci upgrade` and `mnci doctor` all
+reach the same logic without going through scaffolding) and re-applied on `mnci upgrade`:
 
 - **Source maps**: `withRollupSourceMaps` sets `sourcemap: true` in `withNx`'s FIRST
   argument only (the second argument's `output.sourcemap` is always overwritten), and
@@ -357,7 +358,8 @@ VS Code `launch` entry, written by `registerProjectCommands`
   `sources` path (rollup's OS-native, one-parent-too-many path is wrong on every
   platform for a URL-style specifier).
 - **`types`**: the generator writes `types: './dist/index.esm.d.ts'`, a file its own
-  build never emits. `repairPublishableManifest()` (`project-scaffolding/post-generation.use-case.ts`) repoints it at
+  build never emits. `repairPublishableManifest()`
+  (`rollup-library/repair-publishable-manifest.use-case.ts`) repoints it at
   `./dist/src/index.d.ts` — not the intermediate re-export stub, which
   `@nx/rollup`'s `dts-bundle` plugin builds with `path.relative()`, an OS-native
   separator that is wrong (backslash) on Windows and breaks module resolution

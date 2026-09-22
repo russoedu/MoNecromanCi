@@ -8,7 +8,7 @@ import {
   hasDirectoryAwareDeclarationSpecifiers,
   hasRollupSourceMaps,
   resolveRollupConfigText,
-} from '../project-scaffolding'
+} from '../rollup-library'
 import { fileExists, readJson } from '../file-system'
 import { logger } from '../terminal'
 

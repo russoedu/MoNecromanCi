@@ -242,7 +242,7 @@ stays grey with nothing anywhere saying why.
 `compiler: 'swc'` gave 0 sources; `compiler: 'babel'` gave 9, all resolving,
 with `sourcesContent`.
 
-**What mnci does about it.** `withRollupSourceMaps` in `project-scaffolding/post-generation.use-case.ts` swaps the
+**What mnci does about it.** `withRollupSourceMaps` in `rollup-library/rollup-config.algorithm.ts` swaps the
 compiler to `babel` in the generated config, with the reason in a comment beside
 it. A plugin that re-ran swc with maps on was rejected: two transform hooks would
 both compile the same source, and the second would see the first's output.

@@ -40,6 +40,7 @@ src/
   workspace-upgrade/          mnci upgrade
   workspace-diagnostics/      mnci doctor
   project-scaffolding/        mnci add — one use case per kind, plus post-generation repairs
+  rollup-library/             what a rollup-bundled library needs repaired to build, type and publish
   dependency-management/      mnci sync / mnci up, and the manifest + registry + semver machinery
   nx-workspace/               runs the Nx and npm CLIs, always via an argv array
   terminal/                   prompts in, coloured status out
@@ -54,21 +55,20 @@ not assumed.
 
 ### Exceptions, and when they go away
 
-Two files hold more than the one responsibility their suffix claims, and are
+Two places hold more than the one responsibility their name claims, and are
 named here because the next reader deserves to know before opening them:
 
 | Path | Rule waived | Why, and removal condition |
 |---|---|---|
 | `workspace-overlay/overlay.use-case.ts` | one responsibility per file | ~3.5k lines covering CI YAML for two providers, `.npmrc`, `nuget.config`, the VS Code workspace, release config and the CI guard scripts. Splitting it is a decomposition, not a move, so it was deliberately kept out of the change that created these slices. **Temporary** — removed when that decomposition lands. |
-| `project-scaffolding/post-generation.use-case.ts` | one responsibility per file | ~1.6k lines holding both scaffolding-time helpers and the rollup-config repair/inspection helpers. Same reason, same condition. |
+| `rollup-library/repair-rollup-config.use-case.spec.ts` | a test takes its subject's basename | It also holds the `withUpgradedDeclarationSpecifierPlugin` describe, whose subject is `rollup-config.algorithm.ts`. That transform shares three fixtures with the repairs that apply it (`OLD_DTS_PLUGIN_CONFIG`, `EXTENSION_ONLY_DTS_PLUGIN_CONFIG`, `loadWriteBundle`), and duplicating them across two spec files is the worse trade. **Permanent** unless those fixtures stop being shared. |
 
-The second one has a visible consequence worth recording: `workspace-diagnostics`
-and `workspace-upgrade` depend on `project-scaffolding` **only** to reach those
-repair helpers — they have no interest in adding a project. Under the
-own-the-concept rule those helpers belong in their own slice that depends on
-nothing above it, which is what the decomposition should create. Until then the
-dependency stands, and it is the reason two specs mock `@inquirer/prompts`
-purely to stop a barrel transitively loading an ESM-only module.
+`rollup-library/` exists because of the own-the-concept rule. Its contents used
+to live in `project-scaffolding`, which meant `workspace-diagnostics` and
+`workspace-upgrade` depended on the scaffolding slice **only** to reach repair
+helpers — they have no interest in adding a project. The concept now sits in its
+own slice that depends on nothing above it (`file-system` alone), and all three
+consumers point at it.
 
 ## Commands (deliberately just six)
 
