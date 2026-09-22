@@ -161,7 +161,7 @@ jest.mock('./cli-version', () => ({
   readCliVersion: jest.fn(() => '1.0.0'),
 }))
 
-import { buildProgram, main } from './cli.handler'
+import { buildProgram, main } from './main'
 import { runAdd } from './project-scaffolding'
 import { runInteractive } from './workspace-creation'
 import { runNew } from './workspace-creation'

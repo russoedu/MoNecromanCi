@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry:     { cli: 'src/cli.handler.ts' },
+  entry:     { cli: 'src/main.ts' },
   format:    ['cjs'],
   target:    'node24',
   platform:  'node',

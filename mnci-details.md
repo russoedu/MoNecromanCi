@@ -550,7 +550,7 @@ touch this block.
 
 | I need to change…                                              | Go to                                           |
 | -------------------------------------------------------------- | ----------------------------------------------- |
-| A CLI flag or command                                          | `packages/cli/src/cli.handler.ts`                       |
+| A CLI flag or command                                          | `packages/cli/src/main.ts`                              |
 | The kind list / dispatch                                       | `packages/cli/src/project-scaffolding/add-project.use-case.ts`              |
 | How one kind generates                                         | `packages/cli/src/project-scaffolding/<stack>.use-case.ts`      |
 | Shared add helpers (`AddOptions`, `ensureAdmZip`, `hasPlugin`) | `packages/cli/src/project-scaffolding/post-generation.use-case.ts`       |
