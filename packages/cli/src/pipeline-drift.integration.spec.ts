@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
-import { DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './workspace-overlay'
+import { ACTION_VERSIONS, DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './workspace-overlay'
 
 /**
  * This repo's own CI must actually run the pipeline mnci ships.
@@ -23,15 +23,27 @@ import { DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, readMnciCon
  * two files legitimately differ and always will: this repo's workflow carries
  * `workflow_dispatch`, the nightly `schedule` and a whole `e2e-windows` job, none
  * of which the generator emits — a generated workspace has no e2e suite to run.
- * It also tracks newer action versions (`checkout@v7` vs `@v4`) through
- * Dependabot. Regenerating wholesale would delete the nightly, which is the one
- * thing that stops the e2e rotting unnoticed.
+ * Regenerating wholesale would delete the nightly, which is the one thing that
+ * stops the e2e rotting unnoticed.
  *
  * So the invariant is the useful half: **every command the generator emits for
- * the `ci` job must be present here.** Extra steps are fine. Newer `uses:`
- * versions are fine, and fall out for free since only `run:` commands are
- * compared. A *missing* guard is not fine — that is CI here being weaker than
- * the CI mnci hands to its users.
+ * the `ci` job must be present here.** Extra steps are fine. A *missing* guard is
+ * not fine — that is CI here being weaker than the CI mnci hands to its users.
+ *
+ * **`uses:` versions get a second, opposite check.** This file used to say newer
+ * action versions here "fall out for free since only `run:` commands are
+ * compared", and treat a version difference as a Dependabot bump rather than
+ * drift. That is right about *this* repo — running `checkout@v7` against a
+ * generator emitting `@v4` never makes CI here weaker, which is the invariant
+ * above. It is wrong about users: nothing was watching the other direction, and
+ * three of the four actions had gone three majors stale in the generator while
+ * Dependabot kept this file current. `setup-dotnet` is the exception that proves
+ * it — it matches only because PR #189 ported it by hand after someone noticed.
+ *
+ * So `ACTION_VERSIONS` is asserted to be at least as new as this workflow. The
+ * cost is real and was the reason the old test existed: a Dependabot PR bumping
+ * an action now goes red until the same PR bumps the constant. That is a
+ * one-line edit, and it is the edit that was being silently skipped.
  *
  * There is deliberately **no exemption table**. Every one of the seven missing
  * guards was added rather than excused: each begins with an existence check and
@@ -139,12 +151,36 @@ describe("this repo's ci.yml against the pipeline overlay.ts generates", () => {
     expect(Object.keys(generated.jobs)).not.toContain('e2e-windows')
   })
 
-  it('does not require the generated `uses:` versions, so Dependabot can bump them', () => {
-    // `checkout@v7` here vs `@v4` from the generator is a Dependabot bump, not a
-    // regression. Comparing only `run:` commands is what allows that, and this
-    // pins the reasoning rather than leaving it implicit in the helper above.
-    expect(usesOf(actual).some(entry => entry.startsWith('actions/checkout@'))).toBe(true)
-    expect(usesOf(generated).some(entry => entry.startsWith('actions/checkout@'))).toBe(true)
+  it('pins action majors that are not behind the ones this repo runs', () => {
+    // The direction the `run:`-only comparison cannot see. Dependabot keeps this
+    // workflow current and cannot touch ACTION_VERSIONS, so without this the
+    // generator hands users whatever majors were current when someone last
+    // remembered — which had drifted to three behind.
+    //
+    // Only `actions/*` are compared, and only for actions the generator actually
+    // emits: this repo's e2e-windows job is free to use anything it likes.
+    // Collected into one array and asserted empty, rather than one expectation
+    // per action: `toMatchObject` prints only the keys it matched on, so a
+    // per-action assertion reports `atLeast: false` and nothing about WHICH
+    // action or what to edit. An array comparison prints every field.
+    const stale = Object.entries(ACTION_VERSIONS).flatMap(([action, generatedMajor]) => {
+      const here = usesOf(actual)
+        .filter(entry => entry.startsWith(`${action}@v`))
+        .map(entry => Number(entry.slice(`${action}@v`.length).split('.', 1)[0]))
+
+      if (here.length === 0 || Number(generatedMajor.slice(1)) >= Math.max(...here)) {
+        return []
+      }
+
+      return [{
+        action,
+        generates:    generatedMajor,
+        thisRepoRuns: `v${Math.max(...here)}`,
+        remedy:       `bump ACTION_VERSIONS['${action}'] in overlay.use-case.ts`,
+      }]
+    })
+
+    expect(stale).toEqual([])
   })
 })
 
@@ -220,14 +256,12 @@ describe('the e2e job provisions the toolchains its own suite needs', () => {
     // this job's working directory (this repo, not a generated workspace)
     // never satisfies.
     //
-    // Matched by action name only, not a pinned major (`@v4`, `@v6`, …): per
-    // this file's own header comment, a newer `uses:` version is expected to
-    // "fall out for free" via Dependabot and is never this guard's concern —
-    // a literal version match here would re-break on every future bump for
-    // no reason connected to real drift, exactly what broke when Dependabot
-    // carried this repo's own workflow from v4 to v6 in one PR while
-    // overlay.ts (bumped alongside it, deliberately) still had to be edited
-    // by hand.
+    // Matched by action name only, not a pinned major. The version question is
+    // not this assertion's job — it belongs to the ACTION_VERSIONS check above,
+    // which compares every action in one place and says which constant to edit.
+    // Pinning a literal major here instead is what made the old arrangement
+    // brittle for no gain: it re-broke on a bump that was not drift, while the
+    // drift that mattered went unwatched.
     const dotnetStep = steps.find(step => step.uses?.startsWith('actions/setup-dotnet@'))
 
     expect(dotnetStep).toBeDefined()

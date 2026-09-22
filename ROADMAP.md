@@ -529,7 +529,8 @@ forever**, for the identical reason already documented for Go and Flutter: its o
 toolchain-install guards key on `existsSync('*.csproj')` against the job's working
 directory (this repo, not a generated workspace), which the e2e's temp-directory
 workspaces never satisfy. Fixed with an unconditional, pinned, `continue-on-error`
-`actions/setup-dotnet@v4` step, plus a `pipelineDrift.test.ts` assertion pinning it to
+`actions/setup-dotnet@v4` step (since carried to v6, and now pinned through
+`ACTION_VERSIONS`), plus a `pipeline-drift.integration.spec.ts` assertion pinning it to
 `DOTNET_SDK_VERSION` — mutation-tested by bumping the pinned version and confirming
 the new assertion fails before reverting it.
 
