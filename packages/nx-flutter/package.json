@@ -53,5 +53,15 @@
   },
   "dependencies": {
     "cross-spawn": "^7.0.6"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "dependsOn": [
+          "^build",
+          "build"
+        ]
+      }
+    }
   }
 }

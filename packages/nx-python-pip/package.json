@@ -50,5 +50,15 @@
   "peerDependencies": {
     "@nx/devkit": ">=21.0.0",
     "nx": ">=21.0.0"
+  },
+  "nx": {
+    "targets": {
+      "test": {
+        "dependsOn": [
+          "^build",
+          "build"
+        ]
+      }
+    }
   }
 }

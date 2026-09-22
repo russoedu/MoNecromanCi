@@ -20,8 +20,19 @@ import { join } from 'node:path'
  * dropping the `composite: true` build info makes `tsc` skip emit entirely
  * and produce a silently empty build.
  *
- * Skips the path assertions when `dist/` has not been built, so it checks the
- * real artifact rather than failing a fresh clone.
+ * Asserts against the real `dist/`, so the `test` target declares `dependsOn:
+ * ["build"]` for THIS project (the workspace default is `["^build"]` — its
+ * dependencies' builds, not its own). Without that the two targets run
+ * concurrently and this spec reads a half-populated `dist/`: `copySchemas.mjs`
+ * runs last, so every `*.schema` path fails while the factories resolve. That
+ * is what broke CI once, green locally the whole time because a previous build
+ * had left `dist/` complete.
+ *
+ * An earlier version skipped the assertions when `dist/` was missing. That is
+ * strictly worse than failing: `existsSync('dist')` cannot tell "not built"
+ * from "being built right now", so the hedge silently enabled the assertions
+ * against incomplete output. The build is a declared dependency now, so `dist/`
+ * is asserted outright, with the remedy in the message.
  */
 
 const packageRoot = join(__dirname, '..')
@@ -49,15 +60,19 @@ function declaredPaths (manifest: string): [string, string][] {
 }
 
 const all = [...declaredPaths('generators.json'), ...declaredPaths('executors.json')]
-const built = existsSync(join(packageRoot, 'dist'))
 
 describe('the Nx plugin manifests point at files that exist', () => {
   it('declares at least one generator or executor', () => {
     expect(all.length).toBeGreaterThan(0)
   })
 
-  const check = built ? it : it.skip
-  check.each(all)('%s resolves to a built file (%s)', (_label, declared) => {
+  it('has a built dist/ to check against', () => {
+    // Run `npx nx run <project>:test`, never a bare `jest`: the nx target
+    // builds this project first, which is what puts dist/ here.
+    expect(existsSync(join(packageRoot, 'dist'))).toBe(true)
+  })
+
+  it.each(all)('%s resolves to a built file (%s)', (_label, declared) => {
     const target = join(packageRoot, declared)
     const found = [target, `${target}.js`, `${target}.json`].some(candidate =>
       existsSync(candidate),
