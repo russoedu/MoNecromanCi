@@ -83,6 +83,7 @@ as a comment, so it is readable without opening node_modules.
 | `mnci/html`                              | `@html-eslint/eslint-plugin`, incl. its a11y rules                                             |
 | `mnci/tests`                             | `*.spec`/`*.test` relaxations — `eslint-plugin-jest`, plus Vitest's `vi`/`vitest` globals      |
 | `mnci/nx-dependency-checks`              | `@nx/eslint-plugin` on publishable packages' manifests — only when `workspaceRoot` is passed   |
+| `mnci/vertical-slices`                   | Vertical feature slices: role-suffixed kebab-case files, a subfeature reached only through its index, no two subfeatures importing each other — only when `verticalSlices` is passed. See below |
 | `mnci/standard`                          | JavaScript Standard Style as ~60 `@stylistic` rules — **this is the formatter.** See below     |
 | `mnci/house-style`                       | The deliberate departures from Standard: trailing commas, aligned object values, `consistent-as-needed` quote-props, a blank line before `return`, two statements per line. Composed after `mnci/standard`, so it wins |
 
@@ -187,6 +188,33 @@ until that dependency is **built** — and `lint` does not depend on `build`. Th
 preset has no tsconfig `paths` to fall back on either. So a completely correct
 cross-project import resolves to nothing on disk. `tsc` already reports unresolved
 _typed_ imports, and the workspace runs `typecheck` in CI.
+
+### Vertical feature slices (`configs/verticalSlices.js`) — opt-in
+
+For workspaces organised as **vertical feature slices**: each project's `src/`
+holds subfeatures, each exposing an `index`, each holding flat, role-suffixed
+files. Off by default, because it is an architecture, not a style — turned on
+for a workspace that is not built this way, it would fail every file on day one.
+
+```js
+export default mnci({ workspaceRoot: import.meta.dirname, verticalSlices: true })
+// or only for the projects that follow it:
+export default mnci({ verticalSlices: ['packages/*/src/**/*.ts'] })
+```
+
+| Rule | Reports |
+|---|---|
+| `vertical-slices/file-role` | A name not in kebab-case; a production file without its role suffix (`.use-case`, `.algorithm`, `.policy`, `.model`, `.contract`, `.mapper`, `.validator`, `.repository`, `.client`, `.store`, `.error`, `.config`, `.enum`, `.handler`); a folder nested inside a subfeature; anything but `index`/`main` at the root of `src` |
+| `vertical-slices/no-deep-import` | A sibling reached past its index (`'../billing/fee.policy'` instead of `'../billing'`), and a subfeature importing its own index |
+| `vertical-slices/no-slice-cycle` | Two subfeatures importing each other — **type-only imports included** |
+
+The cycle rule covers the gap `import-x/no-cycle` leaves. That rule sees cycles
+between *files*, and a cycle between two folders usually runs through different
+files on each side — a contract imported one way, a use case the other — so there
+is no file-level cycle for it to report. It was written for, and first caught
+three such cycles in, a real monorepo where `no-cycle` was already on.
+
+Tests (`.spec`/`.test`) are exempt from the role and cycle rules.
 
 ### Regex and TOML
 
