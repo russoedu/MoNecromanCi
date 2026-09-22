@@ -12,13 +12,13 @@
       "description": "Create a publishable pip-native Python library (adds a twine nx-release-publish target + a versionActions override)."
     },
     "internal-library": {
-      "factory": "./dist/generators/internalLibrary/generator",
-      "schema": "./dist/generators/internalLibrary/schema.json",
+      "factory": "./dist/generators/internal-library/generator",
+      "schema": "./dist/generators/internal-library/schema.json",
       "description": "Create a private, never-published Python library (lint/test only)."
     },
     "function-application": {
-      "factory": "./dist/generators/functionApplication/generator",
-      "schema": "./dist/generators/functionApplication/schema.json",
+      "factory": "./dist/generators/function-application/generator",
+      "schema": "./dist/generators/function-application/schema.json",
       "description": "Create a Python Azure Function app (v2 programming model), deployed as source, not a wheel."
     }
   }

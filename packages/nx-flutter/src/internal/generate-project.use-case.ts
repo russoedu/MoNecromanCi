@@ -6,11 +6,11 @@ import {
   type ProjectConfiguration,
   type Tree,
 } from '@nx/devkit'
-import { dartPackageName } from './dartPackageName'
-import { runFlutter } from './runFlutter'
-import { withWorkspaceResolution } from './pubspec'
-import { withHtmlLang } from './webIndex'
-import { addWorkspaceMember, ensureWorkspaceRoot, memberAnalysisOptions } from './workspace'
+import { dartPackageName } from './dart-package-name.algorithm'
+import { runFlutter } from './flutter.client'
+import { withWorkspaceResolution } from './pubspec.algorithm'
+import { withHtmlLang } from './web-index.algorithm'
+import { addWorkspaceMember, ensureWorkspaceRoot, memberAnalysisOptions } from './workspace.use-case'
 
 /**
  * The `versionActions` path a publishable Dart package points at.

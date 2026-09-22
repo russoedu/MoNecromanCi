@@ -20,7 +20,7 @@ jest.mock('nx/release', () => ({
 }))
 jest.mock('node:child_process', () => ({ execFileSync: jest.fn() }))
 
-import PythonVersionActions from './versionActions'
+import PythonVersionActions from './python-version.repository'
 
 const mockExecFileSync = jest.mocked(execFileSync)
 

@@ -1,9 +1,9 @@
 import { readProjectConfiguration, type Tree } from '@nx/devkit'
 import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing'
 import appGenerator from './application/generator'
-import internalLibraryGenerator from './internalLibrary/generator'
+import internalLibraryGenerator from './internal-library/generator'
 import libraryGenerator from './library/generator'
-import { ROOT_PUBSPEC } from '../internal/workspace'
+import { ROOT_PUBSPEC } from '../internal/workspace.use-case'
 
 let tree: Tree
 

@@ -1,4 +1,4 @@
-import { pythonCommand } from './pythonCommand'
+import { pythonCommand } from './python-command.algorithm'
 
 describe('pythonCommand', () => {
   const originalPlatform = process.platform

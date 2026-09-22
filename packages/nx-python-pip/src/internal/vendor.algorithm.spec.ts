@@ -1,4 +1,4 @@
-import { addPackagesToWheelTarget, parseVendorEntries } from './vendor'
+import { addPackagesToWheelTarget, parseVendorEntries } from './vendor.algorithm'
 
 describe('parseVendorEntries', () => {
   it('extracts project names from a [tool.mnci-python-pip] vendor table', () => {

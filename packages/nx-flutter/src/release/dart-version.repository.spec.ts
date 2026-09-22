@@ -1,6 +1,6 @@
 import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing'
 import type { Tree } from '@nx/devkit'
-import DartVersionActions from './versionActions'
+import DartVersionActions from './dart-version.repository'
 
 const PUBSPEC = `name: shared
 version: 1.2.3

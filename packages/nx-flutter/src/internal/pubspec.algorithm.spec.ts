@@ -1,4 +1,4 @@
-import { readPubspecVersion, withWorkspaceResolution, writePubspecVersion } from './pubspec'
+import { readPubspecVersion, withWorkspaceResolution, writePubspecVersion } from './pubspec.algorithm'
 
 /** A pubspec shaped exactly like the one `flutter create` writes. */
 const GENERATED = `name: shared

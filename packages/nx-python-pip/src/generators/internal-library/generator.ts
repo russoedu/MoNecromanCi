@@ -4,7 +4,7 @@ import {
   pythonPyprojectToml,
   pythonSampleModule,
   pythonSampleTest,
-} from '../../internal/pythonProject'
+} from '../../internal/python-project.algorithm'
 import type { InternalLibraryGeneratorSchema } from './schema.d'
 
 /**

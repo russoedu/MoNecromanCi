@@ -4,7 +4,7 @@ import {
   pythonPyprojectToml,
   pythonSampleModule,
   pythonSampleTest,
-} from './pythonProject'
+} from './python-project.algorithm'
 
 /** The `nx-release-publish` target for a publishable Python library (twine). */
 const PUBLISH_TARGET = {

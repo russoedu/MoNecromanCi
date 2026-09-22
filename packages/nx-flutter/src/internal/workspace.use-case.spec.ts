@@ -6,7 +6,7 @@ import {
   memberAnalysisOptions,
   ROOT_ANALYSIS_OPTIONS,
   ROOT_PUBSPEC,
-} from './workspace'
+} from './workspace.use-case'
 
 let tree: Tree
 

@@ -2,7 +2,7 @@ import type { ExecutorContext } from '@nx/devkit'
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { pythonCommand } from '../../internal/pythonCommand'
+import { pythonCommand } from '../../internal/python-command.algorithm'
 import buildExecutor from './executor'
 
 jest.mock('node:child_process', () => ({ spawnSync: jest.fn() }))

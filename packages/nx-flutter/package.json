@@ -1,7 +1,7 @@
 {
   "name": "@mnci/nx-flutter",
   "version": "0.1.0",
-  "description": "An Nx plugin for Flutter/Dart projects built on Dart pub workspaces — one root pubspec.yaml, one lockfile, flutter analyze/test/build web.",
+  "description": "An Nx plugin for Flutter/Dart projects built on Dart pub workspaces \u2014 one root pubspec.yaml, one lockfile, flutter analyze/test/build web.",
   "publishConfig": {
     "access": "public"
   },
@@ -28,7 +28,7 @@
     "executors.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
+    "build": "node -e \"const fs=require('node:fs');for(const t of ['dist','tsconfig.lib.tsbuildinfo'])fs.rmSync(t,{recursive:true,force:true})\" && tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint ."

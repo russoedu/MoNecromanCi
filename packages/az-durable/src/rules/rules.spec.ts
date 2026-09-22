@@ -1,8 +1,8 @@
 import { RuleTester } from 'eslint'
 import * as tsParser from '@typescript-eslint/parser'
-import { noNondeterministicOrchestrator } from './noNondeterministicOrchestrator.js'
-import { noUntypedActivityHandler } from './noUntypedActivityHandler.js'
-import { requireYieldStar } from './requireYieldStar.js'
+import { noNondeterministicOrchestrator } from './no-nondeterministic-orchestrator.policy.js'
+import { noUntypedActivityHandler } from './no-untyped-activity-handler.policy.js'
+import { requireYieldStar } from './require-yield-star.policy.js'
 import type { Rule } from './shared.js'
 
 const tester = new RuleTester({

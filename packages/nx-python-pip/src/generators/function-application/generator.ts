@@ -5,8 +5,8 @@ import {
   PYTHON_FUNCTION_APP_GREETING,
   pythonFunctionAppGreetingTest,
   pythonFunctionAppMain,
-} from '../../internal/azureFunctionApp'
-import { pythonModuleDirectory } from '../../internal/pythonProject'
+} from '../../internal/azure-function-app.config'
+import { pythonModuleDirectory } from '../../internal/python-project.algorithm'
 import type { FunctionAppGeneratorSchema } from './schema.d'
 
 /**

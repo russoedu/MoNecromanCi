@@ -3,7 +3,7 @@ import {
   pythonPyprojectToml,
   pythonSampleModule,
   pythonSampleTest,
-} from './pythonProject'
+} from './python-project.algorithm'
 
 describe('pythonModuleDirectory', () => {
   it('replaces hyphens with underscores', () => {

@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { ExecutorContext } from '@nx/devkit'
-import { projectRootFrom } from '../../internal/executorContext'
-import { runFlutter } from '../../internal/runFlutter'
+import { projectRootFrom } from '../../internal/executor-context.mapper'
+import { runFlutter } from '../../internal/flutter.client'
 import type { TestExecutorSchema } from './schema.d'
 
 /**

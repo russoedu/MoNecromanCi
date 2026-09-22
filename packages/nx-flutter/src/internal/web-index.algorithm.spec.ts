@@ -1,4 +1,4 @@
-import { withHtmlLang } from './webIndex'
+import { withHtmlLang } from './web-index.algorithm'
 
 /** The `<html>` tag exactly as `flutter create --platforms=web` emits it. */
 const FLUTTER_INDEX = `<!DOCTYPE html>
