@@ -19,6 +19,17 @@ const packageRoot = join(__dirname, '..')
 const eslintBin = join(packageRoot, '..', '..', 'node_modules', '.bin', 'eslint')
 
 const FIXTURES: Record<string, string> = {
+  // A self-contained tsconfig at the WORKSPACE ROOT, so the TypeScript resolver
+  // that `import-x/no-cycle` uses stops walking here.
+  //
+  // Without it the walk continues into the OS temp directory, which these
+  // workspaces are created inside. Anything a previous tool left there - a
+  // generated workspace's own tsconfig.json, say - is picked up instead, and if
+  // it `extends` a file that is not there the resolver throws and EVERY
+  // assertion in the suite fails with "eslint produced no JSON". CI never sees
+  // it because CI's temp directory is empty; a developer's is not.
+  'tsconfig.json':
+    '{\n  "compilerOptions": {\n    "target": "es2021",\n    "module": "commonjs",\n    "moduleResolution": "node",\n    "strict": true,\n    "noEmit": true\n  },\n  "include": []\n}\n',
   'packages/app/tsconfig.json':
     '{\n  "compilerOptions": {\n    "target": "es2021",\n    "module": "commonjs",\n    "moduleResolution": "node",\n    "strict": true,\n    "noEmit": true\n  },\n  "include": ["src/**/*.ts"]\n}\n',
   'packages/app/src/index.ts':                    "export { fee } from './billing'\nexport { add } from './arithmetic'\n",
