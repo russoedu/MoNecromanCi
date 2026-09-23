@@ -131,6 +131,7 @@ function registerPythonGraphPlugin (workspaceRoot: string): void {
 export const PYTHON_REQUIREMENTS_DEV = `build
 twine
 ruff
+mypy
 pytest
 pip-audit
 `

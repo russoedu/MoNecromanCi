@@ -69,7 +69,16 @@ describe('runAdd python', () => {
     )
 
     // requirements-dev.txt (the fixed toolchain) written once.
-    expect(readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')).toContain('pytest')
+    const requirementsDev = readFileSync(join(workspaceRoot, 'requirements-dev.txt'), 'utf8')
+
+    expect(requirementsDev).toContain('pytest')
+    /*
+     * mypy is part of the toolchain, not an optional extra: every generated
+     * Python project carries a `typecheck` target that shells out to it, so a
+     * workspace whose `python:install` did not install it would fail a target
+     * mnci itself wrote.
+     */
+    expect(requirementsDev).toContain('mypy')
     // No hand-authored pyproject.toml/module — that is entirely the plugin's job.
     expect(() => readFileSync(join(workspaceRoot, 'apps/svc/pyproject.toml'), 'utf8')).toThrow()
 

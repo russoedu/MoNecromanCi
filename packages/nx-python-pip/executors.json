@@ -16,6 +16,11 @@
       "schema": "./dist/executors/lint/schema.json",
       "description": "Run ruff check ."
     },
+    "typecheck": {
+      "implementation": "./dist/executors/typecheck/executor",
+      "schema": "./dist/executors/typecheck/schema.json",
+      "description": "Run mypy against the project, configured by its own [tool.mypy] block."
+    },
     "publish": {
       "implementation": "./dist/executors/publish/executor",
       "schema": "./dist/executors/publish/schema.json",
