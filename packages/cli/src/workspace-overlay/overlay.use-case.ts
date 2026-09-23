@@ -168,8 +168,24 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   if (registry.kind === 'npm') {
     return `; Publish authentication for the public npm registry.
 ;
-; NODE_AUTH_TOKEN is exported by the generated CI's release step; an unset value
-; is harmless locally, so no token is needed for day-to-day work.
+; NODE_AUTH_TOKEN is exported by the generated CI's release step. Nothing needs
+; it for day-to-day work here - installing, building and testing never
+; authenticate.
+;
+; It is NOT harmless the moment you DO want to authenticate from this directory,
+; which an earlier version of this comment claimed. A project .npmrc wins over
+; your user one, so with NODE_AUTH_TOKEN unset this line hands npm an empty
+; token and overrides 'npm login': inside this repo 'npm whoami' fails with a
+; 401 and any write is refused. The refusal is easy to misread, because for a
+; scoped package the registry answers a write you are not allowed to make with
+;
+;   npm error 404 Not Found - PUT https://registry.npmjs.org/@scope%2fthing
+;
+; and everything above it is npm listing what it intended to send, so a long
+; healthy-looking run still changes nothing.
+;
+; To publish or deprecate by hand, run it from outside this directory, or export
+; a real token first.
 //registry.npmjs.org/:_authToken=\${NODE_AUTH_TOKEN}
 
 ; There is deliberately NO '${scope}:registry' line here. npmjs.org is already
@@ -2339,6 +2355,49 @@ const PACK_APPS_GUARD = 'node -e "const fs=require(\'node:fs\');fs.mkdirSync(\'d
  * @throws Never - pure string building.
  * @typeParam None - this function has no generic type parameters.
  */
+/**
+ * Proves npm will accept this workspace's token BEFORE `nx release` does
+ * anything irreversible.
+ *
+ * @remarks
+ * `nx release` versions, tags, pushes the tag, and only THEN publishes. So a
+ * missing or rejected token does not simply fail the run - it leaves a version
+ * tagged with nothing on the registry, and because the next release resolves
+ * the current version from the newest tag, that version number is skipped
+ * FOREVER. A real workspace lost `0.0.2` exactly that way, which is where this
+ * guard comes from.
+ *
+ * `npm whoami` is the cheapest thing that exercises the whole auth path at
+ * once: the secret reaching the step, `.npmrc`'s `${NODE_AUTH_TOKEN}`
+ * expanding, and the registry accepting the token. Checking the variable alone
+ * would pass for an expired or under-scoped token, which fails at exactly the
+ * same late moment.
+ *
+ * The empty-token branch is separate from the rejected-token branch on
+ * purpose: an unset secret renders as blank in the step's env log rather than
+ * as `***`, so naming that case explicitly turns the most common setup mistake
+ * into one sentence instead of a registry error to interpret.
+ *
+ * PUBLIC NPM ONLY. An Azure Artifacts feed answers reads anonymously, so
+ * `whoami` there proves nothing about whether a WRITE would be accepted - and
+ * its auth story is Basic-with-a-PAT, which this repo has already been wrong
+ * about once. A guard that passes without testing anything is worse than no
+ * guard, so the Azure case deliberately gets none.
+ */
+const NPM_AUTH_PREFLIGHT = 'node -e "const fs=require(\'node:fs\'),cp=require(\'node:child_process\');if(fs.globSync(\'packages/*/package.json\').length===0){console.log(\'No npm packages to release - skipping.\');process.exit(0)}if(!process.env.NODE_AUTH_TOKEN){console.error(\'NPM_TOKEN is empty or unset, so the publish would fail AFTER nx release has already tagged. Add it as a repository secret named exactly NPM_TOKEN - under Actions, not the Dependabot or Codespaces tab, and not an Environment secret. Use an npm Automation token - a Publish token is refused by 2FA in CI.\');process.exit(1)}const r=cp.spawnSync(\'npm\',[\'whoami\',\'--registry=https://registry.npmjs.org/\'],{encoding:\'utf8\',shell:process.platform===\'win32\'});if(r.status!==0){console.error(\'NPM_TOKEN is set but the registry rejected it - \'+((r.stderr||\'\')+(r.stdout||\'\')).trim()+\'. Check that it has not expired and that it grants publish rights on this scope.\');process.exit(1)}console.log(\'npm auth OK as \'+r.stdout.trim())"'
+
+/**
+ * The preflight step body for a registry kind, or `''` where none applies.
+ *
+ * @param registryKind - The workspace's registry kind.
+ * @returns The `node -e` command, or `''` for a non-npm registry.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function npmAuthPreflight (registryKind: RegistryConfig['kind']): string {
+  return registryKind === 'npm' ? NPM_AUTH_PREFLIGHT : ''
+}
+
 const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').spawnSync(\'git\',[\'rev-parse\',\'--is-shallow-repository\'],{encoding:\'utf8\'});if(r.status!==0){console.error(\'Could not determine whether this checkout has full history (git rev-parse --is-shallow-repository failed) - refusing to release. \'+(r.stderr||\'\').trim());process.exit(1)}if(r.stdout.trim()===\'true\'){console.error(\'This checkout is a shallow clone. nx release resolves the current version of each package from its git tag, and silently falls back to the permanently-stale on-disk version when a tag cannot be found - which can propose, and publish, a version DOWNGRADE. Fetch full history before releasing - set fetchDepth (Azure) or fetch-depth (GitHub) to 0.\');process.exit(1)}"'
 
 /**
@@ -2878,7 +2937,21 @@ steps:
   - script: ${SHALLOW_CLONE_GUARD}
     displayName: Verify this is a full checkout (nx release needs the real tag history)
     condition: ${onMain}
-
+${
+  npmAuthPreflight(registryKind)
+    ? `
+  # Prove npm will accept us BEFORE anything irreversible happens. nx release
+  # tags first and publishes last, so a rejected token leaves a version tagged
+  # with nothing on the registry - and that number is then skipped forever,
+  # because the next run resolves the current version from the newest tag.
+  - script: ${npmAuthPreflight(registryKind)}
+    displayName: Preflight — npm must accept the token before anything is tagged
+    condition: ${onMain}
+    env:
+      NODE_AUTH_TOKEN: $(NPM_TOKEN)
+`
+    : ''
+}
   # Version + tag + publish, in one release, for npm (packages/*), Python
   # (python-packages/*) AND C# (packages/*/*.csproj) — conventional commits,
   # tag-only push. Portable guard: nx release errors on an empty scope, so
@@ -3169,7 +3242,22 @@ jobs:
       - run: ${SHALLOW_CLONE_GUARD}
         name: Verify this is a full checkout (nx release needs the real tag history)
         if: \${{ ${onMain} }}
-
+${
+  npmAuthPreflight(registryKind)
+    ? `
+      # Prove npm will accept us BEFORE anything irreversible happens. nx
+      # release tags first and publishes last, so a rejected token leaves a
+      # version tagged with nothing on the registry - and that number is then
+      # skipped forever, because the next run resolves the current version
+      # from the newest tag.
+      - run: ${npmAuthPreflight(registryKind)}
+        name: Preflight — npm must accept the token before anything is tagged
+        if: \${{ ${onMain} }}
+        env:
+          NODE_AUTH_TOKEN: \${{ secrets.NPM_TOKEN }}
+`
+    : ''
+}
       # Version + tag + publish, in one release, for npm (packages/*), Python
       # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
       # commits, tag-only push. Portable guard: nx release errors on an empty

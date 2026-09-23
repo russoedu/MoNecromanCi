@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'js-yaml'
-import { ACTION_VERSIONS, DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, readMnciConfig } from './workspace-overlay'
+import { ACTION_VERSIONS, DOTNET_SDK_VERSION, FLUTTER_SDK_VERSION, githubActionsYaml, nugetFeedUrl, pythonPublishUrl, readMnciConfig } from './workspace-overlay'
 
 /**
  * This repo's own CI must actually run the pipeline mnci ships.
@@ -111,10 +111,26 @@ const actual = yaml.load(
   readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8'),
 ) as Workflow
 
-// Generated with this repo's own persisted options, so the comparison is against
-// what `mnci upgrade` would write here — not against some default.
+/*
+ * Generated with this repo's own persisted options, so the comparison is
+ * against what `mnci upgrade` would write HERE.
+ *
+ * Every argument matters, and for a while only the first was passed. This repo
+ * persists `registry.kind: 'npm'`, while the parameter DEFAULTS to
+ * 'azure-artifacts' - so the generated workflow being compared was one mnci
+ * would never write here, and any step that exists only for the public-npm
+ * registry was invisible to this test. Caught when an npm-only guard was added
+ * and this file stayed green.
+ */
 const persisted = readMnciConfig(repoRoot)
-const generated = yaml.load(githubActionsYaml(persisted.agent ?? 'ubuntu-latest')) as Workflow
+const registry = persisted.registry ?? { kind: 'npm' as const }
+const generated = yaml.load(githubActionsYaml(
+  persisted.agent ?? 'ubuntu-latest',
+  pythonPublishUrl(registry),
+  registry.kind,
+  persisted.ci === 'azure' ? 'both' : (persisted.ci ?? 'github'),
+  nugetFeedUrl(registry),
+)) as Workflow
 
 describe("this repo's ci.yml against the pipeline overlay.ts generates", () => {
   it('parsed both workflows and found a non-trivial number of steps', () => {
