@@ -341,14 +341,22 @@ const CSHARP_VERSION_ACTIONS_PATH = 'tools/csharp-version-actions.cjs'
  */
 const CSHARP_VERSION_ACTIONS = `'use strict'
 
-const { join } = require('node:path')
+const { posix } = require('node:path')
 const { VersionActions } = require('nx/release')
 
 const VERSION_TAG = /<Version>([^<]*)<\\/Version>/
 
+/*
+ * posix.join, never plain join. An Nx Tree path is workspace-relative and
+ * forward-slashed on EVERY platform, while join emits a backslashed path on
+ * Windows. This value is handed back to nx release for changelog and manifest
+ * bookkeeping, and interpolated into the user-facing error below, so it was
+ * wrong on every Windows machine. The same bug was already fixed in the
+ * Python and Flutter plugins' release actions; this third copy was missed.
+ */
 function findCsproj (tree, root) {
   const name = tree.children(root).find((entry) => entry.endsWith('.csproj'))
-  return name ? join(root, name) : null
+  return name ? posix.join(root, name) : null
 }
 
 /**

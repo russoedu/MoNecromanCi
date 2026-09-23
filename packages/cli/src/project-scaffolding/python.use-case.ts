@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNx, runShell } from '../nx-workspace'
+import { PYTHON_GRAPH_PLUGIN, withPythonGraphPlugin } from '../workspace-overlay'
 import { promptText } from '../terminal'
-import { fileExists, writeFileEnsured } from '../file-system'
+import { fileExists, readJson, toJson, writeFileEnsured } from '../file-system'
 import { logger } from '../terminal'
 import {
   addProjectJsonTargets,
@@ -45,14 +46,25 @@ function pythonPipPluginSpec (): string {
 }
 
 /**
- * Ensures the `@mnci/nx-python-pip` Nx plugin is installed.
+ * Ensures the `@mnci/nx-python-pip` Nx plugin is installed AND registered.
  *
  * @remarks
- * Unlike `@nxlv/python`, this plugin needs no `nx.json` `plugins`
- * registration: its generators/executors are explicit, resolved by plain
- * Node module lookup against its `generators.json`/`executors.json` —
- * registration in `plugins` is only for inference plugins that scan the
- * filesystem, which this is not. A plain `npm install` is the whole story.
+ * The generators and executors need no `nx.json` `plugins` registration —
+ * they resolve by plain Node module lookup against the plugin's
+ * `generators.json`/`executors.json`, so a plain `npm install` is the whole
+ * story for them.
+ *
+ * Its DEPENDENCY GRAPH does need it. Nx calls `createDependencies` only for a
+ * registered plugin, so without the entry a Python project has no edges: `nx
+ * affected` cannot know that changing a Python library should retest the
+ * projects that consume it, and an affected-scoped verify run passes having
+ * checked none of them.
+ *
+ * Registered HERE rather than only in the overlay because this is where the
+ * plugin arrives. `applyOverlay` registers it too, for a workspace that
+ * already had Python before this existed, but it runs at `new`/`upgrade` time
+ * — which is never during the `mnci add python-*` that first installs the
+ * plugin.
  *
  * @param workspaceRoot - Absolute path to the workspace.
  * @returns Nothing.
@@ -60,16 +72,46 @@ function pythonPipPluginSpec (): string {
  * @typeParam None - this function has no generic type parameters.
  */
 function ensurePythonPipPlugin (workspaceRoot: string): void {
-  if (hasPlugin(workspaceRoot, '@mnci/nx-python-pip')) {
+  if (!hasPlugin(workspaceRoot, '@mnci/nx-python-pip')) {
+    const spec = pythonPipPluginSpec()
+    logger.step(`Installing the Python toolchain plugin (${spec})`)
+    if (
+      runShell('npm', ['install', '--save-dev', spec, '--no-audit', '--no-fund'], workspaceRoot) !== 0
+    ) {
+      throw new Error('npm install of @mnci/nx-python-pip failed')
+    }
+  }
+  registerPythonGraphPlugin(workspaceRoot)
+}
+
+/**
+ * Registers the Python dependency-graph plugin in `nx.json`.
+ *
+ * @remarks
+ * Idempotent, and written only when it changes something — `mnci add` already
+ * rewrites more of `nx.json` than a reviewer wants to read, and a no-op write
+ * here would add another line of noise to every Python add after the first.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Never - a missing or unreadable `nx.json` is left alone.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function registerPythonGraphPlugin (workspaceRoot: string): void {
+  const nxJsonPath = join(workspaceRoot, 'nx.json')
+  if (!fileExists(nxJsonPath)) {
     return
   }
-  const spec = pythonPipPluginSpec()
-  logger.step(`Installing the Python toolchain plugin (${spec})`)
-  if (
-    runShell('npm', ['install', '--save-dev', spec, '--no-audit', '--no-fund'], workspaceRoot) !== 0
-  ) {
-    throw new Error('npm install of @mnci/nx-python-pip failed')
+  const nxJson = readJson<Record<string, unknown>>(nxJsonPath)
+  const patched = withPythonGraphPlugin(nxJson, true)
+  if ((patched.plugins as unknown[] | undefined)?.includes(PYTHON_GRAPH_PLUGIN) !== true) {
+    return
   }
+  if ((nxJson.plugins as unknown[] | undefined)?.includes(PYTHON_GRAPH_PLUGIN) === true) {
+    return
+  }
+  logger.step(`Registering ${PYTHON_GRAPH_PLUGIN} so nx affected sees Python dependencies`)
+  writeFileEnsured(nxJsonPath, toJson(patched))
 }
 
 /**
