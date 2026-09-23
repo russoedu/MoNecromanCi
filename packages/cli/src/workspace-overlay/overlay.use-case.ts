@@ -495,6 +495,58 @@ export function withSharedGlobals (nxJson: Record<string, unknown>): Record<stri
 }
 
 /**
+ * The `nx.json` `plugins` entry for `@mnci/nx-python-pip`'s dependency graph.
+ *
+ * @remarks
+ * A bare string rather than the `{ plugin, options }` form: it takes no
+ * options, and the string form is what Nx's own docs show for a plugin that
+ * contributes only `createDependencies`.
+ */
+export const PYTHON_GRAPH_PLUGIN = '@mnci/nx-python-pip/graph'
+
+/**
+ * Returns a copy of an `nx.json` object with the Python graph plugin
+ * registered, when the workspace actually has the plugin.
+ *
+ * @remarks
+ * The GATE is the point, and it is not a nicety. Nx resolves every entry in
+ * `plugins` while constructing the project graph, and a name it cannot resolve
+ * is a hard failure - so registering this unconditionally would break every
+ * generated workspace that has no Python in it, which is most of them. The
+ * plugin arrives only when `mnci add python-*` installs it, so that is the
+ * signal this reads.
+ *
+ * Without the registration the plugin still supplies generators, executors and
+ * release actions - those resolve by plain module lookup through
+ * `generators.json`/`executors.json` - but contributes NO graph edges, because
+ * `createDependencies` is only called for a registered plugin. That is the
+ * difference between `nx affected` knowing a Python library's consumers and
+ * silently testing none of them.
+ *
+ * Idempotent and additive, like {@link withEslintPlugin}: a workspace that
+ * registered it by hand keeps its own entry, and `mnci upgrade` cannot
+ * accumulate duplicates.
+ *
+ * @param nxJson - The parsed `nx.json`.
+ * @param pluginInstalled - Whether the workspace declares
+ * `@mnci/nx-python-pip`.
+ * @returns A new object, with the plugin registered when it is installed.
+ * @throws Never - performs a pure object merge with no I/O.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withPythonGraphPlugin (
+  nxJson: Record<string, unknown>,
+  pluginInstalled: boolean,
+): Record<string, unknown> {
+  const plugins = (nxJson.plugins as unknown[] | undefined) ?? []
+  if (!pluginInstalled || plugins.some(entry => pluginName(entry) === PYTHON_GRAPH_PLUGIN)) {
+    return nxJson.plugins === undefined ? nxJson : { ...nxJson, plugins }
+  }
+
+  return { ...nxJson, plugins: [...plugins, PYTHON_GRAPH_PLUGIN] }
+}
+
+/**
  * Returns a copy of an `nx.json` object with the release block applied.
  *
  * @remarks
@@ -2331,20 +2383,94 @@ function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): strin
 }
 
 /**
- * Injected into {@link releaseGuard}: when there are Python packages and a
- * configured Azure feed, export twine publish credentials (the raw PAT,
- * decoded from the base64 value both providers read from a `PAT` env var).
+ * The env var each registry kind carries a PyPI-side credential in.
  *
- * @param pythonPublishUrl - The twine upload URL for Python packages, or
- * `undefined` to leave Python publishing unconfigured (public npm).
- * @returns The `node -e` fragment, or `''` when there is no Python feed.
+ * @remarks
+ * Deliberately NOT the same variable as npm's. Azure Artifacts' feed is
+ * multi-protocol, so one PAT authenticates both; public npm and public PyPI
+ * are unrelated services with unrelated credentials, and conflating them is
+ * how a workspace ends up sending its npm automation token to PyPI.
+ */
+export const PYPI_TOKEN_VARIABLE = 'PYPI_TOKEN'
+
+/**
+ * The extra `env:` line the release step needs to carry a PyPI token.
+ *
+ * @remarks
+ * Only for the public-npm registry kind. An Azure Artifacts feed publishes
+ * Python through the SAME multi-protocol feed and the same PAT the step
+ * already exports, so adding a second variable there would suggest a second
+ * credential exists when it does not.
+ *
+ * Rendered from one function for both providers, so the variable name cannot
+ * drift between them - the same reason {@link npmAuthEnvVariable} exists.
+ *
+ * @param registryKind - The workspace's registry kind.
+ * @param variableReference - Renders a named secret in the calling provider's
+ * own syntax (Azure `$(NAME)`, GitHub `${{ secrets.NAME }}`).
+ * @param indent - The indentation the provider's `env:` block uses.
+ * @returns The rendered line, or `''` when no PyPI token applies.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pypiTokenEnvLine (
+  registryKind: RegistryConfig['kind'],
+  variableReference: (name: string) => string,
+  indent: string,
+): string {
+  return registryKind === 'npm'
+    ? `
+${indent}${PYPI_TOKEN_VARIABLE}: ${variableReference(PYPI_TOKEN_VARIABLE)}`
+    : ''
+}
+
+/**
+ * Injected into {@link releaseGuard}: exports twine publish credentials when
+ * the workspace has Python packages.
+ *
+ * @remarks
+ * TWO genuinely different mechanisms, which is why this is not one template
+ * with a swapped URL.
+ *
+ * Azure Artifacts is a multi-protocol feed: the same org/project/feed that
+ * serves npm serves Python, so the upload URL is derived and the credential is
+ * the same PAT, decoded from the base64 value both providers read.
+ *
+ * Public PyPI takes an API token under the literal username `__token__` - that
+ * spelling is PyPI's own convention, not a placeholder - and needs NO
+ * repository URL, since twine's default already points at
+ * `upload.pypi.org/legacy/`. Writing one would be a chance to get it wrong for
+ * no gain. `TWINE_NON_INTERACTIVE` is set because twine otherwise PROMPTS for
+ * a missing password, and a prompt on a CI agent is a build that hangs until
+ * it times out rather than one that fails.
+ *
+ * The empty-token check is a fail-fast rather than a credential probe. A HEAD
+ * against the upload endpoint was considered and rejected: `twine check` only
+ * validates the artefact, and an authenticated probe against the real registry
+ * means a release step that can fail for reasons unrelated to this workspace.
+ * The failure worth catching cheaply is the common one - the secret was never
+ * configured - and that is knowable without a network call. A token that is
+ * present but wrong still fails at upload, loudly, which is correct.
+ *
+ * @param pythonPublishUrl - The twine upload URL for an Azure Artifacts feed,
+ * or `undefined` for any other registry.
+ * @param registryKind - The workspace's registry kind.
+ * @returns The `node -e` fragment for the workspace's registry kind.
  * @throws Never - pure string mapping.
  * @typeParam None - this function has no generic type parameters.
  */
-function pythonPublishEnvFragment (pythonPublishUrl?: string): string {
-  return pythonPublishUrl
-    ? `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
-    : ''
+function pythonPublishEnvFragment (
+  pythonPublishUrl: string | undefined,
+  registryKind: RegistryConfig['kind'],
+): string {
+  if (pythonPublishUrl !== undefined) {
+    return `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+  }
+  if (registryKind !== 'npm') {
+    return ''
+  }
+
+  return `if(hasPython){if(!process.env.${PYPI_TOKEN_VARIABLE}){console.error('This workspace has '+pythonCount+' Python package(s) to publish but ${PYPI_TOKEN_VARIABLE} is empty. Add a PyPI API token as a secret named ${PYPI_TOKEN_VARIABLE}, or remove the Python packages from release.projects.');process.exit(1)}env.TWINE_USERNAME='__token__';env.TWINE_PASSWORD=process.env.${PYPI_TOKEN_VARIABLE};env.TWINE_NON_INTERACTIVE='1'}`
 }
 
 /**
@@ -2771,11 +2897,11 @@ steps:
   # it whenever more than one package is releasable. The guard below fails
   # the run rather than under-bumping silently: clear the variable back to
   # '' once the override is no longer needed.
-  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+  - script: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl, registryKind), nugetPublishEnvFragment(nugetFeedUrl))}
     displayName: Release — version, tag and publish (npm + Python + C#)
     condition: ${onMain}
     env:
-      ${npmAuthName}: ${npmAuthValue}
+      ${npmAuthName}: ${npmAuthValue}${pypiTokenEnvLine(registryKind, name => `$(${name})`, ' '.repeat(6))}
       RELEASE_SPECIFIER: $(RELEASE_SPECIFIER)
 
   # nx release's own git push (release.git.push) is deliberately left off: it
@@ -3073,11 +3199,11 @@ jobs:
       # why every other provider combination keeps the explicit push step below.`
           : ''
       }
-      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl), nugetPublishEnvFragment(nugetFeedUrl))}
+      - run: ${releaseGuard(pythonPublishEnvFragment(pythonPublishUrl, registryKind), nugetPublishEnvFragment(nugetFeedUrl))}
         name: Release — version, tag${githubReleases ? ', publish and GitHub Release' : ' and publish'} (npm + Python + C#)
         if: \${{ ${onMain} }}
         env:
-          ${npmAuthName}: ${npmAuthValue}
+          ${npmAuthName}: ${npmAuthValue}${pypiTokenEnvLine(registryKind, name => `\${{ secrets.${name} }}`, ' '.repeat(10))}
           RELEASE_SPECIFIER: \${{ vars.RELEASE_SPECIFIER }}${
             githubReleases
               ? `
@@ -3442,7 +3568,23 @@ export function applyOverlay (
   }
   const sync = { ...(nxJson.sync as Record<string, unknown> | undefined), ...SYNC_CONFIG }
   const mnci = { ...(nxJson.mnci as Record<string, unknown> | undefined), ...mnciConfig(options) }
-  const patched = withSharedGlobals(withEslintPlugin(withReleaseConfig(nxJson, options.ci)))
+  /*
+   * Read from the root manifest rather than assumed: the Python plugin arrives
+   * only when `mnci add python-*` installs it, and registering a plugin Nx
+   * cannot resolve is a hard failure of the whole project graph.
+   */
+  const rootManifest = readJson<{
+    dependencies?:    Record<string, string>
+    devDependencies?: Record<string, string>
+  }>(join(workspaceRoot, 'package.json'))
+  const hasPythonPlugin =
+    (rootManifest.devDependencies ?? {})['@mnci/nx-python-pip'] !== undefined ||
+    (rootManifest.dependencies ?? {})['@mnci/nx-python-pip'] !== undefined
+  const withRelease = withReleaseConfig(nxJson, options.ci)
+  const patched = withPythonGraphPlugin(
+    withSharedGlobals(withEslintPlugin(withRelease)),
+    hasPythonPlugin,
+  )
   onProgress('nx.json — release, sync, generators, shared inputs, mnci block')
   writeFileEnsured(nxJsonPath, toJson({ ...patched, generators, sync, mnci }))
 

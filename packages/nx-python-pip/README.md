@@ -35,9 +35,9 @@ machine — same way `@nx/js`'s executors assume `node` is already there.
 
 | Generator              | Location default | Writes                                                                                                                                                                                                 |
 | ---------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `application`          | `apps/<name>`    | `pyproject.toml` (hatchling) + `project.json` (`lint`/`test`/`build`) + a sample module and pytest                                                                                                     |
+| `application`          | `apps/<name>`    | `pyproject.toml` (hatchling, incl. a strict `[tool.mypy]`) + `project.json` (`lint`/`typecheck`/`test`/`build`) + a sample module and pytest                                                                                                     |
 | `library`              | `libs/<name>`    | Same as `application`, plus `nx-release-publish` (twine) and a project-level `release.version.versionActions` override                                                                                 |
-| `internal-library`     | `libs/<name>`    | `lint`/`test` only — no `build`/publish; meant to be **vendored** into a consumer's wheel, not built or released on its own                                                                            |
+| `internal-library`     | `libs/<name>`    | `lint`/`typecheck`/`test` only — no `build`/publish; meant to be **vendored** into a consumer's wheel, not built or released on its own                                                                            |
 | `function-application` | `apps/<name>`    | Azure Functions **v2** programming model (`function_app.py` + `host.json` + `requirements.txt` + a tested pure helper) — no `pyproject.toml`/build target, since the deployable is source, not a wheel |
 
 ```sh
@@ -54,6 +54,7 @@ nx g @mnci/nx-python-pip:function-application my-function-app
 | `build`   | `python -m build` — vendoring-aware (see below)                                                                                        |
 | `test`    | `python -m pip install -e .` (unless `installEditable: false`) then `python -m pytest`                                                 |
 | `lint`    | `python -m ruff check .`                                                                                                               |
+| `typecheck` | `python -m mypy .` — strictness comes from the project's own `[tool.mypy]`, never from flags here, so a hand-run `mypy` matches the target |
 | `publish` | `python -m twine upload --skip-existing dist/*`, reading `TWINE_USERNAME`/`TWINE_PASSWORD`/`TWINE_REPOSITORY_URL` from the environment |
 
 Every command is invoked as `<python> -m <tool>`, never a hard-coded venv
@@ -67,6 +68,31 @@ outright there.
 `publish` accepts a real, typed `dryRun` option — `nx release publish
 --dry-run` sets it automatically on every `nx-release-publish` executor, so
 a dry run cleanly previews the twine command instead of running it.
+
+## Type checking
+
+Every generated project carries a `typecheck` target and a **strict**
+`[tool.mypy]` block in its own `pyproject.toml`. The name matters: a generated
+workspace's CI already verifies `lint,typecheck,test,build`, and Nx **skips**
+projects that have no target of a given name and still exits 0 — so before
+this, Python was type-checked by nothing while the workspace reported green.
+
+`strict = true` is measured rather than aspirational: the sample module and
+test this plugin writes are both fully annotated, so a freshly generated
+project passes `mypy --strict` with no findings.
+
+There is exactly one relaxation, `disable_error_code = ["import-untyped"]`.
+Importing a library that ships no type stubs otherwise fails on code you wrote
+normally and cannot fix. It is deliberately narrower than
+`ignore_missing_imports`: a module that genuinely cannot be resolved still
+fails, as `import-not-found`, so a typo'd or un-installed import does not
+silently become `Any`. Note that a **vendored** internal lib is one of those —
+it resolves only after the workspace-wide editable install (`npm run
+python:install` in an `@mnci/cli` workspace), the same precondition the `test`
+target already has.
+
+Both are ordinary settings in a file you own: relax or tighten per project by
+editing the block.
 
 ## Internal-lib vendoring
 

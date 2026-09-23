@@ -1900,6 +1900,11 @@ section('python', ['alt stack'], () => {
     'see log above',
   )
   enforce(
+    'python: mypy --strict runs green across the python projects, out of the box',
+    tryRun('npx nx run-many -t typecheck --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
+    'see log above',
+  )
+  enforce(
     'python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
     tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
     'see log above',

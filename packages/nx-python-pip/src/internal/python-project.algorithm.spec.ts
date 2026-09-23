@@ -34,6 +34,38 @@ describe('pythonPyprojectToml', () => {
     expect(toml).toContain('packages = ["my_svc"]')
     expect(toml).toContain('dependencies = []')
   })
+
+  it('configures mypy as strict, so a generated project is typed from day one', () => {
+    /*
+     * Measured, not aspirational: both templates this generator writes are
+     * fully annotated, so a freshly generated project passes `mypy --strict`
+     * with no findings. Verified by running the real binary against the real
+     * emitted manifest.
+     */
+    const toml = pythonPyprojectToml('my-svc', 'my_svc')
+
+    expect(toml).toContain('[tool.mypy]')
+    expect(toml).toContain('strict = true')
+  })
+
+  it('tolerates a stub-less third-party import, and ONLY that', () => {
+    /*
+     * The one thing that breaks plain strict in practice: importing a library
+     * that ships no type stubs fails as `import-untyped` on code the user
+     * wrote normally and cannot fix - the same class as the jsx-a11y and TOML
+     * relaxations elsewhere in mnci, where a generated project must not fail
+     * its own gate on upstream boilerplate.
+     *
+     * Asserted in BOTH directions. `import-not-found` - a module that
+     * genuinely cannot be resolved - must keep failing, or the relaxation
+     * would quietly turn every typo'd import into `Any`.
+     */
+    const toml = pythonPyprojectToml('my-svc', 'my_svc')
+
+    expect(toml).toContain('disable_error_code = ["import-untyped"]')
+    expect(toml).not.toContain('ignore_missing_imports')
+    expect(toml).not.toContain('import-not-found"]')
+  })
 })
 
 describe('pythonSampleModule + pythonSampleTest', () => {

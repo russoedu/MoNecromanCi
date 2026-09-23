@@ -221,6 +221,36 @@ Four cheap wins, all originally verified absent:
 | 6. ~~`concurrency` group~~           | ✅ done — GitHub gets a concurrency group whose `cancel-in-progress` is an **expression**, not a flat `true`: a superseded PR run is cancelled, but a run on `main` queues instead, because cancelling one part-way can leave a release tag pushed with the publish half done, which no rerun repairs. Azure gets `batch: true` on the main trigger (its nearest YAML equivalent, and it also stops two `nx release` runs racing for a tag); PR-run cancellation there is a branch-policy setting with no YAML form, so it is documented rather than faked | —   |
 | 7. Deploy stage                      | The drop zip is currently the handoff; an optional per-kind deploy would close the loop (see also §6)                                                                                                                                                                                                                                                                                                                                                                                                                                                      | P3  |
 
+### 7e. The Python generator scaffolds at `1.0.0` while the workspace releases from `0.0.1` — P2
+
+**What.** `pythonPyprojectToml` writes `version = "1.0.0"` into every generated
+`pyproject.toml` (`nx-python-pip/src/internal/python-project.algorithm.ts`),
+while every other kind mnci generates starts at `0.0.1` and `nx release`
+resolves versions from git tags rather than from disk.
+
+**Why it matters, and why it is not cosmetic.** `release.git.commit` is
+`false`, so a release tags and publishes without ever writing the bump back —
+which makes the on-disk version *deliberately* stale. The disk value is still
+read in one case: `fallbackCurrentVersionResolver: "disk"`, used when no tag
+exists yet. So the very first release of a Python package resolves its current
+version as `1.0.0` and proposes `1.0.1` / `1.1.0` / `2.0.0`, while an npm
+sibling in the same workspace, from the same commit, proposes `0.0.2`. Two
+packages released together, disagreeing about what "first release" means, from
+one `nx release` invocation.
+
+It is also the exact shape of the tagless-dry-run trap already written up in
+`CLAUDE.md`: a stale disk version producing an authoritative-looking wrong
+answer.
+
+**Not fixed here, deliberately.** Changing the scaffolded version changes what
+every existing generated project would compare against on its next release, and
+the safe migration is not obvious: a workspace that already published `1.0.x`
+from this template must not be moved backwards. The decision needs the user, not
+a default.
+
+**Verify:** generate a Python lib and an npm lib in one workspace with no tags,
+then `npx nx release --dry-run` and read the two proposed versions.
+
 ### 7d. `@nx/rollup` runs swc with source maps off — P3, upstream
 
 **What.** `@nx/rollup`'s swc plugin

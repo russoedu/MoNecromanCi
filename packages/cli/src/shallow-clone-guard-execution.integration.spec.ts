@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,7 +28,18 @@ function extractGuardCommand (): string {
 function run (dir: string): { status: number; stdout: string; stderr: string } {
   const command = extractGuardCommand()
   try {
-    const stdout = execSync(`bash -c ${JSON.stringify(command)}`, {
+    /*
+       * `execFileSync('bash', ['-c', command])`, never
+       * `execSync('bash -c "..."')`. `execSync` runs its argument through the
+       * PLATFORM shell, which on Windows is cmd.exe - and cmd re-parses the
+       * quoting before bash ever sees it, so the whole command arrives
+       * truncated and bash exits 255 with `unexpected EOF while looking for
+       * matching '"'`. Measured: every assertion in this file failed that way
+       * on Windows, so a suite covering the RELEASE path verified nothing on
+       * any developer machine. `execFileSync` passes the argument straight to
+       * the process, with no shell in between.
+       */
+    const stdout = execFileSync('bash', ['-c', command], {
       cwd:      dir,
       encoding: 'utf8',
     })

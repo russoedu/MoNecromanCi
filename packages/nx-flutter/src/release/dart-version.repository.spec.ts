@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing'
 import type { Tree } from '@nx/devkit'
 import DartVersionActions from './dart-version.repository'
@@ -112,9 +114,29 @@ describe('the versionActions path generators stamp onto a project', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const manifest = require('../../package.json') as {
       name:    string
-      exports: Record<string, { default: string }>
+      exports: Record<string, { default: string, types: string }>
     }
     expect(stamped.startsWith(manifest.name)).toBe(true)
-    expect(manifest.exports[subpath]?.default).toBe('./dist/release/versionActions.js')
+
+    /*
+     * The TARGET must exist, not merely equal a string this test also holds.
+     * The previous assertion compared against a hardcoded
+     * './dist/release/versionActions.js' - and when the vertical-slice
+     * restructure renamed the source to `dart-version.repository.ts`, the
+     * exports map kept naming a file no build emits and this test kept
+     * passing, because both sides said the same wrong thing. That is the
+     * failure the comment above describes, and it shipped in a published
+     * package: `require.resolve` on the stamped specifier returned
+     * MODULE_NOT_FOUND, which breaks `nx release` for the WHOLE workspace.
+     *
+     * `test` declares `dependsOn: ['build']` for this project, so `dist` is
+     * populated by the time this runs - no existence hedge, which would only
+     * turn the gate off again.
+     */
+    const target = manifest.exports[subpath]?.default
+
+    expect(target).toBeDefined()
+    expect(existsSync(join(__dirname, '..', '..', target))).toBe(true)
+    expect(existsSync(join(__dirname, '..', '..', manifest.exports[subpath].types))).toBe(true)
   })
 })

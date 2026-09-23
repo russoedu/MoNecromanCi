@@ -25,6 +25,11 @@ export function pythonModuleDirectory (name: string): string {
  * The `pyproject.toml` written for a buildable Python project (app or lib).
  *
  * @remarks
+ * `[tool.mypy]` is `strict`, and that is measured rather than aspirational:
+ * the sample module and test this generator writes are both fully annotated,
+ * so a freshly generated project passes `mypy --strict` with no findings. The
+ * single relaxation is explained beside it.
+ *
  * `hatchling` is the PEP 517 backend. The wheel target's `packages` list is
  * explicit (not hatchling's own auto-detection) because the `build` executor
  * patches this exact list when vendoring an internal-lib's module into the
@@ -55,6 +60,16 @@ packages = ["${moduleDirectory}"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+# Stub-less third-party packages, and ONLY those. Measured on a generated
+# project: plain strict passes out of the box, and the one thing that breaks it
+# in practice is importing a library that ships no type stubs - "import yaml"
+# fails as import-untyped on code you wrote normally and cannot fix. Disabling
+# that one code keeps every other strict check on your own code, and a module
+# that genuinely cannot be found still fails, as import-not-found.
+disable_error_code = ["import-untyped"]
 `
 }
 

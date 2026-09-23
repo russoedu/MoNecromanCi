@@ -58,9 +58,17 @@ export function generateBuildableProject (tree: Tree, options: BuildableProjectO
   const root = options.directory
 
   const targets: ProjectConfiguration['targets'] = {
-    lint:  { executor: '@mnci/nx-python-pip:lint', options: {} },
-    test:  { executor: '@mnci/nx-python-pip:test', options: {} },
-    build: { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} },
+    lint:      { executor: '@mnci/nx-python-pip:lint', options: {} },
+    /*
+     * `typecheck` is named to match every other language's target in a
+     * generated workspace, so `nx run-many -t typecheck` covers Python too.
+     * Without it Nx does not fail - it SKIPS every project that has no such
+     * target and exits 0, which is the quietest way for a language to be
+     * type-checked by nothing at all while the workspace reports green.
+     */
+    typecheck: { executor: '@mnci/nx-python-pip:typecheck', options: {} },
+    test:      { executor: '@mnci/nx-python-pip:test', options: {} },
+    build:     { executor: '@mnci/nx-python-pip:build', outputs: ['{projectRoot}/dist'], options: {} },
   }
 
   const project: ProjectConfiguration = {

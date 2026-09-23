@@ -1,7 +1,7 @@
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { githubActionsYaml } from './workspace-overlay'
 
 /**
@@ -54,6 +54,7 @@ function runIn (
   dir: string,
   workspace: number | Workspace,
   specifier?: string,
+  envOverrides: Record<string, string> = {},
 ): { status: number; stdout: string; stderr: string } {
   seed(dir, typeof workspace === 'number' ? { npm: workspace } : workspace)
   // A fake `npx` on PATH that just echoes what it was invoked with, instead of
@@ -65,15 +66,52 @@ function runIn (
     '#!/bin/sh\necho "NPX_CALLED_WITH: $@"\nexit 0\n',
     { mode: 0o755 },
   )
+  /*
+   * A `.cmd` twin, because the guard spawns the release command with
+   * `shell: true` - which is cmd.exe on Windows, and cmd cannot execute an
+   * extensionless shell script however executable its mode bit claims to be.
+   * Without this the guard exits 1 for a reason unrelated to anything these
+   * tests assert.
+   */
+  writeFileSync(
+    join(fakeBin, 'npx.cmd'),
+    '@echo off\r\necho NPX_CALLED_WITH: %*\r\nexit /b 0\r\n',
+  )
 
   const command = extractReleaseCommand()
   try {
-    const stdout = execSync(`bash -c ${JSON.stringify(command)}`, {
+    /*
+       * `execFileSync('bash', ['-c', command])`, never
+       * `execSync('bash -c "..."')`. `execSync` runs its argument through the
+       * PLATFORM shell, which on Windows is cmd.exe - and cmd re-parses the
+       * quoting before bash ever sees it, so the whole command arrives
+       * truncated and bash exits 255 with `unexpected EOF while looking for
+       * matching '"'`. Measured: every assertion in this file failed that way
+       * on Windows, so a suite covering the RELEASE path verified nothing on
+       * any developer machine. `execFileSync` passes the argument straight to
+       * the process, with no shell in between.
+       */
+    const stdout = execFileSync('bash', ['-c', command], {
       cwd: dir,
       env: {
         ...process.env,
-        PATH:              `${fakeBin}:${process.env.PATH}`,
+        /*
+         * `path.delimiter`, not a literal ':'. On Windows the separator is
+         * ';' AND every entry contains a drive colon, so a ':' join produces
+         * one unusable mega-entry: bash finds neither the fake `npx` nor
+         * anything else, and every test in this file exits 255. That is how
+         * all thirteen assertions here were failing off-CI - a suite covering
+         * the RELEASE path, verifying nothing, on every developer machine.
+         */
+        PATH:              `${fakeBin}${delimiter}${process.env.PATH}`,
         RELEASE_SPECIFIER: specifier ?? '',
+        /*
+         * The release guard fails fast when a workspace has Python packages
+         * and no PyPI token, so the fixtures that seed Python must carry one.
+         * The fail-fast itself is asserted separately below.
+         */
+        PYPI_TOKEN:        'pypi-token-for-the-fixture',
+        ...envOverrides,
       },
       encoding: 'utf8',
     })
@@ -176,6 +214,33 @@ describe('every releasable manifest shape is detected, not just npm', () => {
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('2 releasable packages')
+  })
+
+  it('publishes Python to PyPI with the token username, not the npm credential', () => {
+    /*
+     * `__token__` is PyPI's own literal username for an API token, not a
+     * placeholder. The credential is deliberately a SEPARATE secret from the
+     * npm one: public npm and public PyPI are unrelated services, and sharing
+     * one variable is how a workspace sends its npm automation token to PyPI.
+     */
+    const result = runIn(dir, { python: 1 })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('NPX_CALLED_WITH: nx release --yes')
+  })
+
+  it('fails fast, naming the secret, when a Python workspace has no PyPI token', () => {
+    /*
+     * Without this the run reaches twine, which PROMPTS for a missing
+     * password - and a prompt on a CI agent is a build that hangs until it
+     * times out rather than one that fails. The message names the secret
+     * because "the secret was never configured" is the common case and the
+     * only one knowable without a network call.
+     */
+    const result = runIn(dir, { python: 1 }, undefined, { PYPI_TOKEN: '' })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('PYPI_TOKEN is empty')
   })
 
   it('still skips cleanly when there is genuinely nothing to release', () => {
