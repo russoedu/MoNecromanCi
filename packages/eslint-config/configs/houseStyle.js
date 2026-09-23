@@ -31,6 +31,33 @@ import stylistic from '@stylistic/eslint-plugin'
  *   demands, and no `--fix` can satisfy both. That is the single most important
  *   thing to know before touching either of them.
  *
+ * - **KNOWN BUG in that alignment, and it corrupts source.** With
+ *   `align: { on: 'value' }`, key-spacing's FIXER drops the opening parenthesis
+ *   of a TypeScript type annotation that is wrapped entirely in parentheses,
+ *   and leaves the closing one:
+ *
+ *   ```ts
+ *   #p: (Date & { x: number })   ->   #p: Date & { x: number })
+ *   ```
+ *
+ *   So `npm run format` turns valid TypeScript into a parse error, silently:
+ *   `--fix` reports success and the damage surfaces on the next lint or
+ *   typecheck. Found on a real package that stopped building after a routine
+ *   format pass.
+ *
+ *   It is pinned by `tests/key-spacing-fixer.spec.ts`, which also pins the
+ *   blast radius: only parentheses wrapping the WHOLE annotation are affected,
+ *   so `(string | number)[]` and `(() => void) | undefined` are safe, and
+ *   object literals - the thing this alignment is for - are untouched.
+ *
+ *   There is nothing here to fix it with. @stylistic 5.10.0 is the latest
+ *   stable, `align: { on: 'colon' }` does not corrupt but aligns the wrong
+ *   thing, and `@stylistic/no-extra-parens` is NOT a workaround despite
+ *   removing those parentheses cleanly on its own: both rules rewrite the same
+ *   range, key-spacing's fix starts earlier so ESLint applies it first, and the
+ *   source is unparseable before the other one gets a turn. When that spec
+ *   starts failing, the bug is fixed upstream - drop this note and invert it.
+ *
  * - **`no-multi-spaces` gains three exceptions** beyond @stylistic's own
  *   defaults (`Property`, `ImportAttribute`, which are re-listed because
  *   supplying `exceptions` REPLACES the default object rather than merging into
