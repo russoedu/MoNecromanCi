@@ -14,9 +14,13 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "default": "./dist/graph/index.js"
+    },
     "./release/version-actions": {
-      "types": "./dist/release/versionActions.d.ts",
-      "default": "./dist/release/versionActions.js"
+      "types": "./dist/release/python-version.repository.d.ts",
+      "default": "./dist/release/python-version.repository.js"
     },
     "./package.json": "./package.json",
     "./generators.json": "./generators.json",
@@ -28,10 +32,11 @@
     "executors.json"
   ],
   "scripts": {
-    "build": "node -e \"const fs=require('node:fs');for(const t of ['dist','tsconfig.lib.tsbuildinfo'])fs.rmSync(t,{recursive:true,force:true})\" && tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs",
+    "build": "node -e \"const fs=require('node:fs');for(const t of ['dist','tsconfig.lib.tsbuildinfo'])fs.rmSync(t,{recursive:true,force:true})\" && tsc -p tsconfig.lib.json && node scripts/copySchemas.mjs && node scripts/checkEntryPoints.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:entrypoints": "node scripts/checkEntryPoints.mjs"
   },
   "keywords": [
     "nx",
