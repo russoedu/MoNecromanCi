@@ -3,6 +3,15 @@ import { posix } from 'node:path'
 import type { ProjectGraph, Tree } from '@nx/devkit'
 import type * as NxRelease from 'nx/release'
 import { pythonCommand } from '../internal/python-command.algorithm'
+import { parseVendorEntries } from '../internal/vendor.algorithm'
+import {
+  normaliseDistributionName,
+  pyprojectDependencies,
+  pyprojectName,
+  requirementName,
+  requirementSpecifier,
+  withRewrittenDependency,
+} from '../internal/pyproject.algorithm'
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- nx/release is CJS; no ESM entry to `import` from.
 const { VersionActions } = require('nx/release') as typeof NxRelease
 
@@ -30,6 +39,48 @@ const VERSION_LINE = /^version\s*=\s*"([^"]+)"/m
  */
 export default class PythonVersionActions extends VersionActions {
   validManifestFilenames = ['pyproject.toml']
+
+  /**
+   * This project's `pyproject.toml` path, as a Tree path.
+   *
+   * @returns The workspace-relative, forward-slashed manifest path.
+   * @throws Never - pure string build.
+   * @typeParam None - this method has no generic type parameters.
+   */
+  #manifestPath (): string {
+    return posix.join(this.projectGraphNode.data.root, 'pyproject.toml')
+  }
+
+  /**
+   * The distribution name an Nx project publishes.
+   *
+   * @remarks
+   * The indirection is unavoidable: Nx names a dependency by its PROJECT name
+   * while a `pyproject.toml` names it by its DISTRIBUTION name, and the two
+   * differ in every workspace where a project folder is not spelled exactly
+   * like the package it ships.
+   *
+   * @param tree - The Nx virtual file system.
+   * @param projectGraph - Where the dependency's root is found.
+   * @param projectName - The Nx project name.
+   * @returns The distribution name, or `undefined` when the project has no
+   * readable `pyproject.toml`.
+   * @throws Never - an unreadable manifest yields `undefined`.
+   * @typeParam None - this method has no generic type parameters.
+   */
+  #distributionOf (
+    tree: Tree,
+    projectGraph: ProjectGraph,
+    projectName: string,
+  ): string | undefined {
+    const root = projectGraph.nodes[projectName]?.data.root
+    if (root === undefined) {
+      return undefined
+    }
+    const content = tree.read(posix.join(root, 'pyproject.toml'), 'utf8')
+
+    return content === null ? undefined : pyprojectName(content)
+  }
 
   /**
    * Reads the current version from `pyproject.toml`'s `[project]` table.
@@ -103,27 +154,70 @@ export default class PythonVersionActions extends VersionActions {
   }
 
   /**
-   * Resolves the current version of a dependency of this project.
+   * Resolves the version this project currently requires of a dependency.
    *
    * @remarks
-   * Internal-lib dependencies are vendored (copied into the wheel at build
-   * time by the `build` executor), not registry-referenced, so there is no
-   * separate version to track — the same branch `@nxlv/python`'s own
-   * reference implementation took for bundled dependencies.
+   * Returning `null` here is not neutral, which is what made the previous
+   * no-op harmful rather than merely incomplete: Nx `continue`s past any
+   * dependency with no current version, so `updateProjectDependencies` is
+   * never even asked about it. A workspace releasing `scanmate-ink@0.24.0`
+   * therefore left `scanmate-ink>=0.23.0` sitting inside `scanmate-scan` -
+   * the under-bump `documentation/releasing.md` exists to prevent, reborn in
+   * Python.
    *
-   * @param _tree - Unused.
-   * @param _projectGraph - Unused.
-   * @param _dependencyProjectName - Unused.
-   * @returns `null` for both fields — nothing to report.
-   * @throws Never - pure no-op.
+   * The VERSION is returned without its operator. Nx reads this value to
+   * detect an npm-style `~`/`^`/`=` prefix and may hand it back as the new
+   * version when the dependency is not itself being released; a PEP 508
+   * operator round-tripping through that logic would produce nonsense. The
+   * operator is preserved where it belongs instead - in
+   * {@link withRewrittenDependency}, which reads it from the manifest at
+   * write time.
+   *
+   * A VENDORED dependency still returns `null`, and that branch is correct
+   * rather than unfinished: the `build` executor copies the internal lib's
+   * module into this project's wheel, so there is no requirement entry and no
+   * published version to track. It is a real dependency - the graph plugin
+   * reports the edge - with nothing in the manifest to rewrite.
+   *
+   * @param tree - The Nx virtual file system.
+   * @param projectGraph - Used to find the dependency's own manifest, since
+   * the argument names an Nx project and the manifest names a distribution.
+   * @param dependencyProjectName - The Nx project name of the dependency.
+   * @returns The required version and `'dependencies'`, or `null` for both
+   * when this project does not reference the dependency through a manifest.
+   * @throws Never - anything it cannot read yields `null`.
    * @typeParam None - this method has no generic type parameters.
    */
   async readCurrentVersionOfDependency (
-    _tree: Tree,
-    _projectGraph: ProjectGraph,
-    _dependencyProjectName: string,
+    tree: Tree,
+    projectGraph: ProjectGraph,
+    dependencyProjectName: string,
   ): Promise<{ currentVersion: string | null; dependencyCollection: string | null }> {
-    return { currentVersion: null, dependencyCollection: null }
+    const content = tree.read(this.#manifestPath(), 'utf8')
+    if (content === null) {
+      return { currentVersion: null, dependencyCollection: null }
+    }
+    if (parseVendorEntries(content).includes(dependencyProjectName)) {
+      return { currentVersion: null, dependencyCollection: null }
+    }
+    const distribution = this.#distributionOf(tree, projectGraph, dependencyProjectName)
+    if (distribution === undefined) {
+      return { currentVersion: null, dependencyCollection: null }
+    }
+    const wanted = normaliseDistributionName(distribution)
+    const entry = pyprojectDependencies(content).find((candidate) => {
+      const name = requirementName(candidate)
+
+      return name !== undefined && normaliseDistributionName(name) === wanted
+    })
+    if (entry === undefined) {
+      return { currentVersion: null, dependencyCollection: null }
+    }
+    // Everything that is not the version itself - the operator, and any extras
+    // or environment marker - is dropped, for reporting purposes only.
+    const version = /\d[^\s,;]*/.exec(requirementSpecifier(entry))?.[0] ?? null
+
+    return { currentVersion: version, dependencyCollection: 'dependencies' }
   }
 
   /**
@@ -137,7 +231,7 @@ export default class PythonVersionActions extends VersionActions {
    * @typeParam None - this method has no generic type parameters.
    */
   async updateProjectVersion (tree: Tree, newVersion: string): Promise<string[]> {
-    const manifestPath = posix.join(this.projectGraphNode.data.root, 'pyproject.toml')
+    const manifestPath = this.#manifestPath()
     const content = tree.read(manifestPath, 'utf8') ?? ''
     tree.write(
       manifestPath,
@@ -148,24 +242,76 @@ export default class PythonVersionActions extends VersionActions {
   }
 
   /**
-   * Updates dependency versions in this project's manifest.
+   * Rewrites the versions this project requires of its released dependencies.
    *
    * @remarks
-   * Same reasoning as {@link readCurrentVersionOfDependency}: dependencies
-   * are vendored, not registry references, so there is nothing to update.
+   * This is the Python half of what `nx release` already does to a
+   * `package.json` range, and the operator is the part that matters. A
+   * manifest declaring `scanmate-ink>=0.23.0` is stating a FLOOR; rewriting it
+   * to `scanmate-ink==0.24.0` would change the dependency's meaning while
+   * looking like a version bump, so {@link withRewrittenDependency} keeps
+   * whichever operator the author wrote.
    *
-   * @param _tree - Unused.
-   * @param _projectGraph - Unused.
-   * @param _dependenciesToUpdate - Unused.
-   * @returns An empty array — no log messages, nothing changed.
-   * @throws Never - pure no-op.
+   * Nx keys the map by Nx PROJECT name and may include an npm-style `~`/`^`
+   * prefix on the value, which means nothing in a PEP 508 specifier and is
+   * stripped here rather than written into the manifest.
+   *
+   * A dependency it cannot rewrite is REPORTED, never silently skipped. An
+   * unpinned entry, a compound range or a direct URL reference each get a line
+   * saying so, because a dependant whose specifier did not move is precisely
+   * the stale reference this method exists to prevent - and a release that
+   * quietly left one behind would look identical to one that had nothing to do.
+   *
+   * @param tree - The Nx virtual file system.
+   * @param projectGraph - Used to map each Nx project name to the distribution
+   * name its manifest declares.
+   * @param dependenciesToUpdate - New version per dependency Nx project name.
+   * @returns One log line per dependency considered.
+   * @throws Never - a manifest it cannot read yields no messages.
    * @typeParam None - this method has no generic type parameters.
    */
   async updateProjectDependencies (
-    _tree: Tree,
-    _projectGraph: ProjectGraph,
-    _dependenciesToUpdate: Record<string, string>,
+    tree: Tree,
+    projectGraph: ProjectGraph,
+    dependenciesToUpdate: Record<string, string>,
   ): Promise<string[]> {
-    return []
+    const manifestPath = this.#manifestPath()
+    let content = tree.read(manifestPath, 'utf8')
+    if (content === null) {
+      return []
+    }
+    const messages: string[] = []
+    let changed = false
+
+    for (const [dependencyProjectName, rawVersion] of Object.entries(dependenciesToUpdate)) {
+      if (parseVendorEntries(content).includes(dependencyProjectName)) {
+        messages.push(
+          `Skipped ${dependencyProjectName} in ${manifestPath}: vendored into the wheel, so it carries no requirement to update`,
+        )
+        continue
+      }
+      const distribution = this.#distributionOf(tree, projectGraph, dependencyProjectName)
+      if (distribution === undefined) {
+        continue
+      }
+      // `~`, `^` and `=` are npm prefixes; PEP 508 has no such notion.
+      const newVersion = rawVersion.replace(/^[~^=]/, '')
+      const rewritten = withRewrittenDependency(content, distribution, newVersion)
+      if (rewritten === undefined) {
+        messages.push(
+          `Could not update ${distribution} to ${newVersion} in ${manifestPath}: its requirement is unpinned, a compound range, or a direct reference`,
+        )
+        continue
+      }
+      content = rewritten.content
+      changed = true
+      messages.push(`Updated ${manifestPath}: "${rewritten.from}" -> "${rewritten.to}"`)
+    }
+
+    if (changed) {
+      tree.write(manifestPath, content)
+    }
+
+    return messages
   }
 }
