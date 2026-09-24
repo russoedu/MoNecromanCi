@@ -463,6 +463,27 @@ section('js stack', [], () => {
 
   enforceWorkspaceShape(workspace, 'after new')
 
+  // A PRISTINE workspace must pass its own lint, before anything is added to
+  // it. This was red: create-nx-workspace 23.x writes AI-agent scaffolding by
+  // default, and three copies of its `monitor-ci` scripts fail
+  // @mnci/eslint-config with 36 errors - so `mnci new` itself ended with
+  // "eslint could not format '.' (exit code 1)" and the first thing a user saw
+  // in a brand-new workspace was a failing `npm run lint`. `--aiAgents=none`
+  // is what stops them being written.
+  enforce('a fresh workspace passes its own npm run lint', tryRun('npm run lint', workspace))
+
+  // The scaffolding itself must be absent rather than merely unlinted: files
+  // the workspace's own linter disowns are the fragmentation the single root
+  // config exists to end, and deleting them after the fact would leave every
+  // `nx` command printing "Your AI agent configuration is outdated".
+  for (const leftover of ['.agents', '.claude', '.codex', '.cursor', '.gemini', '.opencode',
+    'opencode.json', 'AGENTS.md', 'CLAUDE.md', '.github/skills']) {
+    enforce(
+      `no AI-agent scaffolding: ${leftover}`,
+      !existsSync(path.join(workspace, leftover)),
+    )
+  }
+
   // The root config is three lines importing the shared package — the whole
   // linting opinion lives there, not inlined per workspace.
   // Without this registration every project silently loses its lint target while

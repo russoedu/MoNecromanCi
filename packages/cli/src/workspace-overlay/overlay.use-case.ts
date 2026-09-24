@@ -3644,11 +3644,59 @@ export interface OverlayOptions {
  *   prompt twice and the two drift apart. mnci owned this file once
  *   (`.vscode/extensions.json`), then moved to the single-file workspace and
  *   never cleaned up the old location.
+ * - **the AI-agent scaffolding** — `create-nx-workspace` 23.x writes ten
+ *   entries of it, and three copies of its `monitor-ci` scripts fail
+ *   `@mnci/eslint-config` with 36 errors (`unicorn/prefer-number-coercion`,
+ *   `unicorn/prefer-simple-condition-first`). So `mnci new` ended with
+ *   "eslint could not format '.' (exit code 1)" and `npm run lint` was RED on
+ *   a pristine workspace. Measured on 23.2.1.
+ *
+ * On that last one, two things were tried first and are recorded so nobody
+ * repeats them:
+ *
+ * 1. `--aiAgents=none`, which `create-nx-workspace --help` documents ("Use
+ *    \"none\" to skip"). It does nothing on 23.2.1: a workspace generated with
+ *    it holds byte-identical scaffolding to one generated without it, in both
+ *    the `=none` and the space-separated array form. Verified against the real
+ *    binary, three times.
+ * 2. Ignoring the files in `mnci/ignores` instead. That leaves files in the
+ *    repository the workspace's own linter disowns, which is exactly the
+ *    fragmentation the single root config exists to end.
+ *
+ * The list has to be COMPLETE, and that is the subtle part. Nx prints "Your AI
+ * agent configuration is outdated" after a task run when an agent has both an
+ * MCP config and rules present but would change if regenerated. Delete some of
+ * the set and that condition still holds, so every `nx` command nags forever;
+ * delete all of it and nothing is detected at all. `.github/agents` and
+ * `.github/prompts` are the two easiest to miss — verified by deleting the full
+ * set from a real workspace and confirming `nx show projects` and
+ * `nx run-many -t build` print nothing.
+ *
+ * A user who wants them back runs `nx configure-ai-agents`, which is the
+ * supported way in and is what the nag itself recommends.
  *
  * Removal is idempotent and safe on a workspace where they are already gone,
  * which is what makes `mnci upgrade` able to repair an existing workspace.
  */
-const NX_SCAFFOLDING_TO_REMOVE = ['.prettierrc', '.prettierrc.json', '.vscode'] as const
+const NX_SCAFFOLDING_TO_REMOVE = [
+  '.prettierrc',
+  '.prettierrc.json',
+  '.vscode',
+  // The AI-agent set, in full. See the remarks above: a partial delete leaves
+  // every `nx` command printing an "outdated configuration" nag.
+  '.agents',
+  '.claude',
+  '.codex',
+  '.cursor',
+  '.gemini',
+  '.opencode',
+  '.github/agents',
+  '.github/prompts',
+  '.github/skills',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'opencode.json',
+] as const
 
 /**
  * Deletes the `create-nx-workspace` scaffolding mnci replaces.

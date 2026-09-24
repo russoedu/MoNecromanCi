@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import {
   applyOverlay,
   azurePipelinesYaml,
@@ -3019,6 +3019,52 @@ describe('applyOverlay', () => {
 
     expect(existsSync(join(workspaceRoot, '.vscode'))).toBe(false)
     expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
+  })
+
+  it('deletes every piece of create-nx-workspace 23.x AI-agent scaffolding', () => {
+    // A pristine `mnci new` used to end with "eslint could not format '.'
+    // (exit code 1)" and a RED `npm run lint`, because three copies of
+    // create-nx-workspace's `monitor-ci` scripts fail @mnci/eslint-config with
+    // 36 errors. `--aiAgents=none` does not help - measured against the real
+    // binary on 23.2.1, in both the `=none` and space-separated forms, and the
+    // generated tree is byte-identical either way.
+    //
+    // The list has to be COMPLETE. Nx nags "Your AI agent configuration is
+    // outdated" when an agent has both an MCP config and rules present, so a
+    // PARTIAL delete leaves every `nx` command printing it forever.
+    // `.github/agents` and `.github/prompts` are the two easiest to miss.
+    const scaffolding = [
+      '.agents/skills/monitor-ci/scripts/ci-poll-decide.mjs',
+      '.claude/settings.json',
+      '.codex/config.toml',
+      '.cursor/rules.md',
+      '.gemini/settings.json',
+      '.opencode/skills/monitor-ci/scripts/ci-state-update.mjs',
+      '.github/agents/nx.md',
+      '.github/prompts/nx.md',
+      '.github/skills/monitor-ci/scripts/ci-poll-decide.mjs',
+      'AGENTS.md',
+      'CLAUDE.md',
+      'opencode.json',
+    ]
+    for (const file of scaffolding) {
+      mkdirSync(dirname(join(workspaceRoot, file)), { recursive: true })
+      writeFileSync(join(workspaceRoot, file), 'x\n')
+    }
+
+    overlayWith(DEFAULT_STACK)
+
+    for (const file of scaffolding) {
+      expect(existsSync(join(workspaceRoot, file))).toBe(false)
+    }
+    // And `.github` itself survives, because the removal names SUBDIRECTORIES
+    // rather than the directory - `mnci` writes `workflows/ci.yml` and
+    // `dependabot.yml` into it on the github path, and deleting `.github`
+    // wholesale would take them with it. This fixture is on the azure path, so
+    // the directory is what there is to check here; the e2e covers the github
+    // one with the real files present.
+    expect(existsSync(join(workspaceRoot, '.github'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
   })
 
   it('sweeps per-project eslint configs, so `mnci upgrade` de-fragments an old workspace', () => {
