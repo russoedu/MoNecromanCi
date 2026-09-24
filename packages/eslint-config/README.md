@@ -214,7 +214,16 @@ files on each side — a contract imported one way, a use case the other — so 
 is no file-level cycle for it to report. It was written for, and first caught
 three such cycles in, a real monorepo where `no-cycle` was already on.
 
-Tests (`.spec`/`.test`) are exempt from the role and cycle rules.
+Tests (`.spec`/`.test`) are exempt from the role and cycle rules — a test is
+named for the file it tests, so it has no role suffix, and a spec is not in the
+production dependency graph a cycle would matter in.
+
+They are **not** exempt from `no-deep-import`. A test importing
+`'../billing/fee.policy'` is reported, exactly as production code would be:
+that rule is about respecting a sibling's public API, and a test that reaches
+past an index couples to the sibling's internals just as tightly — rename a
+file in one slice and another slice's test breaks. Reach a sibling through its
+index from a test too, or move the test beside what it is testing.
 
 ### Regex and TOML
 

@@ -222,8 +222,21 @@ export const plugin = {
  *   they tie the slices together as surely as values do, even though they are
  *   erased at run time.
  *
- * Tests (`.spec` or `.test`) are exempt from the role and cycle rules: they
- * name the file they test, and may reach wherever they need to.
+ * Tests (`.spec` or `.test`) are exempt from TWO of the three rules, and the
+ * split is deliberate rather than an oversight:
+ *
+ * - `file-role` exempts them, because a test is named for the file it tests
+ *   and so has no role suffix by design.
+ * - `no-slice-cycle` exempts them, because it describes the PRODUCTION
+ *   dependency graph and a spec is not in the shipped bundle.
+ * - `no-deep-import` does NOT. It is about respecting a sibling's public API,
+ *   and a test reaching past an index couples to that sibling's internals
+ *   exactly as production code would: rename a file in one slice and another
+ *   slice's test breaks. The rule does not care who wrote the import.
+ *
+ * This used to be documented as a blanket "tests may reach wherever they need
+ * to", which was simply false - a test importing `'../template/x.algorithm'`
+ * has always been reported.
  *
  * @param files - Globs of the source this applies to. Default: every project's
  * `src` under `apps/`, `libs/` and `packages/`.

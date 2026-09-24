@@ -56,6 +56,10 @@ const FIXTURES: Record<string, string> = {
   // Tests name the file they test, and are exempt from the role and cycle rules.
   'packages/app/src/arithmetic/add.algorithm.spec.ts':
     "import { add } from './add.algorithm'\n\ndescribe('add', () => {\n  it('adds', () => {\n    expect(add(1, 2)).toBe(3)\n  })\n})\n",
+  // A test reaching PAST a sibling's index. NOT exempt, deliberately — see the
+  // assertion below for why the three rules treat tests differently.
+  'packages/app/src/billing/fee.policy.spec.ts':
+    "import { add } from '../arithmetic/add.algorithm'\n\ndescribe('fee', () => {\n  it('adds', () => {\n    expect(add(1, 2)).toBe(3)\n  })\n})\n",
 }
 
 let workspace: string
@@ -116,6 +120,24 @@ describe('mnci({ verticalSlices })', () => {
   it('reports a sibling reached past its index, and a slice importing its own', () => {
     expect(slicesFor('packages/app/src/reports/report.use-case.ts')).toEqual(['vertical-slices/no-deep-import'])
     expect(slicesFor('packages/app/src/reports/selfish.use-case.ts')).toEqual(['vertical-slices/no-deep-import'])
+  })
+
+  it('holds a TEST to no-deep-import, unlike the role and cycle rules', () => {
+    // The three rules treat tests differently, and the distinction is
+    // principled rather than an oversight - it was documented as a blanket
+    // "tests may reach wherever they need to", which was simply wrong.
+    //
+    // `file-role` must exempt them: a test is named for the file it tests, so
+    // it has no role suffix by design.
+    // `no-slice-cycle` must exempt them: it describes the PRODUCTION dependency
+    // graph, and a spec is not in the shipped bundle.
+    // `no-deep-import` must NOT: it is about respecting a sibling's public
+    // API, and a test that reaches past an index couples to that sibling's
+    // internals exactly as production code would. Rename a file in one slice
+    // and another slice's test breaks - which is the coupling the rule exists
+    // to prevent, and it does not care who wrote the import.
+    expect(slicesFor('packages/app/src/billing/fee.policy.spec.ts'))
+      .toEqual(['vertical-slices/no-deep-import'])
   })
 
   it('reports a file without its role, or not in kebab-case, nested, or at the root of src', () => {
