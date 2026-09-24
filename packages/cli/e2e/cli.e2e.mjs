@@ -929,6 +929,48 @@ section('js stack', [], () => {
   )
   run('npx nx sync', workspace)
 
+  /* ---------------------------------------------------------------------------
+   * `npm run format` must not touch a published manifest.
+   *
+   * The blocker this guards, observed on a real workspace: `format` is
+   * `eslint . --fix`, and `@nx/dependency-checks` is fixable. Two of its checks
+   * rewrite the manifest - `checkObsoleteDependencies` REMOVES a declared
+   * dependency the project graph does not yet see used, and
+   * `checkVersionMismatches` re-pins `^1.2.3` to `1.2.3`. The graph lags the
+   * disk, so a dependency installed minutes ago reads as unused.
+   *
+   * What followed there: three runtime dependencies deleted from the manifest,
+   * `npm install` syncing the lockfile to the damage, and rollup - which
+   * externalises exactly what the manifest declares - inlining Playwright into
+   * a 9 MB bundle opening with an unresolvable `chromium-bidi` import. Nothing
+   * errored at any step.
+   *
+   * Run HERE, immediately after the manifest is written and before anything
+   * warms the graph, because a cold graph is the condition under which the
+   * fixer was most wrong.
+   * ------------------------------------------------------------------------- */
+  console.log('\n▸ npm run format must leave a published manifest alone')
+  const sdkManifestBeforeFormat = readFileSync(sdkManifestPath, 'utf8')
+  run('npm run format', workspace)
+  const sdkManifestAfterFormat = readFileSync(sdkManifestPath, 'utf8')
+
+  enforce(
+    'format leaves the freshly installed dependency declared, at its original range',
+    sdkManifestAfterFormat === sdkManifestBeforeFormat,
+  )
+  // Asserted separately from the byte comparison so a failure says WHICH half
+  // broke: the dependency vanishing and its range being re-pinned are different
+  // bugs with the same cause.
+  const sdkAfterFormat = JSON.parse(sdkManifestAfterFormat)
+  enforce(
+    'format keeps ms in dependencies rather than deleting it as obsolete',
+    sdkAfterFormat.dependencies?.ms !== undefined,
+  )
+  enforce(
+    'format keeps the caret range rather than re-pinning it to the installed version',
+    sdkAfterFormat.dependencies?.ms === `^${msVersion}`,
+  )
+
   console.log('\n▸ mnci add react-app web')
   run(`node ${CLI} add react-app web`, workspace)
 

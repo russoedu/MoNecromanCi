@@ -602,4 +602,55 @@ describe('@mnci/eslint-config', () => {
       rmSync(scoped, { recursive: true, force: true })
     }
   })
+
+  it('never lets dependency-checks DELETE or RE-PIN a published manifest', () => {
+    // The blocker this configuration exists to prevent, observed on a real
+    // workspace rather than imagined:
+    //
+    // `npm run format` is `eslint . --fix`, and two of this rule's three checks
+    // have fixers that rewrite a manifest — `checkObsoleteDependencies` removes
+    // a property, `checkVersionMismatches` replaces a range with the exact
+    // installed version. Both read the Nx project graph, which lags the disk,
+    // so "not used by this project" is routinely false for a dependency
+    // installed minutes ago.
+    //
+    // What followed: cheerio, jsonpath-plus and playwright were deleted from a
+    // package manifest and zod was re-pinned; the next `npm install` synced the
+    // lockfile to the damage; rollup, which externalises exactly what the
+    // manifest declares, then INLINED Playwright and produced a 9 MB bundle
+    // opening with an unresolvable `chromium-bidi` import. Nothing errored.
+    //
+    // Asserted on the resolved options rather than by running the fixer,
+    // because the rule skips entirely without a cached project graph — the
+    // very condition under which a `--fix` run would be least trustworthy.
+    const scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-config-dc-fix-'))
+    try {
+      writeConfig(scoped, `{ workspaceRoot: ${JSON.stringify(scoped)} }`)
+      mkdirSync(join(scoped, 'packages/thing'), { recursive: true })
+      writeFileSync(
+        join(scoped, 'packages/thing/package.json'),
+        '{ "name": "thing", "version": "1.0.0" }\n',
+      )
+      const printed = spawnSync(eslintBin, ['--print-config', 'packages/thing/package.json'], {
+        cwd:      scoped,
+        encoding: 'utf8',
+        shell:    process.platform === 'win32',
+      })
+      const resolved = JSON.parse(printed.stdout) as {
+        rules: Record<string, [number, Record<string, unknown>]>
+      }
+      const [severity, options] = resolved.rules['@nx/dependency-checks']
+
+      // `--print-config` normalises severity to its numeric form; 2 is 'error'.
+      expect(severity).toBe(2)
+      // The two with destructive fixers.
+      expect(options.checkObsoleteDependencies).toBe(false)
+      expect(options.checkVersionMismatches).toBe(false)
+      // The one whose fixer only ever inserts, so a stale graph cannot lose
+      // anything: the worst case is a dependency added that was already needed.
+      expect(options.checkMissingDependencies).toBe(true)
+    } finally {
+      rmSync(scoped, { recursive: true, force: true })
+    }
+  })
 })
