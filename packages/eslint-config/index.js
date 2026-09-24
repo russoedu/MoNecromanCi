@@ -13,6 +13,7 @@ import standard from './configs/standard.js'
 import toml from './configs/toml.js'
 import typeAware from './configs/typeAware.js'
 import typescript from './configs/typescript.js'
+import browserAutomation from './configs/browserAutomation.js'
 import verticalSlices from './configs/verticalSlices.js'
 import yaml from './configs/yaml.js'
 
@@ -36,6 +37,7 @@ export { default as standard } from './configs/standard.js'
 export { default as toml } from './configs/toml.js'
 export { default as typeAware } from './configs/typeAware.js'
 export { default as typescript } from './configs/typescript.js'
+export { default as browserAutomation } from './configs/browserAutomation.js'
 export { default as verticalSlices } from './configs/verticalSlices.js'
 export { default as yaml } from './configs/yaml.js'
 
@@ -86,11 +88,15 @@ export const ignores = [
  * `verticalSlices: true` - the globs of the projects that follow it, or
  * `{ files, roles }` to extend the role vocabulary - to
  * enforce the vertical-slice rules (see `configs/verticalSlices.js`); they are
- * off by default, because they are an architecture, not a style.
+ * off by default, because they are an architecture, not a style. Pass
+ * `browserAutomation: true` - or globs - in a Playwright or Puppeteer project,
+ * so an in-page callback like `page.evaluate(() => document.title)` can see
+ * browser globals; `unicorn/isolated-functions` reports every one of them
+ * otherwise, and it is right to (see `configs/browserAutomation.js`).
  * @returns The flat config array.
  */
 export default function mnci (options = {}) {
-  const { workspaceRoot, verticalSlices: slices } = options
+  const { workspaceRoot, verticalSlices: slices, browserAutomation: browser } = options
 
   return [
     { name: 'mnci/ignores', ignores },
@@ -109,6 +115,9 @@ export default function mnci (options = {}) {
     ...jest,
     ...(workspaceRoot ? dependencyChecks(workspaceRoot) : []),
     ...(slices ? verticalSlices(slices === true ? undefined : slices) : []),
+    // After the blocks that set Node's globals, so these ADD to them rather
+    // than being overwritten by them.
+    ...(browser ? browserAutomation(browser === true ? undefined : browser) : []),
     // LAST, and nothing may follow that disables it: this block IS the
     // formatting opinion now. `eslint-config-prettier` used to sit here to
     // switch every stylistic rule off for a formatter to own; with no

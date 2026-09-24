@@ -603,6 +603,55 @@ describe('@mnci/eslint-config', () => {
     }
   })
 
+  it('gives in-page callbacks browser globals only when asked', () => {
+    // `page.evaluate(() => document.body.scrollHeight)` fails
+    // `unicorn/isolated-functions` with "Variable document not defined in scope
+    // of isolated function". The rule is RIGHT about the isolation - that
+    // callback is serialised and run inside the page - and it checks free
+    // variables against the declared globals, which are Node's. So every
+    // browser global in every in-page callback reported, and a Playwright
+    // project had to pass string scripts and lose type checking entirely.
+    //
+    // Asserted in BOTH directions: opting in must fix it, and not opting in
+    // must leave the rule doing its job, or this is just the rule switched off
+    // under a friendlier name.
+    const scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-browser-'))
+    try {
+      const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+      writeFileSync(join(scoped, 'tsconfig.json'), FIXTURES['tsconfig.json'])
+      writeFileSync(
+        join(scoped, 'scrape.ts'),
+        'declare const page: { evaluate: (fn: () => number) => Promise<number> }\n' +
+        '\n' +
+        'export async function height (): Promise<number> {\n' +
+        '  return page.evaluate(() => document.body.scrollHeight)\n' +
+        '}\n',
+      )
+      const lintWith = (config: string): string[] => {
+        writeFileSync(join(scoped, 'eslint.config.mjs'), config)
+        const result = spawnSync(eslintBin, ['scrape.ts', '--format', 'json'], {
+          cwd:      scoped,
+          encoding: 'utf8',
+          shell:    process.platform === 'win32',
+        })
+        const parsed = JSON.parse(result.stdout.trim()) as {
+          messages: { ruleId: string | null }[]
+        }[]
+
+        return parsed.flatMap(file => file.messages.map(message => message.ruleId ?? 'FATAL'))
+      }
+
+      expect(lintWith(`import mnci from ${JSON.stringify(entry)}\nexport default mnci()\n`))
+        .toContain('unicorn/isolated-functions')
+      expect(lintWith(
+        `import mnci from ${JSON.stringify(entry)}\n` +
+        'export default mnci({ browserAutomation: [\'**/*.ts\'] })\n',
+      )).toEqual([])
+    } finally {
+      rmSync(scoped, { recursive: true, force: true })
+    }
+  })
+
   it('exports the dependency-checks options, because ESLint replaces them', () => {
     // ESLint does not MERGE rule options, it replaces them. A consumer
     // overriding this rule loses every exclusion set here, and the first

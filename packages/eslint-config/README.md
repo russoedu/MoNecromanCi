@@ -189,6 +189,35 @@ preset has no tsconfig `paths` to fall back on either. So a completely correct
 cross-project import resolves to nothing on disk. `tsc` already reports unresolved
 _typed_ imports, and the workspace runs `typecheck` in CI.
 
+### Browser automation (`configs/browserAutomation.js`) — opt-in
+
+For Playwright and Puppeteer projects. `page.evaluate(() => document.title)`
+fails `unicorn/isolated-functions`:
+
+```
+Variable document not defined in scope of isolated function.
+Function is isolated because: callee of method named "page.evaluate"
+```
+
+The rule is right about the isolation — that callback is serialised and runs
+inside the page, so it genuinely cannot see the enclosing module — and it
+checks every free variable against the declared globals, which here are
+**Node's**. So no browser global exists for the callback and every one reports.
+Without the opt-in the choices are passing string scripts and losing type
+checking, disabling a rule that catches real scope bugs, or a red `lint`.
+
+```js
+export default mnci({ browserAutomation: true })
+// or only where the automation lives:
+export default mnci({ browserAutomation: ['packages/scraper/src/**/*.ts'] })
+```
+
+It declares browser globals; it does not make them true. A file in scope may
+now reference `document` at the **top** level without ESLint objecting, and
+that throws in Node. TypeScript is what still catches it — `document` is not in
+scope unless the project's `lib` includes `dom` — which is why this is opt-in
+and scoped by glob rather than on by default.
+
 ### Vertical feature slices (`configs/verticalSlices.js`) — opt-in
 
 For workspaces organised as **vertical feature slices**: each project's `src/`
