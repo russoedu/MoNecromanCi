@@ -56,6 +56,10 @@ const FIXTURES: Record<string, string> = {
   // Tests name the file they test, and are exempt from the role and cycle rules.
   'packages/app/src/arithmetic/add.algorithm.spec.ts':
     "import { add } from './add.algorithm'\n\ndescribe('add', () => {\n  it('adds', () => {\n    expect(add(1, 2)).toBe(3)\n  })\n})\n",
+  // A test reaching PAST a sibling's index. NOT exempt, deliberately — see the
+  // assertion below for why the three rules treat tests differently.
+  'packages/app/src/billing/fee.policy.spec.ts':
+    "import { add } from '../arithmetic/add.algorithm'\n\ndescribe('fee', () => {\n  it('adds', () => {\n    expect(add(1, 2)).toBe(3)\n  })\n})\n",
 }
 
 let workspace: string
@@ -100,6 +104,68 @@ afterAll(() => {
   rmSync(workspace, { recursive: true, force: true })
 })
 
+describe('mnci({ verticalSlices: { roles } })', () => {
+  // The default role list is the BACK-END vocabulary. The ADR these rules come
+  // from also allows `.service` and `.middleware`, and its front-end amendment
+  // adds `.route`, `.component`, `.hook`, `.section`, `.style`, `.content`,
+  // `.mock` and `.fixture`. While the list was fixed, a React app could not opt
+  // in at all - every component it has would report.
+  let extended: Record<string, string[]>
+  let scoped: string
+
+  beforeAll(() => {
+    scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-slices-roles-'))
+    const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+    writeFileSync(
+      join(scoped, 'eslint.config.mjs'),
+      `import mnci from ${JSON.stringify(entry)}\nexport default mnci({ verticalSlices: { roles: ['component', 'hook'] } })\n`,
+    )
+    const files: Record<string, string> = {
+      'tsconfig.json':                                FIXTURES['tsconfig.json'],
+      'packages/app/tsconfig.json':                   FIXTURES['packages/app/tsconfig.json'],
+      'packages/app/src/index.ts':                    "export { Button } from './buttons'\n",
+      'packages/app/src/buttons/index.ts':            "export { Button } from './button.component'\n",
+      // An added role.
+      'packages/app/src/buttons/button.component.ts': 'export const Button = 1\n',
+      // Another added role.
+      'packages/app/src/buttons/use-press.hook.ts':   'export const usePress = 1\n',
+      // A DEFAULT role, which must still pass - the option appends, it does not
+      // replace, or adding one role would cost you the other fourteen.
+      'packages/app/src/buttons/press.use-case.ts':   'export const press = 1\n',
+      // Still not a role.
+      'packages/app/src/buttons/helper.ts':           'export const helper = 1\n',
+    }
+    for (const [filename, contents] of Object.entries(files)) {
+      const target = join(scoped, filename)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, contents)
+    }
+    extended = lintAll(scoped)
+  })
+
+  afterAll(() => {
+    rmSync(scoped, { recursive: true, force: true })
+  })
+
+  const slicesIn = (filename: string): string[] =>
+    (extended[filename] ?? [])
+      .filter(rule => rule.startsWith('vertical-slices/') || rule === 'FATAL')
+      .toSorted((a, b) => a.localeCompare(b))
+
+  it('accepts the roles it was given', () => {
+    expect(slicesIn('packages/app/src/buttons/button.component.ts')).toEqual([])
+    expect(slicesIn('packages/app/src/buttons/use-press.hook.ts')).toEqual([])
+  })
+
+  it('still accepts the defaults, because the option APPENDS', () => {
+    expect(slicesIn('packages/app/src/buttons/press.use-case.ts')).toEqual([])
+  })
+
+  it('still reports a file with no role at all', () => {
+    expect(slicesIn('packages/app/src/buttons/helper.ts')).toEqual(['vertical-slices/file-role'])
+  })
+})
+
 describe('mnci({ verticalSlices })', () => {
   it('passes a slice that follows the rules, and its test', () => {
     expect(slicesFor('packages/app/src/index.ts')).toEqual([])
@@ -116,6 +182,24 @@ describe('mnci({ verticalSlices })', () => {
   it('reports a sibling reached past its index, and a slice importing its own', () => {
     expect(slicesFor('packages/app/src/reports/report.use-case.ts')).toEqual(['vertical-slices/no-deep-import'])
     expect(slicesFor('packages/app/src/reports/selfish.use-case.ts')).toEqual(['vertical-slices/no-deep-import'])
+  })
+
+  it('holds a TEST to no-deep-import, unlike the role and cycle rules', () => {
+    // The three rules treat tests differently, and the distinction is
+    // principled rather than an oversight - it was documented as a blanket
+    // "tests may reach wherever they need to", which was simply wrong.
+    //
+    // `file-role` must exempt them: a test is named for the file it tests, so
+    // it has no role suffix by design.
+    // `no-slice-cycle` must exempt them: it describes the PRODUCTION dependency
+    // graph, and a spec is not in the shipped bundle.
+    // `no-deep-import` must NOT: it is about respecting a sibling's public
+    // API, and a test that reaches past an index couples to that sibling's
+    // internals exactly as production code would. Rename a file in one slice
+    // and another slice's test breaks - which is the coupling the rule exists
+    // to prevent, and it does not care who wrote the import.
+    expect(slicesFor('packages/app/src/billing/fee.policy.spec.ts'))
+      .toEqual(['vertical-slices/no-deep-import'])
   })
 
   it('reports a file without its role, or not in kebab-case, nested, or at the root of src', () => {

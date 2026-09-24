@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { promptText } from '../terminal'
 import { repairDeclarationSpecifiers, repairPublishableManifest } from '../rollup-library'
+import { removeLocalRegistryScaffolding } from '../workspace-overlay'
 import {
   defaultScope,
   ensurePlugin,
@@ -105,6 +106,10 @@ export async function addReactLib (
       repairDeclarationSpecifiers(projectRoot)
       writeProjectReadme(projectRoot, `${scope}/${name}`, stack.testRunner)
       removeGeneratedEslintConfig(workspaceRoot, `packages/${name}`)
+      // `--publishable` also scaffolds a whole local-registry story (verdaccio
+      // config, devDependency, root target) that mnci's tag-only release model
+      // has no use for.
+      removeLocalRegistryScaffolding(workspaceRoot)
       registerProjectCommands(workspaceRoot, name, { build: true })
     },
   )

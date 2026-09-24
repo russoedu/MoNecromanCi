@@ -602,4 +602,138 @@ describe('@mnci/eslint-config', () => {
       rmSync(scoped, { recursive: true, force: true })
     }
   })
+
+  it('gives in-page callbacks browser globals only when asked', () => {
+    // `page.evaluate(() => document.body.scrollHeight)` fails
+    // `unicorn/isolated-functions` with "Variable document not defined in scope
+    // of isolated function". The rule is RIGHT about the isolation - that
+    // callback is serialised and run inside the page - and it checks free
+    // variables against the declared globals, which are Node's. So every
+    // browser global in every in-page callback reported, and a Playwright
+    // project had to pass string scripts and lose type checking entirely.
+    //
+    // Asserted in BOTH directions: opting in must fix it, and not opting in
+    // must leave the rule doing its job, or this is just the rule switched off
+    // under a friendlier name.
+    const scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-browser-'))
+    try {
+      const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+      writeFileSync(join(scoped, 'tsconfig.json'), FIXTURES['tsconfig.json'])
+      writeFileSync(
+        join(scoped, 'scrape.ts'),
+        'declare const page: { evaluate: (fn: () => number) => Promise<number> }\n' +
+        '\n' +
+        'export async function height (): Promise<number> {\n' +
+        '  return page.evaluate(() => document.body.scrollHeight)\n' +
+        '}\n',
+      )
+      const lintWith = (config: string): string[] => {
+        writeFileSync(join(scoped, 'eslint.config.mjs'), config)
+        const result = spawnSync(eslintBin, ['scrape.ts', '--format', 'json'], {
+          cwd:      scoped,
+          encoding: 'utf8',
+          shell:    process.platform === 'win32',
+        })
+        const parsed = JSON.parse(result.stdout.trim()) as {
+          messages: { ruleId: string | null }[]
+        }[]
+
+        return parsed.flatMap(file => file.messages.map(message => message.ruleId ?? 'FATAL'))
+      }
+
+      expect(lintWith(`import mnci from ${JSON.stringify(entry)}\nexport default mnci()\n`))
+        .toContain('unicorn/isolated-functions')
+      expect(lintWith(
+        `import mnci from ${JSON.stringify(entry)}\n` +
+        'export default mnci({ browserAutomation: [\'**/*.ts\'] })\n',
+      )).toEqual([])
+    } finally {
+      rmSync(scoped, { recursive: true, force: true })
+    }
+  })
+
+  it('exports the dependency-checks options, because ESLint replaces them', () => {
+    // ESLint does not MERGE rule options, it replaces them. A consumer
+    // overriding this rule loses every exclusion set here, and the first
+    // symptom reads like a real finding: rollup.config.cjs does
+    // `require('@nx/rollup/with-nx')`, so without `ignoredFiles` the rule
+    // reports @nx/rollup as missing from the dependencies of a package that
+    // must never declare it.
+    //
+    // Read through the package ENTRY POINT in a subprocess, for the reason the
+    // file header gives: this package is ESM and Jest runs these specs as CJS,
+    // so a direct import cannot work. Going through the entry point is also
+    // what pins the re-export - an options object nobody can import is no
+    // better than no options object.
+    const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+    const read = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { dependencyChecksOptions } from ${JSON.stringify(entry)}
+` +
+        `process.stdout.write(JSON.stringify(dependencyChecksOptions(${JSON.stringify(packageRoot)})))`,
+      ],
+      { encoding: 'utf8' },
+    )
+    const options = JSON.parse(read.stdout) as {
+      ignoredFiles:              string[]
+      checkObsoleteDependencies: boolean
+    }
+
+    expect(options.ignoredFiles).toContain('{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}')
+    expect(options.checkObsoleteDependencies).toBe(false)
+  })
+
+  it('never lets dependency-checks DELETE or RE-PIN a published manifest', () => {
+    // The blocker this configuration exists to prevent, observed on a real
+    // workspace rather than imagined:
+    //
+    // `npm run format` is `eslint . --fix`, and two of this rule's three checks
+    // have fixers that rewrite a manifest — `checkObsoleteDependencies` removes
+    // a property, `checkVersionMismatches` replaces a range with the exact
+    // installed version. Both read the Nx project graph, which lags the disk,
+    // so "not used by this project" is routinely false for a dependency
+    // installed minutes ago.
+    //
+    // What followed: cheerio, jsonpath-plus and playwright were deleted from a
+    // package manifest and zod was re-pinned; the next `npm install` synced the
+    // lockfile to the damage; rollup, which externalises exactly what the
+    // manifest declares, then INLINED Playwright and produced a 9 MB bundle
+    // opening with an unresolvable `chromium-bidi` import. Nothing errored.
+    //
+    // Asserted on the resolved options rather than by running the fixer,
+    // because the rule skips entirely without a cached project graph — the
+    // very condition under which a `--fix` run would be least trustworthy.
+    const scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-config-dc-fix-'))
+    try {
+      writeConfig(scoped, `{ workspaceRoot: ${JSON.stringify(scoped)} }`)
+      mkdirSync(join(scoped, 'packages/thing'), { recursive: true })
+      writeFileSync(
+        join(scoped, 'packages/thing/package.json'),
+        '{ "name": "thing", "version": "1.0.0" }\n',
+      )
+      const printed = spawnSync(eslintBin, ['--print-config', 'packages/thing/package.json'], {
+        cwd:      scoped,
+        encoding: 'utf8',
+        shell:    process.platform === 'win32',
+      })
+      const resolved = JSON.parse(printed.stdout) as {
+        rules: Record<string, [number, Record<string, unknown>]>
+      }
+      const [severity, options] = resolved.rules['@nx/dependency-checks']
+
+      // `--print-config` normalises severity to its numeric form; 2 is 'error'.
+      expect(severity).toBe(2)
+      // The two with destructive fixers.
+      expect(options.checkObsoleteDependencies).toBe(false)
+      expect(options.checkVersionMismatches).toBe(false)
+      // The one whose fixer only ever inserts, so a stale graph cannot lose
+      // anything: the worst case is a dependency added that was already needed.
+      expect(options.checkMissingDependencies).toBe(true)
+    } finally {
+      rmSync(scoped, { recursive: true, force: true })
+    }
+  })
 })

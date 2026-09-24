@@ -30,6 +30,43 @@ try {
  * the rule resolves the owning project from the linted `package.json`'s path
  * and that the projectRoot tokens still expand correctly from the root.
  *
+ * TWO OF THE RULE'S THREE CHECKS ARE OFF, AND THIS IS THE IMPORTANT PART
+ *
+ * `@nx/dependency-checks` is fixable, and `npm run format` is
+ * `eslint . --fix`. Two of its checks have fixers that DELETE or REWRITE a
+ * published package's manifest:
+ *
+ * - `checkObsoleteDependencies` reports a declared dependency the project graph
+ *   does not see used, and its fixer calls `removeRange` on the property.
+ * - `checkVersionMismatches` reports a range that does not contain the
+ *   installed version, and its fixer calls `replaceText` with the exact
+ *   version — turning `"^4.6.5"` into `"4.6.5"`.
+ *
+ * The rule reads the Nx project graph, which LAGS the files on disk: a
+ * dependency installed and imported a minute ago is not in it yet, whether
+ * because the daemon has not rebuilt it or because `.nx/workspace-data` is
+ * stale. So "not used by this project" is routinely false, and the fixer acts
+ * on it anyway.
+ *
+ * Observed on a real workspace, not inferred. After installing and importing
+ * `playwright`, a later `npm run format` removed `cheerio`, `jsonpath-plus`
+ * and `playwright` from the manifest and re-pinned `zod`. The next
+ * `npm install` synced the lockfile to the damaged manifest. Then rollup —
+ * which externalises exactly what the manifest declares — INLINED Playwright:
+ * the bundle went from 102 KB to 9 MB and opened with an unresolvable
+ * `import ... from 'chromium-bidi/...'`. No step errored, and the published
+ * package would have been broken.
+ *
+ * `checkMissingDependencies` stays on. Its fixer only ever calls
+ * `insertTextAfter`, so the worst a stale graph can do there is add a
+ * dependency that was already needed — recoverable by reading a diff, which
+ * the other two are not.
+ *
+ * The cost is real and worth stating: an obsolete dependency now has to be
+ * noticed by a human or by `mnci doctor`. That is the right trade. A lint rule
+ * that silently deletes a runtime dependency from a package about to be
+ * published is not a safety net, it is the hazard.
+ *
  * Two exclusions are load-bearing:
  *
  * - `ignoredDependencies` — private workspace libs are compiled INTO a
@@ -45,19 +82,79 @@ try {
  * @param workspaceRoot - Absolute path to the workspace root.
  * @returns The flat config blocks, or an empty array when Nx is absent.
  */
-export default function dependencyChecks (workspaceRoot) {
-  // No Nx present means no project graph to check against — skip rather than
-  // crash, so this package stays usable outside an Nx workspace.
-  if (!nxPlugin) {
-    return []
-  }
-
+/**
+ * The exact options this config gives `@nx/dependency-checks`.
+ *
+ * @remarks
+ * Exported because **ESLint replaces rule options, it does not merge them.** A
+ * consumer overriding the rule - to re-enable a check locally, say - silently
+ * loses everything here, and the first symptom is a false positive that reads
+ * like a real one: `rollup.config.cjs` does `require('@nx/rollup/with-nx')`,
+ * so without `ignoredFiles` the rule reports `@nx/rollup` as missing from the
+ * published `dependencies` of a package that must never declare it.
+ *
+ * So an override spreads these rather than restating them:
+ *
+ * ```js
+ * import mnci, { dependencyChecksOptions } from '@mnci/eslint-config'
+ *
+ * export default [
+ *   ...mnci({ workspaceRoot: import.meta.dirname }),
+ *   {
+ *     name:  'local/dependency-checks',
+ *     files: ['packages/*\/package.json'],
+ *     rules: {
+ *       '@nx/dependency-checks': [
+ *         'error',
+ *         { ...dependencyChecksOptions(import.meta.dirname), checkObsoleteDependencies: true },
+ *       ],
+ *     },
+ *   },
+ * ]
+ * ```
+ *
+ * It takes `workspaceRoot` because `ignoredDependencies` is computed by
+ * scanning for `private: true` manifests - an override that hardcoded the list
+ * would go stale the next time an internal lib is added.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root.
+ * @returns The options object, safe to spread.
+ */
+export function dependencyChecksOptions (workspaceRoot) {
   const privateWorkspacePackages = globSync(['libs/*/package.json', 'packages/*/package.json'], {
     cwd: workspaceRoot,
   })
     .map(manifestPath => JSON.parse(readFileSync(join(workspaceRoot, manifestPath), 'utf8')))
     .filter(manifest => manifest.private === true)
     .map(manifest => manifest.name)
+
+  return {
+    // See the note on the default export: both of these have destructive
+    // fixers and read a project graph that lags the disk.
+    checkObsoleteDependencies: false,
+    checkVersionMismatches:    false,
+    // Additive fixer only, so a stale graph cannot lose anything.
+    checkMissingDependencies:  true,
+    ignoredDependencies:       privateWorkspacePackages,
+    ignoredFiles:              [
+      '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
+      '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
+      '{projectRoot}/tsup.config.{js,ts,mjs,mts,cjs,cts}',
+      '{projectRoot}/vite.config.{js,ts,mjs,mts,cjs,cts}',
+      '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
+      '{projectRoot}/jest.config.{js,ts,mjs,mts,cjs,cts}',
+      '{projectRoot}/**/*.spec.{js,ts,jsx,tsx}',
+      '{projectRoot}/**/*.test.{js,ts,jsx,tsx}',
+    ],
+  }
+}
+
+export default function dependencyChecks (workspaceRoot) {
+  // No Nx present means no project graph to check against — skip rather than
+  // crash, so this package stays usable outside an Nx workspace.
+  if (!nxPlugin) {
+    return []
+  }
 
   return [
     {
@@ -66,22 +163,7 @@ export default function dependencyChecks (workspaceRoot) {
       languageOptions: { parser: jsoncParser },
       plugins:         { '@nx': nxPlugin },
       rules:           {
-        '@nx/dependency-checks': [
-          'error',
-          {
-            ignoredDependencies: privateWorkspacePackages,
-            ignoredFiles:        [
-              '{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}',
-              '{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}',
-              '{projectRoot}/tsup.config.{js,ts,mjs,mts,cjs,cts}',
-              '{projectRoot}/vite.config.{js,ts,mjs,mts,cjs,cts}',
-              '{projectRoot}/vitest.config.{js,ts,mjs,mts,cjs,cts}',
-              '{projectRoot}/jest.config.{js,ts,mjs,mts,cjs,cts}',
-              '{projectRoot}/**/*.spec.{js,ts,jsx,tsx}',
-              '{projectRoot}/**/*.test.{js,ts,jsx,tsx}',
-            ],
-          },
-        ],
+        '@nx/dependency-checks': ['error', dependencyChecksOptions(workspaceRoot)],
       },
     },
   ]

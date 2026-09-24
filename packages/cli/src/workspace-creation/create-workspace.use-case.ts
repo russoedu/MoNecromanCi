@@ -1,5 +1,6 @@
-import { rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { runFormatter, runNpx, runShell } from '../nx-workspace'
 import {
   applyOverlay,
@@ -11,6 +12,7 @@ import {
 import { promptCi, promptNxCloud, promptRegistry, promptStack, promptText } from '../terminal'
 import { logger } from '../terminal'
 import { assertValidProjectName } from '../project-name'
+import { adoptGeneratedWorkspace, assertAdoptableDirectory } from './adopt-directory.use-case'
 
 /**
  * Options accepted by {@link runNew}.
@@ -44,6 +46,11 @@ export interface NewOptions {
   testRunner?:    StackConfig['testRunner']
   /** Opt in to Nx Cloud (remote caching + CI insights). Default: not connected. */
   nxCloud?:       boolean
+  /**
+   * Bootstrap into an existing directory (typically a fresh clone holding
+   * nothing but `.git`) instead of creating a new one.
+   */
+  into?:          string
 }
 
 /**
@@ -167,7 +174,17 @@ async function resolveRegistry (options: NewOptions): Promise<RegistryConfig> {
  * @typeParam None - this function has no generic type parameters.
  */
 export async function runNew (name: string | undefined, options: NewOptions): Promise<void> {
-  const workspaceName = name ?? (await promptText('Workspace name'))
+  // `--into` doubles as the name when none is given, because the directory is
+  // already named: a cloned repository's folder IS the workspace name, and
+  // retyping it is a way to get the two out of step.
+  const adoptTarget = options.into === undefined ? undefined : resolve(process.cwd(), options.into)
+  // Checked before a single prompt, let alone the minutes `create-nx-workspace`
+  // takes. Finding out that the target is unusable after generating into a
+  // temp directory is finding out too late.
+  if (adoptTarget !== undefined) assertAdoptableDirectory(adoptTarget)
+
+  const workspaceName =
+    name ?? (adoptTarget === undefined ? await promptText('Workspace name') : basename(adoptTarget))
   // Fails fast, before any further prompt or side effect: the name becomes a
   // directory, a `create-nx-workspace` argument and (derived) an npm scope, so
   // a bad one should never get this far — and an explicitly empty `name`
@@ -202,6 +219,14 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   const stack = await resolveStack(options)
   const nxCloud = options.nxCloud ?? (options.yes ? false : await promptNxCloud())
 
+  // `create-nx-workspace <name>` insists on creating the directory itself and
+  // exits with DIRECTORY_EXISTS otherwise, so adopting one means generating
+  // somewhere else and moving the result in. A temp directory rather than a
+  // sibling of the target, so a failed run leaves nothing next to the
+  // repository to clean up by hand.
+  const stagingParent =
+    adoptTarget === undefined ? process.cwd() : mkdtempSync(join(tmpdir(), 'mnci-new-'))
+
   logger.step(`Creating Nx workspace '${workspaceName}' (preset: ts)`)
   runNpx(
     [
@@ -213,10 +238,21 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
       nxCloud ? `--nxCloud=${nxCloudProviderValue(ci)}` : '--nxCloud=skip',
       '--no-interactive',
     ],
-    process.cwd(),
+    stagingParent,
   )
 
-  const workspaceRoot = join(process.cwd(), workspaceName)
+  let workspaceRoot = join(stagingParent, workspaceName)
+  if (adoptTarget !== undefined) {
+    logger.step(`Adopting ${adoptTarget} (keeping its .git)`)
+    // Throws on any collision it cannot resolve, having written nothing. The
+    // staging tree is removed either way — on the failure path by the process
+    // exiting, on the success path by the adoption itself.
+    const adoption = adoptGeneratedWorkspace(workspaceRoot, adoptTarget)
+    for (const kept of adoption.kept) logger.detail(`kept the existing ${kept}`)
+    if (adoption.mergedGitignore) logger.detail('merged the generated .gitignore into the existing one')
+    rmSync(stagingParent, { recursive: true, force: true })
+    workspaceRoot = adoptTarget
+  }
 
   logger.step(
     'Applying MoNecromanCI overlay (VS Code workspace, release config, .npmrc, commitlint, pipeline, stack)',
@@ -272,7 +308,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   runFormatter(workspaceRoot)
 
   logger.success('Done. Next steps:')
-  logger.info(`  cd ${workspaceName}`)
+  if (adoptTarget === undefined) logger.info(`  cd ${workspaceName}`)
   logger.info('  mnci add react-app web        # or: react-lib, react-internal-lib, node-app,')
   logger.info('                                 #     node-function-app, npm-lib, internal-lib,')
   logger.info(

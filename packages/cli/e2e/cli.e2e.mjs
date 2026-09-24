@@ -463,6 +463,27 @@ section('js stack', [], () => {
 
   enforceWorkspaceShape(workspace, 'after new')
 
+  // A PRISTINE workspace must pass its own lint, before anything is added to
+  // it. This was red: create-nx-workspace 23.x writes AI-agent scaffolding by
+  // default, and three copies of its `monitor-ci` scripts fail
+  // @mnci/eslint-config with 36 errors - so `mnci new` itself ended with
+  // "eslint could not format '.' (exit code 1)" and the first thing a user saw
+  // in a brand-new workspace was a failing `npm run lint`. `--aiAgents=none`
+  // is what stops them being written.
+  enforce('a fresh workspace passes its own npm run lint', tryRun('npm run lint', workspace))
+
+  // The scaffolding itself must be absent rather than merely unlinted: files
+  // the workspace's own linter disowns are the fragmentation the single root
+  // config exists to end, and deleting them after the fact would leave every
+  // `nx` command printing "Your AI agent configuration is outdated".
+  for (const leftover of ['.agents', '.claude', '.codex', '.cursor', '.gemini', '.opencode',
+    'opencode.json', 'AGENTS.md', 'CLAUDE.md', '.github/skills']) {
+    enforce(
+      `no AI-agent scaffolding: ${leftover}`,
+      !existsSync(path.join(workspace, leftover)),
+    )
+  }
+
   // The root config is three lines importing the shared package — the whole
   // linting opinion lives there, not inlined per workspace.
   // Without this registration every project silently loses its lint target while
@@ -878,6 +899,29 @@ section('js stack', [], () => {
   console.log('\n▸ mnci add npm-lib sdk')
   run(`node ${CLI} add npm-lib sdk`, workspace)
 
+  /* ---------------------------------------------------------------------------
+   * `--publishable` scaffolds a local-registry story mnci does not use, and it
+   * does it on EVERY add, so leaving it is not a one-time cost. All three halves
+   * have to go together - a target pointing at a config file that is not there
+   * is worse than either alone.
+   * ------------------------------------------------------------------------- */
+  const rootManifestAfterNpmLib = JSON.parse(
+    readFileSync(path.join(workspace, 'package.json'), 'utf8'),
+  )
+
+  enforce(
+    'npm-lib: no .verdaccio/ left at the workspace root',
+    !existsSync(path.join(workspace, '.verdaccio')),
+  )
+  enforce(
+    'npm-lib: no verdaccio devDependency left at the root',
+    rootManifestAfterNpmLib.devDependencies?.verdaccio === undefined,
+  )
+  enforce(
+    'npm-lib: no local-registry target left in the root manifest',
+    rootManifestAfterNpmLib.nx?.targets?.['local-registry'] === undefined,
+  )
+
   console.log('\n▸ mnci add internal-lib utils')
   run(`node ${CLI} add internal-lib utils`, workspace)
 
@@ -928,6 +972,83 @@ section('js stack', [], () => {
     "import { sdk } from './sdk.js';\n\ndescribe('sdk', () => {\n  it('uses the internal lib and the external dependency', () => {\n    expect(sdk()).toEqual('sdk uses utils and 1m');\n  });\n});\n",
   )
   run('npx nx sync', workspace)
+
+  /* ---------------------------------------------------------------------------
+   * `npm run format` must not touch a published manifest.
+   *
+   * The blocker this guards, observed on a real workspace: `format` is
+   * `eslint . --fix`, and `@nx/dependency-checks` is fixable. Two of its checks
+   * rewrite the manifest - `checkObsoleteDependencies` REMOVES a declared
+   * dependency the project graph does not yet see used, and
+   * `checkVersionMismatches` re-pins `^1.2.3` to `1.2.3`. The graph lags the
+   * disk, so a dependency installed minutes ago reads as unused.
+   *
+   * What followed there: three runtime dependencies deleted from the manifest,
+   * `npm install` syncing the lockfile to the damage, and rollup - which
+   * externalises exactly what the manifest declares - inlining Playwright into
+   * a 9 MB bundle opening with an unresolvable `chromium-bidi` import. Nothing
+   * errored at any step.
+   *
+   * Run HERE, immediately after the manifest is written and before anything
+   * warms the graph, because a cold graph is the condition under which the
+   * fixer was most wrong.
+   * ------------------------------------------------------------------------- */
+  console.log('\n▸ npm run format must leave a published manifest alone')
+  const sdkManifestBeforeFormat = readFileSync(sdkManifestPath, 'utf8')
+  run('npm run format', workspace)
+  const sdkManifestAfterFormat = readFileSync(sdkManifestPath, 'utf8')
+
+  enforce(
+    'format leaves the freshly installed dependency declared, at its original range',
+    sdkManifestAfterFormat === sdkManifestBeforeFormat,
+  )
+  // Asserted separately from the byte comparison so a failure says WHICH half
+  // broke: the dependency vanishing and its range being re-pinned are different
+  // bugs with the same cause.
+  const sdkAfterFormat = JSON.parse(sdkManifestAfterFormat)
+  enforce(
+    'format keeps ms in dependencies rather than deleting it as obsolete',
+    sdkAfterFormat.dependencies?.ms !== undefined,
+  )
+  enforce(
+    'format keeps the caret range rather than re-pinning it to the installed version',
+    sdkAfterFormat.dependencies?.ms === `^${msVersion}`,
+  )
+
+  /* ---------------------------------------------------------------------------
+   * `typecheck` must run AFTER `build`, not beside it.
+   *
+   * Reported as a race: `nx run-many -t typecheck,build` (which is what
+   * `npm run affected` expands to) running rollup's `deleteOutputPath` wipe of
+   * `dist/` underneath a `tsc --build` that was reading declarations out of it.
+   *
+   * It does not reproduce on this output, for two independent reasons, and
+   * this assertion pins the one that can regress. First, resolution: an
+   * `e2e/a.ts` included by `tsconfig.spec.json` and importing `../src/index`
+   * resolves to `src/index.ts`, the SOURCE - TypeScript's source-of-project-
+   * reference redirect is on by default, so `dist/*.d.ts` is never consulted
+   * and wiping it cannot break the program. Second, ordering: the `typecheck`
+   * target `@nx/js/typescript` infers carries `dependsOn: ['build', ...]`, so
+   * the two never overlap at all. Five deliberately concurrent rollup/tsc pairs
+   * on a generated `npm-lib` left typecheck green every time.
+   *
+   * Only the second is ours to keep. A per-project `typecheck` SCRIPT would
+   * shadow the inferred target with an `nx:run-script` one carrying no
+   * `dependsOn` at all - which is exactly what this repo's own `az-durable`
+   * package looks like - and the ordering guarantee would vanish with nothing
+   * to notice. Hence an assertion on the dependency rather than on the race.
+   * ------------------------------------------------------------------------- */
+  console.log('\n▸ typecheck depends on build, so rollup cannot wipe dist underneath it')
+  const sdkGraph = tryRunCapture('npx nx show project @demo/sdk --json', workspace)
+  const sdkTypecheck = sdkGraph.ok
+    ? JSON.parse(sdkGraph.output.slice(sdkGraph.output.indexOf('{'))).targets?.typecheck
+    : undefined
+
+  enforce(
+    'sdk: typecheck declares a dependency on build, so dist is never wiped underneath it',
+    Array.isArray(sdkTypecheck?.dependsOn) && sdkTypecheck.dependsOn.includes('build'),
+    JSON.stringify(sdkTypecheck?.dependsOn),
+  )
 
   console.log('\n▸ mnci add react-app web')
   run(`node ${CLI} add react-app web`, workspace)

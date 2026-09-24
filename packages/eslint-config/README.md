@@ -189,6 +189,35 @@ preset has no tsconfig `paths` to fall back on either. So a completely correct
 cross-project import resolves to nothing on disk. `tsc` already reports unresolved
 _typed_ imports, and the workspace runs `typecheck` in CI.
 
+### Browser automation (`configs/browserAutomation.js`) — opt-in
+
+For Playwright and Puppeteer projects. `page.evaluate(() => document.title)`
+fails `unicorn/isolated-functions`:
+
+```
+Variable document not defined in scope of isolated function.
+Function is isolated because: callee of method named "page.evaluate"
+```
+
+The rule is right about the isolation — that callback is serialised and runs
+inside the page, so it genuinely cannot see the enclosing module — and it
+checks every free variable against the declared globals, which here are
+**Node's**. So no browser global exists for the callback and every one reports.
+Without the opt-in the choices are passing string scripts and losing type
+checking, disabling a rule that catches real scope bugs, or a red `lint`.
+
+```js
+export default mnci({ browserAutomation: true })
+// or only where the automation lives:
+export default mnci({ browserAutomation: ['packages/scraper/src/**/*.ts'] })
+```
+
+It declares browser globals; it does not make them true. A file in scope may
+now reference `document` at the **top** level without ESLint objecting, and
+that throws in Node. TypeScript is what still catches it — `document` is not in
+scope unless the project's `lib` includes `dom` — which is why this is opt-in
+and scoped by glob rather than on by default.
+
 ### Vertical feature slices (`configs/verticalSlices.js`) — opt-in
 
 For workspaces organised as **vertical feature slices**: each project's `src/`
@@ -200,7 +229,26 @@ for a workspace that is not built this way, it would fail every file on day one.
 export default mnci({ workspaceRoot: import.meta.dirname, verticalSlices: true })
 // or only for the projects that follow it:
 export default mnci({ verticalSlices: ['packages/*/src/**/*.ts'] })
+// or with extra roles, for a vocabulary the default list does not cover:
+export default mnci({
+  verticalSlices: {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    roles: ['route', 'component', 'hook', 'section', 'style', 'content'],
+  },
+})
 ```
+
+**The role list is extensible, and for a front end it has to be.** The default
+roles are the back-end vocabulary. The ADR these rules come from also allows
+`.service` (with a recorded exception) and `.middleware`, and its front-end
+amendment adds `.route`, `.component`, `.hook`, `.section`, `.style`,
+`.content`, `.mock` and `.fixture`. A React app could not opt in at all while
+the list was fixed — every component it has would report.
+
+`roles` **appends** to the defaults rather than replacing them: a workspace
+adding `.component.tsx` still wants `.use-case.ts`, and a replacing option
+would mean restating fourteen entries to add one. Only `file-role` takes it;
+the other two rules are about imports, which a file's suffix has no bearing on.
 
 | Rule | Reports |
 |---|---|
@@ -214,7 +262,16 @@ files on each side — a contract imported one way, a use case the other — so 
 is no file-level cycle for it to report. It was written for, and first caught
 three such cycles in, a real monorepo where `no-cycle` was already on.
 
-Tests (`.spec`/`.test`) are exempt from the role and cycle rules.
+Tests (`.spec`/`.test`) are exempt from the role and cycle rules — a test is
+named for the file it tests, so it has no role suffix, and a spec is not in the
+production dependency graph a cycle would matter in.
+
+They are **not** exempt from `no-deep-import`. A test importing
+`'../billing/fee.policy'` is reported, exactly as production code would be:
+that rule is about respecting a sibling's public API, and a test that reaches
+past an index couples to the sibling's internals just as tightly — rename a
+file in one slice and another slice's test breaks. Reach a sibling through its
+index from a test too, or move the test beside what it is testing.
 
 ### Regex and TOML
 
@@ -285,6 +342,33 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 block for `packages/*` and `libs/*`, which needs to scan for `private: true`
 manifests. Omit it in a workspace with no publishable npm packages.
 
+#### `@nx/dependency-checks` only runs under `nx run`
+
+It needs the Nx project graph, and outside a target it prints:
+
+```
+No cached ProjectGraph is available. The rule will be skipped.
+```
+
+So `npm run lint` (`nx run-many -t lint`) evaluates it, and **`npm run format`,
+your editor and any pre-commit hook do not**. That is worth knowing in both
+directions:
+
+- A dependency problem will not surface until you run `lint`. `format` passing
+  says nothing about it.
+- The rule is **fixable**, and `format` is `eslint . --fix`. Its being skipped
+  there is the reason a `--fix` run outside `nx` cannot reach a manifest at all.
+
+This config turns off the two checks whose fixers rewrite manifests
+(`checkObsoleteDependencies`, `checkVersionMismatches` — see below), so neither
+path is destructive now. Before that, the difference between the two commands
+was the difference between a report and a deleted runtime dependency.
+
+If you want the rule evaluated in `format` too, warm the graph first —
+`npx nx show projects > /dev/null && npm run format`. mnci does not do this by
+default: it makes every format run pay for a graph computation to enforce
+something `lint` already gates.
+
 ### Where this differs from Standard
 
 `mnci/standard` is a faithful port of `neostandard`. Five deliberate departures
@@ -337,6 +421,43 @@ export default [
   }
 ]
 ```
+
+### Options are replaced, not merged
+
+Switching a rule off is one thing; **re-configuring one is a trap**. ESLint
+replaces a rule's options wholesale — it does not merge yours into the ones
+already set — so an override that passes an options object discards every
+option this package gave that rule.
+
+`@nx/dependency-checks` is where this bites, because most of its configuration
+here is exclusions. Override it without spreading and you lose `ignoredFiles`,
+and the first symptom reads like a real finding: `rollup.config.cjs` does
+`require('@nx/rollup/with-nx')`, so the rule reports `@nx/rollup` as missing
+from the `dependencies` of a package that must never declare it.
+
+So spread the exported options rather than restating them:
+
+```js
+import mnci, { dependencyChecksOptions } from '@mnci/eslint-config'
+
+export default [
+  ...mnci({ workspaceRoot: import.meta.dirname }),
+  {
+    name:  'local/dependency-checks',
+    files: ['packages/*/package.json'],
+    rules: {
+      '@nx/dependency-checks': [
+        'error',
+        { ...dependencyChecksOptions(import.meta.dirname), checkObsoleteDependencies: true },
+      ],
+    },
+  },
+]
+```
+
+It takes `workspaceRoot` because `ignoredDependencies` is computed by scanning
+for `private: true` manifests — a hardcoded list goes stale the next time an
+internal lib is added.
 
 To find out which block turned a rule on in the first place:
 
