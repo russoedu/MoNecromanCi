@@ -992,6 +992,41 @@ section('js stack', [], () => {
     sdkAfterFormat.dependencies?.ms === `^${msVersion}`,
   )
 
+  /* ---------------------------------------------------------------------------
+   * `typecheck` must run AFTER `build`, not beside it.
+   *
+   * Reported as a race: `nx run-many -t typecheck,build` (which is what
+   * `npm run affected` expands to) running rollup's `deleteOutputPath` wipe of
+   * `dist/` underneath a `tsc --build` that was reading declarations out of it.
+   *
+   * It does not reproduce on this output, for two independent reasons, and
+   * this assertion pins the one that can regress. First, resolution: an
+   * `e2e/a.ts` included by `tsconfig.spec.json` and importing `../src/index`
+   * resolves to `src/index.ts`, the SOURCE - TypeScript's source-of-project-
+   * reference redirect is on by default, so `dist/*.d.ts` is never consulted
+   * and wiping it cannot break the program. Second, ordering: the `typecheck`
+   * target `@nx/js/typescript` infers carries `dependsOn: ['build', ...]`, so
+   * the two never overlap at all. Five deliberately concurrent rollup/tsc pairs
+   * on a generated `npm-lib` left typecheck green every time.
+   *
+   * Only the second is ours to keep. A per-project `typecheck` SCRIPT would
+   * shadow the inferred target with an `nx:run-script` one carrying no
+   * `dependsOn` at all - which is exactly what this repo's own `az-durable`
+   * package looks like - and the ordering guarantee would vanish with nothing
+   * to notice. Hence an assertion on the dependency rather than on the race.
+   * ------------------------------------------------------------------------- */
+  console.log('\n▸ typecheck depends on build, so rollup cannot wipe dist underneath it')
+  const sdkGraph = tryRunCapture('npx nx show project @demo/sdk --json', workspace)
+  const sdkTypecheck = sdkGraph.ok
+    ? JSON.parse(sdkGraph.output.slice(sdkGraph.output.indexOf('{'))).targets?.typecheck
+    : undefined
+
+  enforce(
+    'sdk: typecheck declares a dependency on build, so dist is never wiped underneath it',
+    Array.isArray(sdkTypecheck?.dependsOn) && sdkTypecheck.dependsOn.includes('build'),
+    JSON.stringify(sdkTypecheck?.dependsOn),
+  )
+
   console.log('\n▸ mnci add react-app web')
   run(`node ${CLI} add react-app web`, workspace)
 
