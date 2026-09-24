@@ -1,7 +1,13 @@
-import { globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runShell } from '../nx-workspace'
-import { ESLINT_VERSION, RETIRED_FORMATTER_FILES, type RegistryConfig } from '../workspace-overlay'
+import {
+  ESLINT_MNCI_FILENAME,
+  ESLINT_USER_FILENAME,
+  ESLINT_VERSION,
+  RETIRED_FORMATTER_FILES,
+  type RegistryConfig,
+} from '../workspace-overlay'
 import {
   canRepairRollupConfig,
   hasDeclarationSpecifierPlugin,
@@ -96,6 +102,52 @@ function checkEslintConfigs (workspaceRoot: string): Finding[] {
       ok:     projectConfigs.length === 0,
       detail: `found ${projectConfigs.length}: ${projectConfigs.join(', ')}`,
       remedy: 'run `mnci upgrade`, which sweeps {apps,libs,packages}/*/eslint.config.*',
+    },
+    ...checkEslintEntryPointReachesTheRules(workspaceRoot),
+  ]
+}
+
+/**
+ * Fails when `eslint.config.mjs` no longer reaches the rules mnci writes.
+ *
+ * @remarks
+ * The two files are split so that `mnci upgrade` can rewrite the rules without
+ * touching the workspace's own blocks — which is only true while the workspace's
+ * file still imports the other one. A config that has stopped doing so lints
+ * against whatever it does import and nothing else, and it does that quietly:
+ * ESLint is perfectly happy with a config that carries no rules, so `lint`
+ * passes and every file in the repository drifts.
+ *
+ * Only asked once `eslint.config.mnci.mjs` exists, so a workspace that has not
+ * been upgraded yet is not nagged about a file it has never had.
+ *
+ * Matched on the filename rather than by parsing: a bare substring is enough to
+ * tell an import of it from its absence, and running a workspace's config
+ * through a parser inside a read-only diagnostic buys nothing.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns One finding, or none when the split has not been applied here.
+ * @throws Never - an unreadable entry point reads as not reaching the rules.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkEslintEntryPointReachesTheRules (workspaceRoot: string): Finding[] {
+  const rules = join(workspaceRoot, ESLINT_MNCI_FILENAME)
+  if (!existsSync(rules)) return []
+
+  const entryPoint = join(workspaceRoot, ESLINT_USER_FILENAME)
+  const source = existsSync(entryPoint) ? readFileSync(entryPoint, 'utf8') : ''
+
+  return [
+    {
+      check:  `${ESLINT_USER_FILENAME} imports the mnci rules`,
+      ok:     source.includes(ESLINT_MNCI_FILENAME),
+      detail: source === ''
+        ? `${ESLINT_USER_FILENAME} is missing, so nothing loads the rules`
+        : `${ESLINT_USER_FILENAME} never mentions ${ESLINT_MNCI_FILENAME}`,
+      remedy:
+        `make its first import \`import mnci from './${ESLINT_MNCI_FILENAME}'\` and spread ` +
+        '`...mnci` into the exported array, keeping your own blocks after it — ' +
+        'mnci does not rewrite this file, so it cannot do this for you',
     },
   ]
 }

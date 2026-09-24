@@ -95,6 +95,43 @@ describe('collectFindings', () => {
     expect(findingFor(collectFindings(workspaceRoot), 'root ESLint config')?.ok).toBe(false)
   })
 
+  it('says nothing about the split on a workspace that has not been upgraded to it', () => {
+    // eslint.config.mnci.mjs is what upgrade writes. Until it exists there is
+    // nothing for the entry point to import, and nagging about a file the
+    // workspace has never had would be noise on every older workspace.
+    seedHealthyWorkspace()
+
+    expect(findingFor(collectFindings(workspaceRoot), 'imports the mnci rules')).toBeUndefined()
+  })
+
+  it('catches an entry point that has stopped importing the mnci rules', () => {
+    // The failure is silent, which is why it is worth a check: ESLint is happy
+    // with a config carrying no rules, so `lint` passes and every file in the
+    // repository drifts. mnci cannot fix this itself — it does not rewrite this
+    // file, which is the entire point of the split — so the remedy has to say
+    // what to type.
+    seedHealthyWorkspace()
+    writeFileSync(join(workspaceRoot, 'eslint.config.mnci.mjs'), 'export default []')
+    writeFileSync(join(workspaceRoot, 'eslint.config.mjs'), 'export default []')
+
+    const finding = findingFor(collectFindings(workspaceRoot), 'imports the mnci rules')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('never mentions')
+    expect(finding?.remedy).toContain("import mnci from './eslint.config.mnci.mjs'")
+  })
+
+  it('passes once the entry point imports them', () => {
+    seedHealthyWorkspace()
+    writeFileSync(join(workspaceRoot, 'eslint.config.mnci.mjs'), 'export default []')
+    writeFileSync(
+      join(workspaceRoot, 'eslint.config.mjs'),
+      "import mnci from './eslint.config.mnci.mjs'\nexport default [...mnci]\n",
+    )
+
+    expect(findingFor(collectFindings(workspaceRoot), 'imports the mnci rules')?.ok).toBe(true)
+  })
+
   it('catches an unregistered @nx/eslint/plugin, which makes lint pass while linting nothing', () => {
     seedHealthyWorkspace()
     writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ plugins: [] }))

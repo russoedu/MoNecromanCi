@@ -1,10 +1,15 @@
 import tsdoc from 'eslint-plugin-tsdoc'
 import tsdocRequire from 'eslint-plugin-tsdoc-require-2'
-import mnci from '@mnci/eslint-config'
+import mnci from './eslint.config.mnci.mjs'
 
 /**
  * This repo lints itself with the exact config it ships to the workspaces it
- * generates — the same three-line import a `mnci new` workspace gets.
+ * generates — the same two files a `mnci new` workspace gets, split the same
+ * way: `eslint.config.mnci.mjs` holds the rules and is mnci's, and this file
+ * holds the repo's own blocks and is not. Dogfooding the split is the point.
+ * The bug it fixes was mnci rewriting THIS file on every upgrade and silently
+ * deleting every block below, having told the reader three lines above that
+ * appending was how overriding worked.
  *
  * That is the point, not a convenience. This whole change exists because the
  * repo's own root had been hand-upgraded to a rich ~340-line config while
@@ -35,7 +40,11 @@ export default [
   //
   // Turning it on workspace-wide would therefore fail four packages for reasons
   // that are not architectural drift, which is exactly how a gate gets disabled.
-  ...mnci({ workspaceRoot: import.meta.dirname, verticalSlices: ['packages/cli/src/**/*.ts'] }),
+  //
+  // `verticalSlices` is also why the owned file exports a FUNCTION rather than
+  // a resolved array: this option has to be passable from here, and the first
+  // draft of the split left it nowhere to go.
+  ...mnci({ verticalSlices: ['packages/cli/src/**/*.ts'] }),
 
   // Repo-specific ignores, beyond the build output the shared config lists.
   { ignores: ['.azurite/**', '.build-templates/**', 'doc/**', 'tools/**', '**/assets/**'] },

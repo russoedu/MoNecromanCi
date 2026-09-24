@@ -87,10 +87,23 @@ describe('mnci holds itself to the invariants it enforces elsewhere', () => {
     // Extras layered ON TOP are fine and deliberate (repo-only ignores, TSDoc
     // enforcement); what must never happen is this file ceasing to be the shared
     // config plus extras.
+    //
+    // It reaches the shared config through the SPLIT now, exactly as a generated
+    // workspace does: eslint.config.mnci.mjs holds the rules and belongs to
+    // mnci, and eslint.config.mjs holds this repo's own blocks and does not.
+    // Dogfooding that is not decoration — it is what caught the generated
+    // owned file failing `unicorn/no-anonymous-default-export` and then
+    // `unicorn/default-export-style`, which would have broken the first
+    // `npm run lint` in every workspace mnci produced.
+    const rules = readFileSync(join(WORKSPACE_ROOT, 'eslint.config.mnci.mjs'), 'utf8')
     const config = readFileSync(join(WORKSPACE_ROOT, 'eslint.config.mjs'), 'utf8')
 
-    expect(config).toContain("from '@mnci/eslint-config'")
+    expect(rules).toContain("from '@mnci/eslint-config'")
+    expect(config).toContain("from './eslint.config.mnci.mjs'")
     expect(config).toContain('...mnci(')
+    // The rules must not be reachable from the editable file directly, or the
+    // split buys nothing and an upgrade would have to rewrite it again.
+    expect(config).not.toContain("from '@mnci/eslint-config'")
   })
 
   it('declares no retired formatter in its own root manifest', () => {

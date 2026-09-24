@@ -429,15 +429,20 @@ that would just fail felt worse than being upfront that it doesn't exist yet.
    `{projectName}@{version}` tags, **tag-only git** (`commit: false`) — nothing
    is ever pushed to `main`; future runs resolve versions from tag names. Also
    fills in `namedInputs.sharedGlobals` with the root config files
-   (`eslint.config.mjs`, `tsconfig.base.json`, `package.json`), without which
+   (`eslint.config.mjs`, `eslint.config.mnci.mjs`, `tsconfig.base.json`,
+   `package.json`), without which
    `nx affected` on a pull request is blind to them: they live in no project, so
    changing one marked only the root pseudo-project — which has no
    lint/typecheck/test/build target — and the affected-scoped verify step ran
    nothing at all while reporting green.
-3. Writes `eslint.config.mjs` (one import from `@mnci/eslint-config` — the whole
-   linting opinion, in one root config — plus a commented inventory naming every
-   config block and how to override it — there is no formatter config, because
-   ESLint is the formatter), `.npmrc` (publish auth — see **Publish auth** below),
+3. Writes **two** ESLint files, and only one of them is mnci's:
+   `eslint.config.mnci.mjs` holds the whole linting opinion (one import from
+   `@mnci/eslint-config`, plus a commented inventory naming every config block)
+   and is rewritten on every upgrade; `eslint.config.mjs` is the file ESLint
+   actually loads, imports that one, holds **your** blocks, and is written once
+   and then never touched again. See **Your half of the ESLint config** below.
+   There is no formatter config, because ESLint is the formatter. Also writes
+   `.npmrc` (publish auth — see **Publish auth** below),
    `commitlint.config.mjs`, a husky `commit-msg` hook, the chosen CI provider's
    pipeline file(s)
    (`azure-pipelines.yml` and/or `.github/workflows/ci.yml`, `--ci`, default
@@ -460,7 +465,8 @@ same options `new` would have and calls the exact same `applyOverlay` `new`
 itself calls — the one function that does every bit of `mnci`-owned file
 writing (`nx.json`'s `release`/`sync`/`generators`/`namedInputs.sharedGlobals`/
 `mnci` blocks, `.npmrc`,
-`eslint.config.mjs`, `commitlint.config.mjs`,
+`eslint.config.mnci.mjs` (**not** `eslint.config.mjs` — see below),
+`commitlint.config.mjs`,
 `.husky/commit-msg`, the CI pipeline file(s), `.devcontainer/devcontainer.json`, the
 `<workspace-name>.code-workspace` file, and the curated root `package.json`
 scripts). Nothing else in the workspace — app/lib source, `project.json` targets
@@ -532,8 +538,52 @@ stack:
 | --------------- | ------------------ | ------- | ---------------------------------------------------------------------------------------- |
 | `--test-runner` | `jest` \| `vitest` | `jest`  | `nx.json` generator `unitTestRunner` default; the hand-built function app follows it too |
 
+### Your half of the ESLint config
+
+There are two root ESLint files, and the split exists because the old
+single-file layout lost work. `eslint.config.mjs` used to be mnci-owned and
+rewritten wholesale on every `mnci upgrade` — so a block appended to it, in the
+way a comment mnci itself wrote three lines above described, was deleted
+without a word. Worse, `upgrade` then tells you to run `npm run format`, so the
+first thing that happens after your overrides vanish is every file in the
+repository being rewritten against the rules you thought you had changed.
+
+So:
+
+| File | Owner | On `mnci upgrade` |
+| --- | --- | --- |
+| `eslint.config.mnci.mjs` | mnci | rewritten every time |
+| `eslint.config.mjs` | you | written once, then never touched |
+
+`eslint.config.mjs` is what ESLint loads, because `eslint.config.mjs` is
+ESLint's own default filename — the file the tool looks for has to be the one
+you own, or the tool's default is the one mnci overwrites.
+
+```js
+import mnci from './eslint.config.mnci.mjs'
+
+export default [
+  ...mnci(),
+  { name: 'local/legacy-app-allows-any', files: ['apps/legacy/**/*.ts'], rules: { … } },
+]
+```
+
+The owned file exports a **function**, not a resolved array, so options still
+reach `@mnci/eslint-config` from the file you own:
+`...mnci({ verticalSlices: ['packages/*/src/**/*.ts'] })`. An array would have
+had nowhere to receive them — mnci's own repository passes `verticalSlices`,
+which is how that was caught.
+
+**Upgrading an existing workspace.** If your `eslint.config.mjs` is still the
+old single-file one and you never edited it, `mnci upgrade` moves it onto the
+split for you: it replaces the file only when it provably holds nothing but
+mnci's own output. If you did edit it, it is left exactly as it is and
+`mnci doctor` reports that it no longer imports the rules, with the line to
+add. mnci does not rewrite that file any more — which is the point, and also
+why it cannot do this part for you.
+
 **Linting and formatting are unified across the workspace, from exactly one
-config file each.** The root `eslint.config.mjs` is three lines importing
+pair of config files.** The rules are three lines importing
 [`@mnci/eslint-config`](../eslint-config/README.md); every `@nx/*` generator
 drops a config into the project it creates, and `mnci add` deletes it. Projects
 still get their `lint` target: `@nx/eslint/plugin` infers it by mapping config
