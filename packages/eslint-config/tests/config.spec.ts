@@ -603,6 +603,40 @@ describe('@mnci/eslint-config', () => {
     }
   })
 
+  it('exports the dependency-checks options, because ESLint replaces them', () => {
+    // ESLint does not MERGE rule options, it replaces them. A consumer
+    // overriding this rule loses every exclusion set here, and the first
+    // symptom reads like a real finding: rollup.config.cjs does
+    // `require('@nx/rollup/with-nx')`, so without `ignoredFiles` the rule
+    // reports @nx/rollup as missing from the dependencies of a package that
+    // must never declare it.
+    //
+    // Read through the package ENTRY POINT in a subprocess, for the reason the
+    // file header gives: this package is ESM and Jest runs these specs as CJS,
+    // so a direct import cannot work. Going through the entry point is also
+    // what pins the re-export - an options object nobody can import is no
+    // better than no options object.
+    const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+    const read = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `import { dependencyChecksOptions } from ${JSON.stringify(entry)}
+` +
+        `process.stdout.write(JSON.stringify(dependencyChecksOptions(${JSON.stringify(packageRoot)})))`,
+      ],
+      { encoding: 'utf8' },
+    )
+    const options = JSON.parse(read.stdout) as {
+      ignoredFiles:              string[]
+      checkObsoleteDependencies: boolean
+    }
+
+    expect(options.ignoredFiles).toContain('{projectRoot}/rollup.config.{js,ts,mjs,mts,cjs,cts}')
+    expect(options.checkObsoleteDependencies).toBe(false)
+  })
+
   it('never lets dependency-checks DELETE or RE-PIN a published manifest', () => {
     // The blocker this configuration exists to prevent, observed on a real
     // workspace rather than imagined:

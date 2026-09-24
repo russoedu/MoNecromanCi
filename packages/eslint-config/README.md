@@ -366,6 +366,43 @@ export default [
 ]
 ```
 
+### Options are replaced, not merged
+
+Switching a rule off is one thing; **re-configuring one is a trap**. ESLint
+replaces a rule's options wholesale — it does not merge yours into the ones
+already set — so an override that passes an options object discards every
+option this package gave that rule.
+
+`@nx/dependency-checks` is where this bites, because most of its configuration
+here is exclusions. Override it without spreading and you lose `ignoredFiles`,
+and the first symptom reads like a real finding: `rollup.config.cjs` does
+`require('@nx/rollup/with-nx')`, so the rule reports `@nx/rollup` as missing
+from the `dependencies` of a package that must never declare it.
+
+So spread the exported options rather than restating them:
+
+```js
+import mnci, { dependencyChecksOptions } from '@mnci/eslint-config'
+
+export default [
+  ...mnci({ workspaceRoot: import.meta.dirname }),
+  {
+    name:  'local/dependency-checks',
+    files: ['packages/*/package.json'],
+    rules: {
+      '@nx/dependency-checks': [
+        'error',
+        { ...dependencyChecksOptions(import.meta.dirname), checkObsoleteDependencies: true },
+      ],
+    },
+  },
+]
+```
+
+It takes `workspaceRoot` because `ignoredDependencies` is computed by scanning
+for `private: true` manifests — a hardcoded list goes stale the next time an
+internal lib is added.
+
 To find out which block turned a rule on in the first place:
 
 ```bash

@@ -19,6 +19,11 @@ import yaml from './configs/yaml.js'
 export { default as base } from './configs/base.js'
 export { default as css } from './configs/css.js'
 export { default as dependencyChecks } from './configs/dependencyChecks.js'
+// The rule's options, separately: ESLint REPLACES rule options rather than
+// merging them, so an override that does not spread these loses `ignoredFiles`
+// and starts reporting `@nx/rollup` as missing from every publishable
+// package's dependencies. See the remarks on the function.
+export { dependencyChecksOptions } from './configs/dependencyChecks.js'
 export { default as houseStyle } from './configs/houseStyle.js'
 export { default as html } from './configs/html.js'
 export { default as importGraph } from './configs/importGraph.js'
