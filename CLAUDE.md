@@ -31,8 +31,11 @@ libs/                     # empty (.gitkeep only) — internal libs would live h
 azure-pipelines.yml       # Azure Pipelines CI (if --ci=azure|both during initial setup)
 
 nx.json                   # Nx workspace config with release, sync, generators, sharedGlobals
-eslint.config.mjs         # ESLint flat config — mnci-owned; one import from @mnci/eslint-config,
-                          #   plus a named inventory of every block and how to override it
+eslint.config.mnci.mjs    # ESLint flat config — MNCI-OWNED, rewritten every upgrade; one
+                          #   import from @mnci/eslint-config plus a named inventory of every
+                          #   block. Exports a FUNCTION so options still reach the package.
+eslint.config.mjs         # ESLint's entry point — YOURS. Imports the file above and holds
+                          #   your own blocks. Written once, never rewritten
                           #   (there is NO formatter config: ESLint is the formatter)
 commitlint.config.mjs     # Conventional commit enforcement (via husky hook)
 .husky/commit-msg         # commitlint hook
@@ -405,7 +408,7 @@ since Prettier rewrites `function f (a)` back to `function f(a)` on every run).
   `lint` target (`ROOT_LINT_TARGET`) covering CI/config/Markdown files that no
   per-project target reaches.
 - `nx.json`'s `namedInputs.sharedGlobals` includes every root config file
-  (`eslint.config.mjs`, `tsconfig.base.json`, root `package.json`) so `nx affected`
+  (both ESLint files, `tsconfig.base.json`, root `package.json`) so `nx affected`
   doesn't treat a change to any of them as invisible — a root config file lives in
   no project, so without this a PR touching only `eslint.config.mjs` verified
   nothing and reported green.
@@ -562,7 +565,9 @@ assumed. As of the last rollup there: **no P1 is open**. Open work is:
 3. `.npmrc` (publish auth; the azure variant also routes `@scope` to the feed)
 4. *(nothing — there is no formatter config; `mnci upgrade` DELETES `.prettierrc*`,
    `.prettierignore`, `.oxfmtrc.json` and `oxlint.config.ts` if a past version wrote them)*
-5. `eslint.config.mjs` (one import from `@mnci/eslint-config`, plus the block inventory)
+5. `eslint.config.mnci.mjs` (one import from `@mnci/eslint-config`, plus the block
+   inventory). **`eslint.config.mjs` is NOT owned** — it is written once and then
+   never touched, because rewriting it deleted users' override blocks
 6. `commitlint.config.mjs` + `.husky/commit-msg` (conventional-commit enforcement)
 7. `<workspace-name>.code-workspace` (VS Code configuration: folders, settings,
    extensions, per-project tasks, and `launch` configs for build/test/lint/typecheck)
