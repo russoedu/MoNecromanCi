@@ -78,7 +78,8 @@ export const ignores = [
  * `import.meta.dirname` from the root config) to enable the
  * `@nx/dependency-checks` block, which scans for `private: true` manifests.
  * Omit it in a workspace with no publishable npm packages. Pass
- * `verticalSlices: true` - or the globs of the projects that follow it - to
+ * `verticalSlices: true` - the globs of the projects that follow it, or
+ * `{ files, roles }` to extend the role vocabulary - to
  * enforce the vertical-slice rules (see `configs/verticalSlices.js`); they are
  * off by default, because they are an architecture, not a style.
  * @returns The flat config array.

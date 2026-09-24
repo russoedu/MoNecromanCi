@@ -104,6 +104,68 @@ afterAll(() => {
   rmSync(workspace, { recursive: true, force: true })
 })
 
+describe('mnci({ verticalSlices: { roles } })', () => {
+  // The default role list is the BACK-END vocabulary. The ADR these rules come
+  // from also allows `.service` and `.middleware`, and its front-end amendment
+  // adds `.route`, `.component`, `.hook`, `.section`, `.style`, `.content`,
+  // `.mock` and `.fixture`. While the list was fixed, a React app could not opt
+  // in at all - every component it has would report.
+  let extended: Record<string, string[]>
+  let scoped: string
+
+  beforeAll(() => {
+    scoped = mkdtempSync(join(tmpdir(), 'mnci-eslint-slices-roles-'))
+    const entry = pathToFileURL(join(packageRoot, 'index.js')).href
+    writeFileSync(
+      join(scoped, 'eslint.config.mjs'),
+      `import mnci from ${JSON.stringify(entry)}\nexport default mnci({ verticalSlices: { roles: ['component', 'hook'] } })\n`,
+    )
+    const files: Record<string, string> = {
+      'tsconfig.json':                                FIXTURES['tsconfig.json'],
+      'packages/app/tsconfig.json':                   FIXTURES['packages/app/tsconfig.json'],
+      'packages/app/src/index.ts':                    "export { Button } from './buttons'\n",
+      'packages/app/src/buttons/index.ts':            "export { Button } from './button.component'\n",
+      // An added role.
+      'packages/app/src/buttons/button.component.ts': 'export const Button = 1\n',
+      // Another added role.
+      'packages/app/src/buttons/use-press.hook.ts':   'export const usePress = 1\n',
+      // A DEFAULT role, which must still pass - the option appends, it does not
+      // replace, or adding one role would cost you the other fourteen.
+      'packages/app/src/buttons/press.use-case.ts':   'export const press = 1\n',
+      // Still not a role.
+      'packages/app/src/buttons/helper.ts':           'export const helper = 1\n',
+    }
+    for (const [filename, contents] of Object.entries(files)) {
+      const target = join(scoped, filename)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, contents)
+    }
+    extended = lintAll(scoped)
+  })
+
+  afterAll(() => {
+    rmSync(scoped, { recursive: true, force: true })
+  })
+
+  const slicesIn = (filename: string): string[] =>
+    (extended[filename] ?? [])
+      .filter(rule => rule.startsWith('vertical-slices/') || rule === 'FATAL')
+      .toSorted((a, b) => a.localeCompare(b))
+
+  it('accepts the roles it was given', () => {
+    expect(slicesIn('packages/app/src/buttons/button.component.ts')).toEqual([])
+    expect(slicesIn('packages/app/src/buttons/use-press.hook.ts')).toEqual([])
+  })
+
+  it('still accepts the defaults, because the option APPENDS', () => {
+    expect(slicesIn('packages/app/src/buttons/press.use-case.ts')).toEqual([])
+  })
+
+  it('still reports a file with no role at all', () => {
+    expect(slicesIn('packages/app/src/buttons/helper.ts')).toEqual(['vertical-slices/file-role'])
+  })
+})
+
 describe('mnci({ verticalSlices })', () => {
   it('passes a slice that follows the rules, and its test', () => {
     expect(slicesFor('packages/app/src/index.ts')).toEqual([])

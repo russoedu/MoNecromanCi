@@ -200,7 +200,26 @@ for a workspace that is not built this way, it would fail every file on day one.
 export default mnci({ workspaceRoot: import.meta.dirname, verticalSlices: true })
 // or only for the projects that follow it:
 export default mnci({ verticalSlices: ['packages/*/src/**/*.ts'] })
+// or with extra roles, for a vocabulary the default list does not cover:
+export default mnci({
+  verticalSlices: {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    roles: ['route', 'component', 'hook', 'section', 'style', 'content'],
+  },
+})
 ```
+
+**The role list is extensible, and for a front end it has to be.** The default
+roles are the back-end vocabulary. The ADR these rules come from also allows
+`.service` (with a recorded exception) and `.middleware`, and its front-end
+amendment adds `.route`, `.component`, `.hook`, `.section`, `.style`,
+`.content`, `.mock` and `.fixture`. A React app could not opt in at all while
+the list was fixed — every component it has would report.
+
+`roles` **appends** to the defaults rather than replacing them: a workspace
+adding `.component.tsx` still wants `.use-case.ts`, and a replacing option
+would mean restating fourteen entries to add one. Only `file-role` takes it;
+the other two rules are about imports, which a file's suffix has no bearing on.
 
 | Rule | Reports |
 |---|---|

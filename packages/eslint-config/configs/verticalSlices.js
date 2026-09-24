@@ -6,7 +6,19 @@ export const ROLES = ['handler', 'use-case', 'algorithm', 'policy', 'model', 'co
 
 const EXTENSION = String.raw`\.(?:ts|tsx|mts|cts)`
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const PRODUCTION = new RegExp(String.raw`^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:${ROLES.join('|')})${EXTENSION}$`)
+/**
+ * The name pattern a production file must match, for a given role list.
+ *
+ * Built per rule invocation rather than once at module load, because the role
+ * list is configurable - see the `roles` option on {@link verticalSlices}. The
+ * cost is one `RegExp` per linted file, which is nothing next to parsing it.
+ *
+ * @param roles - Every role a production file may end in.
+ * @returns The matching pattern.
+ */
+function productionPattern (roles) {
+  return new RegExp(String.raw`^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:${roles.join('|')})${EXTENSION}$`)
+}
 const TEST = new RegExp(String.raw`\.(?:spec|test)${EXTENSION}$`)
 const SOURCE = new RegExp(`${EXTENSION}$`)
 const ENTRY = new RegExp(`^(?:index|main)${EXTENSION}$`)
@@ -127,12 +139,24 @@ export const plugin = {
           nesting: 'A subfeature is flat: "{{name}}" sits in a folder inside one. Split the subfeature instead of nesting it.',
           root:    'Only index and main live at the root of src; "{{name}}" belongs in a subfeature.',
         },
-        schema: [],
+        schema: [
+          {
+            type:                 'object',
+            properties:           { roles: { type: 'array', items: { type: 'string' } } },
+            additionalProperties: false,
+          },
+        ],
       },
       create (context) {
         const place = locate(context.filename)
         if (place === null) return {}
         const name = basename(context.filename)
+        // Extra roles are APPENDED to the defaults rather than replacing them:
+        // a workspace adding `.component.tsx` still wants `.use-case.ts`, and
+        // making the option replace the list would mean restating fourteen
+        // entries to add one.
+        const roles = [...ROLES, ...(context.options[0]?.roles ?? [])]
+        const production = productionPattern(roles)
 
         return {
           Program (node) {
@@ -144,8 +168,8 @@ export const plugin = {
               if (!ENTRY.test(name)) context.report({ node, messageId: 'root', data: { name } })
             } else if (place.depth > 1 && !folders.includes('fixtures')) {
               context.report({ node, messageId: 'nesting', data: { name } })
-            } else if (!BARREL.test(name) && !PRODUCTION.test(name)) {
-              context.report({ node, messageId: 'role', data: { name, roles: ROLES.join(' .') } })
+            } else if (!BARREL.test(name) && !production.test(name)) {
+              context.report({ node, messageId: 'role', data: { name, roles: roles.join(' .') } })
             }
           },
         }
@@ -238,22 +262,47 @@ export const plugin = {
  * to", which was simply false - a test importing `'../template/x.algorithm'`
  * has always been reported.
  *
- * @param files - Globs of the source this applies to. Default: every project's
- * `src` under `apps/`, `libs/` and `packages/`.
+ * THE ROLE LIST IS EXTENSIBLE
+ *
+ * {@link ROLES} is the back-end vocabulary, and it is not the only one. The ADR
+ * behind these rules also allows `.service` (with a recorded exception) and
+ * `.middleware`, and its front-end amendment adds `.route`, `.component`,
+ * `.hook`, `.section`, `.style`, `.content`, `.mock` and `.fixture`. A React
+ * app could not opt in at all while the list was fixed - every component it
+ * has would report.
+ *
+ * So `roles` appends to the defaults rather than replacing them: a workspace
+ * adding `.component.tsx` still wants `.use-case.ts`, and a replacing option
+ * would mean restating fourteen entries to add one.
+ *
+ * @param options - Globs, or `{ files, roles }`. An array (or nothing) is
+ * treated as `files`, so both earlier forms keep working.
+ * @param options.files - Globs of the source this applies to. Default: every
+ * project's `src` under `apps/`, `libs/` and `packages/`.
+ * @param options.roles - Extra role suffixes, APPENDED to {@link ROLES}.
  * @returns The flat config blocks.
  */
-export default function verticalSlices (files = [
-  'apps/*/src/**/*.{ts,mts,cts,tsx}',
-  'libs/*/src/**/*.{ts,mts,cts,tsx}',
-  'packages/*/src/**/*.{ts,mts,cts,tsx}',
-]) {
+export default function verticalSlices (options = {}) {
+  // `true` never reaches here - index.js maps it to `undefined` - but an array
+  // does, and so does nothing at all. Both predate the options object and both
+  // still work.
+  const settings = Array.isArray(options) ? { files: options } : options
+  const files = settings.files ?? [
+    'apps/*/src/**/*.{ts,mts,cts,tsx}',
+    'libs/*/src/**/*.{ts,mts,cts,tsx}',
+    'packages/*/src/**/*.{ts,mts,cts,tsx}',
+  ]
+  const roles = settings.roles ?? []
+
   return [
     {
       name:    'mnci/vertical-slices',
       files,
       plugins: { 'vertical-slices': plugin },
       rules:   {
-        'vertical-slices/file-role':      'error',
+        // Only `file-role` takes the roles: the other two are about imports,
+        // which a file's suffix has no bearing on.
+        'vertical-slices/file-role':      roles.length > 0 ? ['error', { roles }] : 'error',
         'vertical-slices/no-deep-import': 'error',
         'vertical-slices/no-slice-cycle': 'error',
       },
