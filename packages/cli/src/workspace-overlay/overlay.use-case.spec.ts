@@ -52,6 +52,7 @@ import {
   withEslintPlugin,
   withReleaseConfig,
   withSharedGlobals,
+  removeLocalRegistryScaffolding,
 } from './overlay.use-case'
 
 /**
@@ -2536,9 +2537,13 @@ describe('applyOverlay', () => {
   })
 
   it("keeps a workspace's own root targets when adding the lint one", () => {
+    // Deliberately NOT `local-registry`, which this overlay now removes on
+    // purpose - see the verdaccio test below. A target mnci has an opinion
+    // about proves nothing here; the claim is that a target it has never heard
+    // of survives.
     writeFileSync(
       join(workspaceRoot, 'package.json'),
-      JSON.stringify({ name: 'x', nx: { targets: { 'local-registry': { executor: 'x' } } } }),
+      JSON.stringify({ name: 'x', nx: { targets: { 'ship-it': { executor: 'x' } } } }),
     )
     overlayWith(DEFAULT_STACK)
 
@@ -2546,7 +2551,7 @@ describe('applyOverlay', () => {
       nx: { targets: Record<string, unknown> }
     }
 
-    expect(nx.targets['local-registry']).toEqual({ executor: 'x' })
+    expect(nx.targets['ship-it']).toEqual({ executor: 'x' })
     expect(nx.targets.lint).toEqual(ROOT_LINT_TARGET)
   })
 
@@ -3067,6 +3072,43 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
   })
 
+  it('removes the local-registry scaffolding a publishable lib left behind', () => {
+    // `@nx/js:lib --publishable` scaffolds a whole second publishing
+    // mechanism - verdaccio config, devDependency, root target - that mnci's
+    // tag-only release model never uses. All three halves have to go together:
+    // deleting the config while leaving the target is a target pointing at a
+    // file that is not there.
+    mkdirSync(join(workspaceRoot, '.verdaccio'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.verdaccio/config.yml'), 'storage: ../tmp\n')
+    writeFileSync(
+      join(workspaceRoot, 'package.json'),
+      JSON.stringify({
+        name:            '@org/source',
+        private:         true,
+        devDependencies: { nx: '23.0.0', verdaccio: '^6.3.2' },
+        nx:              {
+          includedScripts: [],
+          targets:         { 'local-registry': { executor: '@nx/js:verdaccio' } },
+        },
+      }),
+    )
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, '.verdaccio'))).toBe(false)
+    const manifest = JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as {
+      devDependencies: Record<string, string>
+      nx:              { targets: Record<string, unknown> }
+    }
+    // The MERGE is what would otherwise carry both across an upgrade, which is
+    // why each is dropped explicitly rather than just not written.
+    expect(manifest.devDependencies.verdaccio).toBeUndefined()
+    expect(manifest.nx.targets['local-registry']).toBeUndefined()
+    // And the rest of the block survives - this is a removal, not a reset.
+    expect(manifest.devDependencies.nx).toBe('23.0.0')
+    expect(manifest.nx.targets.lint).toBeDefined()
+  })
+
   it('sweeps per-project eslint configs, so `mnci upgrade` de-fragments an old workspace', () => {
     // This is the migration path that matters. `mnci add` deletes the config
     // its own generator writes, but that only helps projects created from now
@@ -3249,5 +3291,90 @@ describe('applyOverlay', () => {
     }
     expect(manifest.scripts.postinstall).toBe('echo hi')
     expect(manifest.scripts.build).toBe('nx run-many -t build')
+  })
+})
+
+describe('removeLocalRegistryScaffolding', () => {
+  // The `mnci add` path, which never goes near the overlay: adding a
+  // publishable library to an existing workspace re-scaffolds all three halves
+  // every time, so this has to stand on its own.
+  let workspaceRoot: string
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-verdaccio-'))
+  })
+
+  afterEach(() => {
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  const writeManifest = (manifest: unknown): void =>
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify(manifest))
+
+  const readManifest = (): Record<string, unknown> =>
+    JSON.parse(readFileSync(join(workspaceRoot, 'package.json'), 'utf8')) as Record<string, unknown>
+
+  it('removes all three halves and leaves the rest of the manifest alone', () => {
+    mkdirSync(join(workspaceRoot, '.verdaccio'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.verdaccio/config.yml'), 'storage: ../tmp\n')
+    writeManifest({
+      name:            '@org/source',
+      devDependencies: { nx: '23.0.0', verdaccio: '^6.3.2' },
+      nx:              { includedScripts: [], targets: { 'local-registry': {}, 'lint': {} } },
+    })
+
+    removeLocalRegistryScaffolding(workspaceRoot)
+
+    expect(existsSync(join(workspaceRoot, '.verdaccio'))).toBe(false)
+    const manifest = readManifest() as {
+      devDependencies: Record<string, string>
+      nx:              { includedScripts: unknown[], targets: Record<string, unknown> }
+    }
+    expect(manifest.devDependencies).toEqual({ nx: '23.0.0' })
+    expect(manifest.nx.targets).toEqual({ lint: {} })
+    expect(manifest.nx.includedScripts).toEqual([])
+  })
+
+  it('keeps every untouched key in its original position', () => {
+    // Rebuilding the manifest from a spread moves `devDependencies` and `nx`
+    // to the end of the file, which is a diff in every generated workspace for
+    // no reason at all.
+    writeManifest({
+      name:            '@org/source',
+      devDependencies: { verdaccio: '^6.3.2', nx: '23.0.0' },
+      private:         true,
+      nx:              { targets: { 'local-registry': {}, 'lint': {} } },
+      workspaces:      ['packages/*'],
+    })
+
+    removeLocalRegistryScaffolding(workspaceRoot)
+
+    expect(Object.keys(readManifest())).toEqual([
+      'name',
+      'devDependencies',
+      'private',
+      'nx',
+      'workspaces',
+    ])
+  })
+
+  it('drops a container that emptying leaves with nothing in it', () => {
+    // A stray `{}` would read as deliberate; nothing else in a generated
+    // manifest carries one.
+    writeManifest({ name: '@org/source', devDependencies: { verdaccio: '^6.3.2' }, nx: { targets: { 'local-registry': {} } } })
+
+    removeLocalRegistryScaffolding(workspaceRoot)
+
+    expect(readManifest()).toEqual({ name: '@org/source' })
+  })
+
+  it('changes nothing on a workspace that never had it', () => {
+    writeManifest({ name: '@org/source', devDependencies: { nx: '23.0.0' } })
+    const before = readFileSync(join(workspaceRoot, 'package.json'), 'utf8')
+
+    removeLocalRegistryScaffolding(workspaceRoot)
+
+    expect(readManifest()).toEqual({ name: '@org/source', devDependencies: { nx: '23.0.0' } })
+    expect(before).toContain('23.0.0')
   })
 })

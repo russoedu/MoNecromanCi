@@ -899,6 +899,29 @@ section('js stack', [], () => {
   console.log('\n▸ mnci add npm-lib sdk')
   run(`node ${CLI} add npm-lib sdk`, workspace)
 
+  /* ---------------------------------------------------------------------------
+   * `--publishable` scaffolds a local-registry story mnci does not use, and it
+   * does it on EVERY add, so leaving it is not a one-time cost. All three halves
+   * have to go together - a target pointing at a config file that is not there
+   * is worse than either alone.
+   * ------------------------------------------------------------------------- */
+  const rootManifestAfterNpmLib = JSON.parse(
+    readFileSync(path.join(workspace, 'package.json'), 'utf8'),
+  )
+
+  enforce(
+    'npm-lib: no .verdaccio/ left at the workspace root',
+    !existsSync(path.join(workspace, '.verdaccio')),
+  )
+  enforce(
+    'npm-lib: no verdaccio devDependency left at the root',
+    rootManifestAfterNpmLib.devDependencies?.verdaccio === undefined,
+  )
+  enforce(
+    'npm-lib: no local-registry target left in the root manifest',
+    rootManifestAfterNpmLib.nx?.targets?.['local-registry'] === undefined,
+  )
+
   console.log('\n▸ mnci add internal-lib utils')
   run(`node ${CLI} add internal-lib utils`, workspace)
 

@@ -3682,6 +3682,9 @@ const NX_SCAFFOLDING_TO_REMOVE = [
   '.prettierrc',
   '.prettierrc.json',
   '.vscode',
+  // See LOCAL_REGISTRY_SCAFFOLDING: the config half of a publishing mechanism
+  // this workspace does not use.
+  '.verdaccio',
   // The AI-agent set, in full. See the remarks above: a partial delete leaves
   // every `nx` command printing an "outdated configuration" nag.
   '.agents',
@@ -3697,6 +3700,102 @@ const NX_SCAFFOLDING_TO_REMOVE = [
   'CLAUDE.md',
   'opencode.json',
 ] as const
+
+/**
+ * One key removed from a record, without mutating the original.
+ *
+ * @remarks
+ * Exists because the destructuring form of this needs a computed key, which
+ * reads badly enough that the lint config rejects it.
+ *
+ * @param record - The record to copy.
+ * @param key - The key to leave out.
+ * @returns A new record without that key.
+ * @throws Never - pure object construction.
+ * @typeParam T - The record's value type.
+ */
+function withoutKey<T> (record: Record<string, T>, key: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key))
+}
+
+/**
+ * The local-registry story `@nx/js:lib --publishable` scaffolds, in the three
+ * places it puts itself.
+ *
+ * @remarks
+ * Generating a publishable library drops a `.verdaccio/config.yml`, a
+ * `verdaccio` devDependency at the root, and a root `local-registry` target
+ * wired to both. It is Nx's own way of rehearsing a publish against a
+ * throwaway registry.
+ *
+ * mnci's way is different and already written down: `nx release` is tag-only
+ * and publishes from CI on a push to `main`, and `npm run release:preview`
+ * rehearses it without a registry at all. So this is a second publishing
+ * mechanism arriving unasked, that nothing in the workspace refers to, and
+ * bringing a devDependency with its own transitive tree and its own advisories
+ * for a feature nobody chose.
+ *
+ * Deleted rather than documented, for the same reason as `.vscode/` and the
+ * retired formatter configs: it re-appears on every `mnci add npm-lib`, so
+ * leaving it is not a one-time cost. Anyone who wants a local registry can add
+ * one deliberately; what they cannot do is notice it arriving.
+ */
+export const LOCAL_REGISTRY_SCAFFOLDING = {
+  /** The config directory, removed with the rest of {@link NX_SCAFFOLDING_TO_REMOVE}. */
+  directory:     '.verdaccio',
+  /** The root devDependency the target runs. */
+  devDependency: 'verdaccio',
+  /** The root Nx target wired to both of the above. */
+  rootTarget:    'local-registry',
+} as const
+
+/**
+ * Deletes the local-registry scaffolding from a workspace that already has it.
+ *
+ * @remarks
+ * `applyOverlay` handles `mnci new` and `mnci upgrade` on its own — it removes
+ * the directory with the rest of the Nx scaffolding, and drops the
+ * devDependency and the target while rewriting the root manifest. This is for
+ * `mnci add`, which scaffolds a publishable library without going near the
+ * overlay.
+ *
+ * Edits in place rather than rebuilding from a spread, so every untouched key
+ * keeps its position: a rebuild moves `devDependencies` and `nx` to the end of
+ * the file, which is a diff in every generated workspace for no reason.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function removeLocalRegistryScaffolding (workspaceRoot: string): void {
+  rmSync(join(workspaceRoot, LOCAL_REGISTRY_SCAFFOLDING.directory), {
+    recursive: true,
+    force:     true,
+  })
+
+  const manifestPath = join(workspaceRoot, 'package.json')
+  if (!fileExists(manifestPath)) return
+
+  const manifest = readJson<{
+    devDependencies?: Record<string, string>
+    nx?:              Record<string, unknown> & { targets?: Record<string, unknown> }
+  } & Record<string, unknown>>(manifestPath)
+
+  if (manifest.devDependencies?.[LOCAL_REGISTRY_SCAFFOLDING.devDependency] !== undefined) {
+    delete manifest.devDependencies[LOCAL_REGISTRY_SCAFFOLDING.devDependency]
+    if (Object.keys(manifest.devDependencies).length === 0) delete manifest.devDependencies
+  }
+  if (manifest.nx?.targets?.[LOCAL_REGISTRY_SCAFFOLDING.rootTarget] !== undefined) {
+    delete manifest.nx.targets[LOCAL_REGISTRY_SCAFFOLDING.rootTarget]
+    // Emptied containers go entirely: nothing else in a generated manifest
+    // carries an empty object, so a stray one would read as deliberate.
+    if (Object.keys(manifest.nx.targets).length === 0) delete manifest.nx.targets
+    if (Object.keys(manifest.nx).length === 0) delete manifest.nx
+  }
+
+  writeFileEnsured(manifestPath, toJson(manifest))
+}
 
 /**
  * Deletes the `create-nx-workspace` scaffolding mnci replaces.
@@ -3897,12 +3996,19 @@ export function applyOverlay (
     ...rootScripts(),
   }
   const existingDevDeps = manifest.devDependencies as Record<string, string> | undefined
-  const devDeps = withoutRetiredFormatterDependencies({
-    ...existingDevDeps,
-    ...TS_COMPILER_DEPENDENCIES,
-    // The preset pins `nx` itself; the ESLint plugins must match it exactly.
-    ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
-  })
+  // Dropped here as well as in `removeLocalRegistryScaffolding`, because this
+  // merge is what carries an existing workspace's devDependencies across an
+  // upgrade - so without this `mnci upgrade` would delete `.verdaccio/` and
+  // leave the dependency that populates it.
+  const devDeps = withoutKey(
+    withoutRetiredFormatterDependencies({
+      ...existingDevDeps,
+      ...TS_COMPILER_DEPENDENCIES,
+      // The preset pins `nx` itself; the ESLint plugins must match it exactly.
+      ...eslintToolchainDependencies(existingDevDeps?.nx ?? 'latest'),
+    }),
+    LOCAL_REGISTRY_SCAFFOLDING.devDependency,
+  )
   // Merged, never replaced: a workspace's own overrides must survive an upgrade.
   const overrides = {
     ...(manifest.overrides as Record<string, unknown> | undefined),
@@ -3918,11 +4024,18 @@ export function applyOverlay (
   // added root targets of its own keeps them — see ROOT_LINT_TARGET for why
   // `includedScripts` must stay empty.
   const existingNx = manifest.nx as Record<string, unknown> | undefined
+  // Same reason as the devDependency above: the merge is what would otherwise
+  // carry the target across an upgrade, pointing at a config file this run has
+  // just deleted.
+  const existingTargets = withoutKey(
+    (existingNx?.targets as Record<string, unknown> | undefined) ?? {},
+    LOCAL_REGISTRY_SCAFFOLDING.rootTarget,
+  )
   const nx = {
     ...existingNx,
     includedScripts: (existingNx?.includedScripts as unknown[] | undefined) ?? [],
     targets:         {
-      ...(existingNx?.targets as Record<string, unknown> | undefined),
+      ...existingTargets,
       lint: ROOT_LINT_TARGET,
     },
   }
