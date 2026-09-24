@@ -119,6 +119,10 @@ describe('collectFindings', () => {
     expect(finding?.ok).toBe(false)
     expect(finding?.detail).toContain('never mentions')
     expect(finding?.remedy).toContain("import mnci from './eslint.config.mnci.mjs'")
+    // The CALL, not the bare identifier: the owned file exports a function so
+    // that options still reach @mnci/eslint-config, and a remedy a user follows
+    // literally has to produce something that works.
+    expect(finding?.remedy).toContain('...mnci()')
   })
 
   it('passes once the entry point imports them', () => {
