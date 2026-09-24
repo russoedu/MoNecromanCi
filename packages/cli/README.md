@@ -613,6 +613,23 @@ the editor. It also makes `space-before-function-paren` enforceable for the
 first time: every Prettier-compatible formatter, oxfmt included, rewrites
 `function f (a)` back to `function f(a)`.
 
+**`npm run lint` checks one thing `npm run format` does not.** `lint` is
+`nx run-many -t lint`; `format` is a bare `eslint . --fix --cache`. The
+`@nx/dependency-checks` rule needs the Nx project graph, and outside a target it
+prints `No cached ProjectGraph is available. The rule will be skipped.` So a
+dependency problem shows up in `lint` and never in `format`, your editor, or a
+pre-commit hook.
+
+That asymmetry is now a safety property rather than a hazard. The rule is
+**fixable**, and `format` passes `--fix`; when the graph was warm — which it is
+after any `nx` command in the same workspace — a `format` run could and did
+rewrite `package.json`. `@mnci/eslint-config` turns off the two checks whose
+fixers do that (`checkObsoleteDependencies`, `checkVersionMismatches`), so
+neither path is destructive, and the skip means `format` cannot reach a manifest
+at all. Warm the graph deliberately (`npx nx show projects`) if you want the
+rule evaluated in `format` too; mnci does not, because it would make every
+format run pay for a graph computation to enforce what `lint` already gates.
+
 **Upgrading an older workspace.** `mnci upgrade` deletes every config a previous
 version could have written for a second tool — `.prettierrc`, `.prettierrc.json`,
 `.prettierrc.mjs`, `.prettierignore`, `.oxfmtrc.json`, `oxlint.config.ts` — and

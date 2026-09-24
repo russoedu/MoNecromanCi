@@ -342,6 +342,33 @@ export default mnci({ workspaceRoot: import.meta.dirname })
 block for `packages/*` and `libs/*`, which needs to scan for `private: true`
 manifests. Omit it in a workspace with no publishable npm packages.
 
+#### `@nx/dependency-checks` only runs under `nx run`
+
+It needs the Nx project graph, and outside a target it prints:
+
+```
+No cached ProjectGraph is available. The rule will be skipped.
+```
+
+So `npm run lint` (`nx run-many -t lint`) evaluates it, and **`npm run format`,
+your editor and any pre-commit hook do not**. That is worth knowing in both
+directions:
+
+- A dependency problem will not surface until you run `lint`. `format` passing
+  says nothing about it.
+- The rule is **fixable**, and `format` is `eslint . --fix`. Its being skipped
+  there is the reason a `--fix` run outside `nx` cannot reach a manifest at all.
+
+This config turns off the two checks whose fixers rewrite manifests
+(`checkObsoleteDependencies`, `checkVersionMismatches` — see below), so neither
+path is destructive now. Before that, the difference between the two commands
+was the difference between a report and a deleted runtime dependency.
+
+If you want the rule evaluated in `format` too, warm the graph first —
+`npx nx show projects > /dev/null && npm run format`. mnci does not do this by
+default: it makes every format run pay for a graph computation to enforce
+something `lint` already gates.
+
 ### Where this differs from Standard
 
 `mnci/standard` is a faithful port of `neostandard`. Five deliberate departures
