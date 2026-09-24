@@ -125,6 +125,10 @@ function checkEslintConfigs (workspaceRoot: string): Finding[] {
  * tell an import of it from its absence, and running a workspace's config
  * through a parser inside a read-only diagnostic buys nothing.
  *
+ * The remedy spells the CALL, `...mnci()`, not `...mnci`. The owned file
+ * exports a function so that options still reach `@mnci/eslint-config`, and a
+ * remedy a user follows literally has to produce something that works.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @returns One finding, or none when the split has not been applied here.
  * @throws Never - an unreadable entry point reads as not reaching the rules.
@@ -146,7 +150,7 @@ function checkEslintEntryPointReachesTheRules (workspaceRoot: string): Finding[]
         : `${ESLINT_USER_FILENAME} never mentions ${ESLINT_MNCI_FILENAME}`,
       remedy:
         `make its first import \`import mnci from './${ESLINT_MNCI_FILENAME}'\` and spread ` +
-        '`...mnci` into the exported array, keeping your own blocks after it — ' +
+        '`...mnci()` into the exported array, keeping your own blocks after it — ' +
         'mnci does not rewrite this file, so it cannot do this for you',
     },
   ]
