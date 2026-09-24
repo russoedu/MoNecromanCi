@@ -6,5 +6,6 @@
  * through this barrel, never by a path into the files below.
  */
 
+export * from './adopt-directory.use-case'
 export * from './create-workspace.use-case'
 export * from './interactive-wizard.use-case'

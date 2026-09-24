@@ -57,6 +57,10 @@ export function buildProgram (cliVersion: string): Command {
     .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
     .option('--nx-cloud', 'connect the workspace to Nx Cloud (remote caching + CI insights)')
+    .option(
+      '--into <dir>',
+      'bootstrap into an existing directory (a fresh clone holding only .git); the directory name is the workspace name unless one is given',
+    )
     .action(async (name: string | undefined, options: NewOptions) => {
       await runNew(name, options)
     })

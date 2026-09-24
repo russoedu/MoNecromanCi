@@ -81,6 +81,7 @@ consumers point at it.
 mnci new my-repo            # create a monorepo (prompts scope + registry)
 mnci new my-repo --yes --registry npm --scope @my
 mnci new my-repo --yes --registry npm --scope @my --nx-cloud  # opt in to Nx Cloud
+mnci new --into .           # ...or bootstrap into a clone that already exists
 
 cd my-repo
 mnci add react-app web         # @nx/react (Vite + Jest)
@@ -639,6 +640,47 @@ but an editor extension still resolves them, and the VS Code extension resolves 
 formatter from the **project's** dependencies, so a stale declaration is enough
 to reformat on save against an opinion nothing checks. `mnci doctor` reports a
 workspace that has not been upgraded yet.
+
+## `--into`: bootstrapping into a repository that already exists
+
+`create-nx-workspace <name>` creates the directory itself and exits with
+`DIRECTORY_EXISTS` when one is already there. That rules out the most common
+way a repository actually starts: the host creates it, you clone it, and the
+clone holds a `.git` directory, a README and a licence. Doing it by hand means
+generating into a temp parent, copying everything except `.git` and
+`node_modules` across, and reinstalling — four steps, each of which can quietly
+lose a file.
+
+`mnci new --into <dir>` is that, done once and tested:
+
+```sh
+git clone git@github.com:me/my-repo.git
+cd my-repo
+mnci new --into .
+```
+
+The workspace name defaults to the directory's name, because the directory is
+already named and retyping it is a way to get the two out of step; pass a name
+argument to override it.
+
+What it does with the files that are already there is the whole of the risk, so
+every case is decided in advance:
+
+| Already in the directory | What happens |
+| --- | --- |
+| `.git` | Never touched. Keeping it is the point. |
+| `README.md`, `LICENSE*` | **Kept.** The generator's README is boilerplate; yours is usually the only hand-written file in the repository. |
+| `.gitignore` | **Merged.** Your lines stay, and the generated ones (`.nx/cache`, `dist`, `out-tsc`, …) are appended under a labelled heading. Lines already present are not repeated, so it is idempotent. |
+| Anything else the new workspace also writes | **Refused**, naming every collision, before a single file is written. |
+| Anything the new workspace does not write | Left alone. |
+
+Two checks, not one. A directory holding `package.json`, `nx.json`,
+`tsconfig.base.json`, `node_modules`, `apps/`, `libs/` or `packages/` is
+rejected **before** anything is generated — it is a project already, and the
+answer there is `mnci upgrade`, not `mnci new`. The full collision check needs
+the generated tree, so it runs afterwards, but still before the first write:
+a refusal leaves the target byte-identical to how it was found, and the staging
+copy is discarded.
 
 ## Layout convention = release scoping
 
