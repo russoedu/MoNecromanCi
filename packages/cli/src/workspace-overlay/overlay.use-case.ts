@@ -2611,6 +2611,48 @@ function releaseGuard (pythonPublishEnv: string, nugetPublishEnv: string): strin
 export const PYPI_TOKEN_VARIABLE = 'PYPI_TOKEN'
 
 /**
+ * The env var an Azure Artifacts workspace carries its base64-encoded PAT in.
+ *
+ * @remarks
+ * Named once and shared by {@link npmAuthEnvVariable},
+ * {@link pythonPublishEnvFragment} and {@link nugetPublishEnvFragment}, for the
+ * same "cannot drift between providers" reason {@link PYPI_TOKEN_VARIABLE} is a
+ * constant rather than three string literals.
+ */
+export const AZURE_PAT_VARIABLE = 'PAT'
+
+/**
+ * The fail-fast an Azure Artifacts publish fragment opens with, so a missing
+ * PAT stops the release instead of being decoded into an empty credential.
+ *
+ * @remarks
+ * The same reasoning {@link pythonPublishEnvFragment} documents for public
+ * PyPI, applied to the feed that had no check at all. Both Azure fragments used
+ * to call `Buffer.from(process.env.PAT, 'base64')` unguarded, and an
+ * unconfigured secret does not arrive as `undefined` - **both providers
+ * substitute the empty string** - so the decode SUCCEEDED and produced `''`.
+ *
+ * For C# that was silent: `csharpLibPublishTarget()` self-gates on a falsy
+ * `NUGET_PAT`, printing "NuGet publish is not configured" and exiting 0. Under
+ * a tag-only release model that is the worst possible outcome - `nx release`
+ * versions and TAGS the package, the publish step reports success, and nothing
+ * reaches the feed. The next run resolves the current version from that tag and
+ * bumps past it, so the skipped version is never retried and never exists.
+ *
+ * Checked here, before `nx release` runs, rather than inside the publish
+ * target: once versioning has tagged, refusing to publish is already too late.
+ *
+ * @param countExpression - The in-fragment variable holding the package count.
+ * @param subject - How the message names this ecosystem's packages.
+ * @returns The `node -e` fragment fail-fast, for use inside an `if(has…){}`.
+ * @throws Never - pure string mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function azurePatPreflight (countExpression: string, subject: string): string {
+  return `if(!process.env.${AZURE_PAT_VARIABLE}){console.error('This workspace has '+${countExpression}+' ${subject} package(s) to publish to Azure Artifacts but ${AZURE_PAT_VARIABLE} is empty. Add your base64-encoded Azure DevOps PAT as a secret named ${AZURE_PAT_VARIABLE}, or remove the ${subject} packages from release.projects.');process.exit(1)}`
+}
+
+/**
  * The extra `env:` line the release step needs to carry a PyPI token.
  *
  * @remarks
@@ -2681,7 +2723,7 @@ function pythonPublishEnvFragment (
   registryKind: RegistryConfig['kind'],
 ): string {
   if (pythonPublishUrl !== undefined) {
-    return `if(hasPython){env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.PAT,'base64').toString()}`
+    return `if(hasPython){${azurePatPreflight('pythonCount', 'Python')}env.TWINE_REPOSITORY_URL='${pythonPublishUrl}';env.TWINE_USERNAME='AzureArtifacts';env.TWINE_PASSWORD=Buffer.from(process.env.${AZURE_PAT_VARIABLE},'base64').toString()}`
   }
   if (registryKind !== 'npm') {
     return ''
@@ -2704,7 +2746,7 @@ function pythonPublishEnvFragment (
  */
 function nugetPublishEnvFragment (nugetFeedUrl?: string): string {
   return nugetFeedUrl
-    ? 'if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}'
+    ? `if(hasCsharp){${azurePatPreflight('csharpCount', 'C#')}env.NUGET_PAT=Buffer.from(process.env.${AZURE_PAT_VARIABLE},'base64').toString()}`
     : ''
 }
 
@@ -2734,7 +2776,7 @@ function npmAuthEnvVariable (
 ): [string, string] {
   return registryKind === 'npm'
     ? ['NODE_AUTH_TOKEN', variableReference('NPM_TOKEN')]
-    : ['PAT', variableReference('PAT')]
+    : [AZURE_PAT_VARIABLE, variableReference(AZURE_PAT_VARIABLE)]
 }
 
 /**

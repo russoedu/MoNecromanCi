@@ -677,8 +677,12 @@ describe('azurePipelinesYaml', () => {
 
     // Guarded on packages/*/*.csproj, the same detection PACK_APPS_GUARD uses.
     expect(pipeline).toContain('csharpCount=fs.globSync(\'packages/*/*.csproj\').length')
-    // Exported only when hasCsharp — same shape as the Python fragment.
-    expect(pipeline).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+    // Exported only when hasCsharp — same shape as the Python fragment,
+    // including the PAT preflight that runs before the decode (an empty
+    // secret decodes to '', which the publish target treats as "not
+    // configured" and skips, silently, after versioning has already tagged).
+    expect(pipeline).toContain('env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+    expect(pipeline).toContain('if(hasCsharp){if(!process.env.PAT){console.error(')
     // Unlike npm's base64 _password, NuGet's ClearTextPassword takes the RAW
     // token, so no double-decode and no leftover base64 call for NuGet alone.
   })
@@ -1083,7 +1087,10 @@ describe('githubActionsYaml', () => {
     const workflow = githubActionsYaml('ubuntu-latest', undefined, 'azure-artifacts', 'github', nugetUrl)
 
     expect(workflow).toContain('csharpCount=fs.globSync(\'packages/*/*.csproj\').length')
-    expect(workflow).toContain('if(hasCsharp){env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+    expect(workflow).toContain('env.NUGET_PAT=Buffer.from(process.env.PAT,\'base64\').toString()}')
+    // The same PAT preflight the Azure file carries — one fragment, both
+    // providers, which is what the anti-drift test below relies on.
+    expect(workflow).toContain('if(hasCsharp){if(!process.env.PAT){console.error(')
   })
 
   it('still versions/tags C# on public npm, but exports no NuGet publish creds', () => {
@@ -1315,6 +1322,112 @@ describe('githubActionsYaml', () => {
 // a `.cmd` shim, and the harness is not worth duplicating for a platform whose
 // only job here runs e2e rather than unit tests.
 const describeOnPosix = process.platform === 'win32' ? describe.skip : describe
+
+describe('the Azure Artifacts PAT preflight, executed', () => {
+  // Executed rather than string-matched, because the bug being pinned was not
+  // a missing substring: `Buffer.from(process.env.PAT, 'base64')` SUCCEEDS on
+  // the empty string both providers substitute for an unconfigured secret, and
+  // produced `''`. The publish target then self-gated on that falsy value and
+  // exited 0, so `nx release` tagged a version it never published — and the
+  // next run resolved from that tag and bumped past it.
+  const guard = extractGuard(
+    azurePipelinesYaml(
+      'ubuntu-latest',
+      'Build',
+      'https://pkgs.dev.azure.com/org/proj/_packaging/feed/pypi/upload/',
+      'azure-artifacts',
+      'https://pkgs.dev.azure.com/org/proj/_packaging/feed/nuget/v3/index.json',
+    ),
+    'npx nx release',
+  )
+
+  let workspace: string
+  let log: string
+
+  /** Runs the release guard against the fixture workspace.
+   * @param pat - The value of the PAT variable for this run.
+   * @returns What the stubbed npx recorded, the exit status and the output. */
+  function run (pat: string): { released: string; status: number | null; out: string } {
+    const result = spawnSync(guard, {
+      cwd:      workspace,
+      shell:    true,
+      encoding: 'utf8',
+      env:      {
+        ...process.env,
+        PAT:               pat,
+        RELEASE_SPECIFIER: '',
+        PATH:              `${join(workspace, 'stub-bin')}${delimiter}${process.env.PATH ?? ''}`,
+      },
+    })
+
+    return {
+      released: existsSync(log) ? readFileSync(log, 'utf8').trim() : '',
+      status:   result.status,
+      out:      `${result.stdout}${result.stderr}`,
+    }
+  }
+
+  beforeEach(() => {
+    workspace = mkdtempSync(join(tmpdir(), 'mnci-pat-preflight-'))
+    log = join(workspace, 'released.log')
+
+    // One publishable package per PAT-authenticated ecosystem.
+    mkdirSync(join(workspace, 'python-packages/thing'), { recursive: true })
+    writeFileSync(join(workspace, 'python-packages/thing/pyproject.toml'), '[project]\n')
+    mkdirSync(join(workspace, 'packages/thing'), { recursive: true })
+    writeFileSync(join(workspace, 'packages/thing/thing.csproj'), '<Project />\n')
+
+    // Stubbed so a regression cannot reach a real `nx release`: without this,
+    // a guard that stopped failing would run the actual publish. Stubbed for
+    // BOTH shells — `shell: true` means cmd.exe on Windows, which cannot run
+    // the `#!/bin/sh` script, so a POSIX-only stub would leave the Windows run
+    // shelling out to the real npx: the one outcome this fixture exists to
+    // prevent.
+    mkdirSync(join(workspace, 'stub-bin'))
+    writeFileSync(
+      join(workspace, 'stub-bin/npx'),
+      `#!/bin/sh\necho "$@" > "${log}"\nexit 0\n`,
+      { mode: 0o755 },
+    )
+    writeFileSync(
+      join(workspace, 'stub-bin/npx.cmd'),
+      `@echo off\r\necho %*> "${log}"\r\nexit /b 0\r\n`,
+    )
+  })
+
+  afterEach(() => rmSync(workspace, { force: true, recursive: true }))
+
+  it('stops the release before anything is versioned when PAT is empty', () => {
+    const result = run('')
+
+    expect(result.status).toBe(1)
+    expect(result.released).toBe('')
+  })
+
+  it('names the variable and both remedies, so the message is actionable', () => {
+    const { out } = run('')
+
+    expect(out).toContain('PAT is empty')
+    expect(out).toContain('Add your base64-encoded Azure DevOps PAT')
+    expect(out).toContain('remove the')
+    expect(out).toContain('release.projects')
+  })
+
+  it('reports the ecosystem that is actually blocked, with its count', () => {
+    // Python is checked first, so it is the one reported. The count comes from
+    // the same glob `release.projects` uses, so the number is the real one.
+    expect(run('').out).toContain('has 1 Python package(s) to publish to Azure Artifacts')
+  })
+
+  it('releases normally once PAT is configured', () => {
+    // The other half of the guard: a preflight that over-fires would block
+    // every release on a correctly configured workspace.
+    const result = run(Buffer.from('a-real-pat').toString('base64'))
+
+    expect(result.status).toBe(0)
+    expect(result.released).toContain('nx release')
+  })
+})
 
 describeOnPosix('the verify guard, executed', () => {
   const guard = extractGuard(githubActionsYaml('ubuntu-latest'), 'npx nx affected')
