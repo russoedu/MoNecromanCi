@@ -2,6 +2,7 @@ import { addProjectConfiguration, formatFiles, type Tree } from '@nx/devkit'
 import {
   pythonModuleDirectory,
   pythonPyprojectToml,
+  pythonReadme,
   pythonSampleModule,
   pythonSampleTest,
 } from '../../internal/python-project.algorithm'
@@ -41,6 +42,7 @@ export default async function internalLibraryGenerator (
   })
 
   tree.write(`${root}/pyproject.toml`, pythonPyprojectToml(options.name, moduleDirectory))
+  tree.write(`${root}/README.md`, pythonReadme(options.name, moduleDirectory))
   tree.write(`${root}/${moduleDirectory}/__init__.py`, pythonSampleModule(moduleDirectory))
   tree.write(`${root}/tests/test_${moduleDirectory}.py`, pythonSampleTest(moduleDirectory))
   await formatFiles(tree)
