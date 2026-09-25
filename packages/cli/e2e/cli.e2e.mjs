@@ -2015,6 +2015,40 @@ section('python', ['alt stack'], () => {
     'see log above',
   )
 
+  /* ---------------------------------------------------------------------------
+   * Everything a build writes must be ignored, and this finds out GENERICALLY.
+   *
+   * This is the assertion that was missing, and a real defect shipped because
+   * of it: `create-nx-workspace`'s `.gitignore` is a JavaScript template -
+   * `dist`, `tmp`, `out-tsc`, `node_modules`, and not one line about any other
+   * language - so every Python project in a generated workspace committed its
+   * `__pycache__/` directories on the first `git add -A`.
+   *
+   * The shape matters. A list of expected artefact paths would only ever catch
+   * what its author thought of, and a hand-written list of ignores is exactly
+   * what was wrong to begin with. So this snapshots what git can SEE before the
+   * targets run, runs them, and looks again: anything new is something a build
+   * wrote that nothing ignores. It needs no list, and it will find `bin/` and
+   * `obj/` from `dotnet build`, `.dart_tool/` from Flutter, or whatever a future
+   * toolchain writes, on whichever machine has that toolchain.
+   *
+   * `git init` here rather than later: the existing `git init` further down is
+   * then a no-op and its `git add -A` still makes the first commit, so the
+   * conventional-commit history the release dry-run reads is unchanged.
+   *
+   * The three Python tool caches are absent from the result and that is not
+   * luck - mypy, pytest and ruff each write a `.gitignore` containing `*` into
+   * their own cache directory. CPython does not, which is why the bytecode was
+   * the part that leaked.
+   * ------------------------------------------------------------------------- */
+  run('git init -q -b main', altWorkspace)
+  const visibleBeforeVerify = new Set(
+    tryRunCapture('git status --porcelain --untracked-files=all', altWorkspace)
+      .output.split('\n')
+      .map(line => line.slice(3).trim())
+      .filter(line => line !== ''),
+  )
+
   enforce(
     'python: ruff lint runs green across the python projects',
     tryRun('npx nx run-many -t lint --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
@@ -2029,6 +2063,22 @@ section('python', ['alt stack'], () => {
     'python: pytest runs green across the python projects (private-lib + external-dependency wiring included, both resolving at test time via the global editable install)',
     tryRun('npx nx run-many -t test --projects=pysvc,pyfunc,pyshared,pycore', altWorkspace),
     'see log above',
+  )
+
+  console.log('\n▸ a project verify writes nothing git can see')
+  const visibleAfterVerify = tryRunCapture(
+    'git status --porcelain --untracked-files=all',
+    altWorkspace,
+  )
+  const wroteAndUnignored = visibleAfterVerify.output
+    .split('\n')
+    .map(line => line.slice(3).trim())
+    .filter(line => line !== '' && !visibleBeforeVerify.has(line))
+
+  enforce(
+    'python: lint, typecheck and test write nothing that .gitignore does not cover',
+    visibleAfterVerify.ok && wroteAndUnignored.length === 0,
+    wroteAndUnignored.join('\n'),
   )
 
   // Same real-execution proof as the npm audit step above, extracted from this

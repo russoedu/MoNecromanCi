@@ -17,6 +17,7 @@ import {
   DEFAULT_STACK,
   devcontainerJson,
   ensureEslintCacheIgnored,
+  ensurePythonArtefactsIgnored,
   ESLINT_BLOCK_INVENTORY,
   DOTNET_SDK_VERSION,
   ESLINT_CONFIG_VERSION,
@@ -2061,6 +2062,122 @@ describe('ensureEslintCacheIgnored', () => {
     ensureEslintCacheIgnored(workspaceRoot)
 
     expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe('dist\n  .eslintcache  \n')
+  })
+})
+
+describe('ensurePythonArtefactsIgnored', () => {
+  let workspaceRoot: string
+
+  const withPythonProject = (): void => {
+    mkdirSync(join(workspaceRoot, 'python-packages/pylib'), { recursive: true })
+    writeFileSync(join(workspaceRoot, 'python-packages/pylib/pyproject.toml'), '[project]\n')
+  }
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-pyignore-'))
+  })
+
+  afterEach(() => {
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('is a no-op when there is no .gitignore to append to', () => {
+    withPythonProject()
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    expect(existsSync(join(workspaceRoot, '.gitignore'))).toBe(false)
+  })
+
+  it('leaves a workspace with no Python project alone', () => {
+    // A pure-JavaScript workspace has no business carrying ignores for a
+    // language it does not use, and this is the whole difference from
+    // `.eslintcache`, which every workspace produces.
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\nnode_modules\n')
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe('dist\nnode_modules\n')
+  })
+
+  it('adds the bytecode ignores when a Python project exists', () => {
+    // `create-nx-workspace`'s template is a JavaScript template: `dist`, `tmp`,
+    // `out-tsc`, `node_modules`, and not one line about any other language. So
+    // running a generated Python project's own targets left two `__pycache__/`
+    // directories for the first `git add -A` to commit — measured on a real
+    // generated workspace, not inferred.
+    withPythonProject()
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\nnode_modules')
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    const gitignore = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')
+    expect(gitignore.split('\n')).toContain('__pycache__/')
+    expect(gitignore.split('\n')).toContain('*.py[cod]')
+    // Same shape as the `.eslintcache` append: a blank-line separator, a comment
+    // saying who added it and why, and a trailing newline.
+    expect(gitignore).toBe(
+      'dist\nnode_modules\n\n# Added by MoNecromanCI: Python bytecode. The tool caches (.mypy_cache,\n# .pytest_cache, .ruff_cache) write their own .gitignore; CPython does not.\n__pycache__/\n*.py[cod]\n',
+    )
+  })
+
+  it('does not ignore the three tool caches, because they ignore themselves', () => {
+    // Not an omission. mypy, pytest and ruff each write a `.gitignore`
+    // containing `*` into their own cache directory; CPython does not, which is
+    // why the bytecode is the part that leaked. Adding lines for the caches
+    // would be three lines of noise claiming to fix something already fixed.
+    withPythonProject()
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\n')
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    const gitignore = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')
+    for (const cache of ['.mypy_cache', '.pytest_cache', '.ruff_cache']) {
+      expect(gitignore).not.toContain(cache + '/\n')
+    }
+    // And no `.venv`: mnci invokes the toolchain as `python3 -m <tool>` and
+    // never creates one, so ignoring it would be a guess about how someone
+    // works rather than a fact about what this generates.
+    expect(gitignore).not.toContain('.venv')
+  })
+
+  it('is idempotent, so mnci upgrade can run on an already-fixed workspace', () => {
+    withPythonProject()
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\n')
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+    const once = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    expect(readFileSync(join(workspaceRoot, '.gitignore'), 'utf8')).toBe(once)
+  })
+
+  it('adds only the lines that are missing, whitespace and all', () => {
+    // A workspace that added one line by hand should get the other, not a
+    // duplicate of the first.
+    withPythonProject()
+    writeFileSync(join(workspaceRoot, '.gitignore'), 'dist\n  __pycache__/  \n')
+
+    ensurePythonArtefactsIgnored(workspaceRoot)
+
+    const lines = readFileSync(join(workspaceRoot, '.gitignore'), 'utf8').split('\n')
+    expect(lines.filter(line => line.trim() === '__pycache__/')).toHaveLength(1)
+    expect(lines).toContain('*.py[cod]')
+  })
+
+  it('finds a Python project under apps/ and libs/ too', () => {
+    // The same three roots every other Python-aware guard in this file scans.
+    for (const root of ['apps/pysvc', 'libs/pycore']) {
+      const fresh = mkdtempSync(join(tmpdir(), 'mnci-pyignore-root-'))
+      mkdirSync(join(fresh, root), { recursive: true })
+      writeFileSync(join(fresh, root, 'pyproject.toml'), '[project]\n')
+      writeFileSync(join(fresh, '.gitignore'), 'dist\n')
+
+      ensurePythonArtefactsIgnored(fresh)
+
+      expect(readFileSync(join(fresh, '.gitignore'), 'utf8')).toContain('__pycache__/')
+      rmSync(fresh, { recursive: true, force: true })
+    }
   })
 })
 

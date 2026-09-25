@@ -3883,6 +3883,88 @@ export function ensureEslintCacheIgnored (workspaceRoot: string): void {
 }
 
 /**
+ * Lines every Python project needs `.gitignore` to carry, and nothing more.
+ *
+ * @remarks
+ * Deliberately just the bytecode. Running `lint`, `typecheck` and `test` on a
+ * generated `python-lib` writes five directories - `__pycache__/` twice,
+ * `.mypy_cache/`, `.pytest_cache/` and `.ruff_cache/` - and the last three each
+ * write their own `.gitignore` containing `*`, so they need nothing from here.
+ * CPython does not, which is why `__pycache__/` is the one that leaks.
+ *
+ * Measured on a real generated workspace rather than assumed: after
+ * `nx run-many -t lint,typecheck,test`, `git status` named exactly the two
+ * `__pycache__/` directories and nothing else.
+ *
+ * `.venv/` is NOT here. mnci invokes the Python toolchain as `python3 -m <tool>`
+ * and never creates a virtualenv, so ignoring one would be a guess about how
+ * someone works rather than a fact about what this generates.
+ */
+const PYTHON_ARTEFACT_IGNORES = ['__pycache__/', '*.py[cod]'] as const
+
+/**
+ * Adds the Python bytecode ignores when the workspace has a Python project.
+ *
+ * @remarks
+ * `create-nx-workspace`'s `.gitignore` is a JavaScript template: `dist`, `tmp`,
+ * `out-tsc`, `node_modules`, and not one line about any other language. That was
+ * fine while mnci only scaffolded JavaScript, and has been wrong since it
+ * scaffolded Python - the first `git add -A` after running a Python project's
+ * own targets commits its bytecode.
+ *
+ * Found from the outside: a repository built with this CLI needed a hand-written
+ * commit to add these lines, and `.gitignore` is the one file mnci appends to
+ * without owning (see {@link ensureEslintCacheIgnored}, and `react-app`'s
+ * `.env` negation) - so appending here is the established shape rather than a
+ * new one.
+ *
+ * Conditional on a Python project existing, unlike `.eslintcache`, which every
+ * workspace produces. A pure-JavaScript workspace has no business carrying
+ * ignores for a language it does not use.
+ *
+ * Idempotent: `mnci upgrade` runs this on every existing workspace, and lines
+ * already present - added by hand or by a previous upgrade - are left alone.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any `fs` error reading or writing `.gitignore`.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function ensurePythonArtefactsIgnored (workspaceRoot: string): void {
+  const gitignorePath = join(workspaceRoot, '.gitignore')
+  if (!fileExists(gitignorePath)) {
+    return
+  }
+  // The same three roots every other Python-aware guard here scans.
+  const hasPython =
+    globSync(
+      ['python-packages/*/pyproject.toml', 'apps/*/pyproject.toml', 'libs/*/pyproject.toml'],
+      { cwd: workspaceRoot },
+    ).length > 0
+  if (!hasPython) {
+    return
+  }
+
+  const current = readFileSync(gitignorePath, 'utf8')
+  const present = new Set(current.split('\n').map(line => line.trim()))
+  const missing = PYTHON_ARTEFACT_IGNORES.filter(line => !present.has(line))
+  if (missing.length === 0) {
+    return
+  }
+
+  const withoutTrailingBlankLines = current.replace(/\n+$/u, '')
+  const separator = withoutTrailingBlankLines.length > 0 ? '\n\n' : ''
+  const heading = [
+    '# Added by MoNecromanCI: Python bytecode. The tool caches (.mypy_cache,',
+    '# .pytest_cache, .ruff_cache) write their own .gitignore; CPython does not.',
+  ].join('\n')
+  writeFileEnsured(
+    gitignorePath,
+    `${withoutTrailingBlankLines}${separator}${heading}\n${missing.join('\n')}\n`,
+  )
+}
+
+/**
  * Deletes every per-project ESLint config in the workspace.
  *
  * @remarks
@@ -4081,6 +4163,9 @@ export function applyOverlay (
   // create-nx-workspace's own .gitignore template has no reason to know
   // about — see ensureEslintCacheIgnored.
   ensureEslintCacheIgnored(workspaceRoot)
+  // Same file, same reason, different language: create-nx-workspace's template
+  // says nothing about Python because it is a JavaScript template.
+  ensurePythonArtefactsIgnored(workspaceRoot)
   // Every config a previous mnci version could have written for a second tool
   // has to be REMOVED, not merely left unwritten. A stale `.prettierrc.mjs` or
   // `.oxfmtrc.json` does nothing on its own now that neither binary runs, but a
