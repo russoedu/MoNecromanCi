@@ -570,12 +570,91 @@ export function withPythonGraphPlugin (
 }
 
 /**
+ * Narrows to a mergeable object: not null, and not an array.
+ *
+ * @remarks
+ * Arrays are deliberately NOT mergeable. `release.projects` is mnci's own
+ * list, and element-wise merging it would leave a workspace unable to drop an
+ * entry mnci once emitted.
+ *
+ * @param value - The value to test.
+ * @returns Whether `value` is a plain object.
+ * @throws Never - pure predicate.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function isMergeableObject (value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Deep-merges mnci's owned config over whatever the workspace already had,
+ * so keys mnci does not emit survive.
+ *
+ * @remarks
+ * mnci wins for every key it emits — those encode the tag-only release model,
+ * and a workspace silently flipping `git.commit` to `true` would be a worse
+ * bug than the one this fixes. Everything else is the workspace's and is kept.
+ *
+ * The trade, stated: a key mnci USED to emit and no longer does now lingers
+ * instead of being cleaned up. That is the right side to err on - a stale key
+ * nx ignores costs nothing, and deleting a key the workspace meant to keep has
+ * already cost a repo two days of silently failing releases.
+ *
+ * @param existing - The workspace's current value, of any shape.
+ * @param owned - The config mnci generates.
+ * @returns The merged object.
+ * @throws Never - pure recursive merge.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function preservingUnknownKeys (
+  existing: unknown,
+  owned: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isMergeableObject(existing)) {
+    return owned
+  }
+
+  const merged: Record<string, unknown> = { ...existing }
+  for (const [key, value] of Object.entries(owned)) {
+    const previous = merged[key]
+    merged[key] =
+      isMergeableObject(value) && isMergeableObject(previous)
+        ? preservingUnknownKeys(previous, value)
+        : value
+  }
+
+  return merged
+}
+
+/**
  * Returns a copy of an `nx.json` object with the release block applied.
  *
  * @remarks
  * Pure read-modify-write on the object the Nx preset generated — this never
  * templates whole config files, it only patches in the one opinion Nx has no
  * default for.
+ *
+ * The release block is **merged, not replaced**, and that distinction is the
+ * whole point. It used to be `release: releaseConfig(ci)`, which meant every
+ * `mnci upgrade` deleted any key a workspace had added under `release` — and
+ * `release` is the one block a workspace legitimately has to extend, because
+ * nx exposes settings there that mnci has no opinion about and cannot
+ * enumerate in advance.
+ *
+ * Observed, not hypothetical. A workspace had deliberately set
+ * `version.preserveMatchingDependencyRanges: false` - without it nx REFUSES to
+ * release when an internal dependency range cannot absorb the bump, which
+ * under this tag-only model is always, since `git.commit` is `false` and the
+ * on-disk manifests are permanently the scaffold version. An upgrade dropped
+ * it, and every release from that day on failed in the version phase. Nothing
+ * else noticed: lint, typecheck, test and build all stayed green, because the
+ * only broken path was the release, and that runs on the default branch alone.
+ *
+ * `sharedGlobals` ({@link withSharedGlobals}) and `plugins`
+ * ({@link withEslintPlugin}) were already additive, and `generators`, `sync`
+ * and `mnci` are all spread-merged where `nx.json` is written. `release` was
+ * the one wholesale replacement, and the only one whose value nests, so a
+ * shallow spread would still have wiped `version.*`.
  *
  * @param nxJson - The parsed `nx.json` produced by `create-nx-workspace`.
  * @param ci - Which CI provider(s) the workspace generates a pipeline for —
@@ -589,7 +668,11 @@ export function withReleaseConfig (
   nxJson: Record<string, unknown>,
   ci: CiProvider,
 ): Record<string, unknown> {
-  return { ...nxJson, defaultBase: 'main', release: releaseConfig(ci) }
+  return {
+    ...nxJson,
+    defaultBase: 'main',
+    release:     preservingUnknownKeys(nxJson.release, releaseConfig(ci)),
+  }
 }
 
 /**

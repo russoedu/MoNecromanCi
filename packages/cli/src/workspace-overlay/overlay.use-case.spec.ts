@@ -328,6 +328,79 @@ describe('nugetConfigContent', () => {
   })
 })
 
+describe('withReleaseConfig, over a workspace that extended the release block', () => {
+  // `release` is the one block a workspace legitimately has to extend: nx
+  // exposes settings there that mnci has no opinion about and cannot enumerate
+  // in advance. It used to be replaced wholesale, so `mnci upgrade` deleted
+  // them — silently, and visibly only on the release path, which runs on the
+  // default branch alone.
+  const extended = {
+    release: {
+      version: {
+        conventionalCommits:              true,
+        // The real casualty. Without it nx REFUSES to release when an internal
+        // dependency range cannot absorb the bump — which under a tag-only
+        // model is always, since `git.commit` is false and the on-disk
+        // manifests stay at the scaffold version forever.
+        preserveMatchingDependencyRanges: false,
+      },
+      changelog:           { automaticFromRef: true },
+      // A top-level key mnci has never emitted.
+      conventionalCommits: { types: { chore: { changelog: false } } },
+    },
+  }
+
+  it('keeps a nested release setting mnci does not emit', () => {
+    const release = withReleaseConfig(extended, 'github').release as {
+      version: Record<string, unknown>
+    }
+
+    expect(release.version.preserveMatchingDependencyRanges).toBe(false)
+  })
+
+  it('keeps additions in every release sub-block, not just the first', () => {
+    const release = withReleaseConfig(extended, 'github').release as Record<
+      string,
+      Record<string, unknown>
+    >
+
+    expect(release.changelog.automaticFromRef).toBe(true)
+    expect(release.conventionalCommits).toEqual({ types: { chore: { changelog: false } } })
+  })
+
+  it('still wins for every key it does emit', () => {
+    // The merge has to go this way round. These encode the tag-only release
+    // model, and a workspace silently flipping `git.commit` to true would be a
+    // worse bug than the one being fixed here.
+    const release = withReleaseConfig(
+      { release: { git: { commit: true, tag: false }, projectsRelationship: 'fixed' } },
+      'github',
+    ) as { release: Record<string, Record<string, unknown> | string> }
+
+    expect(release.release.projectsRelationship).toBe('independent')
+    expect(release.release.git).toMatchObject({ commit: false, tag: true })
+  })
+
+  it('replaces an owned array rather than merging it element-wise', () => {
+    // Otherwise a workspace could never drop an entry mnci once emitted.
+    const release = withReleaseConfig(
+      { release: { projects: ['legacy/*', 'packages/*', 'python-packages/*'] } },
+      'github',
+    ).release as { projects: string[] }
+
+    expect(release.projects).not.toContain('legacy/*')
+  })
+
+  it('handles a workspace with no release block, and one whose release is not an object', () => {
+    expect(withReleaseConfig({}, 'github').release).toMatchObject({
+      projectsRelationship: 'independent',
+    })
+    expect(withReleaseConfig({ release: 'nonsense' }, 'github').release).toMatchObject({
+      projectsRelationship: 'independent',
+    })
+  })
+})
+
 describe('withReleaseConfig', () => {
   it('patches release and defaultBase while preserving what the preset generated, for azure', () => {
     const patched = withReleaseConfig(
