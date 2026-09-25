@@ -341,6 +341,175 @@ function checkNpmrc (
 }
 
 /**
+ * Warns when this workspace's `.npmrc` would hand npm an empty credential.
+ *
+ * @remarks
+ * A project `.npmrc` beats the user's one, and the generated file authenticates
+ * through an environment variable that only CI exports. So with that variable
+ * unset — which is every local shell — npm inside this workspace does not fall
+ * back to whatever `npm login` wrote in `~/.npmrc`; it authenticates with an
+ * empty string and every write is refused.
+ *
+ * That is a deliberate trade-off rather than a defect, and the generated
+ * `.npmrc` says so in its own comments. This check exists because the comments
+ * are in a file nobody reads at the moment they need them, and because **the
+ * refusal is easy to misread**: for a write you are not allowed to make, the
+ * registry answers
+ *
+ * ```text
+ * npm error 404 Not Found - PUT https://registry.npmjs.org/<package>
+ * ```
+ *
+ * with everything above it being npm listing what it *intended* to send. A long,
+ * healthy-looking run changes nothing, and 404 reads as "no such package"
+ * rather than "you are not who you need to be".
+ *
+ * WHAT THIS DOES NOT CHECK, AND WHY NOT
+ *
+ * Whether the credential is any good. That needs the registry, and `mnci doctor`
+ * is a local, read-only, offline-capable check — a diagnostic that fails on a
+ * train is a diagnostic people stop running. An expired token produces the
+ * *same* misleading 404 as this does, so the remedy names `npm whoami`: one
+ * command, and the only one that distinguishes the two.
+ *
+ * Generic in the variable name rather than looking for `NODE_AUTH_TOKEN`. The
+ * public-registry file references that one and the Azure Artifacts file
+ * references `${PAT}`, and a third could be added; reading the names out of the
+ * file cannot go stale.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param environment - The variables to resolve against. Defaulted rather than
+ * read inline so the intent is visible in the signature; every caller uses the
+ * default.
+ * @returns A finding when the file references a variable nothing has set, and
+ * `undefined` when there is no `.npmrc`, it references no variables, or every
+ * variable it references is set.
+ * @throws Never - an unreadable `.npmrc` is treated as absent.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkNpmrcCredentialResolves (
+  workspaceRoot: string,
+  environment: Record<string, string | undefined> = process.env,
+): Finding | undefined {
+  const npmrcPath = join(workspaceRoot, '.npmrc')
+  if (!fileExists(npmrcPath)) {
+    return undefined
+  }
+
+  const npmrc = readFileSync(npmrcPath, 'utf8')
+  // Credential lines only. A `${VAR}` inside a comment is documentation, and a
+  // registry URL could contain one without being a secret.
+  const credentials = npmrc
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith(';') && !line.trimStart().startsWith('#'))
+    .filter(line => /(?:_authToken|_password|_auth)\s*=/u.test(line))
+
+  const referenced = [
+    ...new Set(
+      credentials.flatMap(line =>
+        Array.from(line.matchAll(/\$\{(\w+)\}/gu), match => match[1]),
+      ),
+    ),
+  ]
+  if (referenced.length === 0) {
+    return undefined
+  }
+
+  const unset = referenced.filter(name => (environment[name] ?? '') === '')
+  if (unset.length === 0) {
+    return npmjsCredentialShape(credentials, environment)
+  }
+
+  return {
+    check: 'npm credentials in this workspace resolve to something',
+    ok:    false,
+    detail:
+      `.npmrc authenticates with \${${unset.join('}, ${')}}, which ${unset.length > 1 ? 'are' : 'is'} ` +
+      'unset here — and a project .npmrc beats your user one, so npm will send an EMPTY token from ' +
+      'this directory rather than the one `npm login` wrote. Writes are then refused as a 404 on ' +
+      'the PUT, which reads like a missing package',
+    remedy:
+      'nothing, for installing or building — this only affects authenticated commands. To publish ' +
+      'or deprecate by hand, run it from outside this workspace, or export a real token first. If ' +
+      'it still fails there, `npm whoami` — an expired token gives the same 404',
+  }
+}
+
+/**
+ * Every current npm token starts with this. Granular and automation tokens have
+ * since 2021; the legacy format was a UUID, matched separately below.
+ */
+const NPM_TOKEN_PREFIX = 'npm_'
+
+/** The legacy npm token format, still valid on very old accounts. */
+const LEGACY_NPM_TOKEN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu
+
+/**
+ * Warns when the credential bound for npmjs.org is not shaped like an npm token.
+ *
+ * @remarks
+ * A set variable is not a working one, and the failure looks identical. This
+ * was found on a real machine: `NODE_AUTH_TOKEN` held an 84-character Azure
+ * DevOps PAT, so every mnci workspace generated with `--registry npm` quietly
+ * authenticated the **public** registry with an Azure credential and every
+ * write came back as the same misleading 404.
+ *
+ * The name is the hazard. `NODE_AUTH_TOKEN` is what `actions/setup-node`
+ * exports, which is why mnci writes it — but it is a generic name, so anything
+ * else on the machine that sets it wins inside every generated workspace, and
+ * nothing says so.
+ *
+ * A SHAPE CHECK, AND IT SAYS SO
+ *
+ * This cannot tell a valid token from a revoked one without the registry, and
+ * `mnci doctor` stays offline. What it can do is notice that the value is not
+ * an npm token at all — every current one begins `npm_`, and the legacy format
+ * is a UUID. Anything else is either a credential for somewhere else or a typo,
+ * and both are worth a line. The remedy names `npm whoami` because that is the
+ * one command that settles what this cannot.
+ *
+ * The token's value never appears in the output. Its length does, which is
+ * enough to recognise what you set without putting a secret on a terminal that
+ * may be logged or shared.
+ *
+ * @param credentials - The `.npmrc` credential lines, comments already removed.
+ * @param environment - The variables to resolve against.
+ * @returns A finding when an npmjs.org credential is shaped wrongly, else
+ * `undefined`.
+ * @throws Never - pure string inspection.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function npmjsCredentialShape (
+  credentials: string[],
+  environment: Record<string, string | undefined>,
+): Finding | undefined {
+  const line = credentials.find(entry => entry.includes('//registry.npmjs.org/:_authToken='))
+  const variable = line === undefined ? undefined : /\$\{(\w+)\}/u.exec(line)?.[1]
+  if (variable === undefined) {
+    return undefined
+  }
+
+  const value = environment[variable] ?? ''
+  if (value.startsWith(NPM_TOKEN_PREFIX) || LEGACY_NPM_TOKEN.test(value)) {
+    return undefined
+  }
+
+  return {
+    check: 'the credential bound for npmjs.org looks like an npm token',
+    ok:    false,
+    detail:
+      `\${${variable}} is set (${value.length} characters) but does not start with '${NPM_TOKEN_PREFIX}' ` +
+      'and is not a legacy UUID token, so it is probably a credential for somewhere else — ' +
+      `'${variable}' is a generic name that other tooling also sets, and inside this workspace it ` +
+      'is sent to the PUBLIC registry. A write then fails as a 404 on the PUT, which reads like a ' +
+      'missing package',
+    remedy:
+      '`npm whoami` to confirm — it is the only thing that separates a wrong token from an ' +
+      `expired one. Then unset \`${variable}\` for local work, or set it to a real npm token`,
+  }
+}
+
+/**
  * Checks that every publishable non-npm package keeps its `versionActions` override.
  *
  * @remarks
@@ -794,6 +963,7 @@ export function collectFindings (workspaceRoot: string): Finding[] {
     checkEslintPlugin(nxJson),
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
+    checkNpmrcCredentialResolves(workspaceRoot),
     checkNoRootRuntimeDependencies(workspaceRoot),
     ...checkRollupSourceMaps(workspaceRoot),
     ...checkDeclarationSpecifiers(workspaceRoot),

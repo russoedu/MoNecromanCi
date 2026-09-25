@@ -51,18 +51,35 @@ function writeWorkspace (devDependencies: Record<string, string> = {}): void {
 const findingFor = (findings: Finding[], fragment: string): Finding | undefined =>
   findings.find(finding => finding.check.includes(fragment))
 
+/**
+ * A token shaped like a real npm one, so `seedHealthyWorkspace` is healthy
+ * whatever the developer's shell happens to hold.
+ *
+ * Two checks read `NODE_AUTH_TOKEN`, because the `.npmrc` that fixture writes
+ * authenticates through it — so without pinning it here "a healthy workspace
+ * passes every check" would depend on the ambient environment: it fails when
+ * the variable is unset, and fails differently when something else on the
+ * machine has set it to a credential for somewhere else. Both happened.
+ */
+const HEALTHY_NPM_TOKEN = 'npm_0000000000000000000000000000000000'
+let savedAuthToken: string | undefined
+
 beforeEach(() => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-doctor-'))
   mockRunShell.mockImplementation(() => 0)
   jest.spyOn(console, 'log').mockImplementation(() => {})
   jest.spyOn(console, 'error').mockImplementation(() => {})
   process.exitCode = undefined
+  savedAuthToken = process.env.NODE_AUTH_TOKEN
+  process.env.NODE_AUTH_TOKEN = HEALTHY_NPM_TOKEN
 })
 
 afterEach(() => {
   rmSync(workspaceRoot, { recursive: true, force: true })
   jest.restoreAllMocks()
   process.exitCode = undefined
+  if (savedAuthToken === undefined) delete process.env.NODE_AUTH_TOKEN
+  else process.env.NODE_AUTH_TOKEN = savedAuthToken
 })
 
 describe('collectFindings', () => {
@@ -723,5 +740,281 @@ describe('runDoctor', () => {
     // The stray file is still there: doctor names the fix, it does not apply it.
     expect(() => collectFindings(workspaceRoot)).not.toThrow()
     expect(findingFor(collectFindings(workspaceRoot), 'retired formatter')?.ok).toBe(false)
+  })
+})
+
+describe('doctor: npm credentials in this workspace resolve to something', () => {
+  const CHECK = 'npm credentials in this workspace resolve to something'
+  let workspaceRoot: string
+  let savedEnvironment: Record<string, string | undefined>
+
+  const writeNpmrc = (contents: string): void =>
+    writeFileSync(join(workspaceRoot, '.npmrc'), contents)
+
+  /** The finding this check produces, or `undefined` when it stayed quiet. */
+  const findingFor = (environment: Record<string, string | undefined>): Finding | undefined => {
+    for (const [name, value] of Object.entries(environment)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+
+    return collectFindings(workspaceRoot).find(finding => finding.check === CHECK)
+  }
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-npmauth-'))
+    // A minimal workspace the other checks tolerate: `collectFindings` needs an
+    // nx.json before it looks at anything else.
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ plugins: [] }))
+    // The variables these cases set, saved and restored around each one - the
+    // real environment may legitimately have them (CI does).
+    savedEnvironment = {
+      NODE_AUTH_TOKEN: process.env.NODE_AUTH_TOKEN,
+      PAT:             process.env.PAT,
+      OTHER_PAT:       process.env.OTHER_PAT,
+      FEED_HOST:       process.env.FEED_HOST,
+    }
+    for (const name of Object.keys(savedEnvironment)) delete process.env[name]
+  })
+
+  afterEach(() => {
+    for (const [name, value] of Object.entries(savedEnvironment)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('says nothing when there is no .npmrc', () => {
+    expect(findingFor({})).toBeUndefined()
+  })
+
+  it('reports the public-registry file with NODE_AUTH_TOKEN unset', () => {
+    /*
+     * The case a human actually hits. A project `.npmrc` beats the user's one,
+     * so npm sends an EMPTY token from this directory rather than the one
+     * `npm login` wrote - and the registry refuses the write as a 404 on the
+     * PUT, which reads like a missing package rather than a credential problem.
+     */
+    writeNpmrc('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n')
+
+    const finding = findingFor({})
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('NODE_AUTH_TOKEN')
+    // The remedy has to name both halves, because an expired token produces
+    // the SAME misleading 404 and this check cannot tell them apart offline.
+    expect(finding?.remedy).toContain('outside this workspace')
+    expect(finding?.remedy).toContain('npm whoami')
+  })
+
+  it('stays quiet when the variable IS set, which is what CI does', () => {
+    writeNpmrc('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n')
+
+    expect(
+      findingFor({ NODE_AUTH_TOKEN: 'npm_realtoken' }),
+    ).toBeUndefined()
+  })
+
+  it('treats an empty variable as unset, because npm does', () => {
+    // An exported-but-empty variable authenticates exactly as badly as a
+    // missing one, and is easier to end up with (`NODE_AUTH_TOKEN=` in a
+    // dotenv file, or a CI secret that was never populated).
+    writeNpmrc('//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n')
+
+    expect(findingFor({ NODE_AUTH_TOKEN: '' })?.ok).toBe(false)
+  })
+
+  it('finds the Azure Artifacts variable too, without being told its name', () => {
+    /*
+     * Generic on purpose. The public file references `NODE_AUTH_TOKEN` and the
+     * Azure one references `PAT`; hardcoding either would make this check go
+     * stale the moment a third registry kind is added.
+     */
+    writeNpmrc(
+      [
+        '@scope:registry=https://pkgs.dev.azure.com/org/_packaging/feed/npm/registry/',
+        '//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:username=org',
+        '//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_password=${PAT}',
+        '',
+      ].join('\n'),
+    )
+
+    const finding = findingFor({})
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('PAT')
+  })
+
+  it('names every unset variable, not just the first', () => {
+    writeNpmrc(
+      [
+        '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}',
+        '//other.example/:_password=${OTHER_PAT}',
+        '',
+      ].join('\n'),
+    )
+
+    const finding = findingFor({})
+
+    expect(finding?.detail).toContain('NODE_AUTH_TOKEN')
+    expect(finding?.detail).toContain('OTHER_PAT')
+    // Plural, because a finding that says "is unset" about two variables reads
+    // as though one of them is fine.
+    expect(finding?.detail).toContain('are')
+  })
+
+  it('reports only the variables that are actually unset', () => {
+    writeNpmrc(
+      [
+        '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}',
+        '//other.example/:_password=${OTHER_PAT}',
+        '',
+      ].join('\n'),
+    )
+
+    const finding = findingFor({ NODE_AUTH_TOKEN: 'real' })
+
+    expect(finding?.detail).toContain('OTHER_PAT')
+    expect(finding?.detail).not.toContain('NODE_AUTH_TOKEN')
+  })
+
+  it('ignores a variable that only appears in a comment', () => {
+    /*
+     * The generated file DOCUMENTS these variables at length - its comments
+     * name `NODE_AUTH_TOKEN` several times before the one line that uses it.
+     * A check that matched comments would fire on a correctly configured
+     * workspace, which is the fastest way to teach someone to ignore `doctor`.
+     */
+    writeNpmrc(
+      [
+        '; NODE_AUTH_TOKEN is exported by the generated CI release step.',
+        '# Nothing needs ${NODE_AUTH_TOKEN} for day-to-day work here.',
+        'registry=https://registry.npmjs.org/',
+        '',
+      ].join('\n'),
+    )
+
+    expect(findingFor({})).toBeUndefined()
+  })
+
+  it('ignores a non-credential line that happens to contain a variable', () => {
+    // A registry URL built from a variable is configuration, not a secret, and
+    // an unset one fails loudly on its own the moment npm resolves the host.
+    writeNpmrc('registry=https://${FEED_HOST}/npm/\n')
+
+    expect(findingFor({})).toBeUndefined()
+  })
+
+  it('stays quiet on a literal token, however unwise that is', () => {
+    // Not this check's business. A committed literal token is a different
+    // problem with a different remedy, and reporting it here under a heading
+    // about credentials RESOLVING would be the wrong finding.
+    writeNpmrc('//registry.npmjs.org/:_authToken=npm_aRealLiteralToken\n')
+
+    expect(findingFor({})).toBeUndefined()
+  })
+})
+
+describe('doctor: the credential bound for npmjs.org looks like an npm token', () => {
+  /*
+   * A set variable is not a working one, and the failure looks identical.
+   *
+   * Found on a real machine rather than imagined: `NODE_AUTH_TOKEN` held an
+   * 84-character Azure DevOps PAT, so every workspace generated with
+   * `--registry npm` quietly authenticated the PUBLIC registry with an Azure
+   * credential. The name is the hazard - `NODE_AUTH_TOKEN` is what
+   * `actions/setup-node` exports, which is why mnci writes it, but it is
+   * generic enough that anything else setting it wins inside every generated
+   * workspace and nothing said so.
+   */
+  const CHECK = 'the credential bound for npmjs.org looks like an npm token'
+  const PUBLIC_NPMRC = '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n'
+  let workspaceRoot: string
+  let savedToken: string | undefined
+
+  const findingFor = (token: string | undefined): Finding | undefined => {
+    if (token === undefined) delete process.env.NODE_AUTH_TOKEN
+    else process.env.NODE_AUTH_TOKEN = token
+
+    return collectFindings(workspaceRoot).find(finding => finding.check === CHECK)
+  }
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), 'mnci-npmshape-'))
+    writeFileSync(join(workspaceRoot, 'nx.json'), JSON.stringify({ plugins: [] }))
+    writeFileSync(join(workspaceRoot, '.npmrc'), PUBLIC_NPMRC)
+    savedToken = process.env.NODE_AUTH_TOKEN
+  })
+
+  afterEach(() => {
+    if (savedToken === undefined) delete process.env.NODE_AUTH_TOKEN
+    else process.env.NODE_AUTH_TOKEN = savedToken
+    rmSync(workspaceRoot, { recursive: true, force: true })
+  })
+
+  it('accepts a current npm token', () => {
+    expect(findingFor('npm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')).toBeUndefined()
+  })
+
+  it('accepts a legacy UUID token, which very old accounts still have', () => {
+    expect(findingFor('12345678-90ab-cdef-1234-567890abcdef')).toBeUndefined()
+  })
+
+  it('reports a credential for somewhere else', () => {
+    // The real case: an Azure DevOps PAT, which is base64-ish and has no npm
+    // prefix. Shaped like the one that was actually found.
+    const finding = findingFor('4b1Tdho8Ylufye7YnDaiUpmNq7RDVcVjfH9UV8blP9681GDuU03lJQQJ99CHAAAA')
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('NODE_AUTH_TOKEN')
+    expect(finding?.detail).toContain('PUBLIC registry')
+  })
+
+  it('never puts the token value in the output', () => {
+    /*
+     * The whole reason the detail reports a LENGTH. A diagnostic prints to a
+     * terminal that may be logged, screenshotted or pasted into an issue, and
+     * a check about credentials is the last place that should leak one.
+     */
+    const secret = 'sooper-secret-azure-pat-value-that-must-not-appear'
+    const finding = findingFor(secret)
+
+    expect(finding?.ok).toBe(false)
+    expect(JSON.stringify(finding)).not.toContain(secret)
+    expect(finding?.detail).toContain(`${secret.length} characters`)
+  })
+
+  it('leaves an unset variable to the other check, rather than reporting twice', () => {
+    // An unset variable is a different finding with a different remedy. Two
+    // lines about one problem is how a diagnostic teaches people to skim it.
+    const findings = ((): Finding[] => {
+      delete process.env.NODE_AUTH_TOKEN
+
+      return collectFindings(workspaceRoot)
+    })()
+
+    expect(findings.filter(finding => finding.check === CHECK)).toEqual([])
+    expect(
+      findings.some(finding => finding.check === 'npm credentials in this workspace resolve to something'),
+    ).toBe(true)
+  })
+
+  it('says nothing about a feed that is not npmjs.org', () => {
+    // An Azure Artifacts PAT is the RIGHT credential for an Azure feed, and
+    // this check has no opinion about what one looks like.
+    writeFileSync(
+      join(workspaceRoot, '.npmrc'),
+      '//pkgs.dev.azure.com/org/_packaging/feed/npm/registry/:_password=${NODE_AUTH_TOKEN}\n',
+    )
+
+    expect(findingFor('4b1Tdho8Ylufye7YnDaiUpmNq7RDVcVjfH9UV8blP9681GDuU03lJQQJ99CHAAAA')).toBeUndefined()
+  })
+
+  it('says nothing when the token is written literally rather than through a variable', () => {
+    // Not this check's business, and it cannot resolve what it cannot see.
+    writeFileSync(join(workspaceRoot, '.npmrc'), '//registry.npmjs.org/:_authToken=npm_literal\n')
+
+    expect(findingFor(undefined)).toBeUndefined()
   })
 })
