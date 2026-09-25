@@ -2047,10 +2047,52 @@ section('python', ['alt stack'], () => {
     'see log above',
   )
 
+  /* ---------------------------------------------------------------------------
+   * The metadata a published Python wheel actually carries.
+   *
+   * Four of these lines were wrong and nothing here noticed, because nothing
+   * here ever read a wheel's METADATA for anything but its dependencies. A
+   * built `python-lib` shipped a blank summary, no long description, and
+   * `version = "1.0.0"` — a semver claim of a stable API, made by a generator,
+   * on a package that had never been released.
+   *
+   * The version is READ from the scaffolded manifest rather than written here.
+   * Four assertions below used to hardcode `1.0.0` in a wheel filename, so
+   * changing the scaffold broke them — and the next change would break them
+   * again. A hardcoded expectation of a generated value is the same shape as
+   * the bug it is meant to catch.
+   * ------------------------------------------------------------------------- */
+  console.log('\n▸ a published python wheel carries real metadata')
+  const pysharedPyproject = readFileSync(pysharedPyprojectPath, 'utf8')
+  const scaffoldedPythonVersion = /^version\s*=\s*"([^"]+)"/mu.exec(pysharedPyproject)?.[1] ?? ''
+
+  enforce(
+    'python: a generated project starts at 0.0.1, the same as npm-lib, not 1.0.0',
+    scaffoldedPythonVersion === '0.0.1',
+    `pyproject.toml says version = "${scaffoldedPythonVersion}"`,
+  )
+  enforce(
+    'python: the summary is a real sentence, not the empty string',
+    /^description\s*=\s*"[^"]+"/mu.test(pysharedPyproject) &&
+      !pysharedPyproject.includes('description = ""'),
+  )
+  enforce(
+    'python: the manifest declares its readme, which is what gives a wheel a long description',
+    pysharedPyproject.includes('readme = "README.md"'),
+  )
+  enforce(
+    'python: a generated project gets a README, the same as npm-lib',
+    existsSync(path.join(altWorkspace, 'python-packages/pyshared/README.md')),
+  )
+  enforce(
+    'python: requires-python names the version mnci provisions, not an untested older one',
+    pysharedPyproject.includes('requires-python = ">=3.12"'),
+  )
+
   const AdmZipPy = createRequire(path.join(altWorkspace, 'package.json'))('adm-zip')
   const pysharedWheelPath = path.join(
     altWorkspace,
-    'python-packages/pyshared/dist/pyshared-1.0.0-py3-none-any.whl',
+    `python-packages/pyshared/dist/pyshared-${scaffoldedPythonVersion}-py3-none-any.whl`,
   )
   enforce(
     "python: build produces a wheel for the publishable lib (vendoring pycore via the plugin's build executor)",
@@ -2108,9 +2150,12 @@ section('python', ['alt stack'], () => {
     ),
   )
 
-  const pysvcWheelPath = path.join(altWorkspace, 'apps/pysvc/dist/pysvc-1.0.0-py3-none-any.whl')
+  const pysvcWheelPath = path.join(
+    altWorkspace,
+    `apps/pysvc/dist/pysvc-${scaffoldedPythonVersion}-py3-none-any.whl`,
+  )
   const pysvcMetadata = existsSync(pysvcWheelPath)
-    ? new AdmZipPy(pysvcWheelPath).readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
+    ? new AdmZipPy(pysvcWheelPath).readAsText(`pysvc-${scaffoldedPythonVersion}.dist-info/METADATA`) // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: app wheel declares the real external dependency (tomli) — not silently dropped',
@@ -2149,7 +2194,7 @@ section('python', ['alt stack'], () => {
     ? pysvcCombinedZip.getEntries().map(entry => entry.entryName)
     : []
   const pysvcCombinedMetadata = pysvcCombinedZip
-    ? pysvcCombinedZip.readAsText('pysvc-1.0.0.dist-info/METADATA') // eslint-disable-line unicorn/prefer-blob-reading-methods
+    ? pysvcCombinedZip.readAsText(`pysvc-${scaffoldedPythonVersion}.dist-info/METADATA`) // eslint-disable-line unicorn/prefer-blob-reading-methods
     : ''
   enforce(
     'python: combined wheel vendors pycore AND keeps the real external dependency declared — no metadata drop (the old @nxlv/python bug does not reproduce with pip)',

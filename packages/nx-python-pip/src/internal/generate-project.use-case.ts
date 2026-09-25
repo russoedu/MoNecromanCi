@@ -2,6 +2,7 @@ import { addProjectConfiguration, type ProjectConfiguration, type Tree } from '@
 import {
   pythonModuleDirectory,
   pythonPyprojectToml,
+  pythonReadme,
   pythonSampleModule,
   pythonSampleTest,
 } from './python-project.algorithm'
@@ -86,6 +87,7 @@ export function generateBuildableProject (tree: Tree, options: BuildableProjectO
   addProjectConfiguration(tree, options.name, project)
 
   tree.write(`${root}/pyproject.toml`, pythonPyprojectToml(options.name, moduleDirectory))
+  tree.write(`${root}/README.md`, pythonReadme(options.name, moduleDirectory))
   tree.write(`${root}/${moduleDirectory}/__init__.py`, pythonSampleModule(moduleDirectory))
   tree.write(`${root}/tests/test_${moduleDirectory}.py`, pythonSampleTest(moduleDirectory))
 }
