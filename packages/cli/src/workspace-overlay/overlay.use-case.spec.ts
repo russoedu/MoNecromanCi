@@ -39,6 +39,7 @@ import {
   poolBlock,
   pythonPublishUrl,
   resolveNpmAuth,
+  withPreservedScopeRoutes,
   readMnciConfig,
   registryUrl,
   RETIRED_FORMATTER_FILES,
@@ -119,6 +120,71 @@ function directives (npmrc: string): string[] {
     .map(line => line.trim())
     .filter(line => line.length > 0 && !line.startsWith(';') && !line.startsWith('#'))
 }
+
+describe('withPreservedScopeRoutes', () => {
+  const GENERATED = '@demo:registry=https://feed/npm/registry/\n'
+
+  it('changes nothing when there was no .npmrc before', () => {
+    expect(withPreservedScopeRoutes(GENERATED, undefined, '@demo')).toBe(GENERATED)
+  })
+
+  it('keeps the route for a second scope, which the feed still has to serve', () => {
+    // The case that motivated it: packages published under @old still resolve from
+    // this feed mid-migration. Rewriting the file without the line sends that
+    // install to npmjs.org, and nothing points back at the upgrade that did it.
+    const result = withPreservedScopeRoutes(
+      GENERATED,
+      '@demo:registry=https://feed/npm/registry/\n@old:registry=https://feed/npm/registry/\n',
+      '@demo',
+    )
+
+    expect(directives(result)).toEqual([
+      '@demo:registry=https://feed/npm/registry/',
+      '@old:registry=https://feed/npm/registry/',
+    ])
+  })
+
+  it('never carries a credential over, whatever the previous file held', () => {
+    // A stale password surviving a move to build identity is the hazard that mode
+    // exists to remove.
+    const result = withPreservedScopeRoutes(
+      GENERATED,
+      '@old:registry=https://feed/npm/registry/\n//feed/npm/registry/:_password=${PAT}\n//registry.npmjs.org/:_authToken=abc\n',
+      '@demo',
+    )
+
+    expect(result).not.toContain('_password=${PAT}')
+    expect(result).not.toContain('_authToken=abc')
+  })
+
+  it('regenerates the workspace\'s own route instead of preserving a hand-edited one', () => {
+    const result = withPreservedScopeRoutes(
+      GENERATED,
+      '@demo:registry=https://somewhere-else/\n',
+      '@demo',
+    )
+
+    expect(directives(result)).toEqual(['@demo:registry=https://feed/npm/registry/'])
+  })
+
+  it('compares scopes without regard to case', () => {
+    const result = withPreservedScopeRoutes(GENERATED, '@DEMO:registry=https://x/\n', '@demo')
+
+    expect(directives(result)).toEqual(['@demo:registry=https://feed/npm/registry/'])
+  })
+
+  it('is idempotent: a second pass over its own output is the same file', () => {
+    const once = withPreservedScopeRoutes(GENERATED, '@old:registry=https://feed/npm/\n', '@demo')
+
+    expect(withPreservedScopeRoutes(GENERATED, once, '@demo')).toBe(once)
+  })
+
+  it('does not treat a comment mentioning a scope as a route', () => {
+    const result = withPreservedScopeRoutes(GENERATED, '; @old:registry=https://feed/\n', '@demo')
+
+    expect(result).toBe(GENERATED)
+  })
+})
 
 describe('resolveNpmAuth', () => {
   const azure = {

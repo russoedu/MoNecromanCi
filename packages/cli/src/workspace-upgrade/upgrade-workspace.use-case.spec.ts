@@ -139,6 +139,22 @@ describe('runUpgrade: npm auth', () => {
   })
 })
 
+describe('runUpgrade: .npmrc scope routes', () => {
+  it('keeps a second scope route through an upgrade, and does not stack it on the next', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, FIXTURE_OPTIONS)
+    const npmrcPath = join(workspaceRoot, '.npmrc')
+    writeFileSync(npmrcPath, `${readFileSync(npmrcPath, 'utf8')}\n@old:registry=https://registry.example/\n`)
+
+    runUpgrade(workspaceRoot, {})
+    const first = readFileSync(npmrcPath, 'utf8')
+    runUpgrade(workspaceRoot, {})
+
+    expect(first).toContain('@old:registry=https://registry.example/')
+    expect(readFileSync(npmrcPath, 'utf8')).toBe(first)
+  })
+})
+
 describe('runUpgrade', () => {
   it('reports each file group it rewrites, and names the slow step before entering it', () => {
     // An upgrade used to print one line and then sit silent through

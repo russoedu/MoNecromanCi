@@ -494,6 +494,12 @@ to one is mirrored in the other by construction:
   the pipeline disagree. `pat` remains the default.
   Both feed path forms (`/npm/` and `/npm/registry/`) are keyed in the generated
   file, since npm matches credentials by URL prefix and walks only upward.
+- **`.npmrc` is rewritten whole, but keeps other scopes' routes.** `mnci upgrade` carries
+  over any `@other:registry=` line the previous file had (`withPreservedScopeRoutes`): a
+  workspace mid-migration still resolves the scope it was published under before a rename
+  from the same feed, and losing that line silently sends the install to npmjs.org.
+  Credentials are never carried over — the auth mode decides those — and the workspace's
+  own scope line is regenerated, not preserved.
 - XML config files (`NuGet.Config`) reject `<!-- -->` comments containing `--`
   anywhere in the body — a real trap hit once (a `--registry` substring inside a
   comment invalidated the whole document, cascading into an unrelated Flutter e2e
