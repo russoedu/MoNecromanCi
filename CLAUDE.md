@@ -188,7 +188,16 @@ committing an upgrade.
 
 - **`packages/nx-python-pip/`** — a real `@nx/devkit` plugin (`@mnci/nx-python-pip`)
   - Generators: `application`, `library`, `internal-library`, `function-application`
-  - Executors: `build` (PyPA build), `test` (pytest), `lint` (Ruff), `publish` (twine)
+  - Executors: `build` (PyPA build), `test` (pytest), `lint` (Ruff), `publish` (twine).
+    `publish` reads the `nxReleaseVersionData` that `nx release publish` hands every
+    `nx-release-publish` task and **skips a project with no new version**, as
+    `@nx/js:release-publish` does. Not tidiness: tag-only releases leave an untouched
+    project's `pyproject.toml` at its scaffold version for ever, so publishing it on
+    every release of its neighbours re-uploads `0.0.1` — silently, since
+    `--skip-existing` makes that exit 0 — and on a package PyPI has never seen it
+    CREATES the project at `0.0.1` while spending a slot in PyPI's new-project rate
+    limit. Measured: that is what 429'd a real release of a workspace with seven
+    Python packages
   - Exports `VersionActions` for Nx release integration
   - No dependency on CLI itself; usable standalone in any Nx 21+ workspace
 
