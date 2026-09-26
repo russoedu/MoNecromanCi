@@ -4294,7 +4294,11 @@ function withoutNxAgentRules (content: string): string | undefined {
   const afterEnd = content.indexOf('>', end)
   const rest = afterEnd === -1 ? '' : content.slice(afterEnd + 1)
 
-  return `${content.slice(0, start)}${rest}`.replace(/^\n+/, '')
+  // `[\r\n]`, not `\n`: a repository checked out on Windows has CRLF line
+  // endings, and trimming only the LF leaves the carriage returns behind as
+  // blank lines at the top of the file - which is most of this project's own
+  // users, since Windows is the platform its e2e runs on.
+  return `${content.slice(0, start)}${rest}`.replace(/^[\r\n]+/, '')
 }
 
 /**

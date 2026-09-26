@@ -3670,6 +3670,19 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, '.claude/settings.json'))).toBe(false)
   })
 
+  it('leaves no blank lines behind on a CRLF checkout', () => {
+    // The excision trimmed only `\n`, so on Windows - the platform this
+    // project's own e2e runs on - every carriage return survived as a blank
+    // line at the top of the user's file.
+    const crlf = `${NX_AGENT_RULES_FIXTURE}\n# My project\n`.replaceAll('\n', '\r\n')
+    writeFileSync(join(workspaceRoot, 'CLAUDE.md'), crlf)
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(readFileSync(join(workspaceRoot, 'CLAUDE.md'), 'utf8'))
+      .toMatch(/^# My project/)
+  })
+
   it('deletes a file that was nothing but an Nx block', () => {
     // What `create-nx-workspace` leaves: no user content, so nothing to keep.
     writeFileSync(join(workspaceRoot, 'CLAUDE.md'), NX_AGENT_RULES_FIXTURE)
