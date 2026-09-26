@@ -369,8 +369,10 @@ reach the same logic without going through scaffolding) and re-applied on `mnci 
   there. Applies identically to `npm-lib` and `react-lib`. Still open upstream: the
   stub itself remains backslash-broken on Windows; the e2e reports it `SKIPPED`.
 - **Packaging**: `files` excludes `!**/*.d.ts.map` (declaration maps reference
-  `../src/*.ts`, which `dist`-only packaging never ships) but keeps `.js.map` files,
-  since debugging a published package needs them.
+  `../src/*.ts`, which `dist`-only packaging never ships) and `!**/*.js.map` too: a
+  `.js.map` carries the whole `sourcesContent`, so publishing it multiplies the
+  tarball for a benefit only this workspace's own debugger collects
+  (`repair-publishable-manifest.use-case.ts`).
 - A CI verify-target guard (`verify-targets.integration.spec.ts`) resolves every declared verify
   target to its real shell command and fails on a no-op (`echo`, stub) — Nx disables
   an inferred target (e.g. `typecheck` when `noEmit: true`) by replacing its command
@@ -483,8 +485,13 @@ to one is mirrored in the other by construction:
   only authenticates via Basic** (`username`/`_password`), which is what
   `npmrcContent()` already emits; do not "fix" this by switching to `_authToken`.
   The actual fix for a real Azure Pipelines run is the `npmAuthenticate@0` task
-  (injects an Entra-issued token) — not yet adopted in `workspace-overlay/overlay.use-case.ts`, since it would
-  overwrite a hand-set password; see ROADMAP for the open trade-off.
+  (injects an Entra-issued token), which is the opt-in `--npm-auth build-identity`
+  mode (`NpmAuthMode` in `workspace-overlay/overlay.use-case.ts`): a credential-free
+  `.npmrc` plus the task before `npm ci`, Azure-only (`resolveNpmAuth` refuses
+  `--ci github|both` and public npm). It is persisted in the `mnci` block, and
+  `mnci upgrade` infers it from an existing `npmAuthenticate@0` so a workspace that
+  added the task by hand does not lose it. `mnci doctor` fails when the `.npmrc` and
+  the pipeline disagree. `pat` remains the default.
   Both feed path forms (`/npm/` and `/npm/registry/`) are keyed in the generated
   file, since npm matches credentials by URL prefix and walks only upward.
 - XML config files (`NuGet.Config`) reject `<!-- -->` comments containing `--`

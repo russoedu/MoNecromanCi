@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { runFormatter } from '../nx-workspace'
 import {
@@ -9,7 +9,9 @@ import {
 import {
   applyOverlay,
   readMnciConfig,
+  resolveNpmAuth,
   type CiProvider,
+  type NpmAuthMode,
   type OverlayOptions,
   type RegistryConfig,
   type StackConfig,
@@ -46,6 +48,8 @@ export interface UpgradeOptions {
   agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
+  /** How npm authenticates to an Azure Artifacts feed: `pat` | `build-identity`. */
+  npmAuth?:       string
   /** CI provider: `azure` | `github` | `both`. */
   ci?:            CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
@@ -148,6 +152,33 @@ function resolveWorkspaceName (workspaceRoot: string, persisted: Partial<Overlay
 }
 
 /**
+ * Finds the npm auth mode a workspace already uses, for one that never recorded it.
+ *
+ * @remarks
+ * `npmAuthenticate@0` in the existing pipeline is an unambiguous statement of
+ * intent: nothing else writes it, and `mnci` did not generate it until this option
+ * existed, so a workspace that has it added it by hand. Without this, an upgrade
+ * would regenerate the pipeline without the task and the `.npmrc` with a PAT block -
+ * silently reverting the one thing that makes a feed publish work, which is exactly
+ * how a real workspace lost it. Consulted only when neither a flag nor a persisted
+ * value says otherwise, so `--npm-auth pat` still wins.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns `build-identity` when the existing pipeline runs the task, else `undefined`.
+ * @throws Never - an unreadable pipeline is treated as absent.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function detectNpmAuth (workspaceRoot: string): NpmAuthMode | undefined {
+  try {
+    return readFileSync(join(workspaceRoot, 'azure-pipelines.yml'), 'utf8').includes('npmAuthenticate@0')
+      ? 'build-identity'
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Resolves the full overlay options a `mnci upgrade` run applies: an
  * explicit flag wins field-by-field, otherwise the persisted `mnci` block
  * (see {@link readMnciConfig}) is the default.
@@ -186,6 +217,17 @@ function resolveOverlayOptions (
   // Azure-only concept; a github-only workspace never needed one, so a
   // missing persisted value is not an error the way scope/ci/agent are.
   const variableGroup = options.variableGroup ?? persisted.variableGroup ?? 'Build'
+  // A flag wins, then what was persisted, then what an existing pipeline already
+  // does. Detection only counts where the mode is deliverable: a workspace that also
+  // carries a GitHub pipeline cannot be moved to build identity by inference.
+  const detected =
+    ci === 'azure' && persisted.npmAuth === undefined && options.npmAuth === undefined
+      ? detectNpmAuth(workspaceRoot)
+      : undefined
+  if (detected) {
+    logger.detail('keeping build-identity npm auth: azure-pipelines.yml already runs npmAuthenticate@0')
+  }
+  const npmAuth = resolveNpmAuth(options.npmAuth, registry, ci, persisted.npmAuth ?? detected)
   // Defaults to `eslint` rather than erroring when absent, unlike testRunner
   const testRunner = options.testRunner ?? persisted.stack?.testRunner
   if (!testRunner) {
@@ -202,6 +244,7 @@ function resolveOverlayOptions (
     variableGroup,
     ci,
     stack:         { testRunner },
+    ...(npmAuth && { npmAuth }),
   }
 }
 

@@ -436,6 +436,83 @@ function checkNpmrcCredentialResolves (
 }
 
 /**
+ * Checks that the two halves of build-identity npm auth agree with each other.
+ *
+ * @remarks
+ * Build-identity auth is split across two files that cannot see each other: the
+ * `.npmrc` carries no credentials, and `azure-pipelines.yml` runs the task that
+ * injects them. Either half alone is broken, and neither breaks loudly:
+ *
+ * - **A credential-free `.npmrc` with no `npmAuthenticate@0` step** publishes
+ *   nothing. `npm ci` still works, since installing a public package never
+ *   authenticates, so the pipeline is green until the release step, where the feed
+ *   answers 401. This is precisely how a real workspace lost the task: a regenerated
+ *   pipeline dropped it and nothing said so until a publish.
+ * - **A `.npmrc` that still holds a PAT block, with the step present,** makes the
+ *   task append a second credential to a file that already has one. Which of the
+ *   two npm ends up sending is not something to leave to chance.
+ *
+ * Only for an Azure Artifacts workspace with an Azure pipeline. A workspace with no
+ * `azure-pipelines.yml` has nothing to disagree with, and public npm has no
+ * build identity.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @param registry - The registry persisted in `nx.json`'s `mnci` block.
+ * @returns A finding when the halves disagree, `undefined` when there is nothing to
+ * compare, and an `ok` finding when they agree.
+ * @throws Never - an unreadable file is treated as absent.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function checkNpmAuthMatchesPipeline (
+  workspaceRoot: string,
+  registry: RegistryConfig | undefined,
+): Finding | undefined {
+  const npmrcPath = join(workspaceRoot, '.npmrc')
+  const pipelinePath = join(workspaceRoot, 'azure-pipelines.yml')
+  if (registry?.kind !== 'azure-artifacts' || !fileExists(npmrcPath) || !fileExists(pipelinePath)) {
+    return undefined
+  }
+
+  const holdsCredentials = readFileSync(npmrcPath, 'utf8')
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith(';') && !line.trimStart().startsWith('#'))
+    .some(line => /(?:_authToken|_password|_auth)\s*=/u.test(line))
+  const runsTask = readFileSync(pipelinePath, 'utf8').includes('npmAuthenticate@0')
+
+  if (!holdsCredentials && !runsTask) {
+    return {
+      check: 'npm auth: .npmrc and azure-pipelines.yml agree',
+      ok:    false,
+      detail:
+        '.npmrc carries no credentials and azure-pipelines.yml does not run npmAuthenticate@0, so ' +
+        'nothing authenticates the feed — installs still pass, and the release step fails with a 401',
+      remedy:
+        'run `mnci upgrade --npm-auth build-identity` to add the task, or `mnci upgrade --npm-auth pat` ' +
+        'to write the PAT block back',
+    }
+  }
+  if (holdsCredentials && runsTask) {
+    return {
+      check: 'npm auth: .npmrc and azure-pipelines.yml agree',
+      ok:    false,
+      detail:
+        '.npmrc holds a credential block AND azure-pipelines.yml runs npmAuthenticate@0, which appends ' +
+        'a second credential to a file that already has one',
+      remedy:
+        'run `mnci upgrade --npm-auth build-identity` to drop the PAT block, or `mnci upgrade ' +
+        '--npm-auth pat` to drop the task',
+    }
+  }
+
+  return {
+    check:  'npm auth: .npmrc and azure-pipelines.yml agree',
+    ok:     true,
+    detail: '',
+    remedy: '',
+  }
+}
+
+/**
  * Every current npm token starts with this. Granular and automation tokens have
  * since 2021; the legacy format was a UUID, matched separately below.
  */
@@ -964,6 +1041,7 @@ export function collectFindings (workspaceRoot: string): Finding[] {
     checkResolvedEslint(workspaceRoot),
     checkNpmrc(workspaceRoot, nxJson.mnci?.registry, nxJson.mnci?.scope),
     checkNpmrcCredentialResolves(workspaceRoot),
+    checkNpmAuthMatchesPipeline(workspaceRoot, nxJson.mnci?.registry),
     checkNoRootRuntimeDependencies(workspaceRoot),
     ...checkRollupSourceMaps(workspaceRoot),
     ...checkDeclarationSpecifiers(workspaceRoot),

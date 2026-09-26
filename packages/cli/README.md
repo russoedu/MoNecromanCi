@@ -909,7 +909,9 @@ as `${{ secrets.PAT }}` — GitHub has no "variable group" concept, so unlike
 Azure this needs no CLI-collected name, just a secret you create once in the
 repo settings. Either way it's mapped as `env` on the npm steps and read by
 the root `.npmrc`'s `_password` block — the PAT value never lands in a file.
-No `npmAuthenticate@0` task (it would overwrite the hand-set password).
+No `npmAuthenticate@0` task in this mode (it would overwrite the hand-set password).
+For an Azure feed there is a second mode that needs no PAT at all — see
+[the alternative on Azure](#the-alternative-on-azure-build-identity-auth-no-pat-at-all).
 
 #### Why `_password` and never `_authToken` — read this before "fixing" it
 
@@ -945,18 +947,23 @@ credentials by URL prefix and walks only *up* a path, so an entry on
 
 #### The alternative on Azure: build-identity auth, no PAT at all
 
-mnci does not generate this, but it is the better setup for an Azure Artifacts feed
-in the **same organisation** as the pipeline, and it is what a real workspace uses
-today. `npmAuthenticate@0` injects the build service identity's token — which *is*
+`--npm-auth build-identity` (on `mnci new` and `mnci upgrade`) is the better setup for
+an Azure Artifacts feed in the **same organisation** as the pipeline.
+`npmAuthenticate@0` injects the build service identity's token — which *is*
 Entra-issued, so it satisfies the Bearer scheme the feed advertises — and there is no
 secret to store, encode, rotate or let expire.
 
-To switch a generated workspace over by hand:
+```bash
+mnci upgrade --npm-auth build-identity   # switch an existing workspace
+mnci upgrade --npm-auth pat              # and back
+```
 
-1. Delete the credential lines from the root `.npmrc`, keeping only the
-   `@scope:registry=` routing line. (`mnci upgrade` will rewrite them back — see the
-   caveat below.)
-2. Add this step **before** `npm ci` in `azure-pipelines.yml`:
+It changes two files together, which is the point of doing it through mnci rather than
+by hand:
+
+1. `.npmrc` keeps only the `@scope:registry=` routing line. No credentials.
+2. `azure-pipelines.yml` runs this step **before** `npm ci`, and `npm ci` no longer
+   gets a `PAT` mapping it would never read:
 
 ```yaml
 - task: npmAuthenticate@0
@@ -965,6 +972,17 @@ To switch a generated workspace over by hand:
     workingFile: .npmrc
 ```
 
+The choice is persisted in `nx.json`'s `mnci` block, so a plain `mnci upgrade` keeps it.
+A workspace that added the task by hand before this option existed needs no flag either:
+`mnci upgrade` sees `npmAuthenticate@0` in its pipeline and keeps that mode, rather than
+regenerating the pipeline without it and writing a PAT block the feed rejects. An explicit
+`--npm-auth pat` always wins over that detection. `mnci doctor` fails a workspace whose
+two halves disagree — a credential-free `.npmrc` with no task publishes nothing (installs
+still pass, so CI stays green until the release step's 401), and a PAT block *plus* the
+task appends a second credential to a file that already has one.
+
+The remaining manual step is the grant:
+
 3. Grant the build identity **Feed Publisher (Contributor)** on the feed (Artifacts →
    Feed Settings → Permissions). Which identity depends on the job authorization
    scope: `<Project> Build Service (<org>)` when scoped to the project (the default),
@@ -972,11 +990,14 @@ To switch a generated workspace over by hand:
    401 is the tell that the wrong identity is in play.
 
 Caveats, stated rather than glossed. This is **Azure-only** — GitHub Actions has no
-equivalent task, so a `--ci=github` or `--ci=both` workspace still needs the PAT.
+equivalent task, so `--ci github` and `--ci both` are **refused** with `build-identity`
+(the credential-free `.npmrc` would authenticate nowhere on the GitHub side), and so is
+public npm, which has no identity to borrow. Those workspaces keep the PAT.
 Local development then needs `npx vsts-npm-auth -config .npmrc` (Windows) or a
-hand-added credential, since developers no longer inherit one from the file.
-And `mnci upgrade` rewrites `.npmrc`, so it will restore the PAT block — `git diff`
-before committing an upgrade, which the upgrade docs already tell you to do.
+hand-added credential, since developers no longer inherit one from the file — the
+generated `.npmrc` says so in its own comments. Python and NuGet publishing are
+unchanged: they read the raw PAT from the variable group, so that group is still needed
+for a workspace that publishes either.
 
 #### Diagnosing an auth failure
 

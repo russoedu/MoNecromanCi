@@ -310,7 +310,26 @@ The fix belongs upstream — one `path.relative()` call that should normalise to
 the state on every run: it reports a loud `SKIPPED` while the stub still contains a
 backslash, and enforces once it does not, so the day Nx fixes it the suite says so.
 
-### 7b. Build-identity npm auth on Azure, instead of a PAT — P2
+### 7b. Build-identity npm auth on Azure, instead of a PAT — ✅ done
+
+Shipped as an opt-in, not a default: `--npm-auth build-identity` on `mnci new` and
+`mnci upgrade`, persisted in the `mnci` block. What follows is the original write-up,
+kept because the trade-offs it lists are exactly the ones the implementation answers.
+How each was resolved:
+
+- **Azure-only** — `resolveNpmAuth` refuses the mode for `--ci github|both` and for
+  public npm, rather than generating a credential-free `.npmrc` that authenticates
+  nowhere on one provider. `--ci=both` has no single right answer, so it is refused,
+  not guessed.
+- **Local development regresses** — stated in the generated `.npmrc`'s own comments
+  (`npx vsts-npm-auth -config .npmrc`).
+- **The overlay documented the opposite** — its remarks now describe both modes.
+- **`doctor`** — `checkNpmAuthMatchesPipeline` fails a credential-free `.npmrc` with no
+  task, and a PAT block alongside the task.
+- **Upgrade** infers the mode from an existing `npmAuthenticate@0`, which is how the
+  workspace that motivated this lost the task twice: an upgrade regenerated the pipeline
+  without it and wrote a PAT block the feed rejects.
+
 
 Generated Azure workspaces authenticate to Azure Artifacts with a base64 PAT in
 `.npmrc`'s `username`/`_password` block. That is **correct** — a PAT can only

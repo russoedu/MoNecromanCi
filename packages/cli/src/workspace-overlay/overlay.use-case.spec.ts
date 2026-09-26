@@ -38,6 +38,7 @@ import {
   nugetFeedUrl,
   poolBlock,
   pythonPublishUrl,
+  resolveNpmAuth,
   readMnciConfig,
   registryUrl,
   RETIRED_FORMATTER_FILES,
@@ -118,6 +119,58 @@ function directives (npmrc: string): string[] {
     .map(line => line.trim())
     .filter(line => line.length > 0 && !line.startsWith(';') && !line.startsWith('#'))
 }
+
+describe('resolveNpmAuth', () => {
+  const azure = {
+    kind:          'azure-artifacts',
+    organization:  'org',
+    project:       'proj',
+    artifactsFeed: 'feed',
+  } as const
+
+  it('leaves a workspace on the default when nothing asks for anything else', () => {
+    expect(resolveNpmAuth(undefined, azure, 'azure')).toBeUndefined()
+    expect(resolveNpmAuth('pat', azure, 'both')).toBe('pat')
+  })
+
+  it('accepts build-identity for an Azure feed on an Azure pipeline', () => {
+    expect(resolveNpmAuth('build-identity', azure, 'azure')).toBe('build-identity')
+  })
+
+  it('falls back to the persisted or detected mode when no flag is passed', () => {
+    expect(resolveNpmAuth(undefined, azure, 'azure', 'build-identity')).toBe('build-identity')
+    // An explicit flag beats the fallback in both directions.
+    expect(resolveNpmAuth('pat', azure, 'azure', 'build-identity')).toBe('pat')
+  })
+
+  it('rejects a mode it does not know, naming the ones it does', () => {
+    expect(() => resolveNpmAuth('token', azure, 'azure')).toThrow(/pat, build-identity/)
+  })
+
+  it.each(['github', 'both'] as const)(
+    'refuses build-identity on --ci %s, because npmAuthenticate@0 is Azure-only',
+    ci => {
+      // Refused rather than generated: the credential-free .npmrc would
+      // authenticate nowhere on the GitHub side, and the resulting publish failure
+      // is a bare auth error that names neither the mode nor the flag.
+      expect(() => resolveNpmAuth('build-identity', azure, ci)).toThrow(/Azure Pipelines task/)
+    },
+  )
+
+  it('refuses build-identity for public npm, which has no identity to borrow', () => {
+    expect(() => resolveNpmAuth('build-identity', { kind: 'npm' }, 'azure')).toThrow(
+      /Azure Artifacts/,
+    )
+  })
+
+  it('refuses a persisted build-identity that the current CI can no longer deliver', () => {
+    // A workspace that adds a GitHub pipeline later must not silently keep a mode
+    // one of its two pipelines cannot use.
+    expect(() => resolveNpmAuth(undefined, azure, 'both', 'build-identity')).toThrow(
+      /Azure Pipelines task/,
+    )
+  })
+})
 
 describe('npmrcContent', () => {
   const azure = {
@@ -210,6 +263,37 @@ describe('npmrcContent', () => {
     // _authToken precisely so nobody reintroduces it.
     expect(directives(npmrc).some((line) => line.includes('_authToken'))).toBe(false)
     expect(directives(npmrc).some((line) => line.includes('_password'))).toBe(true)
+  })
+
+  it('writes routing and NO credentials for build-identity auth', () => {
+    const npmrc = npmrcContent(azure, '@demo', 'build-identity')
+
+    // Exactly one directive: the scope route. Anything else here would be a
+    // credential the pipeline task is supposed to be the only source of.
+    expect(directives(npmrc)).toEqual([
+      '@demo:registry=https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/',
+    ])
+  })
+
+  it('explains, in the file, why there is no credential and what that costs locally', () => {
+    // The reasoning has to live where the person deleting or "fixing" the file will
+    // read it. Two facts matter: a PAT cannot be sent as Bearer, and a developer
+    // machine no longer inherits a credential from this file.
+    const npmrc = npmrcContent(azure, '@demo', 'build-identity')
+
+    expect(npmrc).toContain('npmAuthenticate@0')
+    expect(npmrc).toContain('ENTRA ID')
+    expect(npmrc).toContain('vsts-npm-auth')
+  })
+
+  it('keeps the PAT block as the default, unchanged by the new option', () => {
+    expect(npmrcContent(azure, '@demo', 'pat')).toBe(npmrcContent(azure, '@demo'))
+  })
+
+  it('ignores the mode for public npm, where there is nothing to inject', () => {
+    expect(npmrcContent({ kind: 'npm' }, '@demo', 'build-identity')).toBe(
+      npmrcContent({ kind: 'npm' }, '@demo'),
+    )
   })
 
   it('drops legacy-peer-deps, added for a plugin removed long ago', () => {
@@ -525,6 +609,45 @@ describe('azurePipelinesYaml', () => {
     expect(fetchIndex).toBeGreaterThan(attachIndex)
     expect(verifyIndex).toBeGreaterThan(fetchIndex)
     expect(releaseIndex).toBeGreaterThan(verifyIndex)
+  })
+
+  describe('build-identity npm auth', () => {
+    type Step = { task?: string; script?: string; displayName?: string; env?: Record<string, string>; inputs?: Record<string, string> }
+    const stepsOf = (pipeline: string): Step[] =>
+      (yaml.load(pipeline) as { steps: Step[] }).steps
+
+    it('runs npmAuthenticate@0 against .npmrc, and strictly before npm ci', () => {
+      const steps = stepsOf(azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts', undefined, 'build-identity'))
+      const auth = steps.findIndex(step => step.task === 'npmAuthenticate@0')
+      const install = steps.findIndex(step => step.script === 'npm ci')
+
+      expect(auth).toBeGreaterThan(-1)
+      expect(steps[auth].inputs?.workingFile).toBe('.npmrc')
+      // The order is the whole feature: the task writes the credential into the file
+      // npm reads, so a task after the install authenticates nothing that matters.
+      expect(install).toBeGreaterThan(auth)
+    })
+
+    it('does not hand npm ci a PAT it will never read', () => {
+      const steps = stepsOf(azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts', undefined, 'build-identity'))
+
+      expect(steps.find(step => step.script === 'npm ci')?.env).toBeUndefined()
+    })
+
+    it('still maps PAT where Python and NuGet publishing genuinely need it', () => {
+      // Build identity replaces npm's credential only. The twine and NuGet paths
+      // read the raw PAT from the same variable group, so the release step keeps it.
+      const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts', undefined, 'build-identity')
+
+      expect(pipeline).toContain('PAT: $(PAT)')
+    })
+
+    it('adds nothing to the default pipeline', () => {
+      const pipeline = azurePipelinesYaml('ubuntu-latest', 'Build')
+
+      expect(pipeline).not.toContain('npmAuthenticate')
+      expect(stepsOf(pipeline).find(step => step.script === 'npm ci')?.env).toEqual({ PAT: '$(PAT)' })
+    })
   })
 
   it('authenticates npm via the base64 PAT env, not npmAuthenticate', () => {

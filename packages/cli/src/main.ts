@@ -54,6 +54,10 @@ export function buildProgram (cliVersion: string): Command {
       'CI build agent: a vmImage (e.g. ubuntu-latest) or self-hosted pool name',
     )
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
+    .option(
+      '--npm-auth <mode>',
+      'how npm authenticates to an Azure Artifacts feed: pat (default) | build-identity (npmAuthenticate@0, no PAT; --ci azure only)',
+    )
     .option('--ci <provider>', 'CI provider: azure | github | both')
     .option('--test-runner <runner>', 'unit-test runner: jest | vitest')
     .option('--nx-cloud', 'connect the workspace to Nx Cloud (remote caching + CI insights)')
@@ -77,6 +81,10 @@ export function buildProgram (cliVersion: string): Command {
     .option('--artifacts-feed <name>', 'Azure Artifacts feed')
     .option('--agent <pool>', 'CI build agent (overrides the persisted value)')
     .option('--variable-group <name>', 'Azure DevOps variable group holding the npm PAT')
+    .option(
+      '--npm-auth <mode>',
+      'how npm authenticates to an Azure Artifacts feed: pat (default) | build-identity (npmAuthenticate@0, no PAT; --ci azure only)',
+    )
     .option('--ci <provider>', 'CI provider: azure | github | both (overrides the persisted value)')
     .option(
       '--test-runner <runner>',
