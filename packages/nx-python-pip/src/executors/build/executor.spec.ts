@@ -149,4 +149,58 @@ describe('buildExecutor', () => {
 
     expect(await buildExecutor({}, context())).toEqual({ success: false })
   })
+
+  describe('the output directory', () => {
+    it('is emptied before the build, so a stale wheel cannot be published', async () => {
+      // `python -m build --outdir` ADDS to the directory. A release builds
+      // twice - once in preVersionCommand, at the old version, and again after
+      // the new version is written - and the publish step uploads `dist/*`, so
+      // without this the old wheel goes to the registry alongside the new one.
+      mockReadFileSync.mockReturnValue(
+        '[project]\nname = "pyshared"\n' as unknown as ReturnType<typeof readFileSync>
+      )
+      mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
+
+      await buildExecutor({}, context())
+
+      expect(mockRmSync).toHaveBeenCalledWith(
+        join('/workspace', 'python-packages/pyshared', 'dist'),
+        { recursive: true, force: true }
+      )
+    })
+
+    it('is emptied for a vendoring build too', async () => {
+      mockReadFileSync.mockReturnValue(
+        '[project]\nname = "pyshared"\n\n[tool.mnci]\nvendor = ["pycore"]\n' as unknown as ReturnType<
+          typeof readFileSync
+        >
+      )
+      mockMkdtempSync.mockReturnValue('/tmp/staged')
+      mockSpawnSync.mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
+
+      await buildExecutor({}, context())
+
+      expect(mockRmSync).toHaveBeenCalledWith(
+        join('/workspace', 'python-packages/pyshared', 'dist'),
+        { recursive: true, force: true }
+      )
+    })
+
+    it('is emptied before python runs, not after it', async () => {
+      const order: string[] = []
+      mockReadFileSync.mockReturnValue(
+        '[project]\nname = "pyshared"\n' as unknown as ReturnType<typeof readFileSync>
+      )
+      mockRmSync.mockImplementation(() => { order.push('rm') })
+      mockSpawnSync.mockImplementation(() => {
+        order.push('build')
+
+        return { status: 0 } as ReturnType<typeof spawnSync>
+      })
+
+      await buildExecutor({}, context())
+
+      expect(order).toEqual(['rm', 'build'])
+    })
+  })
 })

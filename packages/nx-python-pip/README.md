@@ -51,7 +51,7 @@ nx g @mnci/nx-python-pip:function-application my-function-app
 
 | Executor  | Runs                                                                                                                                   |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`   | `python -m build` — vendoring-aware (see below)                                                                                        |
+| `build`   | `python -m build` — vendoring-aware (see below); **empties `dist/` first**, since `--outdir` adds to it rather than replacing it         |
 | `test`    | `python -m pip install -e .` (unless `installEditable: false`) then `python -m pytest`                                                 |
 | `lint`    | `python -m ruff check .`                                                                                                               |
 | `typecheck` | `python -m mypy .` — strictness comes from the project's own `[tool.mypy]`, never from flags here, so a hand-run `mypy` matches the target |
@@ -68,6 +68,16 @@ outright there.
 `publish` accepts a real, typed `dryRun` option — `nx release publish
 --dry-run` sets it automatically on every `nx-release-publish` executor, so
 a dry run cleanly previews the twine command instead of running it.
+
+**`dist/` is emptied before each build.** `python -m build --outdir` *adds* to
+that directory, and `publish` uploads `dist/*`. A release builds twice - once in
+`preVersionCommand`, before any version is resolved, and again as the publish
+target's dependency, after the new version has been written to
+`pyproject.toml` - so without this the second build leaves the first one's wheel
+and sdist sitting beside its own, and twine publishes **both**. Measured: that is
+how the scaffold version `0.0.1` reached PyPI for four packages that had long
+since moved past it, silently, because `--skip-existing` reports an
+already-published version as a warning and exits 0.
 
 **A project with no new version is not published.** `nx release publish` hands
 every `nx-release-publish` task the version data its version step produced, and

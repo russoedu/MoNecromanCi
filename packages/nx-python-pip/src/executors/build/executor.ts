@@ -40,6 +40,17 @@ function vendoredProjectRoot(name: string, context: ExecutorContext): string | u
  * Projects with no `vendor` entry build straight from their own directory,
  * no staging.
  *
+ * **`dist/` is emptied first**, because `python -m build --outdir` ADDS to that
+ * directory rather than replacing it, and the publish step uploads `dist/*`.
+ * A release builds twice - once in `preVersionCommand`, before any version is
+ * resolved, and again as the publish target's dependency, after the new
+ * version has been written to `pyproject.toml` - so without this the second
+ * build leaves the first one's wheel and sdist sitting beside its own, and
+ * twine publishes BOTH. Measured: that is how the scaffold version `0.0.1`
+ * reached the registry for four packages that had long since moved past it,
+ * silently, because `--skip-existing` reports an already-published version as
+ * a warning and exits 0.
+ *
  * @param _options - Unused (vendoring is driven by `pyproject.toml`, not options).
  * @param context - The Nx executor context.
  * @returns `{ success: true }` when `python -m build` exits 0.
@@ -56,6 +67,9 @@ export default async function buildExecutor(
   const pyprojectPath = join(absoluteProjectRoot, 'pyproject.toml')
   const pyprojectToml = readFileSync(pyprojectPath, 'utf8')
   const vendorNames = parseVendorEntries(pyprojectToml)
+
+  // See the remarks: `--outdir` adds, and the publish step uploads `dist/*`.
+  rmSync(outDirectory, { recursive: true, force: true })
 
   if (vendorNames.length === 0) {
     const result = spawnSync(

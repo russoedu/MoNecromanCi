@@ -189,6 +189,12 @@ committing an upgrade.
 - **`packages/nx-python-pip/`** — a real `@nx/devkit` plugin (`@mnci/nx-python-pip`)
   - Generators: `application`, `library`, `internal-library`, `function-application`
   - Executors: `build` (PyPA build), `test` (pytest), `lint` (Ruff), `publish` (twine).
+    `build` **empties `dist/` first**: `python -m build --outdir` adds to that
+    directory and `publish` uploads `dist/*`, while a release builds twice (once in
+    `preVersionCommand`, at the pre-bump version, and again as the publish target's
+    dependency, after the bump). Without it the stale wheel is published alongside the
+    real one - silently, since `--skip-existing` warns and exits 0. Measured: that is
+    how `0.0.1` reached PyPI for four packages long past it.
     `publish` reads the `nxReleaseVersionData` that `nx release publish` hands every
     `nx-release-publish` task and **skips a project with no new version**, as
     `@nx/js:release-publish` does. Not tidiness: tag-only releases leave an untouched
