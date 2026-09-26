@@ -55,7 +55,7 @@ nx g @mnci/nx-python-pip:function-application my-function-app
 | `test`    | `python -m pip install -e .` (unless `installEditable: false`) then `python -m pytest`                                                 |
 | `lint`    | `python -m ruff check .`                                                                                                               |
 | `typecheck` | `python -m mypy .` — strictness comes from the project's own `[tool.mypy]`, never from flags here, so a hand-run `mypy` matches the target |
-| `publish` | `python -m twine upload --skip-existing dist/*`, reading `TWINE_USERNAME`/`TWINE_PASSWORD`/`TWINE_REPOSITORY_URL` from the environment |
+| `publish` | `python -m twine upload --skip-existing dist/*`, reading `TWINE_USERNAME`/`TWINE_PASSWORD`/`TWINE_REPOSITORY_URL` from the environment — **skipped entirely for a project this release did not version** (see below) |
 
 Every command is invoked as `<python> -m <tool>`, never a hard-coded venv
 path, so the exact same command works whether or not you've activated a
@@ -68,6 +68,24 @@ outright there.
 `publish` accepts a real, typed `dryRun` option — `nx release publish
 --dry-run` sets it automatically on every `nx-release-publish` executor, so
 a dry run cleanly previews the twine command instead of running it.
+
+**A project with no new version is not published.** `nx release publish` hands
+every `nx-release-publish` task the version data its version step produced, and
+`publish` skips any project whose `newVersion` is `null` — the same thing
+`@nx/js:release-publish` does, and for a sharper reason here. `nx release` is
+normally configured tag-only (`release.git.commit: false`), so an untouched
+project's `pyproject.toml` keeps its scaffold version for ever; publishing it on
+every release of its *neighbours* therefore uploads `0.0.1` over and over, and
+`--skip-existing` reduces that to a warning and exit 0, so nobody sees it. On a
+package PyPI has never seen it is worse than noise: the upload **creates** the
+project at the scaffold version, and each one spends a slot in PyPI's
+new-project rate limit — which is how a workspace adding several Python packages
+earns a `429 Too Many Requests` on the one release it actually meant to publish.
+
+A dry run reports the same skip, so a preview matches the run it previews. When
+no version data is passed at all (`nx release publish` invoked on its own,
+without the version step), nothing has been claimed about any project, so every
+project publishes.
 
 ## Type checking
 
