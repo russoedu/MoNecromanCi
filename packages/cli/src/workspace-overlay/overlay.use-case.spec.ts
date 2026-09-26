@@ -1519,6 +1519,117 @@ describe('githubActionsYaml', () => {
 // only job here runs e2e rather than unit tests.
 const describeOnPosix = process.platform === 'win32' ? describe.skip : describe
 
+describe('the PyPI release preflight, executed', () => {
+  // Executed, not string-matched, for the reason the note above gives: this is
+  // a `node -e` one-liner that reaches the shell through a YAML template
+  // literal, and every layer of that is a place a quote or an escape can be
+  // lost without any unit test noticing.
+  //
+  // `fetch` is stubbed through NODE_OPTIONS rather than left to hit pypi.org:
+  // the guard's whole job is to answer "does this project exist yet", and a
+  // test that asked the real registry would pass or fail on someone else's
+  // uptime.
+  const guard = extractGuard(
+    githubActionsYaml('ubuntu-latest', undefined, 'npm'),
+    'may CREATE ',
+  )
+
+  let workspace: string
+
+  /** Runs the preflight against the fixture workspace.
+   * @param token - The value of PYPI_TOKEN for this run.
+   * @param status - The HTTP status the stubbed PyPI answers with.
+   * @returns The exit status and the combined output. */
+  function run (token: string, status = 404): { status: number | null; out: string } {
+    const stub = join(workspace, 'fetch-stub.cjs')
+    writeFileSync(
+      stub,
+      `globalThis.fetch = async () => ({ status: ${status} })\n`,
+    )
+    const result = spawnSync(guard, {
+      cwd:      workspace,
+      shell:    true,
+      encoding: 'utf8',
+      env:      { ...process.env, PYPI_TOKEN: token, NODE_OPTIONS: `--require ${stub}` },
+    })
+
+    return { status: result.status, out: `${result.stdout}${result.stderr}` }
+  }
+
+  beforeEach(() => {
+    workspace = mkdtempSync(join(tmpdir(), 'mnci-pypi-preflight-'))
+    mkdirSync(join(workspace, 'python-packages/thing'), { recursive: true })
+    writeFileSync(
+      join(workspace, 'python-packages/thing/pyproject.toml'),
+      '[build-system]\nrequires = ["hatchling"]\n\n[project]\nname = "thing_one"\nversion = "0.0.1"\n',
+    )
+  })
+
+  afterEach(() => rmSync(workspace, { force: true, recursive: true }))
+
+  it('is emitted into the workflow at all', () => {
+    expect(guard).not.toBe('')
+  })
+
+  it('stops before anything is versioned when PYPI_TOKEN is empty', () => {
+    const result = run('')
+
+    expect(result.status).toBe(1)
+    expect(result.out).toContain('PYPI_TOKEN is empty or unset')
+    expect(result.out).toContain('AFTER nx release has already tagged')
+  })
+
+  it('stops when the secret is not a PyPI token at all', () => {
+    // A pasted password or a truncated token is otherwise rejected only at
+    // upload time, which is after the tags are pushed.
+    const result = run('hunter2')
+
+    expect(result.status).toBe(1)
+    expect(result.out).toContain('begins with pypi-')
+  })
+
+  it('names the projects a release would have to create, and does not fail', () => {
+    // 404 from the stub: the project does not exist, so publishing it creates
+    // it, and creation is the rate-limited operation.
+    const result = run('pypi-anything', 404)
+
+    expect(result.status).toBe(0)
+    expect(result.out).toContain('may CREATE 1 new PyPI project(s) - thing_one')
+    expect(result.out).toContain('delete the tags for the versions that did not publish')
+  })
+
+  it('says so plainly when every project already exists', () => {
+    const result = run('pypi-anything', 200)
+
+    expect(result.status).toBe(0)
+    expect(result.out).toContain('this release creates none')
+    expect(result.out).not.toContain('may CREATE')
+  })
+
+  it('reads the distribution name from [project], not from another table', () => {
+    // `[build-system]` also has a `requires` line and a tool table can carry
+    // its own `name`; reading the first `name` in the file would report the
+    // wrong project, or none.
+    expect(run('pypi-anything', 404).out).toContain('thing_one')
+  })
+
+  it('skips cleanly in a workspace with no Python packages', () => {
+    rmSync(join(workspace, 'python-packages'), { recursive: true, force: true })
+    const result = run('')
+
+    expect(result.status).toBe(0)
+    expect(result.out).toContain('No Python packages to release - skipping.')
+  })
+
+  it('does not exist for an Azure Artifacts feed, which takes a PAT not a pypi- token', () => {
+    // The same reasoning that denies the Azure case an npm preflight: a guard
+    // that cannot test anything is worse than none.
+    const azure = azurePipelinesYaml('ubuntu-latest', 'Build', undefined, 'azure-artifacts')
+
+    expect(azure).not.toContain('may CREATE ')
+  })
+})
+
 describe('the Azure Artifacts PAT preflight, executed', () => {
   // Executed rather than string-matched, because the bug being pinned was not
   // a missing substring: `Buffer.from(process.env.PAT, 'base64')` SUCCEEDS on

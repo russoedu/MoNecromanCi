@@ -449,6 +449,22 @@ to one is mirrored in the other by construction:
   later (this bit mnci's own workflow once, via a hand-added `workflow_dispatch`).
   Azure's equivalent trigger fix (`in(Build.Reason, 'IndividualCI', 'BatchedCI')`)
   is still open — see ROADMAP #23.
+- **Release preflights, and what each one can honestly prove.** npm's proves the
+  token works (`npm whoami`) before `nx release` tags anything. **PyPI's cannot**:
+  it has no `whoami`, and a bare `POST` to the only endpoint that authenticates
+  answers `405` for good, bad and absent credentials alike (measured). So
+  `PYPI_RELEASE_PREFLIGHT` checks what it can — the token's shape, since every
+  PyPI API token starts with `pypi-` — and otherwise addresses the failure that
+  actually happens: it names the projects the release would have to **create**,
+  because PyPI rate-limits new-project creation per account and a `429` arrives
+  after the tags are pushed, leaving versions tagged with nothing published and
+  skipped for ever. It never fails on that count (a first publish must create the
+  project) nor on an unreachable PyPI. Both preflights are public-registry only —
+  an Azure Artifacts feed answers reads anonymously and takes a PAT, so neither
+  would test anything there. **No colon-space in any guard message**: the command
+  is an unquoted YAML plain scalar, so a `: ` inside it reads as a nested mapping
+  and the whole pipeline stops parsing (`pipeline-drift.integration.spec.ts`
+  catches it, as `bad indentation of a mapping entry`).
 - **`npm audit`** blocks on `fixAvailable` findings at `moderate` or above (not a
   severity guess), non-blocking only for advisories with no published fix; a
   malformed report exits 0 with the reason printed rather than failing silently.

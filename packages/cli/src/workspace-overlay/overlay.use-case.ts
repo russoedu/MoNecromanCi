@@ -2774,6 +2774,69 @@ function npmAuthPreflight (registryKind: RegistryConfig['kind']): string {
   return registryKind === 'npm' ? NPM_AUTH_PREFLIGHT : ''
 }
 
+/**
+ * Names the PyPI projects a release would have to CREATE, before it tags.
+ *
+ * @remarks
+ * **There is deliberately no token check here**, and that is the whole reason
+ * this guard looks nothing like {@link NPM_AUTH_PREFLIGHT}. PyPI has no
+ * `whoami`: the only endpoint that authenticates is the upload itself, and a
+ * bare `POST` to it answers `405` whether the credentials are good, bad or
+ * absent - measured against the live endpoint. Anything calling itself a PyPI
+ * auth preflight would therefore pass without testing anything, which is the
+ * same reason the Azure case already gets no npm preflight. What CAN be
+ * checked without publishing is the token's SHAPE: every PyPI API token
+ * begins with `pypi-`, so a password or a truncated paste is caught here
+ * rather than at upload time, after nx release has tagged.
+ *
+ * What it does test is the failure that actually happens. PyPI rate limits
+ * NEW PROJECT creation per account, and `nx release` tags first and publishes
+ * last, so a `429` lands after the tags are pushed: those versions are then
+ * tagged with nothing published, and skipped for ever, because the next run
+ * resolves the current version from the newest tag. The public JSON API says
+ * which projects do not exist yet, with no credentials at all, so the step
+ * names them up front and says what to do when it happens.
+ *
+ * It never fails on that count - a first publish has to create the project,
+ * and blocking it would block every new package for ever - nor when PyPI
+ * cannot be reached, since a release must not hinge on this step's own
+ * network.
+ *
+ * Written as a `String.raw` template rather than the single-quoted style its
+ * npm counterpart uses. The body is one long `node -e` script full of single
+ * quotes, and it splits on a newline escape - hand-escaping both kinds is how
+ * a guard acquires a silent syntax error that only a real release would
+ * reveal. A plain template literal would turn that newline escape into a real
+ * newline in the middle of a string literal, which is a parse error in the
+ * script node then runs. `String.raw` passes both through untouched, so what
+ * is written here is exactly what runs.
+ *
+ * NO COLON-SPACE ANYWHERE IN THE MESSAGES. The command is emitted as an
+ * unquoted YAML plain scalar after `run:`/`script:`, so a `: ` inside it reads
+ * as a nested mapping and the whole pipeline file stops parsing. Every message
+ * here uses ` - ` where prose wants a colon; `https://` is fine, since only
+ * colon-SPACE ends a scalar. `pipeline-drift.integration.spec.ts` parses both
+ * generated files, so this is caught, but it is caught as an unhelpful
+ * `bad indentation of a mapping entry`.
+ *
+ * PUBLIC PYPI ONLY, mirroring {@link npmAuthPreflight}. An Azure Artifacts
+ * feed takes a PAT rather than a `pypi-` token and answers reads
+ * anonymously, so neither half would mean anything there.
+ */
+const PYPI_RELEASE_PREFLIGHT = String.raw`node -e "const fs=require('node:fs');const files=fs.globSync('python-packages/*/pyproject.toml');if(files.length===0){console.log('No Python packages to release - skipping.');process.exit(0)}if(!process.env.PYPI_TOKEN){console.error('PYPI_TOKEN is empty or unset, so the publish would fail AFTER nx release has already tagged. Add it as a repository secret named exactly PYPI_TOKEN - under Actions, not the Dependabot or Codespaces tab, and not an Environment secret.');process.exit(1)}if(!process.env.PYPI_TOKEN.startsWith('pypi-')){console.error('PYPI_TOKEN does not look like a PyPI API token - every one of them begins with pypi-. A password or a truncated paste is rejected only at upload time, which is AFTER nx release has tagged.');process.exit(1)}const names=files.map(f=>{const t=fs.readFileSync(f,'utf8');const b=t.slice(t.indexOf('[project]'));const l=b.split('\n').find(x=>x.trim().startsWith('name'));return l?l.split('=')[1].replace(/[^a-zA-Z0-9._-]/g,''):''}).filter(Boolean);(async()=>{const fresh=[];for(const n of names){try{const r=await fetch('https://pypi.org/pypi/'+n.toLowerCase().replace(/[-_.]+/g,'-')+'/json',{signal:AbortSignal.timeout(10000)});if(r.status===404)fresh.push(n)}catch{console.log('Could not reach PyPI to check '+n+' - continuing.')}}if(fresh.length===0){console.log('Every Python package already exists on PyPI - this release creates none.');return}console.log('NOTE - this release may CREATE '+fresh.length+' new PyPI project(s) - '+fresh.join(', ')+'. Project creation is rate limited per account, and a 429 there arrives AFTER nx release has tagged - leaving those versions tagged with nothing published, and skipped forever, because the next run resolves the current version from the newest tag. If that happens, delete the tags for the versions that did not publish before releasing again. PyPI offers no way to check the limit, or the token, in advance.')})()"`
+
+/**
+ * The PyPI preflight step body for a registry kind, or `''` where none applies.
+ *
+ * @param registryKind - The workspace's registry kind.
+ * @returns The `node -e` command, or `''` for a non-public registry.
+ * @throws Never - pure mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function pypiReleasePreflight (registryKind: RegistryConfig['kind']): string {
+  return registryKind === 'npm' ? PYPI_RELEASE_PREFLIGHT : ''
+}
+
 const SHALLOW_CLONE_GUARD = 'node -e "const r=require(\'node:child_process\').spawnSync(\'git\',[\'rev-parse\',\'--is-shallow-repository\'],{encoding:\'utf8\'});if(r.status!==0){console.error(\'Could not determine whether this checkout has full history (git rev-parse --is-shallow-repository failed) - refusing to release. \'+(r.stderr||\'\').trim());process.exit(1)}if(r.stdout.trim()===\'true\'){console.error(\'This checkout is a shallow clone. nx release resolves the current version of each package from its git tag, and silently falls back to the permanently-stale on-disk version when a tag cannot be found - which can propose, and publish, a version DOWNGRADE. Fetch full history before releasing - set fetchDepth (Azure) or fetch-depth (GitHub) to 0.\');process.exit(1)}"'
 
 /**
@@ -3393,6 +3456,20 @@ ${
       NODE_AUTH_TOKEN: $(NPM_TOKEN)
 `
     : ''
+}${
+  pypiReleasePreflight(registryKind)
+    ? `
+  # PyPI cannot be asked whether a token is good - the only endpoint that
+  # authenticates is the upload itself - so this checks the token's SHAPE and
+  # names the projects this release would have to CREATE. Project creation is
+  # rate limited per account, and a 429 arrives AFTER nx release has tagged.
+  - script: ${pypiReleasePreflight(registryKind)}
+    displayName: Preflight — name the PyPI projects this release would create
+    condition: ${onMain}
+    env:
+      PYPI_TOKEN: $(PYPI_TOKEN)
+`
+    : ''
 }
   # Version + tag + publish, in one release, for npm (packages/*), Python
   # (python-packages/*) AND C# (packages/*/*.csproj) — conventional commits,
@@ -3697,6 +3774,21 @@ ${
         if: \${{ ${onMain} }}
         env:
           NODE_AUTH_TOKEN: \${{ secrets.NPM_TOKEN }}
+`
+    : ''
+}${
+  pypiReleasePreflight(registryKind)
+    ? `
+      # PyPI cannot be asked whether a token is good - the only endpoint that
+      # authenticates is the upload itself - so this checks the token's SHAPE
+      # and names the projects this release would have to CREATE. Project
+      # creation is rate limited per account, and a 429 arrives AFTER nx
+      # release has tagged.
+      - run: ${pypiReleasePreflight(registryKind)}
+        name: Preflight — name the PyPI projects this release would create
+        if: \${{ ${onMain} }}
+        env:
+          PYPI_TOKEN: \${{ secrets.PYPI_TOKEN }}
 `
     : ''
 }
