@@ -3563,6 +3563,20 @@ describe('applyOverlay', () => {
     expect(existsSync(join(workspaceRoot, 'demo.code-workspace'))).toBe(true)
   })
 
+  // What `nx configure-ai-agents` writes: its rules between two marker
+  // comments, which is what lets the block be replaced without touching the
+  // rest of a file the user also writes in.
+  const NX_AGENT_RULES_FIXTURE = [
+    '<!-- nx configuration start-->',
+    '<!-- Leave the start & end comments to automatically receive updates. -->',
+    '',
+    '# General Guidelines for working with Nx',
+    '',
+    '- Prefer running tasks through nx.',
+    '<!-- nx configuration end-->',
+    '',
+  ].join('\n')
+
   it('deletes every piece of create-nx-workspace 23.x AI-agent scaffolding', () => {
     // A pristine `mnci new` used to end with "eslint could not format '.'
     // (exit code 1)" and a RED `npm run lint`, because three copies of
@@ -3591,7 +3605,11 @@ describe('applyOverlay', () => {
     ]
     for (const file of scaffolding) {
       mkdirSync(dirname(join(workspaceRoot, file)), { recursive: true })
-      writeFileSync(join(workspaceRoot, file), 'x\n')
+      // `AGENTS.md` and `CLAUDE.md` are removed by what they CONTAIN, not by
+      // where they are, so the fixture has to be what Nx actually writes -
+      // its rules wrapped in the marker comments. The tests below cover the
+      // hand-written cases that distinction exists for.
+      writeFileSync(join(workspaceRoot, file), NX_AGENT_RULES_FIXTURE)
     }
 
     overlayWith(DEFAULT_STACK)
@@ -3607,6 +3625,65 @@ describe('applyOverlay', () => {
     // one with the real files present.
     expect(existsSync(join(workspaceRoot, '.github'))).toBe(true)
     expect(existsSync(join(workspaceRoot, 'azure-pipelines.yml'))).toBe(true)
+  })
+
+  it('keeps a CLAUDE.md the user wrote, which has no Nx block in it at all', () => {
+    // The bug this replaces: `CLAUDE.md` and `AGENTS.md` were deleted by PATH,
+    // and both are - by convention - where a person writes instructions for
+    // their own repository. This project's own CLAUDE.md is five hundred lines
+    // of hand-written guide with no marker in it, so `mnci upgrade` run here
+    // would have deleted all of it.
+    const guide = '# My project\n\nRun the tests before pushing.\n'
+    writeFileSync(join(workspaceRoot, 'CLAUDE.md'), guide)
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(readFileSync(join(workspaceRoot, 'CLAUDE.md'), 'utf8')).toBe(guide)
+  })
+
+  it('keeps what the user added around an Nx block, and drops only the block', () => {
+    // The common real shape: Nx wrote its rules, then a person appended their
+    // own. Deleting the file takes both; deleting the block takes neither.
+    writeFileSync(
+      join(workspaceRoot, 'AGENTS.md'),
+      `${NX_AGENT_RULES_FIXTURE}\n## House rules\n\nNever squash-merge.\n`,
+    )
+
+    overlayWith(DEFAULT_STACK)
+
+    const kept = readFileSync(join(workspaceRoot, 'AGENTS.md'), 'utf8')
+    expect(kept).toContain('Never squash-merge.')
+    expect(kept).not.toContain('nx configuration start')
+    expect(kept).not.toContain('Prefer running tasks through nx.')
+  })
+
+  it('keeps the agents a user defined under .claude, and removes only Nx settings', () => {
+    // `.claude` was deleted wholesale. It holds `settings.json`, which Nx does
+    // write, alongside `agents/` and `commands/`, which it does not.
+    mkdirSync(join(workspaceRoot, '.claude/agents'), { recursive: true })
+    writeFileSync(join(workspaceRoot, '.claude/agents/reviewer.md'), '# reviewer\n')
+    writeFileSync(join(workspaceRoot, '.claude/settings.json'), '{}\n')
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, '.claude/agents/reviewer.md'))).toBe(true)
+    expect(existsSync(join(workspaceRoot, '.claude/settings.json'))).toBe(false)
+  })
+
+  it('deletes a file that was nothing but an Nx block', () => {
+    // What `create-nx-workspace` leaves: no user content, so nothing to keep.
+    writeFileSync(join(workspaceRoot, 'CLAUDE.md'), NX_AGENT_RULES_FIXTURE)
+
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, 'CLAUDE.md'))).toBe(false)
+  })
+
+  it('leaves a missing agent file alone rather than creating one', () => {
+    overlayWith(DEFAULT_STACK)
+
+    expect(existsSync(join(workspaceRoot, 'CLAUDE.md'))).toBe(false)
+    expect(existsSync(join(workspaceRoot, 'AGENTS.md'))).toBe(false)
   })
 
   it('removes the local-registry scaffolding a publishable lib left behind', () => {

@@ -4069,7 +4069,6 @@ const NX_SCAFFOLDING_TO_REMOVE = [
   // The AI-agent set, in full. See the remarks above: a partial delete leaves
   // every `nx` command printing an "outdated configuration" nag.
   '.agents',
-  '.claude',
   '.codex',
   '.cursor',
   '.gemini',
@@ -4077,10 +4076,37 @@ const NX_SCAFFOLDING_TO_REMOVE = [
   '.github/agents',
   '.github/prompts',
   '.github/skills',
-  'AGENTS.md',
-  'CLAUDE.md',
   'opencode.json',
+  // `.claude`, `AGENTS.md` and `CLAUDE.md` are NOT here. See
+  // {@link NX_AUTHORED_AGENT_FILES} and {@link removeNxAuthoredAgentFiles}:
+  // all three are paths a user writes by hand, so they are removed by what
+  // they CONTAIN rather than by where they are.
 ] as const
+
+/**
+ * The marker Nx wraps its own agent rules in, and the file it owns outright.
+ *
+ * @remarks
+ * `nx configure-ai-agents` writes its rules into `AGENTS.md` and `CLAUDE.md`
+ * between a start and an end comment, and tells the reader to leave them
+ * alone so the block can be updated in place. That marker is the only honest
+ * way to tell Nx's text from the user's: both files are, by convention, where
+ * a person writes instructions for their own repository. This project's own
+ * `CLAUDE.md` is five hundred lines of hand-written guide with no marker in
+ * it, and the previous behaviour - deleting both files by path - would have
+ * taken all of it.
+ *
+ * `.claude/settings.json` is different: Nx writes the whole file, to register
+ * its plugin marketplace, so it is removed outright. The rest of `.claude` -
+ * `agents/`, `commands/`, anything else a user puts there - is theirs.
+ */
+const NX_AGENT_RULES_MARKER = '<!-- nx configuration start-->'
+
+/** Where Nx's own agent rules live, alongside whatever the user wrote there. */
+const NX_AUTHORED_AGENT_FILES = ['AGENTS.md', 'CLAUDE.md'] as const
+
+/** The one file under `.claude` that Nx writes in full. */
+const NX_CLAUDE_SETTINGS = '.claude/settings.json'
 
 /**
  * One key removed from a record, without mutating the original.
@@ -4195,7 +4221,80 @@ export function removeNxScaffolding (workspaceRoot: string): void {
   for (const entry of NX_SCAFFOLDING_TO_REMOVE) {
     rmSync(join(workspaceRoot, entry), { recursive: true, force: true })
   }
+  removeNxAuthoredAgentFiles(workspaceRoot)
   removeProjectEslintConfigs(workspaceRoot)
+}
+
+/**
+ * Strips Nx's agent rules from `AGENTS.md` and `CLAUDE.md`, keeping the rest.
+ *
+ * @remarks
+ * The rules sit between {@link NX_AGENT_RULES_MARKER} and its closing
+ * comment, which Nx puts there precisely so the block can be replaced without
+ * touching what surrounds it. Everything outside the block is the user's and
+ * survives; the file is deleted only when the block WAS the whole file, which
+ * is the case `create-nx-workspace` produces.
+ *
+ * A file with no marker is Nx-unaware and is left completely alone - this
+ * project's own `CLAUDE.md` is exactly that, and the previous by-path deletion
+ * would have removed it in full.
+ *
+ * Suppressing Nx's "your AI agent configuration is outdated" nag needs the
+ * rules gone, not the file gone: the nag fires on rules that would change if
+ * regenerated, and an excised block leaves none. Verified against a real
+ * workspace with `nx show projects` and `nx run-many -t build`.
+ *
+ * @param workspaceRoot - Absolute path to the workspace.
+ * @returns Nothing.
+ * @throws Propagates any Node.js `fs` error other than a missing path.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function removeNxAuthoredAgentFiles (workspaceRoot: string): void {
+  // Nx writes this one in full, to register its plugin marketplace. The rest
+  // of `.claude` - agents, commands - is the user's and is left alone.
+  rmSync(join(workspaceRoot, NX_CLAUDE_SETTINGS), { force: true })
+
+  for (const name of NX_AUTHORED_AGENT_FILES) {
+    const path = join(workspaceRoot, name)
+    if (!existsSync(path)) continue
+
+    const kept = withoutNxAgentRules(readFileSync(path, 'utf8'))
+    if (kept === undefined) continue
+
+    if (kept.trim() === '') rmSync(path, { force: true })
+    else writeFileEnsured(path, kept)
+  }
+}
+
+/**
+ * One agent-rules file with Nx's marked block taken out.
+ *
+ * @remarks
+ * Returns `undefined` when there is no block to remove, so the caller can
+ * leave a hand-written file untouched rather than rewriting it byte-for-byte
+ * and showing a spurious diff.
+ *
+ * The end marker is matched by its opening rather than spelled out in full:
+ * Nx has changed the words inside it before, and a missed match would silently
+ * mean "no block", which is the failure that loses nothing but fixes nothing.
+ *
+ * @param content - The file's current text.
+ * @returns What should remain, or `undefined` when the file carries no block.
+ * @throws Never - pure string manipulation.
+ * @typeParam None - this function has no generic type parameters.
+ */
+function withoutNxAgentRules (content: string): string | undefined {
+  const start = content.indexOf(NX_AGENT_RULES_MARKER)
+  if (start === -1) return undefined
+
+  const endMarker = '<!-- nx configuration end'
+  const end = content.indexOf(endMarker, start)
+  if (end === -1) return undefined
+
+  const afterEnd = content.indexOf('>', end)
+  const rest = afterEnd === -1 ? '' : content.slice(afterEnd + 1)
+
+  return `${content.slice(0, start)}${rest}`.replace(/^\n+/, '')
 }
 
 /**

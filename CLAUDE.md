@@ -50,6 +50,16 @@ Every file above is mnci-owned — written (and, on `mnci upgrade`, rewritten) b
 until recently: it used to come from `create-nx-workspace`, which is exactly why the rich
 config this repo had never reached a single generated workspace.
 
+**`mnci upgrade` removes Nx's AI-agent scaffolding by what a file CONTAINS, not by
+where it sits.** `nx configure-ai-agents` writes its rules into `AGENTS.md` and
+`CLAUDE.md` between marker comments, and both filenames are — by convention — where a
+person writes instructions for their own repository. So the marked block is excised and
+everything around it survives; the file goes only when the block was all there was, and
+a file with no marker is left completely alone. Likewise `.claude/settings.json` is
+Nx's and is removed, while `.claude/agents/` and the rest of that directory are the
+user's and are not. This was a by-path delete until recently, which means a
+`mnci upgrade` in **this** repo would have deleted the very file you are reading.
+
 `applyOverlay()` also **deletes** things `create-nx-workspace` (or a past mnci version)
 scaffolds: `create-nx-workspace`'s own `.prettierrc`, any retired formatter config
 (`.prettierrc*`, `.oxfmtrc.json`, `oxlint.config.ts` — mnci has shipped both Prettier
