@@ -1,4 +1,5 @@
 import jest from 'eslint-plugin-jest'
+import { TYPE_AWARE_FILES } from './typeAware.js'
 
 /**
  * Test-file overrides.
@@ -52,6 +53,27 @@ export default [
       // finding in a freshly generated workspace, and switching it off here is
       // what lets the root `lint` target ship at all.
       'unicorn/no-anonymous-default-export': 'off',
+    },
+  },
+  {
+    name:    'mnci/tests/mock-aware',
+    // Only the specs the type-aware parser covers. `jest/unbound-method` reads type
+    // information exactly as its base rule does, so applying it to a spec outside
+    // every tsconfig would be a fatal parse error rather than a finding.
+    files:   TYPE_AWARE_FILES.map(glob => glob.replace('*.{', '*.{spec,test}.{')),
+    plugins: { jest },
+    rules:   {
+      // `@typescript-eslint/unbound-method` cannot see through a mock. Every
+      // `expect(client.method)` in a spec is a jest.fn() installed by jest.mock()
+      // or a setup file, so there is no `this` to lose and the base rule reports
+      // only false positives - 14 in one migrated package alone. Suppressing them
+      // one by one would hide the rare real occurrence along with the false ones.
+      //
+      // The check is kept, not dropped: eslint-plugin-jest ships the same rule with
+      // an exemption for `expect(...)`. It relaxes ONLY there, so assigning a
+      // method to a variable and calling it in a spec is still reported.
+      '@typescript-eslint/unbound-method': 'off',
+      'jest/unbound-method':               'error',
     },
   },
 ]

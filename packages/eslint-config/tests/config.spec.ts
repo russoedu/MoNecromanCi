@@ -106,6 +106,18 @@ const FIXTURES: Record<string, string> = {
   'packages/demo/src/misused.ts':
     'function on (handler: () => void): void {\n  handler()\n}\n\nasync function work (): Promise<void> {\n  await Promise.resolve()\n}\n\nexport function wire (): void {\n  on(async () => {\n    await work()\n  })\n}\n',
 
+  // `unbound-method` inside a spec. A method read off an object in `expect(...)` is
+  // a mock reference with no `this` to lose, so it must not be reported; the same
+  // read assigned to a variable is a real unbound call, and must still be.
+  'packages/demo/src/client.ts':
+    'export class Client {\n  value = 1\n\n  method (): number {\n    return this.value\n  }\n}\n',
+  'packages/demo/src/mocked.spec.ts':
+    "import { Client } from './client'\n\ndescribe('client', () => {\n  it('is mocked', () => {\n    const client = new Client()\n    expect(client.method).toBeDefined()\n  })\n})\n",
+  'packages/demo/src/unbound.spec.ts':
+    "import { Client } from './client'\n\ndescribe('client', () => {\n  it('loses this', () => {\n    const client = new Client()\n    const { method } = client\n    expect(method()).toBe(1)\n  })\n})\n",
+  'packages/demo/src/unbound.ts':
+    "import type { Client } from './client'\n\nexport function run (client: Client): number {\n  const { method } = client\n\n  return method()\n}\n",
+
   // The exact shape Nx writes into every workspace's ROOT jest.config.ts. The
   // rule `unicorn/no-anonymous-default-export` fails it, which is what blocked the
   // root `lint` target from shipping to generated workspaces.
@@ -404,6 +416,20 @@ describe('@mnci/eslint-config', () => {
 
   it('catches focused tests, which would silently skip the rest of a suite', () => {
     expect(rulesFor('focused.spec.ts')).toContain('jest/no-focused-tests')
+  })
+
+  it('does not report a mocked method read inside expect(), which has no this to lose', () => {
+    expect(rulesFor('packages/demo/src/mocked.spec.ts')).toEqual([])
+  })
+
+  it('still reports a method assigned to a variable in a spec, through the jest-aware rule', () => {
+    // The check is swapped, not dropped. Asserting the rule id matters: with the
+    // base rule left on this would also report, and the swap would be untested.
+    expect(rulesFor('packages/demo/src/unbound.spec.ts')).toEqual(['jest/unbound-method'])
+  })
+
+  it('keeps the base unbound-method rule for everything that is not a spec', () => {
+    expect(rulesFor('packages/demo/src/unbound.ts')).toEqual(['@typescript-eslint/unbound-method'])
   })
 
   it('catches a floating promise, which nothing else in the stack reports', () => {

@@ -1196,6 +1196,8 @@ export const ESLINT_BLOCK_INVENTORY = `// WHAT IS IN HERE. Each line is one conf
 //   mnci/html                     @html-eslint/eslint-plugin
 //   mnci/tests                    *.spec/*.test relaxations — eslint-plugin-jest
 //                                 (Vitest's globals too; the two stacks share them)
+//   mnci/tests/mock-aware         specs in a project: eslint-plugin-jest's unbound-method,
+//                                 which knows expect(mock.method) has no this to lose
 //   mnci/nx-dependency-checks     @nx/eslint-plugin, on publishable packages' manifests
 //   mnci/standard                 JavaScript Standard Style as ESLint rules — the
 //                                 whole formatting opinion, a faithful port of
