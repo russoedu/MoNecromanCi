@@ -52,6 +52,93 @@ afterEach(() => {
   jest.restoreAllMocks()
 })
 
+/** Reads a file from the fixture workspace. */
+const read = (name: string): string => readFileSync(join(workspaceRoot, name), 'utf8')
+
+/** Whether `.npmrc` has a real `_password` line. Config lines only: the generated comments discuss it by name. */
+const hasPasswordDirective = (): boolean =>
+  read('.npmrc').split(/\r?\n/u).some(line => !line.trimStart().startsWith(';') && line.includes('_password'))
+
+/** The npm auth mode persisted in `nx.json`'s `mnci` block, if any. */
+const persistedAuth = (): unknown =>
+  (JSON.parse(read('nx.json')) as { mnci: { npmAuth?: string } }).mnci.npmAuth
+
+describe('runUpgrade: npm auth', () => {
+  const AZURE_OPTIONS: OverlayOptions = {
+    ...FIXTURE_OPTIONS,
+    registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+    ci:       'azure',
+  }
+
+  it('keeps build-identity auth when the pipeline already runs npmAuthenticate@0', () => {
+    // The case that started this: an upgrade regenerates azure-pipelines.yml from
+    // the overlay, and an overlay that did not know the task dropped it, restoring
+    // a PAT block the feed then rejected. A workspace that added the task by hand
+    // must not lose it to the next upgrade.
+    seedWorkspace()
+    applyOverlay(workspaceRoot, AZURE_OPTIONS)
+    writeFileSync(
+      join(workspaceRoot, 'azure-pipelines.yml'),
+      `${read('azure-pipelines.yml')}\n# added by hand\n  - task: npmAuthenticate@0\n`,
+    )
+
+    runUpgrade(workspaceRoot, {})
+
+    expect(read('azure-pipelines.yml')).toContain('npmAuthenticate@0')
+    expect(hasPasswordDirective()).toBe(false)
+    expect(persistedAuth()).toBe('build-identity')
+  })
+
+  it('lets --npm-auth pat win over what it detected', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, AZURE_OPTIONS)
+    writeFileSync(
+      join(workspaceRoot, 'azure-pipelines.yml'),
+      `${read('azure-pipelines.yml')}\n  - task: npmAuthenticate@0\n`,
+    )
+
+    runUpgrade(workspaceRoot, { npmAuth: 'pat' })
+
+    expect(read('azure-pipelines.yml')).not.toContain('npmAuthenticate@0')
+    expect(hasPasswordDirective()).toBe(true)
+    // Recorded, so detection does not resurrect the mode on the next upgrade.
+    expect(persistedAuth()).toBe('pat')
+  })
+
+  it('switches a PAT workspace over with --npm-auth build-identity, and remembers it', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, AZURE_OPTIONS)
+
+    runUpgrade(workspaceRoot, { npmAuth: 'build-identity' })
+
+    expect(read('azure-pipelines.yml')).toContain('npmAuthenticate@0')
+    expect(hasPasswordDirective()).toBe(false)
+
+    // A second, flagless upgrade keeps it: persisted, not re-detected.
+    runUpgrade(workspaceRoot, {})
+
+    expect(read('azure-pipelines.yml')).toContain('npmAuthenticate@0')
+    expect(persistedAuth()).toBe('build-identity')
+  })
+
+  it('leaves a workspace that never chose alone, and records nothing', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, AZURE_OPTIONS)
+
+    runUpgrade(workspaceRoot, {})
+
+    expect(read('azure-pipelines.yml')).not.toContain('npmAuthenticate')
+    expect(persistedAuth()).toBeUndefined()
+  })
+
+  it('refuses build-identity on a workspace whose CI includes GitHub', () => {
+    seedWorkspace()
+    applyOverlay(workspaceRoot, { ...AZURE_OPTIONS, ci: 'both' })
+
+    expect(() => runUpgrade(workspaceRoot, { npmAuth: 'build-identity' })).toThrow(/Azure Pipelines task/)
+  })
+})
+
 describe('runUpgrade', () => {
   it('reports each file group it rewrites, and names the slow step before entering it', () => {
     // An upgrade used to print one line and then sit silent through

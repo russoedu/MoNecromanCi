@@ -100,6 +100,89 @@ export const TS_COMPILER_DEPENDENCIES: Record<string, string> = {
 }
 
 /**
+ * How an Azure Artifacts workspace authenticates npm against its feed.
+ *
+ * @remarks
+ * - `pat` — a base64 personal access token from the pipeline's variable group,
+ *   read by the root `.npmrc`'s `username`/`_password` block. The default, and the
+ *   only mode that works on every CI provider.
+ * - `build-identity` — `npmAuthenticate@0` injects the build service identity's
+ *   token into `.npmrc` at build time, so the file carries **no credentials** and
+ *   there is no PAT to store, encode, rotate or let expire. Azure Pipelines only:
+ *   GitHub Actions has no equivalent task.
+ *
+ * The two are not interchangeable spellings of one thing. The feed's publish
+ * endpoint advertises a Bearer scheme bound to `login.windows.net`, which wants an
+ * **Entra ID access token**; a PAT is not one and is rejected as Bearer. A PAT
+ * therefore has to go through Basic (`_password`), while the build identity's
+ * token is Entra-issued and is what Bearer wants. See {@link npmrcContent}.
+ */
+export type NpmAuthMode = 'pat' | 'build-identity'
+
+/**
+ * The auth modes, for validating a flag value.
+ *
+ * @remarks
+ * One list, so the flag's error message and the validator cannot disagree about
+ * what is accepted.
+ */
+export const NPM_AUTH_MODES: readonly NpmAuthMode[] = ['pat', 'build-identity']
+
+/**
+ * Resolves the npm auth mode a workspace should be written with, or refuses one
+ * its CI cannot deliver.
+ *
+ * @remarks
+ * `build-identity` is `npmAuthenticate@0`, an Azure Pipelines task: GitHub Actions
+ * has nothing equivalent, so a workspace whose CI includes GitHub would be written
+ * a credential-free `.npmrc` that authenticates nowhere on that provider. That is
+ * refused up front rather than generated, because the failure it would cause -
+ * a publish rejected as an authentication error - names neither the mode nor the
+ * flag. `--ci=both` has no single right answer, so it is refused too rather than
+ * guessed at.
+ *
+ * It also only means anything for an Azure Artifacts feed: public npm has no
+ * identity for the task to borrow.
+ *
+ * @param requested - The `--npm-auth` flag value, if one was passed.
+ * @param registry - The workspace's registry.
+ * @param ci - The workspace's CI provider(s).
+ * @param fallback - What to use when no flag was passed: the persisted value, or
+ * the mode detected in an existing pipeline.
+ * @returns The mode to write, or `undefined` when none was requested anywhere -
+ * which leaves the workspace on the default.
+ * @throws Error when the flag is not a known mode, or when `build-identity` is
+ * requested for a registry or CI provider that cannot use it.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function resolveNpmAuth (
+  requested: string | undefined,
+  registry: RegistryConfig,
+  ci: CiProvider,
+  fallback?: NpmAuthMode,
+): NpmAuthMode | undefined {
+  if (requested !== undefined && !NPM_AUTH_MODES.includes(requested as NpmAuthMode)) {
+    throw new Error(`--npm-auth must be one of: ${NPM_AUTH_MODES.join(', ')} (got '${requested}').`)
+  }
+  const mode = (requested as NpmAuthMode | undefined) ?? fallback
+  if (mode !== 'build-identity') {
+    return mode
+  }
+  if (registry.kind !== 'azure-artifacts') {
+    throw new Error(
+      '--npm-auth build-identity needs an Azure Artifacts feed: public npm has no build identity to borrow. Use --registry azure-artifacts, or drop the flag.',
+    )
+  }
+  if (ci !== 'azure') {
+    throw new Error(
+      `--npm-auth build-identity needs --ci azure (this workspace is '${ci}'): it is npmAuthenticate@0, an Azure Pipelines task, and GitHub Actions has no equivalent. Use --npm-auth pat, or drop the GitHub pipeline.`,
+    )
+  }
+
+  return mode
+}
+
+/**
  * Returns the npm registry URL for a registry config.
  *
  * @remarks
@@ -158,13 +241,27 @@ export function registryUrl (registry: RegistryConfig): string | undefined {
  * verified that `npm install` of a public dependency still succeeds with the
  * variable absent, so a developer needs no token to work in the workspace.
  *
+ * **Build identity: routing only.** With {@link NpmAuthMode} `build-identity` the
+ * Azure file carries the scope line and no credentials at all. `npmAuthenticate@0`
+ * appends the build identity's Entra token to it in the pipeline (the generated
+ * `azure-pipelines.yml` runs it before `npm ci`). The trade is stated in the file
+ * rather than discovered: a developer no longer inherits a credential from it, so
+ * a local authenticated command needs `npx vsts-npm-auth -config .npmrc` on
+ * Windows or a hand-added entry. Public npm ignores the mode — there is nothing to
+ * inject.
+ *
  * @param registry - The monorepo's resolved registry configuration.
  * @param scope - The npm scope (e.g. `@demo`), used for the routing line.
+ * @param npmAuth - How npm authenticates against an Azure Artifacts feed.
  * @returns The full text of the generated `.npmrc`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
  */
-export function npmrcContent (registry: RegistryConfig, scope: string): string {
+export function npmrcContent (
+  registry: RegistryConfig,
+  scope: string,
+  npmAuth: NpmAuthMode = 'pat',
+): string {
   if (registry.kind === 'npm') {
     return `; Publish authentication for the public npm registry.
 ;
@@ -199,6 +296,39 @@ export function npmrcContent (registry: RegistryConfig, scope: string): string {
   }
 
   const feedUrl = registryUrl(registry) as string
+  if (npmAuth === 'build-identity') {
+    return `; Publish + resolution routing for this workspace's own scope.
+;
+; '${scope}:registry' sends BOTH resolution and 'npm publish' of ${scope}/* to the
+; feed: npm prefers a scope's registry over the global one when publishing a
+; scoped package, so a ${scope}/* package cannot reach npmjs.org by accident.
+;
+; Only the scope is routed, on purpose. A global 'registry=' would send every
+; install through the feed as well, so 'npm ci' would need feed auth just to fetch
+; public packages.
+${scope}:registry=${feedUrl}
+
+; NO credentials are written here. The 'npmAuthenticate@0' task in
+; azure-pipelines.yml injects them into this file at build time, using the build
+; service identity - so there is no PAT to store, rotate or encode.
+;
+; That is forced by what the feed accepts. An unauthenticated PUT to the publish
+; endpoint answers with:
+;   www-authenticate: Bearer authorization_uri=https://login.windows.net/<tenant>,
+;                     Basic realm="...", TFS-Federated
+; so its Bearer scheme wants an ENTRA ID access token, which is what the task
+; supplies. A PAT is not one: npm sends _authToken verbatim as a Bearer header, so
+; a PAT there is rejected with "Unable to authenticate, your authentication token
+; seems to be invalid". A PAT can only authenticate through the Basic scheme
+; (username + base64 _password), which is what 'mnci upgrade --npm-auth pat' writes.
+;
+; The cost is local: nothing in this file authenticates a developer's machine, so
+; publishing or installing a private package by hand needs
+; 'npx vsts-npm-auth -config .npmrc' (Windows) or a credential you add yourself.
+; Building and testing never authenticate.
+`
+  }
+
   // npm keys per-registry credentials by the URL with the protocol stripped.
   const feedKey = feedUrl.replace(/^https:/, '')
   // npm matches credentials by URL prefix and walks only UP the path, so an entry
@@ -1813,6 +1943,9 @@ export function mnciConfig (options: OverlayOptions): Record<string, unknown> {
     variableGroup: options.variableGroup,
     ci:            options.ci,
     stack:         { testRunner: options.stack.testRunner },
+    // Only when chosen: a workspace on the default keeps the block it always had,
+    // so an upgrade does not add a field nobody asked for.
+    ...(options.npmAuth !== undefined && { npmAuth: options.npmAuth }),
   }
 }
 
@@ -2902,10 +3035,12 @@ export function poolBlock (agent: string): string {
  * release/CD pipeline keys off it), then `nx release`s: **publish packages +
  * tag main** (versions from conventional commits, tag-only push).
  *
- * npm auth is the base64 PAT from the `variableGroup` (default `Build`): the
- * group exposes `$(PAT)`, mapped as env on the npm steps and read by the root
- * `.npmrc`'s `_password` block. No `npmAuthenticate@0` (it would overwrite
- * that password).
+ * npm auth is one of two modes ({@link NpmAuthMode}). By default it is the base64
+ * PAT from the `variableGroup` (default `Build`): the group exposes `$(PAT)`,
+ * mapped as env on the npm steps and read by the root `.npmrc`'s `_password`
+ * block, and `npmAuthenticate@0` is NOT used because it would overwrite that
+ * password. With `build-identity` the file holds no password, so the task is added
+ * before `npm ci` and injects the build service identity's token instead.
  *
  * Hard-won Azure lessons carried over:
  * - `checkout: self` detaches HEAD; re-attach with `git checkout -B` first or
@@ -2939,6 +3074,8 @@ export function poolBlock (agent: string): string {
  * `NPM_TOKEN` for the npm-authenticating steps.
  * @param nugetFeedUrl - The NuGet v3 feed URL for C# packages, or
  * `undefined` to leave NuGet publishing unconfigured (public npm).
+ * @param npmAuth - `build-identity` adds the `npmAuthenticate@0` step before
+ * `npm ci` and drops the `PAT` mapping from that step; `pat` keeps both as they were.
  * @returns The full text of `azure-pipelines.yml`.
  * @throws Never - performs a pure mapping with no I/O.
  * @typeParam None - this function has no generic type parameters.
@@ -2949,6 +3086,7 @@ export function azurePipelinesYaml (
   pythonPublishUrl?: string,
   registryKind: RegistryConfig['kind'] = 'azure-artifacts',
   nugetFeedUrl?: string,
+  npmAuth: NpmAuthMode = 'pat',
 ): string {
   // ENUMERATED CI reasons, never "not a pull request" — the Azure half of the
   // fix #22 made for GitHub, and the more exposed of the two.
@@ -2974,6 +3112,27 @@ export function azurePipelinesYaml (
   // `in(variables['Agent.JobStatus'], ...)`, so it is valid in a step condition.
   const onMain = 'and(succeeded(), in(variables[\'Build.Reason\'], \'IndividualCI\', \'BatchedCI\'), eq(variables[\'Build.SourceBranchName\'], \'main\'))'
   const [npmAuthName, npmAuthValue] = npmAuthEnvVariable(registryKind, name => `$(${name})`)
+  // Build-identity auth only exists for an Azure Artifacts feed; public npm has
+  // nothing for the task to inject, so the mode is ignored there.
+  const buildIdentity = npmAuth === 'build-identity' && registryKind === 'azure-artifacts'
+  const npmAuthenticateStep = buildIdentity
+    ? `  # Injects feed credentials into .npmrc using the BUILD SERVICE IDENTITY, so no
+  # PAT is stored, rotated or encoded anywhere. This is what the feed accepts: its
+  # publish endpoint advertises a Bearer scheme bound to login.windows.net, which
+  # wants an Entra ID access token, and a PAT is not one. Must run before 'npm ci'.
+  # Needs the build identity to be a Feed Publisher (Contributor) on the feed.
+  - task: npmAuthenticate@0
+    displayName: Authenticate npm against the feed (build identity, no PAT)
+    inputs:
+      workingFile: .npmrc
+
+`
+    : ''
+  const npmCiEnv = buildIdentity
+    ? ''
+    : `
+    env:
+      ${npmAuthName}: ${npmAuthValue}`
 
   return `name: monorepo-ci-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -3091,10 +3250,8 @@ steps:
         npm | "$(Agent.OS)"
       path: $(npm_config_cache)
 
-  - script: npm ci
-    displayName: Install dependencies
-    env:
-      ${npmAuthName}: ${npmAuthValue}
+${npmAuthenticateStep}  - script: npm ci
+    displayName: Install dependencies${npmCiEnv}
 
   # Fails ONLY on an advisory that has a published fix, at moderate or above;
   # anything upstream has not fixed is printed and passes. See NPM_AUDIT_STEP's
@@ -3751,6 +3908,11 @@ export interface OverlayOptions {
   ci:            CiProvider
   /** The stack (TS major, linter, test runner) chosen at `new`. */
   stack:         StackConfig
+  /**
+   * How npm authenticates against an Azure Artifacts feed. Absent means `pat`, so
+   * a workspace generated before this existed keeps the file it has.
+   */
+  npmAuth?:      NpmAuthMode
 }
 
 /**
@@ -4265,7 +4427,10 @@ export function applyOverlay (
         : 'public npm registry auth'
     }`,
   )
-  writeFileEnsured(join(workspaceRoot, '.npmrc'), npmrcContent(options.registry, options.scope))
+  writeFileEnsured(
+    join(workspaceRoot, '.npmrc'),
+    npmrcContent(options.registry, options.scope, options.npmAuth),
+  )
   onProgress('commitlint.config.mjs and .husky/commit-msg — conventional commit enforcement')
   writeFileEnsured(join(workspaceRoot, 'commitlint.config.mjs'), COMMITLINT_CONFIG)
   const hookPath = join(workspaceRoot, '.husky/commit-msg')
@@ -4347,7 +4512,14 @@ export function applyOverlay (
     onProgress('azure-pipelines.yml — build, verify, pack and release')
     writeFileEnsured(
       join(workspaceRoot, 'azure-pipelines.yml'),
-      azurePipelinesYaml(options.agent, options.variableGroup, publishUrl, options.registry.kind, nugetUrl),
+      azurePipelinesYaml(
+        options.agent,
+        options.variableGroup,
+        publishUrl,
+        options.registry.kind,
+        nugetUrl,
+        options.npmAuth,
+      ),
     )
   }
   if (options.ci === 'github' || options.ci === 'both') {

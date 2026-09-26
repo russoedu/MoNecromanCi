@@ -743,6 +743,76 @@ describe('runDoctor', () => {
   })
 })
 
+/** An Azure Artifacts workspace with the given `.npmrc` body and pipeline steps. */
+function seedAzureWorkspace (npmrc: string, pipelineSteps: string): void {
+  seedHealthyWorkspace()
+  writeFileSync(
+    join(workspaceRoot, 'nx.json'),
+    JSON.stringify({
+      plugins: [{ plugin: '@nx/eslint/plugin', options: { targetName: 'lint' } }],
+      mnci:    {
+        registry: { kind: 'azure-artifacts', organization: 'org', project: 'proj', artifactsFeed: 'feed' },
+        scope:    '@demo',
+      },
+    }),
+  )
+  writeFileSync(join(workspaceRoot, '.npmrc'), npmrc)
+  writeFileSync(join(workspaceRoot, 'azure-pipelines.yml'), `steps:\n${pipelineSteps}`)
+}
+
+describe('doctor: npm auth halves agree', () => {
+  const CHECK = 'npm auth: .npmrc and azure-pipelines.yml agree'
+  const FEED = '@demo:registry=https://pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/\n'
+  const PAT_BLOCK = '//pkgs.dev.azure.com/org/proj/_packaging/feed/npm/registry/:_password=${PAT}\n'
+  const TASK = '  - task: npmAuthenticate@0\n    inputs:\n      workingFile: .npmrc\n'
+
+  const found = (): Finding | undefined => findingFor(collectFindings(workspaceRoot), CHECK)
+
+  it('fails a credential-free .npmrc when nothing in the pipeline injects one', () => {
+    // The silent one: installs still pass, so CI is green until the release step.
+    seedAzureWorkspace(FEED, '  - script: npm ci\n')
+
+    const finding = found()
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('401')
+    expect(finding?.remedy).toContain('--npm-auth build-identity')
+  })
+
+  it('fails a PAT block that npmAuthenticate@0 would append a second credential to', () => {
+    seedAzureWorkspace(FEED + PAT_BLOCK, `${TASK}  - script: npm ci\n`)
+
+    const finding = found()
+
+    expect(finding?.ok).toBe(false)
+    expect(finding?.detail).toContain('second credential')
+  })
+
+  it('passes a credential-free .npmrc paired with the task', () => {
+    seedAzureWorkspace(FEED, `${TASK}  - script: npm ci\n`)
+
+    expect(found()?.ok).toBe(true)
+  })
+
+  it('passes a PAT block with no task, the default setup', () => {
+    seedAzureWorkspace(FEED + PAT_BLOCK, '  - script: npm ci\n')
+
+    expect(found()?.ok).toBe(true)
+  })
+
+  it('says nothing for a public-npm workspace, which has no build identity', () => {
+    seedHealthyWorkspace()
+
+    expect(found()).toBeUndefined()
+  })
+
+  it('does not count a commented-out credential as one', () => {
+    seedAzureWorkspace(`${FEED}; ${PAT_BLOCK}`, `${TASK}  - script: npm ci\n`)
+
+    expect(found()?.ok).toBe(true)
+  })
+})
+
 describe('doctor: npm credentials in this workspace resolve to something', () => {
   const CHECK = 'npm credentials in this workspace resolve to something'
   let workspaceRoot: string

@@ -5,6 +5,7 @@ import { runFormatter, runNpx, runShell } from '../nx-workspace'
 import {
   applyOverlay,
   DEFAULT_STACK,
+  resolveNpmAuth,
   type CiProvider,
   type RegistryConfig,
   type StackConfig,
@@ -40,6 +41,8 @@ export interface NewOptions {
   agent?:         string
   /** Library variable group holding the base64 npm `PAT`. */
   variableGroup?: string
+  /** How npm authenticates to an Azure Artifacts feed: `pat` | `build-identity`. */
+  npmAuth?:       string
   /** CI provider: `azure` | `github` | `both`. */
   ci?:            CiProvider
   /** Unit-test runner (`jest` or `vitest`). */
@@ -216,6 +219,9 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
         (options.yes
           ? 'Build'
           : await promptText('Azure DevOps variable group holding the npm PAT', 'Build')))
+  // Validated before anything is created: a refused combination must not leave a
+  // half-generated workspace behind.
+  const npmAuth = resolveNpmAuth(options.npmAuth, registry, ci)
   const stack = await resolveStack(options)
   const nxCloud = options.nxCloud ?? (options.yes ? false : await promptNxCloud())
 
@@ -259,7 +265,7 @@ export async function runNew (name: string | undefined, options: NewOptions): Pr
   )
   applyOverlay(
     workspaceRoot,
-    { workspaceName, scope, registry, agent, variableGroup, ci, stack },
+    { workspaceName, scope, registry, agent, variableGroup, ci, stack, ...(npmAuth && { npmAuth }) },
     logger.detail,
   )
 

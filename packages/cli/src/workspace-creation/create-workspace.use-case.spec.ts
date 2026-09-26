@@ -5,6 +5,7 @@
 jest.mock('@inquirer/prompts', () => ({ confirm: jest.fn(), input: jest.fn(), select: jest.fn(), checkbox: jest.fn(), Separator: class {} }))
 // Type-only, so it is erased before jest hoists the factory below.
 import type * as NodeFs from 'node:fs'
+import type * as Overlay from '../workspace-overlay'
 
 // Only `rmSync` is faked — everything else in `node:fs` stays real, so this
 // cannot quietly break an unrelated import somewhere in the module graph.
@@ -16,6 +17,10 @@ jest.mock('../nx-workspace', () => ({ runNpx: jest.fn(), runFormatter: jest.fn()
 jest.mock('../workspace-overlay', () => ({
   applyOverlay:  jest.fn(),
   DEFAULT_STACK: { testRunner: 'jest' },
+  // Real, not faked: it is a pure validator, and what `runNew` does with its answer
+  // (write the option, or refuse before creating anything) is the behaviour under test.
+  resolveNpmAuth:
+    jest.requireActual<typeof Overlay>('../workspace-overlay').resolveNpmAuth,
 }))
 jest.mock('../terminal', () => ({
   ...jest.requireActual('../terminal'),
@@ -98,6 +103,47 @@ describe('runNew', () => {
       }),
       expect.any(Function),
     )
+  })
+
+  it('passes --npm-auth build-identity through to the overlay', async () => {
+    await runNew('demo', {
+      yes:           true,
+      ci:            'azure',
+      organization:  'org',
+      project:       'proj',
+      artifactsFeed: 'feed',
+      npmAuth:       'build-identity',
+    })
+
+    expect(mockApplyOverlay).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ npmAuth: 'build-identity' }),
+      expect.any(Function),
+    )
+  })
+
+  it('writes no npmAuth at all when the flag is absent, leaving the default alone', async () => {
+    await runNew('demo', { yes: true })
+
+    expect(mockApplyOverlay.mock.calls[0][1]).not.toHaveProperty('npmAuth')
+  })
+
+  it('refuses build-identity on a GitHub workspace BEFORE creating anything', async () => {
+    // The validation runs ahead of create-nx-workspace on purpose: a refused
+    // combination must not leave a half-generated directory behind to clean up.
+    await expect(
+      runNew('demo', {
+        yes:           true,
+        ci:            'github',
+        organization:  'org',
+        project:       'proj',
+        artifactsFeed: 'feed',
+        npmAuth:       'build-identity',
+      }),
+    ).rejects.toThrow(/Azure Pipelines task/)
+
+    expect(mockRunNpx).not.toHaveBeenCalled()
+    expect(mockApplyOverlay).not.toHaveBeenCalled()
   })
 
   it('passes an explicit --ci flag through to the overlay without prompting', async () => {
