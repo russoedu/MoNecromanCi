@@ -372,6 +372,66 @@ ${feedShortKey}:email=npm-requires-this-and-never-uses-it
 }
 
 /**
+ * Appends the scope routes an existing `.npmrc` carried that mnci did not write.
+ *
+ * @remarks
+ * `.npmrc` is mnci-owned and rewritten whole on every upgrade, so anything a
+ * workspace added to it vanished silently. The one addition with a real reason to
+ * exist is a **route for a second scope**: a workspace mid-migration still resolves
+ * packages published under a previous scope from the same feed, and without that
+ * `@old:registry=` line its install goes to npmjs.org and fails - or worse, finds a
+ * different package of the same name there. Nothing about the failure points at
+ * the upgrade that removed the line.
+ *
+ * Only `@scope:registry=` lines are kept, and only for scopes other than the
+ * workspace's own. Credentials are never carried over: the mode decides those, and
+ * a stale password surviving a switch to build identity is the exact hazard
+ * {@link NpmAuthMode} exists to remove. The workspace's own scope line is mnci's, so
+ * a hand-edited one is regenerated rather than preserved.
+ *
+ * Idempotent: the kept lines are read back as ordinary directives on the next run,
+ * so a second upgrade produces the same file rather than stacking headings.
+ *
+ * @param generated - The `.npmrc` mnci generated.
+ * @param existing - The `.npmrc` currently on disk, or `undefined` when there is none.
+ * @param ownScope - The workspace's own npm scope, whose route mnci owns.
+ * @returns `generated`, with any extra scope routes appended under a heading.
+ * @throws Never - pure text mapping.
+ * @typeParam None - this function has no generic type parameters.
+ */
+export function withPreservedScopeRoutes (
+  generated: string,
+  existing: string | undefined,
+  ownScope: string,
+): string {
+  if (existing === undefined) {
+    return generated
+  }
+  const written = new Set(
+    generated.split(/\r?\n/u).map(line => line.trim().toLowerCase()),
+  )
+  const kept = existing
+    .split(/\r?\n/u)
+    .map(line => line.trim())
+    .filter(line => /^@[\w.-]+:registry\s*=\s*\S+/u.test(line))
+    .filter(line => !line.toLowerCase().startsWith(`${ownScope.toLowerCase()}:registry`))
+    .filter(line => !written.has(line.toLowerCase()))
+  const unique = [...new Set(kept)]
+  if (unique.length === 0) {
+    return generated
+  }
+
+  return `${generated.trimEnd()}
+
+; Routes for other scopes, kept from the previous .npmrc by 'mnci upgrade'. mnci writes
+; only the '${ownScope}' route above, so anything else here is yours - typically the
+; scope this workspace's packages were published under before a rename, which still
+; has to resolve from the feed while consumers migrate.
+${unique.join('\n')}
+`
+}
+
+/**
  * Builds the `release` block merged into a generated workspace's `nx.json`.
  *
  * @remarks
@@ -4427,9 +4487,14 @@ export function applyOverlay (
         : 'public npm registry auth'
     }`,
   )
+  const npmrcPath = join(workspaceRoot, '.npmrc')
   writeFileEnsured(
-    join(workspaceRoot, '.npmrc'),
-    npmrcContent(options.registry, options.scope, options.npmAuth),
+    npmrcPath,
+    withPreservedScopeRoutes(
+      npmrcContent(options.registry, options.scope, options.npmAuth),
+      existsSync(npmrcPath) ? readFileSync(npmrcPath, 'utf8') : undefined,
+      options.scope,
+    ),
   )
   onProgress('commitlint.config.mjs and .husky/commit-msg — conventional commit enforcement')
   writeFileEnsured(join(workspaceRoot, 'commitlint.config.mjs'), COMMITLINT_CONFIG)
