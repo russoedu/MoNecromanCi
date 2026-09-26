@@ -82,6 +82,7 @@ as a comment, so it is readable without opening node_modules.
 | `mnci/css`                               | `@eslint/css`                                                                                  |
 | `mnci/html`                              | `@html-eslint/eslint-plugin`, incl. its a11y rules                                             |
 | `mnci/tests`                             | `*.spec`/`*.test` relaxations — `eslint-plugin-jest`, plus Vitest's `vi`/`vitest` globals      |
+| `mnci/tests/mock-aware`                  | specs inside a project: `jest/unbound-method` replaces the base rule, which false-positives on every `expect(mock.method)` |
 | `mnci/nx-dependency-checks`              | `@nx/eslint-plugin` on publishable packages' manifests — only when `workspaceRoot` is passed   |
 | `mnci/vertical-slices`                   | Vertical feature slices: role-suffixed kebab-case files, a subfeature reached only through its index, no two subfeatures importing each other — only when `verticalSlices` is passed. See below |
 | `mnci/standard`                          | JavaScript Standard Style as ~60 `@stylistic` rules — **this is the formatter.** See below     |
