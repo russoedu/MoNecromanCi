@@ -207,6 +207,17 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # PyPI cannot be asked whether a token is good - the only endpoint that
+      # authenticates is the upload itself - so this checks the token's SHAPE
+      # and names the projects this release would have to CREATE. Project
+      # creation is rate limited per account, and a 429 arrives AFTER nx
+      # release has tagged.
+      - run: node -e "const fs=require('node:fs');const files=fs.globSync('python-packages/*/pyproject.toml');if(files.length===0){console.log('No Python packages to release - skipping.');process.exit(0)}if(!process.env.PYPI_TOKEN){console.error('PYPI_TOKEN is empty or unset, so the publish would fail AFTER nx release has already tagged. Add it as a repository secret named exactly PYPI_TOKEN - under Actions, not the Dependabot or Codespaces tab, and not an Environment secret.');process.exit(1)}if(!process.env.PYPI_TOKEN.startsWith('pypi-')){console.error('PYPI_TOKEN does not look like a PyPI API token - every one of them begins with pypi-. A password or a truncated paste is rejected only at upload time, which is AFTER nx release has tagged.');process.exit(1)}const names=files.map(f=>{const t=fs.readFileSync(f,'utf8');const b=t.slice(t.indexOf('[project]'));const l=b.split('\n').find(x=>x.trim().startsWith('name'));return l?l.split('=')[1].replace(/[^a-zA-Z0-9._-]/g,''):''}).filter(Boolean);(async()=>{const fresh=[];for(const n of names){try{const r=await fetch('https://pypi.org/pypi/'+n.toLowerCase().replace(/[-_.]+/g,'-')+'/json',{signal:AbortSignal.timeout(10000)});if(r.status===404)fresh.push(n)}catch{console.log('Could not reach PyPI to check '+n+' - continuing.')}}if(fresh.length===0){console.log('Every Python package already exists on PyPI - this release creates none.');return}console.log('NOTE - this release may CREATE '+fresh.length+' new PyPI project(s) - '+fresh.join(', ')+'. Project creation is rate limited per account, and a 429 there arrives AFTER nx release has tagged - leaving those versions tagged with nothing published, and skipped forever, because the next run resolves the current version from the newest tag. If that happens, delete the tags for the versions that did not publish before releasing again. PyPI offers no way to check the limit, or the token, in advance.')})()"
+        name: Preflight — name the PyPI projects this release would create
+        if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
       # Version + tag + publish, in one release, for npm (packages/*), Python
       # (python-packages/*) AND C# (packages/*/*.csproj) — conventional
       # commits, tag-only push. Portable guard: nx release errors on an empty
