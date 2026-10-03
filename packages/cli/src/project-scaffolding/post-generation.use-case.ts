@@ -48,6 +48,8 @@ export interface AddOptions {
   release?:   boolean
   /** `go-app` only: the app needs a C toolchain, so it is built per OS on native runners instead of cross-compiled. */
   cgo?:       boolean
+  /** `go-app` only: the React app (under `apps/`) the app embeds and serves, built first and staged for `//go:embed`. */
+  web?:       string
 }
 
 /**

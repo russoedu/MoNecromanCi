@@ -65,7 +65,7 @@ named here because the next reader deserves to know before opening them:
 
 | Path | Rule waived | Why, and removal condition |
 |---|---|---|
-| `workspace-overlay/overlay.use-case.ts` | one responsibility per file | ~3.5k lines covering CI YAML for two providers, `.npmrc`, `nuget.config`, the VS Code workspace, release config and the CI guard scripts. Splitting it is a decomposition, not a move, so it was deliberately kept out of the change that created these slices. **Temporary** — removed when that decomposition lands. |
+| `workspace-overlay/overlay.use-case.ts` | one responsibility per file | ~5k lines covering CI YAML for two providers (including the native-app job), `.npmrc`, `nuget.config`, the VS Code workspace, release config and the CI guard scripts. Splitting it is a decomposition, not a move, so it was deliberately kept out of the change that created these slices. **Temporary** — removed when that decomposition lands. |
 | `rollup-library/repair-rollup-config.use-case.spec.ts` | a test takes its subject's basename | It also holds the `withUpgradedDeclarationSpecifierPlugin` describe, whose subject is `rollup-config.algorithm.ts`. That transform shares three fixtures with the repairs that apply it (`OLD_DTS_PLUGIN_CONFIG`, `EXTENSION_ONLY_DTS_PLUGIN_CONFIG`, `loadWriteBundle`), and duplicating them across two spec files is the worse trade. **Permanent** unless those fixtures stop being shared. |
 
 `rollup-library/` exists because of the own-the-concept rule. Its contents used
@@ -104,6 +104,7 @@ mnci add python-vendor shared --lib core  # wire core's module into shared's bui
 mnci add go-app api            # executable -> apps/ (binary, zipped into the drop)
 mnci add go-app cli --release  # ...released: tag + per-platform zips on the GitHub Release
 mnci add go-app tray --cgo     # needs a C toolchain: built on a runner of each OS
+mnci add go-app site --web web # embeds and serves the React app apps/web in one binary
 mnci add go-function-app fn    # serverless handler -> apps/
 mnci add go-lib core           # publishable (by git tag) -> packages/
 mnci add go-internal-lib util  # private shared package -> libs/
@@ -1266,6 +1267,11 @@ get `react-app-<name>-dev` / `-uat` / `-prod`, and the classic release pipeline
 deploys each environment from its own artifact + tag. Need different
 environments? Edit `REACT_ENVIRONMENTS` in the generator.
 
+**A React app can also ship inside a Go binary**, for an app that serves its own UI
+(`mnci add go-app <name> --web <react-app>`): the default `build` is what gets
+embedded, not the per-environment ones, so the app should call its API on the same
+origin (`/api/...`). See _Serving a React app from a Go app_ in the Go section.
+
 ## Python (`@mnci/nx-python-pip` — pip + Ruff + pytest + PyPA `build`/`twine`, no uv)
 
 Python is the first non-JS language, and follows the same philosophy as every
@@ -1485,6 +1491,41 @@ pipeline installs `golangci-lint` itself (see below).
     OS's zip to the same GitHub Release, so one release collects a zip from every
     runner. Azure Pipelines has no GitHub Release to attach to and stops at the
     artifact.
+- **Serving a React app from a Go app (`mnci add go-app <name> --web <react-app>`).**
+  For an app that runs a local server and is used in a browser, shipped as one
+  self-contained binary. `//go:embed` cannot reach outside its package directory,
+  and a React app builds into its own `apps/<react-app>/dist`, so the Go app needs
+  wiring mnci writes for you (the React app has to exist first):
+  - **`stage-web`** copies that `dist` into `apps/<name>/web/`, after the React
+    app's `build`, and the directory is git-ignored (an `apps/<name>/.gitignore`).
+    Its output is declared and its inputs are the React build's outputs, so Nx
+    caches it and a change to the React code reaches the binary.
+  - **Every target that compiles Go depends on it**: `build`, `test`, `lint`,
+    `start`, `build-all` and `build-native` (`package*` reach it through those).
+    `//go:embed` fails at compile time without its files, so on a fresh checkout
+    `go vet`, `go test` and `golangci-lint` fail as well as `go build`. A committed
+    placeholder was rejected: staging replaces the directory, so git would show it
+    modified for ever. The cost is that a Go-only change waits for a React build
+    on a cold cache, and your editor shows the embed error until the first
+    `nx run <name>:stage-web`.
+  - **The project graph knows**: `implicitDependencies` makes the React app a
+    dependency, so changing it marks the Go app affected, while changing the Go
+    app does not rebuild the React app.
+  - **The sources**: `main.go` becomes a small server (`ADDR`, default
+    `127.0.0.1:8080`) that logs the stamped `version`, `web.go` embeds the staged
+    files and serves them (an unknown path falls back to `index.html`, so a
+    client-side route survives a reload), and `main_test.go` checks the embed holds
+    a page. They replace the generated hello world.
+  - **`nx run <name>:dev`** starts the Vite dev server and the Go server together.
+    `add` adds `server.proxy: { '/api': 'http://127.0.0.1:8080' }` to the React
+    app's Vite config (and tells you what to add if it cannot find a `server`
+    block), so the browser talks to Vite and `/api` reaches Go.
+  - **Releasing one.** `package-all` stages once and builds six binaries from the
+    same copy. A native (`--cgo`) app is built on a runner per OS, and **each leg
+    rebuilds the React app**: sharing one frontend build between runners is not
+    done yet.
+  - Types shared between Go and TypeScript (OpenAPI, generated types) are out of
+    scope.
 - **Releasing a Go app is an opt-in: `mnci add go-app <name> --release`.** The
   app is tagged `release:go`, which `release.projects` selects by tag (as it
   does for a VS Code extension, so `mnci upgrade` keeps it). Without the flag

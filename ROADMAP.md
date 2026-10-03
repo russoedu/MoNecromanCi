@@ -487,6 +487,35 @@ platform packages with the sidecar at mode 0755 and the right `TargetPlatform`,
 `mnci upgrade` leaving `git status` empty, and `nx release --dry-run --yes`
 versioning the extension in a workspace with nothing in `packages/`.
 
+### 8c. Go apps that ship as products — mostly done (GitHub #258)
+
+A Go app was an internal tool: never released, always cross-compiled, never serving
+a UI. The first consumer that needed more (a downloader with a tray app and a browser
+UI) turned the gaps into issues, each measured against the real tools rather than
+assumed:
+
+| Issue | Outcome |
+|---|---|
+| #259 releasable apps | ✅ `mnci add go-app --release`: versioned from the git tag with a manifest-less `versionActions`, platform zips attached to the GitHub Release. Found: a workspace of only manifest-less projects **tagged, then exited 1** without an `nx-release-publish` target |
+| #260 project-graph edges | ✅ not a gap: the plugin infers them. Pinned by six e2e assertions |
+| #263 native (cgo) apps | ✅ `--cgo`: host-only `build-native`, a `native` job with a leg per OS, only when such an app exists. **Not verified:** a real cgo compile on `windows-latest` (the nightly runs it if the runner has `gcc`) |
+| #262 embedded React app | ✅ `--web <react-app>`: `stage-web`, every Go target waits for it, graph edge, dev target. A fresh checkout fails `go vet` without it, which is why no committed placeholder |
+| #261 adopting an existing Go module | open |
+| #264 / #265 | ✅ the nightly e2e fixes found on the way |
+
+Still open, and worth knowing before relying on it:
+
+- **Native legs rebuild the React app.** Sharing one frontend build between runners
+  is not done.
+- **The `dev` target and the Vite `/api` proxy are asserted, not run.** Starting both
+  servers was not exercised live.
+- **The native matrix is fixed** at `windows-latest`, `macos-latest`, `ubuntu-latest`
+  (one architecture each), and the Linux `-dev` packages are a line in a file
+  `mnci upgrade` rewrites. Both wait on #269 (one `npx mnci ci` command, with
+  user-owned slots around it), which also moves the #259 and #263 steps into the CLI.
+- **`mnci add --cgo` does not rewrite the pipeline.** It says to run `mnci upgrade`,
+  and `mnci doctor` fails until the job exists.
+
 ### 9. Container / Docker kind — P2
 
 Nothing in `packages/cli/src` mentions a Dockerfile. Without one, nothing reaches

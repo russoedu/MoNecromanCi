@@ -5,6 +5,7 @@ import { fileExists, writeFileEnsured } from '../file-system'
 import { logger } from '../terminal'
 import { GO_CGO_TAG } from '../workspace-overlay'
 import { makeGoAppReleasable } from './go-release.use-case'
+import { assertWebApp, wireGoAppToWeb } from './go-web.use-case'
 import { addProjectJsonTargets, ensureAdmZip, hasPlugin, registerProjectCommands } from './post-generation.use-case'
 
 /**
@@ -615,15 +616,22 @@ function prepareGo (workspaceRoot: string): void {
  * CI builds it on a runner of every OS (the pipelines gain a `native` job on the next
  * `mnci upgrade`).
  *
+ * With `web`, the app embeds and serves the React app of that name (see
+ * {@link wireGoAppToWeb}), which has to exist already.
+ *
  * @param workspaceRoot - Absolute path to the workspace.
  * @param name - The project name (already validated).
- * @param options - `release`: release the app, versioned from its git tag. `cgo`: it needs a C toolchain.
+ * @param options - `release`: release the app, versioned from its git tag. `cgo`: it needs a C toolchain. `web`: the React app it serves.
  * @returns Nothing.
- * @throws Error when Go is missing, or the generator/install fails.
+ * @throws Error when Go is missing, `web` is not a React app, or the generator/install fails.
  * @typeParam None - this function has no generic type parameters.
  */
-export function addGoApp (workspaceRoot: string, name: string, options: { release?: boolean, cgo?: boolean } = {}): void {
+export function addGoApp (workspaceRoot: string, name: string, options: { release?: boolean, cgo?: boolean, web?: string } = {}): void {
   const cgo = options.cgo === true
+  // Before anything is generated or installed, like the toolchain probe below it.
+  if (options.web !== undefined) {
+    assertWebApp(workspaceRoot, options.web)
+  }
   prepareGo(workspaceRoot)
   ensureAdmZip(workspaceRoot)
 
@@ -653,6 +661,9 @@ export function addGoApp (workspaceRoot: string, name: string, options: { releas
   })
   if (options.release === true) {
     makeGoAppReleasable(workspaceRoot, name)
+  }
+  if (options.web !== undefined) {
+    wireGoAppToWeb(workspaceRoot, name, options.web)
   }
   registerProjectCommands(workspaceRoot, name, { build: true, start: `nx run ${name}:start` })
   if (cgo) {

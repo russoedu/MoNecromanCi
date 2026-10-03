@@ -222,8 +222,12 @@ export async function runAdd (
     }))
   // Not silently ignored like the other kind-specific options: a user who asked for
   // a release (or a native build) would otherwise believe the project has one.
-  for (const [flag, requested] of [['--release', options.release], ['--cgo', options.cgo]] as const) {
-    if (resolvedKind !== 'go-app' && requested === true) {
+  for (const [flag, requested] of [
+    ['--release', options.release === true],
+    ['--cgo', options.cgo === true],
+    ['--web', options.web !== undefined],
+  ] as const) {
+    if (resolvedKind !== 'go-app' && requested) {
       throw new Error(`${flag} applies to go-app only, not ${resolvedKind}.`)
     }
   }
@@ -311,7 +315,7 @@ export async function runAdd (
       break
     }
     case 'go-app': {
-      addGoApp(workspaceRoot, resolvedName, { release: options.release, cgo: options.cgo })
+      addGoApp(workspaceRoot, resolvedName, { release: options.release, cgo: options.cgo, web: options.web })
       break
     }
     case 'go-function-app': {

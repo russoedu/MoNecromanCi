@@ -160,6 +160,10 @@ export function buildProgram (cliVersion: string): Command {
       '--cgo',
       'go-app only: the app needs a C toolchain (a tray icon, a native GUI, a cgo driver), so CI builds it on a runner of each OS instead of cross-compiling',
     )
+    .option(
+      '--web <react-app>',
+      'go-app only: embed and serve this React app (apps/<react-app>, added first): built before the Go app, staged for go:embed, with a dev target that runs both',
+    )
     .action(
       async (kind: ProjectKind | undefined, name: string | undefined, options: AddOptions) => {
         await runAdd(kind, name, options)

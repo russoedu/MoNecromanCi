@@ -151,3 +151,77 @@ describeWithGo('the native (cgo) build, executed', () => {
       .toBe(`zip of dist/platforms/tray/${host.os}-${host.arch}`)
   })
 })
+
+describeWithGo('the embedded frontend of a Go app, executed (#262)', () => {
+  let root: string
+
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), 'mnci-go-web-'))
+    jest.spyOn(process, 'cwd').mockReturnValue(root)
+    jest.spyOn(console, 'warn').mockImplementation(() => {})
+    jest.spyOn(console, 'log').mockImplementation(() => {})
+    writeFileSync(join(root, 'nx.json'), '{}')
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@demo/source', devDependencies: {} }))
+    writeFileSync(join(root, 'go.mod'), 'module demo\n\ngo 1.22\n')
+    mkdirSync(join(root, 'node_modules', 'adm-zip'), { recursive: true })
+    writeFileSync(join(root, 'node_modules', 'adm-zip', 'index.js'), 'module.exports=class{}')
+    // A React app as `mnci add react-app` leaves it, and the build output its `build` writes.
+    mkdirSync(join(root, 'apps', 'web', 'dist', 'assets'), { recursive: true })
+    writeFileSync(join(root, 'apps', 'web', 'package.json'), JSON.stringify({ name: '@demo/web' }))
+    writeFileSync(join(root, 'apps', 'web', 'vite.config.mts'), 'export default { server: { port: 4200 } }\n')
+    writeFileSync(join(root, 'apps', 'web', 'dist', 'index.html'), '<!doctype html><html lang="en"><body><div id="root"></div></body></html>\n')
+    writeFileSync(join(root, 'apps', 'web', 'dist', 'assets', 'app.js'), 'console.log(1)\n')
+    // What the (stood-in) generator writes; the Go app's own sources are replaced.
+    mkdirSync(join(root, 'apps', 'site'), { recursive: true })
+    writeFileSync(join(root, 'apps', 'site', 'project.json'), JSON.stringify({ name: 'site', tags: ['type:go-app'], targets: {} }))
+    writeFileSync(join(root, 'apps', 'site', 'main.go'), 'package main\n\nfunc main() {}\n')
+    await runAdd('go-app', 'site', { web: 'web' })
+  }, 30_000)
+
+  afterAll(() => {
+    jest.restoreAllMocks()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const site = (): string => join(root, 'apps', 'site')
+
+  it('does not compile until the frontend is staged, which is why every Go target waits for it', () => {
+    const result = spawnSync('go', ['vet', './apps/site/'], { cwd: root, encoding: 'utf8' })
+
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('web')
+  }, 120_000)
+
+  it('stages the build output, replacing whatever was staged before', () => {
+    const projectJson = readFileSync(join(site(), 'project.json'), 'utf8')
+    const project = JSON.parse(projectJson) as { targets: Record<string, { options: { command: string } }> }
+    const staged = join(site(), 'web')
+    mkdirSync(staged, { recursive: true })
+    writeFileSync(join(staged, 'stale.html'), 'left over from an earlier build')
+
+    execSync(project.targets['stage-web'].options.command, { cwd: root, stdio: 'pipe' })
+
+    const names = readdirSync(staged)
+    const script = readFileSync(join(staged, 'assets', 'app.js'), 'utf8')
+    expect(names.toSorted((a, b) => a.localeCompare(b))).toEqual(['assets', 'index.html'])
+    expect(script).toBe('console.log(1)\n')
+  })
+
+  it('writes Go that is gofmt-clean, passes go vet, and whose test finds the page in the embed', () => {
+    const formatting = spawnSync('gofmt', ['-l', site()], { encoding: 'utf8' })
+    const vet = spawnSync('go', ['vet', './apps/site/'], { cwd: root, encoding: 'utf8' })
+    const test = spawnSync('go', ['test', './apps/site/'], { cwd: root, encoding: 'utf8' })
+
+    expect(formatting.stdout.trim()).toBe('')
+    expect(vet.status).toBe(0)
+    expect(test.stdout).toContain('ok')
+    expect(test.status).toBe(0)
+  }, 180_000)
+
+  it('builds a binary that takes the version stamp the release step writes', () => {
+    const binary = join(root, 'site-binary')
+    execFileSync('go', ['build', '-ldflags', '-X main.version=7.8.9', '-o', binary, './apps/site/'], { cwd: root })
+
+    expect(existsSync(binary)).toBe(true)
+  }, 180_000)
+})

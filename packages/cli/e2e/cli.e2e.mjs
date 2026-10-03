@@ -18,7 +18,7 @@
  * in the suite is skippable.
  */
 
-import { execSync } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -2851,6 +2851,57 @@ section('go', ['alt stack'], () => {
     } else {
       skip('the cgo build assertions', 'no C compiler (CC, gcc, clang or cc) on the PATH')
     }
+
+    /* -------------------------------------------------------------------------
+     * A Go app that embeds and serves a React app (#262). The embed pattern cannot
+     * leave the Go package, so the React build is staged into the app first, and
+     * every target that compiles Go waits for it.
+     * ----------------------------------------------------------------------- */
+    run(`node ${CLI} add react-app uiweb`, altWorkspace)
+    run(`node ${CLI} add go-app site --web uiweb`, altWorkspace)
+
+    const siteBuild = tryRunCapture('npx nx run site:build --skip-nx-cache', altWorkspace)
+    const siteBinary = path.join(altWorkspace, 'dist/apps/site', process.platform === 'win32' ? 'site.exe' : 'site')
+    enforce(
+      'go: building an app that embeds a React app builds the React app first and stages it',
+      siteBuild.ok &&
+        siteBuild.output.includes('uiweb:build') &&
+        siteBuild.output.indexOf('uiweb:build') < siteBuild.output.lastIndexOf('site:build') &&
+        existsSync(path.join(altWorkspace, 'apps/site/web/index.html')) &&
+        existsSync(siteBinary),
+      siteBuild.output,
+    )
+
+    // A fixed free-ish port derived from the pid: the sections are synchronous, so the
+    // server is a child that is polled with curl and then killed by its own handle.
+    const port = 18_000 + (process.pid % 2000)
+    const server = spawn(siteBinary, [], { env: { ...process.env, ADDR: `127.0.0.1:${port}` }, stdio: 'ignore' })
+    let page = ''
+    for (let attempt = 0; page === '' && attempt < 20; attempt += 1) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
+      try {
+        page = execSync(`curl -s http://127.0.0.1:${port}/`, { encoding: 'utf8' })
+      } catch {
+        page = ''
+      }
+    }
+    server.kill()
+    enforce('go: the binary serves the built index.html from its embed', page.includes('<div id="root"'), page.slice(0, 300))
+
+    // The two halves of the graph: the Go app depends on the React app, not the other way.
+    const reactChange = affectedBy('apps/uiweb/src/main.tsx')
+    const siteChange = affectedBy('apps/site/main.go')
+    enforce(
+      'go: a React change marks the embedding Go app affected; a Go change does not mark the React app',
+      reactChange.projects.includes('site') && siteChange.projects.includes('site') && siteChange.projects.every(project => !project.includes('uiweb')),
+      `react change: ${JSON.stringify(reactChange.projects)}; go change: ${JSON.stringify(siteChange.projects)}`,
+    )
+
+    // A fresh clone has neither the staged copy nor the React build.
+    rmSync(path.join(altWorkspace, 'apps/site/web'), { recursive: true, force: true })
+    rmSync(path.join(altWorkspace, 'apps/uiweb/dist'), { recursive: true, force: true })
+    const siteTest = tryRunCapture('npx nx run site:test --skip-nx-cache', altWorkspace)
+    enforce('go: the app tests green on a fresh clone with nothing staged, because the target stages first', siteTest.ok, siteTest.output)
   } else {
     skip('the entire Go section', 'the Go toolchain is not on PATH')
   }

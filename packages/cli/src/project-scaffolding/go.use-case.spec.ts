@@ -30,6 +30,21 @@ function seedProjectJson (relativeDirectory: string, name: string): void {
   )
 }
 
+/** The Vite config `@nx/react` writes, as far as the proxy edit cares. */
+const VITE_CONFIG = "export default defineConfig(() => ({\n  server:   {\n    port: 4200,\n    host: 'localhost',\n  },\n}))\n"
+
+/** Seeds a React app the way `mnci add react-app` leaves it, for the Go app that embeds it. */
+function seedReactApp (directory = 'web', viteConfig = VITE_CONFIG): void {
+  mkdirSync(join(workspaceRoot, 'apps', directory), { recursive: true })
+  writeFileSync(join(workspaceRoot, 'apps', directory, 'package.json'), JSON.stringify({ name: `@demo/${directory}` }))
+  writeFileSync(join(workspaceRoot, 'apps', directory, 'vite.config.mts'), viteConfig)
+}
+
+/** Reads a file of the generated `apps/site` back. */
+function readSite (file: string): string {
+  return readFileSync(join(workspaceRoot, 'apps/site', file), 'utf8')
+}
+
 /** Reads a generated project.json back. */
 function readProjectJson (relativeDirectory: string): {
   targets: Record<
@@ -162,6 +177,138 @@ describe('runAdd go', () => {
     await expect(runAdd('go-lib', 'core', { release: true })).rejects.toThrow('--release applies to go-app only, not go-lib.')
 
     expect(mockRunNx).not.toHaveBeenCalled()
+  })
+
+  describe('an app that embeds and serves a React app (#262)', () => {
+    type Targets = Record<string, { dependsOn?: unknown[]; inputs?: unknown[]; outputs?: string[]; options?: { command?: string; commands?: string[]; parallel?: boolean } }>
+    const projectOf = (directory: string): { implicitDependencies?: string[]; targets: Targets } =>
+      JSON.parse(readFileSync(join(workspaceRoot, 'apps', directory, 'project.json'), 'utf8')) as never
+
+    it('stages the React build into the app, after building it, with its output declared so Nx caches it', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      const stage = projectOf('site').targets['stage-web']
+      // The real Nx name, scope included, not the directory: dependsOn matches on it.
+      expect(stage.dependsOn).toEqual([{ projects: ['@demo/web'], target: 'build' }])
+      expect(stage.outputs).toEqual(['{workspaceRoot}/apps/site/web'])
+      expect(stage.inputs).toEqual([{ dependentTasksOutputFiles: '**/*' }])
+      expect(stage.options?.command).toContain("fs.cpSync('apps/web/dist','apps/site/web'")
+    })
+
+    it('makes every target that compiles Go wait for it, so a fresh clone is green', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      const { targets } = projectOf('site')
+      for (const target of ['build', 'test', 'lint', 'start', 'build-all']) {
+        expect(targets[target].dependsOn).toContain('stage-web')
+      }
+      // Reached through the target they already depend on.
+      expect(targets.package.dependsOn).toEqual(['build'])
+      expect(targets['package-all'].dependsOn).toEqual(['build-all'])
+    })
+
+    it('puts the React app in the project graph, so a change to it marks the Go app affected', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      expect(projectOf('site').implicitDependencies).toEqual(['@demo/web'])
+      expect(projectOf('site').targets['stage-web'].dependsOn).not.toContainEqual('stage-web')
+    })
+
+    it('adds a dev target that runs the Vite server and the Go server together', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      expect(projectOf('site').targets.dev.options).toEqual({ commands: ['nx run @demo/web:serve', 'nx run site:start'], parallel: true })
+    })
+
+    it('writes a server that embeds the staged files, and git-ignores them', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      expect(readSite('.gitignore')).toBe('/web/\n')
+      expect(readSite('web.go')).toContain('//go:embed all:web')
+      expect(readSite('web.go')).toContain('\tfiles := http.FileServer(http.FS(root))')
+      expect(readSite('main.go')).toContain('mux.Handle("/", webHandler())')
+      // The stamp build-all writes has something to land on, and something reads it.
+      expect(readSite('main.go')).toContain('var version = "dev"')
+      expect(readSite('main_test.go')).toContain('TestWebHandlerServesTheBuiltFrontend')
+    })
+
+    it('proxies /api to the Go server from the Vite dev server', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      const config = readFileSync(join(workspaceRoot, 'apps/web/vite.config.mts'), 'utf8')
+      expect(config).toContain("proxy: { '/api': 'http://127.0.0.1:8080' },")
+      expect(config.indexOf('proxy')).toBeGreaterThan(config.indexOf('server:'))
+      expect(config.indexOf('proxy')).toBeLessThan(config.indexOf('port: 4200'))
+    })
+
+    it('leaves a Vite config that already has an /api proxy alone', async () => {
+      const own = "export default { server: { proxy: { '/api': 'http://localhost:9000' } } }\n"
+      seedReactApp('web', own)
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      expect(readFileSync(join(workspaceRoot, 'apps/web/vite.config.mts'), 'utf8')).toBe(own)
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Could not add the /api proxy'))
+    })
+
+    it('says what to add when the Vite config has no server block to put the proxy in', async () => {
+      seedReactApp('web', 'export default {}\n')
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web' })
+
+      expect(readFileSync(join(workspaceRoot, 'apps/web/vite.config.mts'), 'utf8')).toBe('export default {}\n')
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("proxy: { '/api': 'http://127.0.0.1:8080' }"))
+    })
+
+    it('names the missing React app and stops before anything is generated or installed', async () => {
+      await expect(runAdd('go-app', 'site', { web: 'ui' })).rejects.toThrow('--web ui: no React app at apps/ui. Add it first with `mnci add react-app ui`.')
+
+      expect(mockRunNx).not.toHaveBeenCalled()
+      expect(mockRunShell).not.toHaveBeenCalled()
+    })
+
+    it('does not take a directory that is not a React app for one', async () => {
+      mkdirSync(join(workspaceRoot, 'apps/plain'), { recursive: true })
+      writeFileSync(join(workspaceRoot, 'apps/plain/package.json'), JSON.stringify({ name: '@demo/plain' }))
+
+      await expect(runAdd('go-app', 'site', { web: 'plain' })).rejects.toThrow('no React app at apps/plain')
+    })
+
+    it('is rejected for a kind that cannot embed a frontend, before anything is generated', async () => {
+      await expect(runAdd('go-lib', 'core', { web: 'web' })).rejects.toThrow('--web applies to go-app only, not go-lib.')
+
+      expect(mockRunNx).not.toHaveBeenCalled()
+    })
+
+    it('combines with --cgo: the native build waits for the frontend too', async () => {
+      seedReactApp()
+      seedProjectJson('apps/site', 'site')
+
+      await runAdd('go-app', 'site', { web: 'web', cgo: true })
+
+      expect(projectOf('site').targets['build-native'].dependsOn).toContain('stage-web')
+      expect(projectOf('site').targets['package-native'].dependsOn).toEqual(['build-native'])
+    })
   })
 
   describe('a native (cgo) app (#263)', () => {
